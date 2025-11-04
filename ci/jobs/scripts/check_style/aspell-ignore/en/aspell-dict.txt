@@ -310,6 +310,7 @@ Eoan
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -836,6 +837,7 @@ PROXYv
 PRQL
 PSUN
 PagerDuty
+Paimon
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
@@ -946,6 +948,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1190,6 +1193,7 @@ UDFs
 UInt
 UIntN
 ULID
+ULIDs
 ULIDStringToDateTime
 UMTS
 UNDROP
@@ -1222,6 +1226,7 @@ Uptime
 Uptrace
 UserID
 Util
+VARBINARY
 VARCHAR
 VIEWs
 Vadim
@@ -2465,6 +2470,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2575,6 +2583,8 @@ overparallelization
 packetpool
 packetsize
 pageviews
+paimon
+paimonCluster
 parallelization
 parallelize
 parallelized
@@ -3297,6 +3307,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight

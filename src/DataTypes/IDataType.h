@@ -142,10 +142,9 @@ public:
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization(SerializationPtr override_default = {}) const;
-    SerializationPtr getSparseSerialization(SerializationPtr override_default = {}) const;
 
-    /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind, SerializationPtr override_default = {}) const;
+    /// Chooses serialization according to serialization kind stack.
+    SerializationPtr getSerialization(ISerialization::KindStack kind_stack, SerializationPtr override_default = {}) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
@@ -422,6 +421,7 @@ struct WhichDataType
     constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
     constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
+    constexpr bool isIntegerOrDecimal() const { return isInteger() || isDecimal(); }
     constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
@@ -503,6 +503,7 @@ bool isDecimal(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
 \
+bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \
 bool isNumber(TYPE data_type); \
 \

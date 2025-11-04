@@ -825,13 +825,14 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
 {
-    const bool row_group_prefetch = io_pool != nullptr;
+    bool row_group_prefetch = io_pool != nullptr;
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
     parquet::ReaderProperties reader_properties(arrow::default_memory_pool());
     arrow_properties.set_use_threads(false);
     arrow_properties.set_batch_size(row_group_batch.adaptive_chunk_size);
+    reader_properties.set_page_checksum_verification(format_settings.parquet.verify_checksums);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
@@ -877,7 +878,10 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // other, failing an assert. So we disable pre-buffering in this case.
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
+    {
         arrow_properties.set_pre_buffer(false);
+        row_group_prefetch = false;
+    }
 
     if (format_settings.parquet.use_native_reader)
     {
@@ -1004,9 +1008,9 @@ void ParquetBlockInputFormat::RowGroupPrefetchIterator::prefetchNextRowGroups()
     if (next_row_group_idx < row_group_batch.row_groups_idxs.size())
     {
         size_t total_bytes_compressed = 0;
-        // Merge small row groups
+        // Merge small row groups, but always prefetch at least one row group
         while (next_row_group_idx < row_group_batch.row_groups_idxs.size() &&
-               total_bytes_compressed < min_bytes_for_seek)
+               (total_bytes_compressed < min_bytes_for_seek || prefetched_row_groups.empty()))
         {
             total_bytes_compressed += row_group_batch.row_group_sizes[next_row_group_idx];
             prefetched_row_groups.emplace_back(row_group_batch.row_groups_idxs[next_row_group_idx]);
@@ -1076,6 +1080,19 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading Parquet data: {}", batch.status().ToString());
             return batch;
         };
+
+        // If record_batch_reader is null, try to get the next row group reader from prefetch iterator
+        if (!row_group_batch.record_batch_reader && row_group_batch.prefetch_iterator)
+        {
+            row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
+        }
+
+        // If we still don't have a reader, we're done with this row group
+        if (!row_group_batch.record_batch_reader)
+        {
+            end_of_row_group();
+            return;
+        }
 
         auto batch = fetchBatch();
         if (!*batch && row_group_batch.prefetch_iterator)
@@ -1169,7 +1186,9 @@ Chunk ParquetBlockInputFormat::read()
         if (background_exception)
         {
             is_stopped = true;
-            std::rethrow_exception(background_exception);
+            /// This exception can be mutated (addMessage()) in IInputFormat::generate(),
+            /// so we need to copy it (copyMutableException()) to avoid sharing mutable exception between multiple threads
+            std::rethrow_exception(copyMutableException(background_exception));
         }
         if (is_stopped)
             return {};

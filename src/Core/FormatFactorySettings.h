@@ -197,6 +197,9 @@ Skip pages using min/max values from column index.
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
 )", 0) \
+    DECLARE(Bool, input_format_parquet_verify_checksums, true, R"(
+Verify page checksums when reading parquet files.
+)", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
 
@@ -1132,6 +1135,9 @@ If dictionary size grows bigger than this many bytes, switch to encoding without
     DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
 )", 0) \
+    DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
+Put crc32 checksums in parquet page headers.
+)", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
 )", 0) \
@@ -1192,7 +1198,7 @@ Method to write Errors to text output.
     DECLARE(String, format_schema_source, "file", R"(
 Define the source of `format_schema`.
 Possible values:
-- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'file' (default): The `format_schema` is the name of a schema file located in the `format_schemas` directory.
 - 'string': The `format_schema` is the literal content of the schema.
 - 'query': The `format_schema` is a query to retrieve the schema.
 When `format_schema_source` is set to 'query', the following conditions apply:
