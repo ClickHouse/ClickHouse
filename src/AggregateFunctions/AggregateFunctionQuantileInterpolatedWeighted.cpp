@@ -308,14 +308,14 @@ private:
 
     /// This ignores overflows or NaN's that might arise during add, sub and mul operations and doesn't aim to provide exact
     /// results since `the quantileInterpolatedWeighted` function itself relies mainly on approximation.
-    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 xl, Float64 xr, UnderlyingType yl, UnderlyingType yr) const
+    UnderlyingType NO_SANITIZE_UNDEFINED interpolate(Float64 level, Float64 lower_percentile, Float64 upper_percentile, UnderlyingType lower_value, UnderlyingType upper_value) const
     {
-        UnderlyingType dy = yr - yl;
-        Float64 dx = xr - xl;
-        dx = dx == 0 ? 1 : dx; /// to handle NaN behavior that might arise during integer division below.
+        UnderlyingType value_diff = upper_value - lower_value;
+        Float64 percentile_diff = upper_percentile - lower_percentile;
+        percentile_diff = percentile_diff == 0 ? 1 : percentile_diff; /// to handle NaN behavior that might arise during integer division below.
 
         /// yl + (dy / dx) * (level - xl)
-        return static_cast<UnderlyingType>(yl + (dy / dx) * (level - xl));
+        return static_cast<UnderlyingType>(lower_value + (value_diff / percentile_diff) * (level - lower_percentile));
     }
 };
 
