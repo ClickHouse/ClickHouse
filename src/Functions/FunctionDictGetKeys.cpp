@@ -19,6 +19,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 
 #include <Common/CacheBase.h>
@@ -70,7 +71,7 @@ struct KeyHash
     }
 };
 
-using Mapped = std::vector<std::byte>;
+using Mapped = PODArray<UInt8>;
 
 using MappedPtr = std::shared_ptr<Mapped>;
 
