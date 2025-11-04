@@ -41,16 +41,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
-            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
-            {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
-            {"input_format_parquet_verify_checksums", true, true, "New setting."},
-            {"output_format_parquet_write_checksums", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -69,10 +65,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"joined_block_split_single_row", false, false, "New setting"},
             {"temporary_files_buffer_size", DBMS_DEFAULT_BUFFER_SIZE, DBMS_DEFAULT_BUFFER_SIZE, "New setting"},
             {"rewrite_in_to_join", false, false, "New experimental setting"},
-            {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"iceberg_insert_max_bytes_in_data_file", 100000000, 100000000, "New setting."},
-            {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "New setting."},
-            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"iceberg_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
             {"delta_lake_insert_max_rows_in_data_file", 100000, 1000000, "Changed default value."},
             {"delta_lake_log_metadata", false, false, "New setting."},
@@ -99,7 +91,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_protobuf_oneof_presence", false, false, "New setting"},
             {"iceberg_delete_data_on_drop", false, false, "New setting"},
             {"use_skip_indexes_on_data_read", false, false, "New setting"},
-            {"s3_slow_all_threads_after_retryable_error", true, true, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"s3_slow_all_threads_after_retryable_error", false, false, "Added an alias for setting `backup_slow_all_threads_after_retryable_s3_error`"},
             {"iceberg_metadata_log_level", "none", "none", "New setting."},
             {"iceberg_insert_max_rows_in_data_file", 100000, 100000, "New setting."},
@@ -936,8 +927,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"refresh_statistics_interval", 0, 0, "New setting"},
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
-            {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
-            {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
