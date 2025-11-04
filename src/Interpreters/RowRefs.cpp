@@ -2,8 +2,10 @@
 
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Core/Joins.h>
 #include <DataTypes/IDataType.h>
 #include <base/types.h>
@@ -83,7 +85,7 @@ public:
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
     static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
 
-    void insert(const IColumn & asof_column, const Columns * columns, size_t row_num) override
+    void insert(const IColumn & asof_column, const ColumnsInfo * columns, size_t row_num) override
     {
         using ColumnType = ColumnVectorOrDecimal<TKey>;
         const auto & column = assert_cast<const ColumnType &>(asof_column);
@@ -214,6 +216,13 @@ private:
     }
 };
 
+}
+
+ColumnsInfo::ColumnsInfo(Columns && columns_) : columns(std::move(columns_))
+{
+    replicated_columns.resize(columns.size());
+    for (size_t i = 0; i != columns.size(); ++i)
+        replicated_columns[i] = typeid_cast<const ColumnReplicated *>(columns[i].get());
 }
 
 AsofRowRefs createAsofRowRef(TypeIndex type, ASOFJoinInequality inequality)
