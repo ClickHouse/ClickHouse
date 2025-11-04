@@ -1083,7 +1083,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const auto & level_rels = this->levels[this->current_level].rels;
 
     const uint32_t literal_value = this->inside_projection ? 50 : 100;
-    const uint32_t col_ref_expr = 300;
+    const uint32_t col_ref_expr = this->inside_projection ? 600 : 300;
     const uint32_t predicate_expr = 50 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t cast_expr = 25 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t unary_expr = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth);

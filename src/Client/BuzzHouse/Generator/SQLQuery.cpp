@@ -2215,27 +2215,30 @@ void StatementGenerator::generateSelect(
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
-        this->depth++;
-        for (uint32_t i = 0; i < ncols; i++)
+        if (rg.nextMediumNumber() < 99)
         {
-            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-
-            generateExpression(rg, eca->mutable_expr());
-            if (!top && rg.nextBool())
+            this->depth++;
+            for (uint32_t i = 0; i < ncols; i++)
             {
-                const String ncname = getNextAlias();
+                ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
 
-                SQLRelation rel("");
-                rel.cols.emplace_back(SQLRelationCol("", {ncname}));
-                this->levels[this->current_level].rels.emplace_back(rel);
-                eca->mutable_col_alias()->set_column(ncname);
-                this->levels[this->current_level].projections.emplace_back(ncname);
+                generateExpression(rg, eca->mutable_expr());
+                if (!top && rg.nextBool())
+                {
+                    const String ncname = getNextAlias();
+
+                    SQLRelation rel("");
+                    rel.cols.emplace_back(SQLRelationCol("", {ncname}));
+                    this->levels[this->current_level].rels.emplace_back(rel);
+                    eca->mutable_col_alias()->set_column(ncname);
+                    this->levels[this->current_level].projections.emplace_back(ncname);
+                }
+                eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
+                this->width++;
             }
-            eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
-            this->width++;
+            this->depth--;
+            this->width -= ncols;
         }
-        this->depth--;
-        this->width -= ncols;
         if ((allowed_clauses & allow_qualify) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
             && rg.nextSmallNumber() < 3)
         {

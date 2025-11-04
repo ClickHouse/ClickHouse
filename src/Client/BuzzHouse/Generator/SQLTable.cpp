@@ -228,7 +228,7 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         rel.cols.emplace_back(SQLRelationCol(rel_name, names));
     }
     this->table_entries.clear();
-    if (allow_internal_cols && rg.nextSmallNumber() < 3)
+    if (allow_internal_cols && rg.nextSmallNumber() < (this->inside_projection ? 6 : 3))
     {
         if (t.isMergeTreeFamily() && this->allow_not_deterministic)
         {
@@ -1840,7 +1840,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 void StatementGenerator::addTableProjection(RandomGenerator & rg, SQLTable & t, const bool staged, ProjectionDef * pdef)
 {
     const uint32_t pname = t.proj_counter++;
-    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 3)), UINT32_C(1));
+    const uint32_t ncols = rg.nextMediumNumber() < 91 ? 1 : (rg.nextMediumNumber() % 3) + 1;
     auto & to_add = staged ? t.staged_projs : t.projs;
 
     pdef->mutable_proj()->set_projection("p" + std::to_string(pname));
