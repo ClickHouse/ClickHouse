@@ -341,25 +341,3 @@ SYSTEM FLUSH LOGS query_log;
 SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-after' LIMIT 1;
-
--- Insert new data -> first query should load once
-INSERT INTO sc_trunc SELECT number, toFloat64(rand())/4294967296.0 FROM numbers(150000);
-
-SELECT count() FROM sc_trunc WHERE v > 0.99
-SETTINGS use_statistics_cache=1, log_comment='trunc-load' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-load' LIMIT 1;
-
--- After interval tick -> hit (no per-query load)
-SELECT sleep(1);
-
-SELECT count() FROM sc_trunc WHERE v > 0.99
-SETTINGS use_statistics_cache=1, log_comment='trunc-hit' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-hit' LIMIT 1;

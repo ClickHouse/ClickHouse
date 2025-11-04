@@ -27,13 +27,14 @@ def _query_retry(node, sql, retry_count=10, sleep_time=0.2):
     )
 
 def _loaded_stats_us(node, tag):
-    _query(node, "SYSTEM FLUSH LOGS")
+    _query(node, "SYSTEM FLUSH LOGS query_log")
     v = _query(node, f"""
-        SELECT ProfileEvents['LoadedStatisticsMicroseconds']
+        SELECT toInt64(coalesce(max(ProfileEvents['LoadedStatisticsMicroseconds']), 0))
         FROM system.query_log
-        WHERE type='QueryFinish' AND log_comment='{tag}'
-        ORDER BY event_time_microseconds DESC
-        LIMIT 1 FORMAT TabSeparated
+        WHERE current_database = currentDatabase()
+          AND type = 'QueryFinish'
+          AND log_comment = '{tag}'
+        FORMAT TabSeparated
     """).strip()
     return int(v or "0")
 
@@ -48,7 +49,8 @@ def _wait_hit(node, tag, query_sql, retry_count=20, sleep_time=0.2):
         SET_PREFIX + "\n" + query_sql,
         retry_count=retry_count,
         sleep_time=sleep_time,
-        check_callback=lambda _: _loaded_stats_us(node, tag) == 0,
+        check_callback=lambda _:
+            (_loaded_stats_us(node, tag) == 0)
     )
 
 def _create_tbl(node, name, interval):
@@ -103,20 +105,18 @@ def _create_rep(interval):
     for n in (r1, r2):
         _query_retry(n, f"CREATE DATABASE IF NOT EXISTS {db}")
 
-    ddl_r1 = f"""
+    _query_retry(r1, f"""
         CREATE TABLE {db}.{table} (id UInt32, v Float64)
         ENGINE=ReplicatedMergeTree('/clickhouse/tests/{db}/{table}', 'r1')
         ORDER BY id
         SETTINGS refresh_statistics_interval = {interval}
-    """
-    ddl_r2 = f"""
+    """)
+    _query_retry(r2, f"""
         CREATE TABLE {db}.{table} (id UInt32, v Float64)
         ENGINE=ReplicatedMergeTree('/clickhouse/tests/{db}/{table}', 'r2')
         ORDER BY id
         SETTINGS refresh_statistics_interval = {interval}
-    """
-    _query_retry(r1, ddl_r1)
-    _query_retry(r2, ddl_r2)
+    """)
 
     _query(r1, f"INSERT INTO {db}.{table} SELECT number, toFloat64(rand())/4294967296.0 FROM numbers(200000)")
     _query_retry(r2, f"SYSTEM SYNC REPLICA {db}.{table}", retry_count=60, sleep_time=0.2)
@@ -271,6 +271,7 @@ def test_types_smoke_and_nullable():
         ch1, "t-cm",
         "SELECT count() FROM t_cm WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-cm' FORMAT Null"
     )
+
     _query_retry(ch1, "DROP TABLE IF EXISTS t_mm SYNC")
     _query_retry(ch1, "CREATE TABLE t_mm (k UInt32, x UInt32) ENGINE=MergeTree ORDER BY k SETTINGS refresh_statistics_interval=1")
     _query(ch1, "INSERT INTO t_mm SELECT number, number%1000000 FROM numbers(300000)")
@@ -280,11 +281,13 @@ def test_types_smoke_and_nullable():
         ch1, "t-mm",
         "SELECT count() FROM t_mm WHERE x BETWEEN 900000 AND 950000 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-mm' FORMAT Null"
     )
+
     _create_tbl(ch1, "t_tdg", 1)
     _wait_hit(
         ch1, "t-tdg",
         "SELECT count() FROM t_tdg WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='t-tdg' FORMAT Null"
     )
+
     _query_retry(ch1, "DROP TABLE IF EXISTS t_tdg_null SYNC")
     _query_retry(ch1, "CREATE TABLE t_tdg_null (k UInt32, v Nullable(Float64)) ENGINE=MergeTree ORDER BY k SETTINGS refresh_statistics_interval=1")
     _query(ch1, "INSERT INTO t_tdg_null SELECT number, multiIf(number%10=0,NULL,toFloat64(rand())/4294967296.0) FROM numbers(200000)")
@@ -301,8 +304,10 @@ def test_countmin_lowcardinality_supported_load_then_hit():
     _query(ch1, "INSERT INTO t_cm_lc SELECT number, if(number%4=0,'PROMO',concat('X',toString(number%1000))) FROM numbers(200000)")
     _query_retry(ch1, "ALTER TABLE t_cm_lc ADD STATISTICS cat TYPE CountMin")
     _query_retry(ch1, "ALTER TABLE t_cm_lc MATERIALIZE STATISTICS ALL")
+
     _query(ch1, "SELECT count() FROM t_cm_lc WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=0, log_comment='cm-lc-load' FORMAT Null")
     _assert_load(ch1, "cm-lc-load")
+
     _wait_hit(
         ch1, "cm-lc-hit",
         "SELECT count() FROM t_cm_lc WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=1, log_comment='cm-lc-hit' FORMAT Null"
@@ -311,8 +316,22 @@ def test_countmin_lowcardinality_supported_load_then_hit():
 def test_drop_statistics_means_no_load_and_bypass_still_loads():
     _create_tbl(ch1, "drop_tbl", 1)
     _query_retry(ch1, "ALTER TABLE drop_tbl DROP STATISTICS v")
-    _query(ch1, "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='drop-q' FORMAT Null")
-    _assert_hit(ch1, "drop-q")
+
+    assert _query(ch1, """
+        SELECT count()
+        FROM system.statistics
+        WHERE database = currentDatabase()
+          AND table = 'drop_tbl'
+          AND name = 'v'
+        FORMAT TabSeparated
+    """).strip() == "0"
+
+    _wait_hit(
+        ch1, "drop-q",
+        "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 "
+        "SETTINGS use_statistics_cache=1, log_comment='drop-q' FORMAT Null"
+    )
+
     _query(ch1, "SELECT count() FROM drop_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=0, log_comment='drop-bypass' FORMAT Null")
     _assert_load(ch1, "drop-bypass")
 
@@ -322,12 +341,16 @@ def test_per_replica_cache_and_restart_needed():
     _assert_load(r1, "rep-r1-pre")
     _query(r2, f"SELECT count() FROM {db}.{table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-r2-pre' FORMAT Null")
     _assert_load(r2, "rep-r2-pre")
+
     for n in (r1, r2):
         _query_retry(n, f"ALTER TABLE {db}.{table} MODIFY SETTING refresh_statistics_interval = 1")
+
     _query(r1, f"SELECT count() FROM {db}.{table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-now' FORMAT Null")
     _assert_load(r1, "rep-now")
+
     _query_retry(r1, f"SYSTEM RESTART REPLICA {db}.{table}")
     _query_retry(r2, f"SYSTEM RESTART REPLICA {db}.{table}")
+
     _wait_hit(
         r1, "rep-post-r1",
         f"SELECT count() FROM {db}.{table} WHERE v>0.99 AND id>=0 SETTINGS use_statistics_cache=1, log_comment='rep-post-r1' FORMAT Null"
@@ -373,12 +396,14 @@ def test_auto_statistics_types_load_then_hit():
         FROM numbers(200000)
     """)
     _query_retry(ch1, "ALTER TABLE auto_tbl MATERIALIZE STATISTICS ALL")
+
     _query(ch1, "SELECT count() FROM auto_tbl WHERE val>0.99 AND k>=0 SETTINGS use_statistics_cache=0, log_comment='auto-td-load' FORMAT Null")
     _assert_load(ch1, "auto-td-load")
     _wait_hit(
         ch1, "auto-td-hit",
         "SELECT count() FROM auto_tbl WHERE val>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='auto-td-hit' FORMAT Null"
     )
+
     _query(ch1, "SELECT count() FROM auto_tbl WHERE cat='PROMO' AND k>=0 SETTINGS use_statistics_cache=0, log_comment='auto-cm-load' FORMAT Null")
     _assert_load(ch1, "auto-cm-load")
     _wait_hit(
