@@ -54,11 +54,6 @@ inline UInt128 hashAt(const IColumn & column, size_t row_id)
     return h.get128();
 }
 
-inline bool equalAt(const IColumn & left_column, size_t left_row_id, const IColumn & right_column, size_t right_row_id)
-{
-    return hashAt(left_column, left_row_id) == hashAt(right_column, right_row_id);
-}
-
 
 /// Cache key: (dictionary name, epoch, attribute, canonical bytes)
 /// TODO: Use 128 bit sip which should be strong enough to avoid collisions here and then skip storing full bytes?
@@ -399,11 +394,10 @@ private:
                     [&](auto & target_map, auto & bucket_representatives, auto & interested_buckets)
                     {
                         UInt128 hash = hashAt(values_col, 0);
-                        target_map[hash].push_back(0);
+                        target_map[hash] = 0;
                         bucket_representatives.push_back(0);
                         interested_buckets.push_back(0);
                     },
-                    values_col,
                     1);
                 return std::make_shared<Mapped>(std::move(results[0]));
             });
@@ -422,48 +416,37 @@ private:
         size_t input_rows_count,
         const auto & dict) const
     {
-        using BucketIdList = PODArray<UInt64, 2 * sizeof(UInt64)>;
-        using Map = HashMap<UInt64, BucketIdList, HashCRC32<UInt64>>;
-        Map hash_to_bucket_ids;
-        hash_to_bucket_ids.reserve(input_rows_count);
+        using Map = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
+        Map hash_to_bucket_id;
+        hash_to_bucket_id.reserve(input_rows_count);
 
         std::vector<size_t> row_id_to_bucket_id(input_rows_count);
         std::vector<size_t> bucket_id_to_representative_row_id;
         bucket_id_to_representative_row_id.reserve(input_rows_count);
 
+        std::vector<UInt128> bucket_hashes;
+        bucket_hashes.reserve(input_rows_count);
+
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
             const UInt128 hash = hashAt(values_column, cur_row_id);
-            auto & potential_bucket_ids = hash_to_bucket_ids[hash];
 
-            bool previously_seen = false;
-            for (size_t bucket_id : potential_bucket_ids)
+            if (hash_to_bucket_id.contains(hash))
             {
-                size_t bucket_representative_row_id = bucket_id_to_representative_row_id[bucket_id];
-                if (equalAt(values_column, cur_row_id, values_column, bucket_representative_row_id))
-                {
-                    previously_seen = true;
-                    row_id_to_bucket_id[cur_row_id] = bucket_id;
-                    break;
-                }
+                size_t bucket_id = hash_to_bucket_id[hash];
+                row_id_to_bucket_id[cur_row_id] = bucket_id;
+                continue;
             }
 
             /// New unique value, create a new bucket
-            if (!previously_seen)
-            {
-                const size_t new_bucket_id = bucket_id_to_representative_row_id.size();
-                bucket_id_to_representative_row_id.push_back(cur_row_id);
-                potential_bucket_ids.push_back(new_bucket_id);
-                row_id_to_bucket_id[cur_row_id] = new_bucket_id;
-            }
+            const size_t new_bucket_id = bucket_id_to_representative_row_id.size();
+            bucket_id_to_representative_row_id.push_back(cur_row_id);
+            hash_to_bucket_id[hash] = new_bucket_id;
+            row_id_to_bucket_id[cur_row_id] = new_bucket_id;
+            bucket_hashes.push_back(hash);
         }
 
         const size_t num_buckets = bucket_id_to_representative_row_id.size();
-
-        std::vector<UInt128> bucket_hashes;
-        bucket_hashes.reserve(num_buckets);
-        for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
-            bucket_hashes.emplace_back(hashAt(values_column, bucket_id_to_representative_row_id[bucket_id]));
 
         auto & cache = SharedCache::instance().getCache();
         std::vector<DictGetKeysCache::MappedPtr> bucket_cached(num_buckets); // may contain nullptr for misses
@@ -523,10 +506,9 @@ private:
                         for (size_t bucket_id : miss_bucket_ids)
                         {
                             UInt128 hash = hashAt(values_column, bucket_representatives[bucket_id]);
-                            target_map[hash].push_back(bucket_id);
+                            target_map[hash] = bucket_id;
                         }
                     },
-                    values_column,
                     input_rows_count);
 
                 // Insert computed results into cache and fill our local bucket_cached
@@ -648,16 +630,14 @@ private:
         const DataTypes & key_types,
         size_t keys_cnt,
         SetupTargets && setup_targets,
-        const IColumn & values_column,
         size_t input_rows_count) const
     {
-        using BucketIdList = PODArray<UInt64, 2 * sizeof(UInt64)>;
-        using Map = HashMap<UInt64, BucketIdList, HashCRC32<UInt64>>;
+        using Map = HashMap<UInt64, size_t, HashCRC32<UInt64>>;
 
-        Map target;
+        Map target_map;
         std::vector<size_t> bucket_representatives;
         std::vector<size_t> interested_buckets;
-        setup_targets(target, bucket_representatives, interested_buckets);
+        setup_targets(target_map, bucket_representatives, interested_buckets);
 
         const size_t num_buckets_total = bucket_representatives.size();
         std::vector<size_t> last_key_pos_for_bucket(num_buckets_total, std::numeric_limits<size_t>::max());
@@ -691,27 +671,17 @@ private:
             {
                 const UInt128 hash = hashAt(*attr_col, i);
 
-                auto * it = target.find(hash);
-                if (it == target.end())
+                auto * it = target_map.find(hash);
+                if (it == target_map.end())
                     continue;
 
-                const auto & candidate_buckets = it->getMapped();
-                for (size_t bucket_id : candidate_buckets)
-                {
-                    size_t bucket_representative_row_id = bucket_representatives[bucket_id];
-                    if (!equalAt(*attr_col, i, values_column, bucket_representative_row_id))
-                        continue;
-
-                    const size_t cur_pos = payload_key_cols[0]->size();
-                    for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
-                        payload_key_cols[key_id]->insertFrom(*key_src[key_id], i);
-
-                    next_key_pos.push_back(last_key_pos_for_bucket[bucket_id]);
-                    last_key_pos_for_bucket[bucket_id] = cur_pos;
-                    ++counts[bucket_id];
-
-                    break;
-                }
+                const auto & bucket_id = it->getMapped();
+                const size_t cur_pos = payload_key_cols[0]->size();
+                for (size_t key_id = 0; key_id < keys_cnt; ++key_id)
+                    payload_key_cols[key_id]->insertFrom(*key_src[key_id], i);
+                next_key_pos.push_back(last_key_pos_for_bucket[bucket_id]);
+                last_key_pos_for_bucket[bucket_id] = cur_pos;
+                ++counts[bucket_id];
             }
         }
 
