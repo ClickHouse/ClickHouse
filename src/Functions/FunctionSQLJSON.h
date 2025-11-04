@@ -466,7 +466,7 @@ public:
         return true;
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, std::vector<bool> & path_asterisks, bool function_json_value_return_type_allow_complex) 
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, std::vector<bool> & path_asterisks, bool function_json_value_return_type_allow_complex)
     {
         if (dest.getDataType() == TypeIndex::String || (dest.isNullable() && assert_cast<ColumnNullable *>(&dest)->getNestedColumn().getDataType() == TypeIndex::String))
         {
@@ -612,7 +612,7 @@ public:
         return true;
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, std::vector<bool> &, bool function_json_value_return_type_allow_complex) 
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, std::vector<bool> &, bool function_json_value_return_type_allow_complex)
     {
         generator_json_paths[0]->reinitialize();
         return insertResultToColumn(dest, root, *generator_json_paths[0], function_json_value_return_type_allow_complex);
