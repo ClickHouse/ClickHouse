@@ -83,7 +83,6 @@ struct KeyHash
 struct Mapped
 {
     ColumnPtr array;
-    size_t bytes = 0;
 };
 
 
@@ -198,14 +197,12 @@ Mapped makeCachedArrayFromLinkedList(
         auto array = ColumnArray::create(std::move(key_cols[0]), std::move(offsets));
         Mapped mapped;
         mapped.array = std::move(array);
-        mapped.bytes = mapped.array->allocatedBytes();
         return mapped;
     }
     auto tuple_column = ColumnTuple::create(std::move(key_cols));
     auto array = ColumnArray::create(std::move(tuple_column), std::move(offsets));
     Mapped mapped;
     mapped.array = std::move(array);
-    mapped.bytes = mapped.array->allocatedBytes();
     return mapped;
 }
 
@@ -219,7 +216,6 @@ Mapped makeEmptyCachedArray(const DataTypes & key_types)
         auto array = ColumnArray::create(key_types[0]->createColumn(), std::move(offsets));
         Mapped mapped;
         mapped.array = std::move(array);
-        mapped.bytes = mapped.array->allocatedBytes();
         return mapped;
     }
 
@@ -231,7 +227,6 @@ Mapped makeEmptyCachedArray(const DataTypes & key_types)
     auto array = ColumnArray::create(std::move(tuple_column), std::move(offsets));
     Mapped mapped;
     mapped.array = std::move(array);
-    mapped.bytes = mapped.array->allocatedBytes();
     return mapped;
 }
 
@@ -312,7 +307,6 @@ public:
         auto dict = helper.getDictionary(arguments[0].column);
         const auto & structure = dict->getStructure();
         const auto key_types = structure.getKeyTypes();
-        const size_t keys_cnt = key_types.size();
 
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
 
@@ -325,9 +319,9 @@ public:
         ColumnPtr values_full = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullColumnIfLowCardinality();
 
         if (is_values_const)
-            return executeConstPath(dict_name, attr_name, *values_full, key_types, keys_cnt, input_rows_count, dict);
+            return executeConstPath(dict_name, attr_name, *values_full, key_types, input_rows_count, dict);
 
-        return executeVectorPath(dict_name, attr_name, *values_full, key_types, keys_cnt, input_rows_count, dict);
+        return executeVectorPath(dict_name, attr_name, *values_full, key_types, input_rows_count, dict);
     }
 
 private:
@@ -340,7 +334,6 @@ private:
         const String & attr_name,
         const IColumn & values_col,
         const DataTypes & key_types,
-        size_t keys_cnt,
         size_t input_rows_count,
         const auto & dict) const
     {
@@ -356,7 +349,7 @@ private:
                 Map hash_to_bucket_id;
                 hash_to_bucket_id.reserve(1);
                 hash_to_bucket_id[value_hash] = 0;
-                auto results = getMissingBucketKeys(attr_name, dict, key_types, keys_cnt, 1, std::vector<size_t>{0}, hash_to_bucket_id, 1);
+                auto results = getMissingBucketKeys(attr_name, dict, key_types, 1, std::vector<size_t>{0}, hash_to_bucket_id, 1);
                 return std::make_shared<Mapped>(std::move(results[0]));
             });
 
@@ -369,7 +362,6 @@ private:
         const String & attr_name,
         const IColumn & values_column,
         const DataTypes & key_types,
-        size_t keys_cnt,
         size_t input_rows_count,
         const auto & dict) const
     {
@@ -450,7 +442,7 @@ private:
                 lk.unlock();
 
                 auto results = getMissingBucketKeys(
-                    attr_name, dict, key_types, keys_cnt, num_buckets, missing_bucket_ids, hash_to_bucket_id, input_rows_count);
+                    attr_name, dict, key_types, num_buckets, missing_bucket_ids, hash_to_bucket_id, input_rows_count);
 
                 // Insert computed results into cache and fill our local bucket_cached
                 for (size_t bucket_id : missing_bucket_ids)
@@ -492,6 +484,7 @@ private:
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
             total_output += bucket_len[bucket_id] * bucket_use_count[bucket_id];
 
+        const size_t keys_cnt = key_types.size();
         if (keys_cnt == 1)
         {
             std::vector<const IColumn *> src(num_buckets);
@@ -569,7 +562,6 @@ private:
         const String & attr_name,
         const DictionaryPtr & dict,
         const DataTypes & key_types,
-        size_t keys_cnt,
         size_t total_buckets,
         const std::vector<size_t> & missing_bucket_ids,
         const Map & hash_to_bucket_id,
@@ -581,6 +573,7 @@ private:
         next_key_pos.reserve(input_rows_count);
 
         std::vector<MutableColumnPtr> payload_key_cols;
+        const size_t keys_cnt = key_types.size();
         payload_key_cols.reserve(keys_cnt);
         for (const auto & t : key_types)
             payload_key_cols.emplace_back(t->createColumn());
