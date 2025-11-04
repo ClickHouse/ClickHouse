@@ -1,12 +1,12 @@
 Negative
 Simple Key
-[2,1]
+[1,2]
 Array(UInt64)
 Complex Key with 2 elements
-[(2,'b'),(1,'a')]
+[(1,'a'),(2,'b')]
 Array(Tuple(UInt64, String))
 Complex Key with 1 element
-[10,20]
+[20,10]
 Array(UInt64)
 Complex Key with many elements
 [(1,-1,'x','2000-01-02','01234567-89ab-cdef-0123-456789abcdef','1.2.3.4','2001:db8::1','2025-10-10 03:04:05.000')]
@@ -35,7 +35,7 @@ Array
 [2]
 [2]
 Nullable
-[3,1]
+[1,3]
 [2]
 [1]
 [2]
@@ -51,29 +51,29 @@ Dates, UUID, IPs, String, Decimal
 [2]
 Value Types
 Constant value
-[4,1]
+[1,4]
 Non-const vector
-[4,1]
+[1,4]
 [2]
 []
 LowCardinality(String) constant
-[4,1]
+[1,4]
 LowCardinality(String) vector
-[4,1]
+[1,4]
 [2]
 []
 Nullable constant NULL and non-NULL
 [4]
-[2,1]
-[2,1]
-[3,1]
+[1,2]
+[1,2]
+[1,3]
 Nullable vector with NULLs interleaved
 [4]
-[2,1]
+[1,2]
 [4]
 [3]
 Type-mismatch constant convertible (String -> UInt64)
-[3,1]
+[1,3]
 Match Patterns
 No matches at all (const and vector)
 []
@@ -83,7 +83,7 @@ One match per input row
 [3]
 [4]
 Many matches per row (shared attribute)
-[2,1]
-[2,1]
+[1,2]
+[1,2]
 [3]
-[2,1]
+[1,2]
