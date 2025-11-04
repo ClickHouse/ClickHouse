@@ -3394,6 +3394,122 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::filterNodesByAllowedInputs(
     return nodes;
 }
 
+ActionsDAG ActionsDAG::restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const
+{
+    ActionsDAG actions;
+    std::unordered_map<const Node *, const Node *> copy_map;
+    std::unordered_map<const ActionsDAG::Node *, bool> can_compute;
+
+    /// Phase 1: Traverse the DAG and determine which nodes can be computed
+    {
+        struct Frame
+        {
+            const ActionsDAG::Node * node;
+            size_t next_child_to_visit = 0;
+            bool can_compute_all_children = true;
+        };
+
+        std::stack<Frame> stack;
+        stack.push({filter_node});
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            bool need_visit_child = false;
+
+            while (frame.next_child_to_visit < frame.node->children.size())
+            {
+                const auto * child = frame.node->children[frame.next_child_to_visit];
+                auto it = can_compute.find(child);
+                if (it == can_compute.end())
+                {
+                    stack.push({child});
+                    need_visit_child = true;
+                    break;
+                }
+
+                /// If child is not computable, attempt to substitute it with a constant.
+                /// Currently, only "and" function is supported.
+                if (!it->second)
+                {
+                    if (frame.node->type == ActionsDAG::ActionType::FUNCTION)
+                    {
+                        const auto & name = frame.node->function_base->getName();
+
+                        /// Replace non-computable child in "and" with constant true.
+                        if (name == "and")
+                        {
+                            ColumnWithTypeAndName column;
+                            column.name = child->result_name;
+                            column.type = child->result_type;
+                            column.column = child->result_type->createColumnConst(0, 1);
+                            copy_map[child] = &actions.addColumn(std::move(column));
+
+                            /// Mark as now computable (since we substituted it)
+                            it->second = true;
+                        }
+                    }
+                }
+
+                frame.can_compute_all_children &= it->second;
+                ++frame.next_child_to_visit;
+            }
+
+            if (need_visit_child)
+                continue;
+
+            if (frame.node->type == ActionsDAG::ActionType::INPUT)
+                can_compute[frame.node] = available_inputs.contains(frame.node->result_name);
+            else
+                can_compute[frame.node] = frame.can_compute_all_children;
+
+            stack.pop();
+        }
+    }
+
+    /// Phase 2: Reconstruct the DAG using copy_map
+    struct Frame
+    {
+        const Node * node = nullptr;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    if (!copy_map.contains(filter_node))
+    {
+        stack.push(Frame{filter_node});
+        while (!stack.empty())
+        {
+            auto & frame = stack.top();
+            const auto & children = frame.node->children;
+
+            while (frame.next_child < children.size() && copy_map.contains(children[frame.next_child]))
+                ++frame.next_child;
+
+            if (frame.next_child < children.size())
+            {
+                stack.push(Frame{children[frame.next_child]});
+                continue;
+            }
+
+            auto & copy_node = copy_map[frame.node];
+            copy_node = &actions.nodes.emplace_back(*frame.node);
+
+            if (frame.node->type == ActionType::INPUT)
+                actions.inputs.push_back(copy_node);
+
+            stack.pop();
+        }
+    }
+
+    for (auto & node : actions.nodes)
+        for (auto & child : node.children)
+            child = copy_map[child];
+
+    actions.outputs.push_back(copy_map[filter_node]);
+
+    return actions;
+}
+
 FindOriginalNodeForOutputName::FindOriginalNodeForOutputName(const ActionsDAG & actions_)
 {
     const auto & actions_outputs = actions_.getOutputs();
@@ -3639,22 +3755,53 @@ std::vector<const ActionsDAG::Node *> ActionsDAG::getIdToNode() const
     return std::ranges::to<std::vector>(nodes | std::views::transform([](const auto & node) { return &node; }));
 }
 
+/// Reorder DAG nodes so that the whole subgraph of the inputs is listed before the node itself
+static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reordered_nodes, std::unordered_set<const ActionsDAG::Node *> & already_added_nodes, const ActionsDAG::Node * node)
+{
+    if (already_added_nodes.contains(node))
+        return;
+
+    for (const auto * child : node->children)
+        addChildrenBeforeNode(reordered_nodes, already_added_nodes, child);
+
+    reordered_nodes.push_back(node);
+    already_added_nodes.insert(node);
+};
+
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
-    auto node_to_id = getNodeToIdMap();
-    size_t nodes_size = node_to_id.size();
-
+    size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
 
-    for (const auto & node : nodes)
+    /// Reorder nodes so that children are serialized before parents. Otherwise deserialization will be more complicated.
+    std::vector<const Node *> reordered_nodes;
     {
+        std::unordered_set<const Node *> already_added_nodes;
+        for (const auto & node : nodes)
+            addChildrenBeforeNode(reordered_nodes, already_added_nodes, &node);
+    }
+
+    std::unordered_map<const Node *, size_t> node_to_id;
+    for (const auto * node : reordered_nodes)
+        node_to_id.emplace(node, node_to_id.size());
+
+    if (nodes.size() != node_to_id.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate nodes in ActionsDAG");
+
+    for (size_t node_id = 0; node_id < reordered_nodes.size(); ++node_id)
+    {
+        const auto & node = *reordered_nodes[node_id];
         writeIntBinary(static_cast<UInt8>(node.type), out);
         writeStringBinary(node.result_name, out);
         encodeDataType(node.result_type, out);
 
         writeVarUInt(node.children.size(), out);
         for (const auto * child : node.children)
-            writeVarUInt(node_to_id.at(child), out);
+        {
+            auto child_id = node_to_id.at(child);
+            chassert(child_id < node_id, fmt::format("Node {} references child node {} that has not been serialized yet", node_id, child_id));
+            writeVarUInt(child_id, out);
+        }
 
         /// Serialize column if it is present
         const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);

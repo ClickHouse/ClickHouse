@@ -1,15 +1,15 @@
 ---
 description: 'The engine allows querying remote datasets via Apache Arrow Flight.'
-sidebar_label: 'Arrow Flight'
+sidebar_label: 'ArrowFlight'
 sidebar_position: 186
 slug: /engines/table-engines/integrations/arrowflight
-title: 'Arrow Flight'
+title: 'ArrowFlight'
 doc_type: 'reference'
 ---
 
-# Arrow Flight
+# ArrowFlight
 
-The Arrow Flight table engine enables ClickHouse to query remote datasets via the [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) protocol.
+The ArrowFlight table engine enables ClickHouse to query remote datasets via the [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) protocol.
 This integration allows ClickHouse to fetch data from external Flight-enabled servers in a columnar Arrow format with high performance.
 
 ## Creating a Table {#creating-a-table}

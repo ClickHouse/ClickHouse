@@ -41,6 +41,10 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
+    virtual size_t getResultColumnCount() const { return getColumns().size(); }
+
+    virtual bool producesFilterOnly() const { return false; }
+
     virtual ~IMergeTreeReader() = default;
 
     const ValueSizeMap & getAvgValueSizeHints() const;
@@ -59,8 +63,8 @@ public:
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    const NamesAndTypesList & getColumns() const { return requested_columns; }
-    size_t numColumnsInResult() const { return requested_columns.size(); }
+    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
+    size_t numColumnsInResult() const { return getColumns().size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -141,7 +145,7 @@ private:
     NamesAndTypesList original_requested_columns;
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
-    NamesAndTypesList requested_columns;
+    NamesAndTypesList converted_requested_columns;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
