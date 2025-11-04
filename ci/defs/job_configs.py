@@ -20,6 +20,7 @@ build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
         "./contrib/",
+        "./.gitmodules",
         "./CMakeLists.txt",
         "./PreLoad.cmake",
         "./cmake",
@@ -136,6 +137,7 @@ class JobConfigs:
                 "./tests/clickhouse-test",
                 "./src",
                 "./contrib/",
+                "./.gitmodules",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -257,6 +259,20 @@ class JobConfigs:
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    extra_validation_build_jobs = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_TSAN,
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -941,7 +957,7 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job.py",
                 "CHANGELOG.md",
-                "./src/Functions"
+                "./src/Functions",
             ],
         ),
         run_in_docker="clickhouse/docs-builder",

@@ -1434,6 +1434,7 @@ atanh
 atomicity
 auth
 authType
+authenticatedUser
 authenticator
 authenticators
 autocompletion
@@ -2470,6 +2471,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -3304,6 +3308,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight

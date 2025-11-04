@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class TextIndexDictionaryBlockCache;
+
 enum class TextSearchMode : uint8_t
 {
     Any,
@@ -62,6 +64,9 @@ public:
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
+    bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
+    TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
+
 private:
     /// Uses RPN like KeyCondition
     struct RPNElement
@@ -103,6 +108,10 @@ private:
         const Field & value_field,
         RPNElement & out) const;
 
+    std::vector<String> stringToTokens(const Field & field) const;
+    std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
+    std::vector<String> stringLikeToTokens(const Field & field) const;
+
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
     static TextSearchMode getTextSearchMode(const RPNElement & element);
 
@@ -121,6 +130,10 @@ private:
     bool use_bloom_filter = true;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
+    /// Using text index dictionary block cache can be enabled to reduce I/O
+    bool use_dictionary_block_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexDictionaryBlockCache * dictionary_block_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
