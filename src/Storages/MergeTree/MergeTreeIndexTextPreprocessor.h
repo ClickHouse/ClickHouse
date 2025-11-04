@@ -21,6 +21,8 @@ public:
     /// The input column is not modified.
     std::pair<ColumnPtr, size_t> processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const;
 
+    std::pair<ColumnPtr, size_t> processColumnArray(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const;
+
     /// Applies the modification expression to an input string.
     /// This is somehow equivalent to: SELECT expression(input)
     String process(const String & input) const;
