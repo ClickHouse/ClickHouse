@@ -435,7 +435,9 @@ private:
         const std::vector<size_t> & missing_bucket_ids,
         const Map & hash_to_bucket_id) const
     {
-        std::unordered_set<size_t> is_bucket_id_missing(missing_bucket_ids.begin(), missing_bucket_ids.end());
+        std::vector<UInt8> is_missing(out.size(), 0);
+        for (size_t id : missing_bucket_ids)
+            is_missing[id] = 1;
 
         const size_t keys_cnt = key_types.size();
 
@@ -468,7 +470,7 @@ private:
                     continue;
 
                 const size_t bucket_id = it->getMapped();
-                if (!is_bucket_id_missing.contains(bucket_id))
+                if (!is_missing[bucket_id])
                     continue;
 
                 auto & mapped = out[bucket_id];
