@@ -425,7 +425,7 @@ CHJIT::CHJIT()
     symbol_resolver->registerSymbol("__modti3", reinterpret_cast<void *>(&moduloInt128));
     symbol_resolver->registerSymbol("__fixdfti", reinterpret_cast<void *>(&castDoubleToInt128));
     symbol_resolver->registerSymbol("__floattidf", reinterpret_cast<void *>(&castInt128ToDouble));
-    symbol_resolver->registerSymbol("__floatuntidf", reinterpret_cast<void *>(&castUInt128ToFloat));
+    symbol_resolver->registerSymbol("__floatuntidf", reinterpret_cast<void *>(&castUInt128ToDouble));
     symbol_resolver->registerSymbol("__fixsfti", reinterpret_cast<void *>(&castFloatToInt128));
     symbol_resolver->registerSymbol("__floattisf", reinterpret_cast<void *>(&castInt128ToFloat));
 }
