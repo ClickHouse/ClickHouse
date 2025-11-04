@@ -230,7 +230,7 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
 
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
-            WriteBufferFromOwnString wb;
+            NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
             if (is_simple_count)
                 writeVarUInt(getCountState(result.without_key), wb);
@@ -239,14 +239,12 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
             wbuf.finalize();
             res += wb.count();
         }
-        return res;
     }
 
 #define M(NAME)                                                 \
     else if (method == AggregatedDataVariants::Type::NAME)      \
     {                                                           \
         serialize_states(result.NAME->data);                    \
-        return res;                                             \
     }
 
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
@@ -259,13 +257,12 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
             serialize_states(result.NAME->data.impls[bucket]);  \
         else                                                    \
             serialize_states(result.NAME->data);                \
-        return res;                                             \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
 
-    UNREACHABLE();
+    return res;
 }
 
 Block Aggregator::getHeader(bool final) const
