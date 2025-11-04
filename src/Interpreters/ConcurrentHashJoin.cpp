@@ -467,80 +467,23 @@ IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
     }
     else
     {
-        // Decide by checking only the first hash_join's selectors.
-        bool use_merge = false;
+        // Old per-slot streams approach
+        std::vector<IBlocksStreamPtr> streams;
+        streams.reserve(slots);
+        for (const auto & hash_join : hash_joins)
         {
-            std::lock_guard lock(hash_joins[0]->mutex);
-            const auto & cols0 = getData(hash_joins[0])->columns;
-            use_merge = (!cols0.empty() && !cols0.front().selector.isContinuousRange());
-        }
-
-        if (!use_merge)
-        {
-            // Old per-slot streams approach
-            std::vector<IBlocksStreamPtr> streams;
-            streams.reserve(slots);
-            for (const auto & hash_join : hash_joins)
+            std::lock_guard lock(hash_join->mutex);
+            if (hash_join->data->hasNonJoinedRows())
             {
-                std::lock_guard lock(hash_join->mutex);
-                if (hash_join->data->hasNonJoinedRows())
-                {
-                    if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                        streams.push_back(std::move(s));
-                }
+                if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
+                    streams.push_back(std::move(s));
             }
-
-            if (streams.empty())
-                return {};
-            if (streams.size() == 1)
-                return streams[0];
-            return std::make_shared<ConcatStreams>(std::move(streams));
         }
-        else
-        {
-            // Merge selector-based nullmaps into slot 0 and then emit streams from all slots
-            {
-                std::vector<std::unique_lock<std::mutex>> locks;
-                locks.reserve(slots);
-                for (size_t i = 0; i < slots; ++i)
-                    locks.emplace_back(hash_joins[i]->mutex);
-
-                auto dst = getData(hash_joins[0]);
-                size_t added_bytes = 0;
-                for (size_t i = 1; i < slots; ++i)
-                {
-                    auto src = getData(hash_joins[i]);
-                    for (auto & h : src->nullmaps)
-                    {
-                        dst->nullmaps.emplace_back(h.columns, h.column);
-                        dst->nullmaps.back().selector_rows = h.selector_rows;
-                        added_bytes += dst->nullmaps.back().allocatedBytes();
-                    }
-                    src->nullmaps.clear();
-                    src->nullmaps_allocated_size = 0;
-                }
-                dst->nullmaps_allocated_size += added_bytes;
-            }
-
-            // Build streams from each slot (slot 0 has merged nullmaps; others only maps)
-            std::vector<IBlocksStreamPtr> streams;
-            streams.reserve(slots);
-            for (const auto & hash_join : hash_joins)
-            {
-                std::lock_guard lock(hash_join->mutex);
-                if (hash_join->data->hasNonJoinedRows())
-                {
-                    if (auto s = hash_join->data->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size))
-                        streams.push_back(std::move(s));
-                }
-            }
-
-            if (streams.empty())
-                return {};
-            if (streams.size() == 1)
-                return streams[0];
-            return std::make_shared<ConcatStreams>(std::move(streams));
-        }
+        if (streams.empty())
+            return {};
+        if (streams.size() == 1)
+            return streams[0];
+        return std::make_shared<ConcatStreams>(std::move(streams));
     }
 }
 
@@ -595,12 +538,12 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
         {
         #define M(TYPE)                                                                                                                       \
             case HashJoin::Type::TYPE:                                                                                                        \
-                hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                     *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
-                return hashToSelector(*maps.TYPE, hash, num_shards);
+        return hashToSelector(*maps.TYPE, hash, num_shards);
 
-                APPLY_FOR_JOIN_VARIANTS(M)
-        #undef M
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
 
             default:
                 UNREACHABLE();
