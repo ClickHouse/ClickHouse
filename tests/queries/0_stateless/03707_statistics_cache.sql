@@ -25,8 +25,10 @@ SETTINGS use_statistics_cache = 0, log_comment='core-load' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, 'yes', 'no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-load' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-load'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 SELECT sleep(1);
 
@@ -35,8 +37,10 @@ SETTINGS use_statistics_cache = 1, log_comment='core-hit' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, 'yes', 'no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-hit' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-hit'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- B) No-usage guard (no stats used by SUM)
 DROP TABLE IF EXISTS sc_unused SYNC;
@@ -55,8 +59,10 @@ SETTINGS use_statistics_cache = 0, log_comment='nouse-agg' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0, 'yes', 'no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='nouse-agg' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='nouse-agg'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- C) OPTIMIZE FINAL (no data change -> still hit)
 OPTIMIZE TABLE sc_core FINAL;
@@ -68,15 +74,18 @@ SETTINGS use_statistics_cache=1, log_comment='core-after-opt' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-after-opt' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='core-after-opt'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- D) TDigest / CountMin / MinMax with NULLs
 DROP TABLE IF EXISTS st_tdg SYNC;
 
 CREATE TABLE st_tdg (k UInt32, val Nullable(Float64)) ENGINE=MergeTree ORDER BY k;
 
-INSERT INTO st_tdg SELECT number, if(number%23=0,NULL,toFloat64(rand())/4294967296.0) FROM numbers(200000);
+INSERT INTO st_tdg
+SELECT number, if(number%23=0,NULL,toFloat64(rand())/4294967296.0) FROM numbers(200000);
 
 ALTER TABLE st_tdg ADD STATISTICS val TYPE TDigest;
 ALTER TABLE st_tdg MATERIALIZE STATISTICS ALL;
@@ -86,8 +95,10 @@ SETTINGS use_statistics_cache=0, log_comment='tdg-load' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='tdg-load' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='tdg-load'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE IF EXISTS st_cm SYNC;
 
@@ -106,14 +117,17 @@ SETTINGS use_statistics_cache=0, log_comment='cm-load' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='cm-load' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='cm-load'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE IF EXISTS st_mm SYNC;
 
 CREATE TABLE st_mm (k UInt32, x Nullable(UInt32)) ENGINE=MergeTree ORDER BY k;
 
-INSERT INTO st_mm SELECT number, if(number%29=0,NULL, number%1000000) FROM numbers(300000);
+INSERT INTO st_mm
+SELECT number, if(number%29=0,NULL, number%1000000) FROM numbers(300000);
 
 ALTER TABLE st_mm ADD STATISTICS x TYPE MinMax;
 ALTER TABLE st_mm MATERIALIZE STATISTICS ALL;
@@ -123,8 +137,10 @@ SETTINGS use_statistics_cache=0, log_comment='mm-load' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='mm-load' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='mm-load'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- E) LowCardinality coverage - https://github.com/ClickHouse/ClickHouse/issues/87886
 DROP TABLE IF EXISTS st_cm_lc SYNC;
@@ -153,9 +169,10 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] > 0, 'yes', 'no')
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cm-lc-load' LIMIT 1;
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cm-lc-load'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- Hit with cache
 SELECT sleep(1);
@@ -166,11 +183,12 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds'] = 0, 'yes', 'no')
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cm-lc-hit' LIMIT 1;
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'cm-lc-hit'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
-DROP TABLE IF EXISTS sj_a SYNC; 
+DROP TABLE IF EXISTS sj_a SYNC;
 DROP TABLE IF EXISTS sj_b SYNC;
 
 CREATE TABLE sj_a (id UInt32, p UInt8) ENGINE=MergeTree ORDER BY id;
@@ -193,8 +211,10 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-load' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-load'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE IF EXISTS sj_ac SYNC;
 DROP TABLE IF EXISTS sj_bc SYNC;
@@ -208,10 +228,10 @@ SETTINGS refresh_statistics_interval=1;
 INSERT INTO sj_ac SELECT number, number%2 FROM numbers(120000);
 INSERT INTO sj_bc SELECT number, if(number%5=0,'PROMO','OTHER') FROM numbers(120000);
 
-ALTER TABLE sj_ac ADD STATISTICS id TYPE Uniq; 
+ALTER TABLE sj_ac ADD STATISTICS id TYPE Uniq;
 ALTER TABLE sj_bc ADD STATISTICS id TYPE Uniq;
 
-ALTER TABLE sj_ac MATERIALIZE STATISTICS ALL; 
+ALTER TABLE sj_ac MATERIALIZE STATISTICS ALL;
 ALTER TABLE sj_bc MATERIALIZE STATISTICS ALL;
 
 SELECT sleep(1);
@@ -224,8 +244,10 @@ FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-hit' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='join-hit'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- F) auto_statistics_types (with NULLs)
 DROP TABLE IF EXISTS sa_auto SYNC;
@@ -258,13 +280,14 @@ SELECT count() FROM sa_auto WHERE cat='PROMO'  SETTINGS use_statistics_cache=1, 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    if(countIf(log_comment='auto-td' AND ProfileEvents['LoadedStatisticsMicroseconds']=0) >= 1, 'yes', 'no'),
-    if(countIf(log_comment='auto-cm' AND ProfileEvents['LoadedStatisticsMicroseconds']=0) >= 1, 'yes', 'no')
+    toUInt8(any(log_comment='auto-td' AND ProfileEvents['LoadedStatisticsMicroseconds']=0)),
+    toUInt8(any(log_comment='auto-cm' AND ProfileEvents['LoadedStatisticsMicroseconds']=0))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment IN ('auto-td','auto-cm');
 
 -- G) ALTER interval persists, takes effect after DETACH/ATTACH
 DROP TABLE IF EXISTS sc_alter SYNC;
+
 CREATE TABLE sc_alter (k UInt32, v Nullable(Float64))
 ENGINE=MergeTree ORDER BY k
 SETTINGS refresh_statistics_interval = 0;
@@ -281,12 +304,14 @@ SETTINGS use_statistics_cache=1, log_comment='alter-pre' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-pre' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-pre'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 ALTER TABLE sc_alter MODIFY SETTING refresh_statistics_interval = 1;
-SELECT
-    if(positionCaseInsensitive(coalesce(create_table_query,''), 'refresh_statistics_interval = 1') > 0, 'yes', 'no')
+
+SELECT toUInt8(positionCaseInsensitive(coalesce(create_table_query,''), 'refresh_statistics_interval = 1') > 0)
 FROM system.tables WHERE database=currentDatabase() AND name='sc_alter';
 
 SELECT count() FROM sc_alter WHERE v > 0.99
@@ -294,8 +319,10 @@ SETTINGS use_statistics_cache=1, log_comment='alter-immediate' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']>0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-immediate' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-immediate'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DETACH TABLE sc_alter;
 ATTACH TABLE sc_alter;
@@ -306,8 +333,11 @@ SELECT count() FROM sc_alter WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='alter-post' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-post' LIMIT 1;
+
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='alter-post'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- H) TRUNCATE
 DROP TABLE IF EXISTS sc_trunc SYNC;
@@ -328,8 +358,10 @@ SETTINGS use_statistics_cache=1, log_comment='trunc-warm' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
-FROM system.query_log WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-warm' LIMIT 1;
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-warm'
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 TRUNCATE TABLE sc_trunc;
 
@@ -338,6 +370,8 @@ SELECT count() FROM sc_trunc WHERE v > 0.99
 SETTINGS use_statistics_cache=1, log_comment='trunc-after' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
-SELECT if(ProfileEvents['LoadedStatisticsMicroseconds']=0,'yes','no')
+
+SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-after' LIMIT 1;
+WHERE current_database = currentDatabase() AND type='QueryFinish' AND log_comment='trunc-after'
+ORDER BY event_time_microseconds DESC LIMIT 1;
