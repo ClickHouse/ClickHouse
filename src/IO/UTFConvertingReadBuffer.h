@@ -1,7 +1,7 @@
 #pragma once
+#include <memory>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
-#include <memory>
 
 namespace DB
 {

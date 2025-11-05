@@ -2,7 +2,7 @@
 
 #include "config.h"
 #if USE_ICU
-#include <unicode/ucnv.h>
+#    include <unicode/ucnv.h>
 #endif
 #include <Common/Exception.h>
 
@@ -11,7 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+extern const int BAD_ARGUMENTS;
 }
 
 UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_)
@@ -42,14 +42,12 @@ void UTFConvertingReadBuffer::detectAndProcessBOM()
 
     const unsigned char * bytes = reinterpret_cast<const unsigned char *>(pos);
 
-    if (available >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE &&
-        bytes[2] == 0x00 && bytes[3] == 0x00)
+    if (available >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00)
     {
         detected_encoding = Encoding::UTF32_LE;
         impl->ignore(4);
     }
-    else if (available >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 &&
-             bytes[2] == 0xFE && bytes[3] == 0xFF)
+    else if (available >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0xFE && bytes[3] == 0xFF)
     {
         detected_encoding = Encoding::UTF32_BE;
         impl->ignore(4);
@@ -85,10 +83,22 @@ bool UTFConvertingReadBuffer::nextImpl()
 
     if (detected_encoding == Encoding::UTF8)
     {
-        if (!impl->hasPendingData() && !impl->next())
+        if (!impl->hasPendingData())
+        {
+            if (!impl->next())
+                return false;
+        }
+
+        size_t size = impl->available();
+        if (size == 0)
             return false;
 
-        working_buffer = impl->buffer();
+        internal_buffer = Buffer(impl->buffer().begin(), impl->buffer().end());
+        working_buffer = internal_buffer;
+        pos = working_buffer.begin();
+
+        impl->ignore(size);
+
         return true;
     }
 
@@ -127,28 +137,20 @@ size_t UTFConvertingReadBuffer::convertUTF16ToUTF8(const char * src, size_t src_
 
     const char * from_encoding = (detected_encoding == Encoding::UTF16_LE) ? "UTF-16LE" : "UTF-16BE";
 
-    int32_t bytes_written = ucnv_convert(
-        "UTF-8",
-        from_encoding,
-        dst,
-        static_cast<int32_t>(dst_capacity),
-        src,
-        static_cast<int32_t>(src_size),
-        &status
-    );
+    int32_t bytes_written
+        = ucnv_convert("UTF-8", from_encoding, dst, static_cast<int32_t>(dst_capacity), src, static_cast<int32_t>(src_size), &status);
 
     if (U_FAILURE(status))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
-            "Failed to convert UTF-16 to UTF-8: {}", u_errorName(status));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert UTF-16 to UTF-8: {}", u_errorName(status));
     }
 
     return static_cast<size_t>(bytes_written);
 #else
-    (void) src;
-    (void) src_size;
-    (void) dst;
-    (void) dst_capacity;
+    (void)src;
+    (void)src_size;
+    (void)dst;
+    (void)dst_capacity;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "ICU support is required for UTF-16 conversion");
 #endif
 }
@@ -160,28 +162,20 @@ size_t UTFConvertingReadBuffer::convertUTF32ToUTF8(const char * src, size_t src_
 
     const char * from_encoding = (detected_encoding == Encoding::UTF32_LE) ? "UTF-32LE" : "UTF-32BE";
 
-    int32_t bytes_written = ucnv_convert(
-        "UTF-8",
-        from_encoding,
-        dst,
-        static_cast<int32_t>(dst_capacity),
-        src,
-        static_cast<int32_t>(src_size),
-        &status
-    );
+    int32_t bytes_written
+        = ucnv_convert("UTF-8", from_encoding, dst, static_cast<int32_t>(dst_capacity), src, static_cast<int32_t>(src_size), &status);
 
     if (U_FAILURE(status))
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
-            "Failed to convert UTF-32 to UTF-8: {}", u_errorName(status));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert UTF-32 to UTF-8: {}", u_errorName(status));
     }
 
     return static_cast<size_t>(bytes_written);
 #else
-    (void) src;
-    (void) src_size;
-    (void) dst;
-    (void) dst_capacity;
+    (void)src;
+    (void)src_size;
+    (void)dst;
+    (void)dst_capacity;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "ICU support is required for UTF-32 conversion");
 #endif
 }
