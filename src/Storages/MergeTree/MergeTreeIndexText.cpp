@@ -889,11 +889,12 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         return;
 
     const auto & index_column = block.getByName(index_column_name);
-    auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (isArray(processed_column->getDataType()))
+    if (isArray(index_column.type))
     {
-        const auto & column_array = assert_cast<const ColumnArray &>(*processed_column);
+        size_t offset = *pos;
+
+        const auto & column_array = assert_cast<const ColumnArray &>(*index_column.column);
         const auto & column_data = column_array.getData();
         const auto & column_offsets = column_array.getOffsets();
         for (size_t i = 0; i < rows_read; ++i)
@@ -912,6 +913,8 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
     else
     {
+        auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
+
         for (size_t i = 0; i < rows_read; ++i)
         {
             const StringRef ref = processed_column->getDataAt(offset + i);
@@ -1311,6 +1314,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     WhichDataType data_type(index.data_types[0]);
     if (data_type.isArray())
     {
+        if (preprocessor.has_value())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Text index created on Array columns does not support preprocessor argument yet.");
+
         const auto & array_type = assert_cast<const DataTypeArray &>(*index.data_types[0]);
         data_type = WhichDataType(array_type.getNestedType());
     }

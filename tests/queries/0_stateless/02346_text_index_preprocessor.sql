@@ -179,4 +179,15 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
 
+SELECT '- The preprocessor expression is not compatible with array columns (yet)';
+CREATE TABLE tab
+(
+    key UInt64,
+    arr_str Array(String),
+    INDEX idx(arr_str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr_str))
+)
+ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
+
+
+
 DROP TABLE IF EXISTS tab;

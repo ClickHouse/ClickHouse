@@ -29,3 +29,4 @@ Negative tests on preprocessor construction validations.
 - The preprocessor must have input and output values of the same type (here: String)
 - The preprocessor expression must use the column identifier
 - The preprocessor expression must use only deterministic functions
+- The preprocessor expression is not compatible with array columns (yet)
