@@ -43,10 +43,16 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
+            {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
+            {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
+            {"http_write_exception_in_output_format", true, false, "Changed for consistency across formats"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
+            {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
+            {"input_format_parquet_verify_checksums", true, true, "New setting."},
+            {"output_format_parquet_write_checksums", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -927,6 +933,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"refresh_statistics_interval", 0, 0, "New setting"},
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
+            {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
+            {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {

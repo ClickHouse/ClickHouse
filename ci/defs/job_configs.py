@@ -263,6 +263,20 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    extra_validation_build_jobs = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_TSAN,
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     special_build_jobs = common_build_job_config.set_post_hooks(
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -949,7 +963,7 @@ class JobConfigs:
         run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
     )
-    docker_sever = Job.Config(
+    docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",

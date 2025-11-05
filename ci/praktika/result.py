@@ -527,15 +527,14 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
-            with_log=with_log,
         )
         is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error:
+        if is_error and result.is_ok():
             # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.FAILED)
+            result.set_status(Result.Status.ERROR)
         return result
 
     @classmethod
