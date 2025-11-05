@@ -89,4 +89,3 @@ hash right-only	200
 parallel right-only	200
 hash	400
 parallel_hash	400
-
