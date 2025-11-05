@@ -2,11 +2,7 @@
 
 -- Tests that match() utilizes the text index
 
-SET use_query_condition_cache = 0;
-
 SET allow_experimental_full_text_index = true;
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS tab;
 

@@ -6,7 +6,7 @@ SET allow_experimental_object_type = 1;
 
 CREATE TABLE t_subcolumns_sizes (id UInt64, arr Array(UInt64), n Nullable(String), d Object('json'))
 ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'default';
+SETTINGS min_bytes_for_wide_part = 0, serialization_info_version = 'basic';
 
 INSERT INTO t_subcolumns_sizes FORMAT JSONEachRow {"id": 1, "arr": [1, 2, 3], "n": null, "d": {"k1": "v1", "k2": [{"k3": 1, "k4": "v2"}, {"k3": 3}]}}
 

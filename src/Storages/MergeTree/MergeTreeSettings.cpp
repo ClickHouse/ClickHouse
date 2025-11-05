@@ -254,22 +254,20 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "default", R"(
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
 
     Possible values:
-    - `DEFAULT`
+    - `basic` - Basic format.
+    - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
+    This makes settings like `string_serialization_version` effective.
 
-    - `WITH_TYPES`
-      Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
-      This makes settings like `string_serialization_version` effective.
-
-    During rolling upgrades, set this to `DEFAULT` so that new servers produce
+    During rolling upgrades, set this to `basic` so that new servers produce
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "default", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
@@ -282,8 +280,8 @@ namespace ErrorCodes
 
     Possible values:
 
-    - `DEFAULT` — Use the standard serialization format with inline sizes.
-    - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
+    - `single_stream` — Use the standard serialization format with inline sizes.
+    - `with_size_stream` — Use a separate size stream for top-level `String` columns.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
@@ -1392,7 +1390,7 @@ namespace ErrorCodes
     If enabled too many parts counter will rely on shared data in Keeper, not on
     local replica state. Only available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, R"(
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, R"(
     Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
     Only available in ClickHouse Cloud
     )", 0) \
@@ -1997,6 +1995,9 @@ namespace ErrorCodes
     - any - scope is not limited.
     - local - scope is limited by local disks .
     - none - empty scope, do not search
+    )", 0) \
+    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
+    The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

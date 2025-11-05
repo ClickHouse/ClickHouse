@@ -13,7 +13,7 @@ class SerializationDetached final : public ISerialization
 public:
     explicit SerializationDetached(const SerializationPtr & nested_);
 
-    Kind getKind() const override { return nested->getKind() == Kind::DEFAULT ? Kind::DETACHED : Kind::DETACHED_OVER_SPARSE; }
+    KindStack getKindStack() const override;
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 

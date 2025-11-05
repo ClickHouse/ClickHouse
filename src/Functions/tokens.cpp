@@ -87,7 +87,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', and 'array'", name);
+        "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', 'array', and 'sparseGrams'", name);
 }
 
 class ExecutableFunctionTokens : public IExecutableFunction
@@ -135,9 +135,9 @@ private:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef input = column_input.getDataAt(i);
+            std::string_view input = column_input.getDataAt(i).toView();
 
-            forEachTokenPadded(extractor, input.data, input.size, [&](const char * token_start, size_t token_len)
+            forEachTokenPadded(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
             {
                 column_result.insertData(token_start, token_len);
                 ++tokens_count;
