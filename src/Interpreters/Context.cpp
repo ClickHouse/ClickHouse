@@ -2220,7 +2220,7 @@ void Context::addExternalTable(const String & table_name, std::shared_ptr<Tempor
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
 
     std::lock_guard lock(mutex);
-    if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
+    if (external_tables_mapping.contains(table_name))
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
 
     external_tables_mapping.emplace(table_name, std::move(temporary_table));

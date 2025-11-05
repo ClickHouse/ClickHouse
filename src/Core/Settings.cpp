@@ -2076,7 +2076,7 @@ Do not send HTTP headers X-ClickHouse-Progress more frequently than at each spec
     DECLARE(Bool, http_wait_end_of_query, false, R"(
 Enable HTTP response buffering on the server-side.
 )", 0) \
-    DECLARE(Bool, http_write_exception_in_output_format, true, R"(
+    DECLARE(Bool, http_write_exception_in_output_format, false, R"(
 Write exception in output format to produce valid output. Works with JSON and XML formats.
 )", 0) \
     DECLARE(UInt64, http_response_buffer_size, 0, R"(
