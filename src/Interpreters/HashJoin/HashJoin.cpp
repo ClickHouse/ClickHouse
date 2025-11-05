@@ -1282,8 +1282,10 @@ struct AdderNonJoined
         {
             for (size_t j = 0; j < columns_right.size(); ++j)
             {
-                const auto & mapped_column = mapped.columns_info->columns[j];
-                columns_right[j]->insertFrom(*mapped_column, mapped.row_num);
+                if (const auto * replicated_column = mapped.columns_info->replicated_columns[j])
+                    columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
+                else
+                    columns_right[j]->insertFrom(*mapped.columns_info->columns[j], mapped.row_num);
             }
 
             ++rows_added;
@@ -1294,8 +1296,10 @@ struct AdderNonJoined
             {
                 for (size_t j = 0; j < columns_right.size(); ++j)
                 {
-                    const auto & mapped_column = it->columns_info->columns[j];
-                    columns_right[j]->insertFrom(*mapped_column, it->row_num);
+                    if (const auto * replicated_column = it->columns_info->replicated_columns[j])
+                        columns_right[j]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(mapped.row_num));
+                    else
+                        columns_right[j]->insertFrom(*it->columns_info->columns[j], it->row_num);
                 }
 
                 ++rows_added;
@@ -1428,9 +1432,12 @@ private:
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
-                        for (size_t colnum = 0; colnum < columns_keys_and_right.size(); ++colnum)
+                        for (size_t column = 0; column < columns_keys_and_right.size(); ++column)
                         {
-                            columns_keys_and_right[colnum]->insertFrom(*mapped_block.columns_info.columns[colnum], row);
+                            if (const auto * replicated_column = mapped_block.columns_info.replicated_columns[column])
+                                columns_keys_and_right[column]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
+                            else
+                                columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
                         }
 
                         ++rows_added;
@@ -1490,7 +1497,12 @@ private:
                 if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
-                        columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
+                    {
+                        if (const auto * replicated_column = columns->columns_info.replicated_columns[col])
+                            columns_keys_and_right[col]->insertFrom(*replicated_column->getNestedColumn(), replicated_column->getIndexes().getIndexAt(row));
+                        else
+                            columns_keys_and_right[col]->insertFrom(*columns->columns_info.columns[col], row);
+                    }
                     ++rows_added;
                 }
             }
