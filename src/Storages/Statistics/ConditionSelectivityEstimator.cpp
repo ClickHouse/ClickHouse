@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
