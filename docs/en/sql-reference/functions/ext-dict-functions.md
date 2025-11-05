@@ -525,6 +525,10 @@ SELECT dictGetKeys('levels', 'level', 'high') AS ids;
  └───────┘
 ```
 
+:::note
+Use setting `max_reverse_dictionary_lookup_cache_size_bytes` to cap the size of the per-query reverse-lookup cache used by `dictGetKeys`. The cache stores serialized key tuples for each attribute value to avoid re-scanning the dictionary within the same query. The cache is not persistent across queries. When the limit is reached, entries are evicted with LRU. This is most effective with large dictionaries when the input has low cardinality and the working set fits in the cache. Set to `0` to disable caching.
+:::
+
 ## Other Functions {#other-functions}
 
 ClickHouse supports specialized functions that convert dictionary attribute values to a specific data type regardless of the dictionary configuration.
