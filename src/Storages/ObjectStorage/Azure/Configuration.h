@@ -12,6 +12,55 @@ namespace DB
 {
 class BackupFactory;
 
+struct AzureStorageParsableArguments
+{
+    static constexpr auto max_number_of_arguments_with_structure = 10;
+    static constexpr auto signatures_with_structure
+        = " - connection_string, container_name, blobpath, structure \n"
+          " - connection_string, container_name, blobpath, format, compression, structure \n"
+          " - connection_string, container_name, blobpath, format, compression, partition_strategy, structure \n"
+          " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file, "
+          "structure \n"
+          " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
+          " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
+          " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, "
+          "structure\n"
+          " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, "
+          "partition_columns_in_data_file, structure\n";
+
+    /// All possible signatures for Azure engine without structure argument (for example for AzureBlobStorage table engine).
+    static constexpr auto max_number_of_arguments_without_structure = max_number_of_arguments_with_structure - 1;
+    static constexpr auto signatures_without_structure =
+        " - connection_string, container_name, blobpath\n"
+        " - connection_string, container_name, blobpath, format \n"
+        " - connection_string, container_name, blobpath, format, compression \n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy\n"
+        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file\n";
+
+    static constexpr std::string getSignatures(bool with_structure = true)
+    {
+        return with_structure ? signatures_with_structure : signatures_without_structure;
+    }
+    static constexpr size_t getMaxNumberOfArguments(bool with_structure = true)
+    {
+        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
+    }
+
+    using Paths = StorageObjectStorageConfiguration::Paths;
+    using Path = StorageObjectStorageConfiguration::Path;
+    String format = "auto";
+    String compression_method = "auto";
+    String structure = "auto";
+    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    bool partition_columns_in_data_file = true;
+    std::shared_ptr<IPartitionStrategy> partition_strategy;
+    Path blob_path;
+    AzureBlobStorage::ConnectionParams connection_params;
+};
+
 class StorageAzureConfiguration : public StorageObjectStorageConfiguration
 {
     friend class BackupReaderAzureBlobStorage;
@@ -23,53 +72,12 @@ public:
     static constexpr auto type_name = "azure";
     static constexpr auto engine_name = "Azure";
     /// All possible signatures for Azure engine with structure argument (for example for azureBlobStorage table function).
-    static constexpr auto max_number_of_arguments_with_structure = 10;
-    static constexpr auto signatures_with_structure =
-        " - connection_string, container_name, blobpath\n"
-        " - connection_string, container_name, blobpath, structure \n"
-        " - connection_string, container_name, blobpath, format \n"
-        " - connection_string, container_name, blobpath, format, compression \n"
-        " - connection_string, container_name, blobpath, format, compression, partition_strategy \n"
-        " - connection_string, container_name, blobpath, format, compression, structure \n"
-        " - connection_string, container_name, blobpath, format, compression, partition_strategy, structure \n"
-        " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file \n"
-        " - connection_string, container_name, blobpath, format, compression, partition_strategy, partition_columns_in_data_file, structure \n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, structure\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, structure\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file, structure\n";
-
-    /// All possible signatures for Azure engine without structure argument (for example for AzureBlobStorage table engine).
-    static constexpr auto max_number_of_arguments_without_structure = 9;
-    static constexpr auto signatures_without_structure =
-        " - connection_string, container_name, blobpath\n"
-        " - connection_string, container_name, blobpath, format \n"
-        " - connection_string, container_name, blobpath, format, compression \n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy\n"
-        " - storage_account_url, container_name, blobpath, account_name, account_key, format, compression, partition_strategy, partition_columns_in_data_file\n";
 
     StorageAzureConfiguration() = default;
 
     ObjectStorageType getType() const override { return type; }
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
-
-    static constexpr std::string getSignatures(bool with_structure = true)
-    {
-        return with_structure ? signatures_with_structure : signatures_without_structure;
-    }
-    static constexpr size_t getMaxNumberOfArguments(bool with_structure = true)
-    {
-        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
-    }
 
     Path getRawPath() const override { return blob_path; }
     const String & getRawURI() const override { return blob_path.path; }
@@ -102,8 +110,20 @@ public:
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
-};
 
+private:
+    void initializeFromParsableArguments(AzureStorageParsableArguments && parsable_arguments)
+    {
+        format = std::move(parsable_arguments.format);
+        compression_method = std::move(parsable_arguments.compression_method);
+        structure = std::move(parsable_arguments.structure);
+        partition_strategy_type = parsable_arguments.partition_strategy_type;
+        partition_columns_in_data_file = parsable_arguments.partition_columns_in_data_file;
+        partition_strategy = std::move(parsable_arguments.partition_strategy);
+        blob_path = parsable_arguments.blob_path;
+        connection_params = std::move(parsable_arguments.connection_params);
+    }
+};
 }
 
 #endif

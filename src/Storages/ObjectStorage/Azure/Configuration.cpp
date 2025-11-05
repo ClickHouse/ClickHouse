@@ -273,20 +273,15 @@ bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std
     return true;
 }
 
-void fromDiskImpl(
-    StorageAzureConfiguration & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+void fromDiskImpl(AzureStorageParsableArguments & entity_to_initialize, DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
-    entity_to_initialize.disk = context->getDisk(disk_name);
-    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*entity_to_initialize.disk->getObjectStorage());
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
 
     entity_to_initialize.connection_params = azure_object_storage.getConnectionParameters();
-    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, entity_to_initialize.disk->getPath());
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
 
     entity_to_initialize.blob_path = "/" + parsing_result.path_suffix;
-    entity_to_initialize.setPathForRead(entity_to_initialize.blob_path.path + "/");
-    entity_to_initialize.setPaths({entity_to_initialize.blob_path.path + "/"});
 
-    entity_to_initialize.blobs_paths = {entity_to_initialize.blob_path};
     if (parsing_result.format.has_value())
         entity_to_initialize.format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
@@ -296,7 +291,7 @@ void fromDiskImpl(
 }
 
 void fromASTImpl(
-    StorageAzureConfiguration & entity_to_initialalize,
+    AzureStorageParsableArguments & entity_to_initialalize,
     ASTs & engine_args,
     ContextPtr context,
     bool with_structure,
@@ -310,7 +305,7 @@ void fromASTImpl(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
             max_number_of_arguments,
-            StorageAzureConfiguration::getSignatures(with_structure));
+            AzureStorageParsableArguments::getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -373,8 +368,6 @@ void fromASTImpl(
             }
             entity_to_initialalize.connection_params.endpoint.container_name = container_name_abfss;
         }
-
-        entity_to_initialalize.blobs_paths = {entity_to_initialalize.blob_path};
         entity_to_initialalize.connection_params.endpoint.sas_auth = sas_token;
 
         return;
@@ -639,13 +632,12 @@ void fromASTImpl(
         entity_to_initialalize.structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
-    entity_to_initialalize.blobs_paths = {entity_to_initialalize.blob_path};
     entity_to_initialalize.connection_params
         = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
 void addStructureAndFormatToArgsIfNeededImpl(
-    StorageAzureConfiguration & entity_to_initialize,
+    const StorageAzureConfiguration & entity_to_initialize,
     ASTs & args,
     const String & structure_,
     const String & format_,
@@ -836,22 +828,35 @@ void addStructureAndFormatToArgsIfNeededImpl(
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    addStructureAndFormatToArgsIfNeededImpl(*this, args, structure_, format_, context, with_structure, getMaxNumberOfArguments());
+    addStructureAndFormatToArgsIfNeededImpl(
+        *this, args, structure_, format_, context, with_structure, AzureStorageParsableArguments::getMaxNumberOfArguments());
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
+    AzureStorageParsableArguments parsable_arguments;
     fromNamedCollectionImpl(*this, collection, context);
+    initializeFromParsableArguments(std::move(parsable_arguments));
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    fromASTImpl(*this, engine_args, context, with_structure, getMaxNumberOfArguments(with_structure));
+    AzureStorageParsableArguments parsable_arguments;
+    fromASTImpl(
+        parsable_arguments, engine_args, context, with_structure, AzureStorageParsableArguments::getMaxNumberOfArguments(with_structure));
+    initializeFromParsableArguments(std::move(parsable_arguments));
+    blobs_paths = {parsable_arguments.blob_path};
 }
 
 void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    fromDiskImpl(*this, disk_name, args, context, with_structure);
+    AzureStorageParsableArguments parsable_arguments;
+    disk = context->getDisk(disk_name);
+    fromDiskImpl(parsable_arguments, disk, args, context, with_structure);
+    initializeFromParsableArguments(std::move(parsable_arguments));
+    setPathForRead(parsable_arguments.blob_path.path + "/");
+    setPaths({parsable_arguments.blob_path.path + "/"});
+    blobs_paths = {parsable_arguments.blob_path};
 }
 
 
