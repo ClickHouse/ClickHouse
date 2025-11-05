@@ -146,7 +146,7 @@ private:
     /// For constant path, it's simple algorithm:
     ///  Step 1. Compute the hash of the const value column.
     ///  Step 2. Scan the dictionary and store the matching rows keys directly into the result column.
-    ///  Step 3. Format the result column into appropiate format: tuple for multi-key dictionary or single value otherwise.
+    ///  Step 3. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
     ColumnPtr executeConstPath(
         const String & dict_name,
         const String & attr_name,
@@ -231,7 +231,7 @@ private:
     ///   Step 3. Scan the dictionary to get the result for the missing buckets, update the Cache and also update the local `bucket_cached_bytes`.
     ///   Step 4. Unpack the `bucket_cached_bytes` to IColumn format column `results_cols`. Storing IColumn format per key in the Cache is
     ///           is very expensive; so, we only store the raw bytes in the form of `SerializedKeysPtr`.
-    ///   Step 5. Format the result column into appropiate format: tuple for multi-key dictionary or single value otherwise.
+    ///   Step 5. Format the result column into appropriate format: tuple for multi-key dictionary or single value otherwise.
     ColumnPtr executeVectorPath(
         const String & dict_name,
         const String & attr_name,
