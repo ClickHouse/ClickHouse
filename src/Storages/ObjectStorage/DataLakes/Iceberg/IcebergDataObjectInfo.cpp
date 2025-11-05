@@ -41,7 +41,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 #if USE_AVRO
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_)
-    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
+    : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_.file_path))
     , info{
           data_manifest_file_entry_.file_path_key,
           data_manifest_file_entry_.schema_id,
@@ -54,7 +54,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_man
 }
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(const String & path_)
-    : RelativePathWithMetadata(path_)
+    : ObjectInfo(path_)
 {
 }
 

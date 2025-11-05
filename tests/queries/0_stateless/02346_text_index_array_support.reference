@@ -1,43 +1,125 @@
 has support
 -- with String
-3072
-3072
-2048
+1536
+1536
+1024
 0
 -- with FixedString
-3072
-3072
-2048
+1536
+1536
+1024
 0
 -- Check that the text index actually gets used (String)
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
 -- -- value exists only in 1024 granules
 Description: text GRANULARITY 1
-Granules: 1024/6144
--- -- value exists only in 2048 granules
+Granules: 1024/3072
+-- -- value exists only in 1536 granules
 Description: text GRANULARITY 1
-Granules: 2048/6144
--- -- value exists only in 3072 granules
+Granules: 1536/3072
+-- -- value exists only in 1536 granules
 Description: text GRANULARITY 1
-Granules: 3072/6144
--- -- value exists only in 3072 granules
-Description: text GRANULARITY 1
-Granules: 3072/6144
+Granules: 1536/3072
 -- -- value does not exist in granules
 Description: text GRANULARITY 1
-Granules: 0/6144
+Granules: 0/3072
 -- Check that the text index actually gets used (FixedString)
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
 -- -- value exists only in 1024 granules
 Description: text GRANULARITY 1
-Granules: 1024/6144
--- -- value exists only in 2048 granules
+Granules: 1024/3072
+-- -- value exists only in 1536 granules
 Description: text GRANULARITY 1
-Granules: 2048/6144
--- -- value exists only in 3072 granules
+Granules: 1536/3072
+-- -- value exists only in 1536 granules
 Description: text GRANULARITY 1
-Granules: 3072/6144
--- -- value exists only in 3072 granules
-Description: text GRANULARITY 1
-Granules: 3072/6144
+Granules: 1536/3072
 -- -- value does not exist in granules
 Description: text GRANULARITY 1
-Granules: 0/6144
+Granules: 0/3072
+hasAnyTokens support
+-- with String
+1536
+1536
+2560
+-- with FixedString
+1536
+1536
+2560
+-- Check that the text index actually gets used (String)
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/3072
+-- -- value exists only in 1536 granules
+Description: text GRANULARITY 1
+Granules: 1536/3072
+-- -- value exists only in 2560 granules
+Description: text GRANULARITY 1
+Granules: 2560/3072
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/3072
+-- Check that the text index actually gets used (FixedString)
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/3072
+-- -- value exists only in 1536 granules
+Description: text GRANULARITY 1
+Granules: 1536/3072
+-- -- value exists only in 2560 granules
+Description: text GRANULARITY 1
+Granules: 2560/3072
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/3072
+hasAllTokens support
+-- with String
+1536
+1536
+512
+-- with FixedString
+1536
+1536
+512
+-- Check that the text index actually gets used (String)
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/3072
+-- -- value exists only in 1536 granules
+Description: text GRANULARITY 1
+Granules: 1536/3072
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/3072
+-- Check that the text index actually gets used (FixedString)
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
+-- -- value exists only in 1024 granules
+Description: text GRANULARITY 1
+Granules: 1024/3072
+-- -- value exists only in 1536 granules
+Description: text GRANULARITY 1
+Granules: 1536/3072
+-- -- value exists only in 512 granules
+Description: text GRANULARITY 1
+Granules: 512/3072
+-- -- value does not exist in granules
+Description: text GRANULARITY 1
+Granules: 0/3072

@@ -56,7 +56,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
     if (iceberg_info.has_value())
     {
 #if USE_AVRO
-        auto iceberg_object = std::make_shared<IcebergDataObjectInfo>(path);
+        auto iceberg_object = std::make_shared<IcebergDataObjectInfo>(RelativePathWithMetadata{path});
         iceberg_object->info = iceberg_info.value();
         object = iceberg_object;
 #else
