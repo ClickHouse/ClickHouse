@@ -143,6 +143,10 @@ private:
 
     using HashToBucket = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
 
+    /// For constant path, it's simple algorithm:
+    ///  Step 1. Compute the hash of the const value column.
+    ///  Step 2. Scan the dictionary and store the matching rows keys directly into the result column.
+    ///  Step 3. Format the result column into appropiate format: tuple for multi-key dictionary or single value otherwise.
     ColumnPtr executeConstPath(
         const String & dict_name,
         const String & attr_name,
@@ -154,8 +158,10 @@ private:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
 
+        /// Step 1
         const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
 
+        /// Step 2
         MutableColumns result_cols;
         const auto key_types = structure.getKeyTypes();
         for (const auto & key_type : key_types)
@@ -192,6 +198,8 @@ private:
             {
                 const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
 
+                /// Probability of hash collision of Sip128 is extremely astronomically low. As a result, for the sake of simplicity and efficiency,
+                /// let's assume it never happens
                 if (value_hash != values_column_value_hash)
                     continue;
 
@@ -204,6 +212,7 @@ private:
         }
         offsets[0] = out_offset;
 
+        /// Step 3
         if (num_keys == 1)
         {
             auto array_column = ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
@@ -214,6 +223,15 @@ private:
         return ColumnConst::create(std::move(array_column), input_rows_count);
     }
 
+    /// Here's the algorithm:
+    ///   Step 1. Assign each unique element of the `values_column` to a unique `bucket`. If two elements belong to the same bucket,
+    ///           it implies they are the same (to be precise, their hash are the same).
+    ///   Step 2. Check which bucket results can already be found in the shared Cache and store their result locally in `bucket_cached_bytes`. Create an array
+    ///           bucket_ids which are not available in the Cache.
+    ///   Step 3. Scan the dictionary to get the result for the missing buckets, update the Cache and also update the local `bucket_cached_bytes`.
+    ///   Step 4. Unpack the `bucket_cached_bytes` to IColumn format column `results_cols`. Storing IColumn format per key in the Cache is
+    ///           is very expensive; so, we only store the raw bytes in the form of `SerializedKeysPtr`.
+    ///   Step 5. Format the result column into appropiate format: tuple for multi-key dictionary or single value otherwise.
     ColumnPtr executeVectorPath(
         const String & dict_name,
         const String & attr_name,
@@ -225,6 +243,7 @@ private:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfNeeded();
 
+        /// Step 1
         HashToBucket value_hash_to_bucket_id;
         value_hash_to_bucket_id.reserve(input_rows_count);
 
@@ -257,6 +276,7 @@ private:
             }
         }
 
+        /// Step 2
         auto & cache = helper.getContext()->getQueryContext()->getReverseLookupCache();
         std::vector<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
         std::vector<size_t> missing_bucket_ids;
@@ -271,6 +291,7 @@ private:
                 missing_bucket_ids.push_back(bucket_id);
         }
 
+        /// Step 3
         const auto key_types = structure.getKeyTypes();
 
         if (!missing_bucket_ids.empty())
@@ -289,6 +310,8 @@ private:
             }
         }
 
+
+        /// Step 4
         const size_t num_keys = key_types.size();
         MutableColumns result_cols;
         result_cols.reserve(num_keys);
@@ -303,6 +326,9 @@ private:
         auto & offsets = offsets_col->getData();
         offsets.resize(input_rows_count);
 
+        /// For each bucket, it's very expensive to repeatedly deserialize from cached_bytes and construct IColumn elements.
+        /// So, for each bucket, we only deserialize once and store the position of the deserialized slice in `result_cols`.
+        /// Then, for the next time this bucket is seen, we can directly copy from `result_cols` which is very efficient.
         std::vector<size_t> bucket_start_offset(num_buckets, std::numeric_limits<size_t>::max());
         std::vector<size_t> bucket_row_count(num_buckets, 0);
 
@@ -311,7 +337,7 @@ private:
         {
             const size_t bucket_id = row_id_to_bucket_id[row_id];
 
-            // empty hit
+            /// No matching rows in the dictionary for this bucket
             if (!bucket_cached_bytes[bucket_id])
             {
                 offsets[row_id] = out_offset;
@@ -321,9 +347,10 @@ private:
             size_t start = bucket_start_offset[bucket_id];
             size_t len = bucket_row_count[bucket_id];
 
+            /// This means we have already decoded this bucket before. We can directly copy from result_cols (faster
+            /// than deserializing again).
             if (start != std::numeric_limits<size_t>::max())
             {
-                // fast path: reuse already materialized slice
                 if (len)
                 {
                     for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
@@ -334,7 +361,7 @@ private:
                 continue;
             }
 
-            // first time this bucket is seen: decode once from cached_bytes
+            /// Need to decode from cached bytes. This is slow but happens only once per bucket.
             const auto & cached_bytes = *bucket_cached_bytes[bucket_id];
             if (cached_bytes.empty())
             {
@@ -360,6 +387,7 @@ private:
             offsets[row_id] = out_offset;
         }
 
+        /// Step 5
         if (num_keys == 1)
         {
             return ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
@@ -368,6 +396,7 @@ private:
         return ColumnArray::create(ColumnTuple::create(std::move(result_cols)), std::move(offsets_col));
     }
 
+    /// This is similar to `executeConstPath`. If the dictionary row matches and is needed, then store its value.
     template <class DictionaryPtr>
     void fillMissingBucketsFromDict(
         const DictionaryPtr & dict,
@@ -390,8 +419,8 @@ private:
         QueryPipeline pipeline(std::move(pipe));
         PullingPipelineExecutor executor(pipeline);
 
-        /// The arena will not own any thing, just used for temporary allocations during serialization
-        /// of keys. Then rollback after use.
+        /// The arena will not own anything, just used for temporary allocations during serialization
+        /// of keys. Then rollback after use to free memory for next use.
         Arena arena;
         Block block;
         while (executor.pull(block))
@@ -407,11 +436,14 @@ private:
             {
                 const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
 
+                /// Not in user given `values_column`
                 const auto * it = value_hash_to_bucket_id.find(value_hash);
                 if (it == value_hash_to_bucket_id.end())
                     continue;
 
                 const size_t bucket_id = it->getMapped();
+
+                /// In user given `values_column` but not needed
                 if (!is_missing[bucket_id])
                     continue;
 
@@ -428,6 +460,8 @@ private:
                     const size_t old_size = mapped->size();
                     const size_t need = old_size + ref.size;
 
+                    /// This is important. Otherwise, each repeated incremental `resize()` will cause
+                    /// repeated reallocations and copy which is very inefficient.
                     if (need > mapped->capacity())
                     {
                         size_t cap = mapped->capacity();
@@ -442,10 +476,15 @@ private:
                     std::memcpy(mapped->data() + old_size, ref.data, ref.size);
 
                     const size_t alloc = static_cast<size_t>((ref.data - begin) + ref.size);
+
+                    /// This is important to rollback otherwise we will have double memory consumption.
+                    /// Additionally, just used memory is now hot in CPU cache which speeds up next serialization.
                     arena.rollback(alloc);
                 }
             }
         }
+        /// Ideally, we should be `shrink_to_fit` each `mapped` in `out` here to save memory.
+        /// However, since saved memory is typically small, we skip it for performance consideration.
     }
 };
 
