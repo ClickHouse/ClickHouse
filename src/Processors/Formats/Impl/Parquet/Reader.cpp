@@ -1423,7 +1423,7 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
     }
 }
 
-std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end)
+std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const
 {
     parq::PageHeader header;
     data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
