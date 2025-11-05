@@ -292,7 +292,6 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
         token_request.setContentLength(0);
 
         token_session.sendRequest(token_request);
-        LOG_TRACE(logger, "token_request {}", token_request.getURI());
 
         Poco::Net::HTTPResponse token_response;
         std::istream & token_rs = token_session.receiveResponse(token_response);
@@ -320,7 +319,6 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
         throw DB::Exception(ErrorCodes::AWS_ERROR, "Failed to get AWS availability zone. HTTP response code: {}", response.getStatus());
     String response_data;
     Poco::StreamCopier::copyToString(rs, response_data);
-    LOG_TRACE(logger, "response_data {}", response_data);
     return response_data;
 }
 
@@ -377,12 +375,12 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
                 auto ex_msg = getExceptionMessage(std::current_exception(), false);
                 LOG_INFO(getLogger("Application"), "Trying to detect the availability zone via {}. Error: {}",
                     magic_enum::enum_name(az_facility), ex_msg);
+                ex_msgs.push_back(ex_msg);
             }
         }
         throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Failed to find the availability zone. Errors: {}", boost::algorithm::join(ex_msgs, ", "));
     }
-
     else
     {
         try
@@ -393,28 +391,8 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
         catch (...)
         {
             auto ex_msg = getExceptionMessage(std::current_exception(), false);
-            LOG_INFO(getLogger("Application"), "Trying to detect the availability zone via {}. Error: {}",
-                magic_enum::enum_name(az_facility), ex_msg);
-        }
-    }
-
-
-    try
-    {
-        return AWSEC2MetadataClient::getAvailabilityZoneOrException(is_zone_id);
-    }
-    catch (...)
-    {
-        auto aws_ex_msg = getExceptionMessage(std::current_exception(), false);
-        try
-        {
-            return getGCPAvailabilityZoneOrException();
-        }
-        catch (...)
-        {
-            auto gcp_ex_msg = getExceptionMessage(std::current_exception(), false);
             throw DB::Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Failed to find the availability zone, tried AWS and GCP. AWS Error: {}\nGCP Error: {}", aws_ex_msg, gcp_ex_msg);
+                "Failed to find the availability zone via {}. Error: {}", magic_enum::enum_name(az_facility), ex_msg);
         }
     }
 }

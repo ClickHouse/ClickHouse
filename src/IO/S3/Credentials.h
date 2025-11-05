@@ -1,11 +1,10 @@
 #pragma once
 
 #include "config.h"
+#include <base/types.h>
 #include <IO/S3/getAvailabilityZone.h>
 
 #if USE_AWS_S3
-
-#    include <base/types.h>
 
 #    include <aws/core/utils/threading/ReaderWriterLock.h>
 #    include <aws/core/http/HttpRequest.h>

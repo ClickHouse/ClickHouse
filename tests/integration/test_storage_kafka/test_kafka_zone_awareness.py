@@ -10,6 +10,7 @@ instance = cluster.add_instance(
     user_configs=["configs/users.xml"],
     with_kafka=True,
     with_minio=True,  # needed for resolver image only
+    with_zookeeper=True,  # needed for Kafka2
     env_variables={
         "AWS_EC2_METADATA_SERVICE_ENDPOINT": "http://resolver:8080",
     },
@@ -29,7 +30,9 @@ def run_endpoint(cluster):
         "endpoint.py",
     )
     logging.info("Before executing")
-    ret = cluster.exec_in_container(container_id, ["python", "endpoint.py"], detach=True)
+    ret = cluster.exec_in_container(
+        container_id, ["python", "endpoint.py"], detach=True
+    )
     logging.info(f"Executed in container with output {ret}")
 
     # Wait for S3 endpoint start
@@ -52,6 +55,7 @@ def run_endpoint(cluster):
             break
     logging.info("S3 endpoint started")
 
+
 # Fixtures
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -63,6 +67,7 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
@@ -91,10 +96,20 @@ def kafka_setup_teardown():
         time.sleep(0.5)
     yield  # run test
 
-def test_kafka_zone_awareness(kafka_cluster):
+
+# Tests
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [
+        (k.generate_old_create_table_query),
+        (k.generate_new_create_table_query),
+    ],
+)
+def test_kafka_zone_awareness(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
     topname = "zone_awareness"
+    instance.rotate_logs()
 
     # Check that matview does respect Kafka SETTINGS
     k.kafka_produce(
@@ -107,7 +122,8 @@ def test_kafka_zone_awareness(kafka_cluster):
         ],
     )
 
-    instance.query(f"""
+    instance.query(
+        f"""
         CREATE TABLE test.persistent_{kafka_table} (
             time UInt64,
             some_string String
@@ -115,33 +131,29 @@ def test_kafka_zone_awareness(kafka_cluster):
         ENGINE = MergeTree()
         ORDER BY time;
 
-        CREATE TABLE test.{kafka_table} (t UInt64, `e.x` String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = '{topname}',
-                     kafka_group_name = '{topname}',
-                     kafka_format = 'JSONEachRow',
-                     kafka_row_delimiter = '\\n',
-                     kafka_flush_interval_ms=1000,
-                     input_format_import_nested_json = 1,
-                     kafka_autodetect_client_rack = 'MSK';
+        {create_query_generator(kafka_table, "t UInt64, `e.x` String", brokers='kafka1:19092', topic_list=topname, consumer_group=topname, format='JSONEachRow', settings={'kafka_autodetect_client_rack':'MSK', 'input_format_import_nested_json':1})};
 
         CREATE MATERIALIZED VIEW test.persistent_{kafka_table}_mv TO test.persistent_{kafka_table} AS
         SELECT
             `t` AS `time`,
             `e.x` AS `some_string`
         FROM test.{kafka_table};
-    """)
+    """
+    )
 
     while int(instance.query(f"SELECT count() FROM test.persistent_{kafka_table}")) < 3:
         time.sleep(1)
 
-    result = instance.query(f"SELECT * FROM test.persistent_{kafka_table} ORDER BY time")
+    result = instance.query(
+        f"SELECT * FROM test.persistent_{kafka_table} ORDER BY time"
+    )
 
-    instance.query(f"""
+    instance.query(
+        f"""
         DROP TABLE test.persistent_{kafka_table};
         DROP TABLE test.persistent_{kafka_table}_mv;
-    """)
+    """
+    )
 
     expected = """\
 123	woof

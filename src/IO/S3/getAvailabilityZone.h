@@ -1,7 +1,5 @@
 #pragma once
 
-#include <base/types.h>
-
 namespace DB::S3
 {
 enum class AZFacilities

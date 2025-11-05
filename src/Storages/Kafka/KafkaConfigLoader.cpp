@@ -14,7 +14,6 @@
 #include <Common/setThreadName.h>
 #include <IO/S3/getAvailabilityZone.h>
 
-
 namespace CurrentMetrics
 {
 extern const Metric KafkaLibrdkafkaThreads;
