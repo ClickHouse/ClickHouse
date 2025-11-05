@@ -213,9 +213,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
     auto * lhs_in_node = parent_node->children.at(0);
-    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes);
+    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes, makeDescription("Calculate join left keys"));
     auto * rhs_in_node = parent_node->children.at(1);
-    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes);
+    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes, makeDescription("Calculate join right keys"));
     parent_node->children.pop_back();
 
     /// Join equality does not match Nulls.
@@ -250,7 +250,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};
 
-    makeExpressionNodeOnTopOf(*parent_node, std::move(join_output_actions_dag), nodes);
+    makeExpressionNodeOnTopOf(*parent_node, std::move(join_output_actions_dag), nodes, makeDescription("Join output actions"));
 
     /// JoinLogical is replaced to [Expression(left_pre_join_actions), Expression(IN), DelayedCreatingSets, Expression(join_output_actions)]
     return 5;
