@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -620,7 +621,29 @@ namespace
     };
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+static void replicateColumns(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets)
+{
+    for (auto & column : columns)
+        if (column.column)
+            column.column = column.column->replicate(offsets);
+}
+
+static void replicateColumnsLazily(ColumnsWithTypeAndName & columns, const IColumn::Offsets & offsets, const ColumnPtr & indexes)
+{
+    for (auto & column : columns)
+    {
+        if (column.column)
+        {
+            if (isLazyReplicationUseful(column.column))
+                column.column = ColumnReplicated::create(column.column, indexes);
+            else
+                column.column = column.column->replicate(offsets);
+        }
+    }
+}
+
+
+static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input, bool enable_lazy_columns_replication)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -692,19 +715,23 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
             if (!action.arguments.front().needed_later)
                 columns[array_join_key_pos] = {};
 
-            array_join_key.column = array_join_key.column->convertToFullColumnIfConst();
+            array_join_key.column = array_join_key.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
 
             const auto * array = getArrayJoinColumnRawPtr(array_join_key.column);
             if (!array)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "ARRAY JOIN of not array nor map: {}", action.node->result_name);
 
-            for (auto & column : columns)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
-
-            for (auto & column : inputs)
-                if (column.column)
-                    column.column = column.column->replicate(array->getOffsets());
+            if (enable_lazy_columns_replication)
+            {
+                ColumnPtr indexes = convertOffsetsToIndexes(array->getOffsets());
+                replicateColumnsLazily(columns, array->getOffsets(), indexes);
+                replicateColumnsLazily(inputs, array->getOffsets(), indexes);
+            }
+            else
+            {
+                replicateColumns(columns, array->getOffsets());
+                replicateColumns(inputs, array->getOffsets());
+            }
 
             auto & res_column = columns[action.result_position];
 
@@ -806,7 +833,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     {
         try
         {
-            executeAction(action, execution_context, dry_run, allow_duplicates_in_input);
+            executeAction(action, execution_context, dry_run, allow_duplicates_in_input, settings.enable_lazy_columns_replication);
             checkLimits(execution_context.columns);
         }
         catch (Exception & e)

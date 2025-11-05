@@ -48,11 +48,8 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
   */
 std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
 {
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
+    auto res = splitName(std::string_view(name), reverse);
+    return {std::string(res.first), std::string(res.second)};
 }
 
 std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse)
@@ -107,7 +104,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 
                     res.insert(ColumnWithTypeAndName(
                         is_const
-                            ? ColumnConst::create(std::move(column_array_of_element), block.rows())
+                            ? ColumnConst::create(column_array_of_element, block.rows())
                             : column_array_of_element,
                         std::make_shared<DataTypeArray>(element_types[i]),
                         nested_name));
