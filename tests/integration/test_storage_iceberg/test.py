@@ -3205,16 +3205,16 @@ def test_system_iceberg_metadata(started_cluster, format_version, storage_type):
     "storage_type",
     ["s3", "azure", "local"],
 )
-def test_partition_pruning_with_subquery_set(started_cluster_iceberg_with_spark, storage_type):
-    instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
+def test_partition_pruning_with_subquery_set(started_cluster, storage_type):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
     TABLE_NAME = "test_partition_pruning_" + storage_type + "_" + get_uuid_str()
     IN_MEMORY_TABLE = "in_memory_table_" + get_uuid_str()
 
     def execute_spark_query(query: str):
         return execute_spark_query_general(
             spark,
-            started_cluster_iceberg_with_spark,
+            started_cluster,
             storage_type,
             TABLE_NAME,
             query,
@@ -3245,7 +3245,7 @@ def test_partition_pruning_with_subquery_set(started_cluster_iceberg_with_spark,
 
 
     creation_expression = get_creation_expression(
-        storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, table_function=True
+        storage_type, TABLE_NAME, started_cluster, table_function=True
     )
 
     instance.query(f"CREATE TABLE {IN_MEMORY_TABLE} (id INT) ENGINE = Memory")
