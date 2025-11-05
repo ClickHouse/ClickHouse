@@ -28,12 +28,14 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     const FormatSettings & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    size_t min_bytes_for_seek)
+    size_t min_bytes_for_seek,
+    ParquetMetadataCachePtr metadata_cache_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
     , parser_shared_resources(parser_shared_resources_)
     , format_filter_info(format_filter_info_)
+    , metadata_cache(metadata_cache_)
 {
     read_options.min_bytes_for_seek = min_bytes_for_seek;
     read_options.bytes_per_read_task = min_bytes_for_seek * 4;
