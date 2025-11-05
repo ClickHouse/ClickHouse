@@ -175,6 +175,16 @@ def upload_corpus(path):
                 )
 
 
+# same as upload_corpus but without uploading - for testing purposes
+def zip_corpus(path):
+    corpus_dir = Path(path) / "corpus"
+    for fuzzer_dir in corpus_dir.iterdir():
+        if fuzzer_dir.is_dir() and fuzzer_dir.name.endswith("_fuzzer"):
+            zip_file_path = corpus_dir / f"{fuzzer_dir.name}.zip"
+            with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                zipdir(fuzzer_dir, zipf)
+
+
 def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     ERROR = r"^==\d+==\s?ERROR: (\S+): (.*)"
     ERROR_END = r"^SUMMARY: .*"
@@ -279,6 +289,8 @@ def process_results(result_path: Path):
                 log_files.append(str(file))
             for file in list(fuzzer_result_dir.glob("mini-timeout-*")):
                 log_files.append(str(file))
+            for file in list(fuzzer_result_dir.glob("mini-slow-unit-*")):
+                log_files.append(str(file))
 
             result.set_raw_logs("\n".join(raw_logs))
             result.set_log_files("[" + ", ".join(f"'{f}'" for f in log_files) + "]")
@@ -323,6 +335,8 @@ def process_results(result_path: Path):
         for file in list(fuzzer_result_dir.glob("crash-*")):
             log_files.append(str(file))
         for file in list(fuzzer_result_dir.glob("timeout-*")):
+            log_files.append(str(file))
+        for file in list(fuzzer_result_dir.glob("slow-unit-*")):
             log_files.append(str(file))
 
         result.set_raw_logs("\n".join(raw_logs))
@@ -413,6 +427,8 @@ def main():
                 upload_corpus(fuzzers_path)
             else:
                 logging.info("Not uploading corpus - running in PR")
+                zip_corpus(fuzzers_path)
+                subprocess.check_call(f"ls -al {fuzzers_path}/corpus/", shell=True)
         else:
             logging.info("Run failed")
 
