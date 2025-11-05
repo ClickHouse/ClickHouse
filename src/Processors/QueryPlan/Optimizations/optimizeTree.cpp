@@ -25,6 +25,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsUInt64 enable_automatic_parallel_replicas;
+extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
 extern const SettingsMaxThreads max_threads;
 extern const SettingsNonZeroUInt64 max_parallel_replicas;
 extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
@@ -271,10 +272,12 @@ void considerEnablingParallelReplicas(
     if (!optimization_settings.query_plan_builder)
         return;
 
-    if (optimization_settings.context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas])
+    const auto & settings = optimization_settings.context->getSettingsRef();
+
+    if (settings[Setting::allow_experimental_parallel_reading_from_replicas])
         return;
 
-    if (!optimization_settings.context->getSettingsRef()[Setting::enable_automatic_parallel_replicas])
+    if (!settings[Setting::enable_automatic_parallel_replicas])
         return;
 
     auto dump = [&](const QueryPlan & plan)
@@ -318,14 +321,14 @@ void considerEnablingParallelReplicas(
         corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
     }
 
-    if (optimization_settings.context->getSettingsRef()[Setting::enable_automatic_parallel_replicas] == 2)
+    if (settings[Setting::enable_automatic_parallel_replicas] == 2)
         return;
 
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
     if (const auto stats = stats_cache.getStats(single_replica_plan_node_hash))
     {
-        const auto max_threads = optimization_settings.context->getSettingsRef()[Setting::max_threads];
-        const auto num_replicas = optimization_settings.context->getSettingsRef()[Setting::max_parallel_replicas];
+        const auto max_threads = settings[Setting::max_threads];
+        const auto num_replicas = settings[Setting::max_parallel_replicas];
         LOG_DEBUG(
             &Poco::Logger::get("debug"),
             "stats->input_bytes={}, stats->output_bytes={}, max_threads={}, num_replicas={}",
@@ -335,6 +338,16 @@ void considerEnablingParallelReplicas(
             num_replicas.value);
         if (stats->input_bytes / max_threads >= (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
         {
+            if (settings[Setting::automatic_parallel_replicas_min_bytes_per_replica]
+                && stats->input_bytes / num_replicas < settings[Setting::automatic_parallel_replicas_min_bytes_per_replica])
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("debug"),
+                    "Not enabling parallel replicas reading because {} < automatic_parallel_replicas_min_bytes_per_replica {}",
+                    stats->input_bytes / num_replicas,
+                    settings[Setting::automatic_parallel_replicas_min_bytes_per_replica].value);
+                return;
+            }
             dump(query_plan);
             query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
             dump(query_plan);
