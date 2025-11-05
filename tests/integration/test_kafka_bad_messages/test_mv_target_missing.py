@@ -62,7 +62,7 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         settings["kafka_commit_on_select"] = 1
 
     create_query = create_query_generator(
-        "kafka",
+        "kafkamiss",
         "a UInt64, b String",
         topic_list=topic,
         consumer_group=topic,
@@ -82,16 +82,17 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         {create_query};
 
         CREATE TABLE test.target2 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a;
-        CREATE MATERIALIZED VIEW test.mv1 TO test.target1 AS SELECT * FROM test.kafka;
-        CREATE MATERIALIZED VIEW test.mv2 TO test.target2 AS SELECT * FROM test.kafka;
+        CREATE MATERIALIZED VIEW test.mv1 TO test.target1 AS SELECT * FROM test.kafkamiss;
+        CREATE MATERIALIZED VIEW test.mv2 TO test.target2 AS SELECT * FROM test.kafkamiss;
         """
     )
 
     skc = instance.query(
-        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers FORMAT Vertical"
+        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='kafkamiss' FORMAT Vertical"
     )
     assert (
-        skc == """Row 1:
+        skc
+        == """Row 1:
 ──────
 dependencies_database:         ['test','test']
 dependencies_table:            ['mv2','mv1']
@@ -105,10 +106,11 @@ missing_dependencies_table:    ['mv1']
     )
 
     skc = instance.query(
-        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers FORMAT Vertical"
+        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='kafkamiss' FORMAT Vertical"
     )
     assert (
-        skc == """Row 1:
+        skc
+        == """Row 1:
 ──────
 dependencies_database:         ['test','test']
 dependencies_table:            ['mv2','mv1']
@@ -140,7 +142,103 @@ missing_dependencies_table:    []
         DROP TABLE test.mv2;
         DROP TABLE test.target1;
         DROP TABLE test.target2;
-        DROP TABLE test.kafka;
+        DROP TABLE test.kafkamiss;
+        """
+    )
+    k.kafka_delete_topic(admin, topic)
+
+
+@pytest.mark.parametrize(
+    "create_query_generator",
+    [k.generate_old_create_table_query, k.generate_new_create_table_query],
+)
+# kafka ->  mv1 -> null -> mv2 -> nonexistent_merge_tree
+def test_missing_mv_transitive_target(kafka_cluster, create_query_generator):
+    admin = k.get_admin_client(kafka_cluster)
+    topic = "mv_transitive_target_missing" + k.get_topic_postfix(create_query_generator)
+    k.kafka_create_topic(admin, topic)
+
+    settings = {
+        "kafka_row_delimiter": "\n",
+        "format_csv_delimiter": "|",
+    }
+    if create_query_generator == k.generate_old_create_table_query:
+        settings["kafka_commit_on_select"] = 1
+
+    create_query = create_query_generator(
+        "tkafkamiss",
+        "a UInt64, b String",
+        topic_list=topic,
+        consumer_group=topic,
+        format="CSV",
+        settings=settings,
+    )
+
+    instance.query(
+        f"""
+        SET allow_materialized_view_with_bad_select = true;
+        DROP TABLE IF EXISTS test.tkafka;
+        DROP TABLE IF EXISTS test.target1;
+        DROP TABLE IF EXISTS test.target2;
+        DROP TABLE IF EXISTS test.mv1;
+        DROP TABLE IF EXISTS test.mv2;
+
+        {create_query};
+
+        CREATE TABLE test.target1 (a UInt64, b String) ENGINE = Null;
+        CREATE MATERIALIZED VIEW test.mv1 TO test.target1 AS SELECT * FROM test.tkafkamiss;
+        CREATE MATERIALIZED VIEW test.mv2 TO test.target2 AS SELECT * FROM test.target1;
+        """
+    )
+
+    skc = instance.query(
+        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='tkafkamiss' FORMAT Vertical"
+    )
+    assert (
+        skc
+        == """Row 1:
+──────
+dependencies_database:         ['test','test']
+dependencies_table:            ['mv1','mv2']
+missing_dependencies_database: ['test']
+missing_dependencies_table:    ['mv2']
+"""
+    )
+
+    instance.query(
+        "CREATE TABLE test.target2 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a"
+    )
+
+    skc = instance.query(
+        "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='tkafkamiss' FORMAT Vertical"
+    )
+    assert (
+        skc
+        == """Row 1:
+──────
+dependencies_database:         ['test','test']
+dependencies_table:            ['mv1','mv2']
+missing_dependencies_database: []
+missing_dependencies_table:    []
+"""
+    )
+
+    k.kafka_produce(kafka_cluster, topic, ["1|foo", "2|bar"])
+
+    assert (
+        instance.query_with_retry(
+            "SELECT count() FROM test.target2",
+            check_callback=lambda x: int(x) == 2,
+        ).strip()
+        == "2"
+    )
+    instance.query(
+        """
+        DROP TABLE test.mv1;
+        DROP TABLE test.mv2;
+        DROP TABLE test.target1;
+        DROP TABLE test.target2;
+        DROP TABLE test.tkafkamiss;
         """
     )
     k.kafka_delete_topic(admin, topic)

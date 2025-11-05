@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -47,10 +48,10 @@ ColumnsDescription StorageSystemKafkaConsumers::getColumnsDescription()
         {"is_currently_used", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the consumer is in use."},
         {"last_used", std::make_shared<DataTypeDateTime64>(6), "The last time this consumer was in use."},
         {"rdkafka_stat", std::make_shared<DataTypeString>(), "Library internal statistic. Set statistics_interval_ms to 0 disable, default is 3000 (once in three seconds)."},
-        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Database dependencies."},
-        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Table dependencies (materialized views get data from the current table)."},
-        {"missing_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Missing database dependencies."},
-        {"missing_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Missing table dependencies (missing materialized views get data from the current table)."},
+        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Transitive database dependencies."},
+        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Transitive table dependencies (materialized views get data from the current table)."},
+        {"missing_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Missing transitive database dependencies."},
+        {"missing_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Missing transitive table dependencies (missing materialized views get data from the current table)."},
     };
     // clang-format on
 }
@@ -168,29 +169,41 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
             rdkafka_stat.insertData(consumer_stat.rdkafka_stat.data(), consumer_stat.rdkafka_stat.size());
 
-            const  auto view_ids = DatabaseCatalog::instance().getDependentViews(StorageID(database_str, table_str));
-
-            for (const auto & view_id : view_ids)
+            // traversing dependent views
+            auto check_a_table = [&](const auto & self, StorageID storage) -> void
             {
-
-                auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
-                if (view)
+                checkStackSize();
+                const auto view_ids = DatabaseCatalog::instance().getDependentViews(storage);
+                for (const auto & view_id : view_ids)
                 {
-                    auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
-                    if (materialized_view)
+                    auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+                    if (view)
                     {
-                        dependencies_database.insertData(view_id.database_name.data(), view_id.database_name.size());
-                        dependencies_table.insertData(view_id.table_name.data(), view_id.table_name.size());
-                        dependencies_num++;
-                        if (!materialized_view->tryGetTargetTable())
+                        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+                        if (materialized_view)
                         {
-                            missing_dependencies_database.insertData(view_id.database_name.data(), view_id.database_name.size());
-                            missing_dependencies_table.insertData(view_id.table_name.data(), view_id.table_name.size());
-                            missing_dependencies_num++;
+                            dependencies_database.insertData(view_id.database_name.data(), view_id.database_name.size());
+                            dependencies_table.insertData(view_id.table_name.data(), view_id.table_name.size());
+                            dependencies_num++;
+                            auto target_table_ptr = materialized_view->tryGetTargetTable();
+                            if (!target_table_ptr)
+                            {
+                                missing_dependencies_database.insertData(view_id.database_name.data(), view_id.database_name.size());
+                                missing_dependencies_table.insertData(view_id.table_name.data(), view_id.table_name.size());
+                                missing_dependencies_num++;
+                            }
+                            else
+                            {
+                                // recursive call
+                                self(self, target_table_ptr->getStorageID());
+                            }
                         }
                     }
                 }
-            }
+            };
+
+            check_a_table(check_a_table, StorageID(database_str, table_str));
+
             dependencies_database_offset.push_back(dependencies_num);
             dependencies_table_offset.push_back(dependencies_num);
             missing_dependencies_database_offset.push_back(missing_dependencies_num);
