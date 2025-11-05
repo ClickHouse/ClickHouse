@@ -62,6 +62,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
@@ -6912,6 +6913,24 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
+}
+
+ReverseLookupCache & Context::getReverseLookupCache() const
+{
+    auto query_context = getQueryContext();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->reverse_lookup_cache)
+    {
+        query_context->reverse_lookup_cache = std::make_shared<ReverseLookupCache>(
+            "LRU",
+            CurrentMetrics::end(),
+            CurrentMetrics::end(),
+            ReverseLookupCache::defaultMaxBytes(),
+            ReverseLookupCache::NO_MAX_COUNT,
+            ReverseLookupCache::DEFAULT_SIZE_RATIO);
+    }
+    return *query_context->reverse_lookup_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

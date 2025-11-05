@@ -10,6 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -51,66 +52,6 @@ inline UInt128 sipHash128AtRow(const IColumn & column, size_t row_id)
     column.updateHashWithValue(row_id, h);
     return h.get128();
 }
-
-
-struct CacheKey
-{
-    UInt128 domain_id;
-    UInt128 value_hash;
-
-    bool operator==(const CacheKey & rhs) const { return domain_id == rhs.domain_id && value_hash == rhs.value_hash; }
-};
-
-struct CacheKeyHash
-{
-    size_t operator()(const CacheKey & key) const noexcept
-    {
-        SipHash sip;
-        sip.update(key.domain_id);
-        sip.update(key.value_hash);
-        return static_cast<size_t>(sip.get64());
-    }
-};
-
-using SerializedKeys = PODArray<UInt8>;
-
-using SerializedKeysPtr = std::shared_ptr<SerializedKeys>;
-
-struct SerializedKeysWeight
-{
-    size_t operator()(const SerializedKeys & mapped) const { return mapped.capacity() + sizeof(SerializedKeys); }
-};
-
-using ReverseLookupCache = CacheBase<CacheKey, SerializedKeys, CacheKeyHash, SerializedKeysWeight>;
-
-class ReverseLookupCacheHolder
-{
-public:
-    static ReverseLookupCacheHolder & instance()
-    {
-        static ReverseLookupCacheHolder inst;
-        return inst;
-    }
-
-    ReverseLookupCache & getCache() { return cache; }
-
-private:
-    ReverseLookupCacheHolder()
-        : cache(
-              "LRU",
-              CurrentMetrics::end(),
-              CurrentMetrics::end(),
-              defaultMaxBytes(),
-              ReverseLookupCache::NO_MAX_COUNT,
-              ReverseLookupCache::DEFAULT_SIZE_RATIO)
-    {
-    }
-
-    /// TODO: Change to be configurable via settings
-    static size_t defaultMaxBytes() { return 100ULL << 20; }
-
-    ReverseLookupCache cache;
-};
 
 }
 
@@ -313,7 +254,7 @@ private:
             }
         }
 
-        auto & cache = ReverseLookupCacheHolder::instance().getCache();
+        auto & cache = helper.getContext()->getQueryContext()->getReverseLookupCache();
         std::vector<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
         std::vector<size_t> missing_bucket_ids;
         missing_bucket_ids.reserve(num_buckets);
