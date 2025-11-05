@@ -1,14 +1,20 @@
-#include <Functions/array/arrayRemove.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <Interpreters/castColumn.h>
+#include "Columns/ColumnDecimal.h"
+#include <Columns/ColumnNullable.h>
+
+#include <Common/HashTable/HashTable.h>
 #include <Common/assert_cast.h>
+
+#include <DataTypes/DataTypeArray.h>
 #include "DataTypes/DataTypeNothing.h"
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Functions/FunctionFactory.h>
 #include "Functions/FunctionHelpers.h"
+#include <Functions/array/arrayRemove.h>
+
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -51,6 +57,62 @@ DataTypePtr FunctionArrayRemove::getReturnTypeImpl(const DataTypes & arguments) 
     return arguments[0];
 }
 
+template <typename T>
+static bool executeType(
+    const ColumnArray * src_array,
+    const IColumn * elem_values_col,
+    ColumnPtr & res_ptr)
+{
+    using ColVecType = ColumnVectorOrDecimal<T>;
+
+    const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(&src_array->getData());
+    const ColVecType * elem_values_column = checkAndGetColumn<ColVecType>(elem_values_col);
+
+    if (!src_values_column || !elem_values_column)
+        return false;
+
+    const auto & src_values = src_values_column->getData();
+    const auto & src_offsets = src_array->getOffsets();
+
+    chassert(elem_values_column->getData().size() == 1); // validated in executeImpl
+    const T elem_value = elem_values_column->getData()[0];
+
+    typename ColVecType::MutablePtr res_values_column;
+    if constexpr (is_decimal<T>)
+        res_values_column = ColVecType::create(src_values.size(), src_values_column->getScale());
+    else
+        res_values_column = ColVecType::create(src_values.size());
+
+    typename ColVecType::Container & res_values = res_values_column->getData();
+
+    size_t src_offsets_size = src_offsets.size();
+    auto res_offsets_column = ColumnArray::ColumnOffsets::create(src_offsets_size);
+    IColumn::Offsets & res_offsets = res_offsets_column->getData();
+
+    size_t src_pos = 0;
+    size_t res_pos = 0;
+
+    for (size_t i = 0; i < src_offsets_size; ++i)
+    {
+        const size_t src_end = src_offsets[i];
+
+        for (; src_pos < src_end; ++src_pos)
+        {
+            if (!bitEquals(src_values[src_pos], elem_value))
+            {
+                res_values[res_pos] = src_values[src_pos];
+                ++res_pos;
+            }
+        }
+
+        res_offsets[i] = res_pos;
+    }
+
+    res_values.resize(res_pos);
+    res_ptr = ColumnArray::create(std::move(res_values_column), std::move(res_offsets_column));
+    return true;
+}
+
 ColumnPtr FunctionArrayRemove::executeImpl(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & /*result_type*/,
@@ -61,13 +123,6 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "First argument for function {} must be Array", getName());
 
-    const IColumn & src_values = src_array->getData();
-    const auto & src_offsets = src_array->getOffsets();
-
-    const auto * src_nullable = checkAndGetColumn<ColumnNullable>(&src_values);
-    const auto * src_null_map = src_nullable ? &src_nullable->getNullMapData() : nullptr;
-    const IColumn * src_nested = src_nullable ? &src_nullable->getNestedColumn() : &src_values;
-
     const auto elem_column = arguments[1].column;
     bool elem_is_const = isColumnConst(*arguments[1].column);
     const IColumn * elem_values_col =
@@ -75,9 +130,35 @@ ColumnPtr FunctionArrayRemove::executeImpl(
             &checkAndGetColumn<ColumnConst>(arguments[1].column.get())->getDataColumn() :
             elem_column.get();
 
-    if (!elem_is_const && elem_values_col->size() != 1)
+    if (elem_values_col->size() != 1)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Second argument of {} must have exactly 1 row, got {} rows", getName(), elem_values_col->size());
+
+    ColumnPtr res;
+    if ((executeType< UInt8 >(src_array, elem_values_col, res) ||
+            executeType< UInt16>(src_array, elem_values_col, res) ||
+            executeType< UInt32>(src_array, elem_values_col, res) ||
+            executeType< UInt64>(src_array, elem_values_col, res) ||
+            executeType< Int8  >(src_array, elem_values_col, res) ||
+            executeType< Int16 >(src_array, elem_values_col, res) ||
+            executeType< Int32 >(src_array, elem_values_col, res) ||
+            executeType< Int64 >(src_array, elem_values_col, res) ||
+            executeType<Float32>(src_array, elem_values_col, res) ||
+            executeType<Float64>(src_array, elem_values_col, res)) ||
+            executeType<Decimal32>(src_array, elem_values_col, res) ||
+            executeType<Decimal64>(src_array, elem_values_col, res) ||
+            executeType<Decimal128>(src_array, elem_values_col, res) ||
+            executeType<Decimal256>(src_array, elem_values_col, res))
+    {
+        return res;
+    }
+
+    const IColumn & src_values = src_array->getData();
+    const auto & src_offsets = src_array->getOffsets();
+
+    const auto * src_nullable = checkAndGetColumn<ColumnNullable>(&src_values);
+    const auto * src_null_map = src_nullable ? &src_nullable->getNullMapData() : nullptr;
+    const IColumn * src_nested = src_nullable ? &src_nullable->getNestedColumn() : &src_values;
 
     const auto * elem_nullable = checkAndGetColumn<ColumnNullable>(elem_values_col);
     const IColumn * elem_nested = elem_nullable ? &elem_nullable->getNestedColumn() : elem_values_col;
