@@ -72,7 +72,7 @@
 #include <unistd.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include "IO/UTFConvertingReadBuffer.h"
+#include <IO/UTFConvertingReadBuffer.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
