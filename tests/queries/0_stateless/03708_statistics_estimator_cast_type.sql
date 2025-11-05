@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 CREATE TABLE dt64test
 (
 	    `dt64_column` DateTime64(3),
