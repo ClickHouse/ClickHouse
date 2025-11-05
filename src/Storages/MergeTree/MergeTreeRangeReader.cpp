@@ -331,8 +331,13 @@ void MergeTreeRangeReader::ReadResult::addGranule(size_t num_rows_, GranuleOffse
     total_rows_per_granule += num_rows_;
 }
 
-void MergeTreeRangeReader::ReadResult::adjustLastGranule()
+void MergeTreeRangeReader::ReadResult::adjustLastGranule(std::optional<size_t> actual_num_read_rows)
 {
+    if (actual_num_read_rows)
+    {
+        num_read_rows = *actual_num_read_rows;
+        num_rows = *actual_num_read_rows;
+    }
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())
@@ -1242,6 +1247,15 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     if (num_rows == 0)
         num_rows = result.total_rows_per_granule;
 
+    /// Last granule may be incomplete.
+    /// `MergeTreeReaderIndex::readRows()` always returns `index_granularity` rows when the mark cannot be skipped.
+    /// For the last mark of a part, the number of remaining rows may be smaller than `index_granularity`.
+    /// This leads to mismatch between `num_rows` and result.total_rows_per_granule`.
+    /// So we need to adjust the result to reflect the actual number of data rows, in order to avoid the crash.
+    if (stream.isFinished() && !result.rows_per_granule.empty())
+    {
+        result.adjustLastGranule(num_rows);
+    }
     if (num_rows != result.total_rows_per_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeReader read {} rows, but {} expected.",
                         num_rows, result.total_rows_per_granule);
