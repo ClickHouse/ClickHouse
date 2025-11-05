@@ -639,7 +639,7 @@ Write data of [JSON](../../sql-reference/data-types/newjson.md) column as [Strin
 Write data of [JSON](../../sql-reference/data-types/newjson.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) columns in a flattened format (all types/paths as separate subcolumns).
 )", 0) \
     \
-    DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, R"(
+    DECLARE(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::BestEffort, R"(
 Allows choosing a parser of the text representation of date and time.
 
 The setting does not apply to [date and time functions](../../sql-reference/functions/date-time-functions.md).
@@ -655,8 +655,6 @@ Possible values:
 - `'basic'` — Use basic parser.
 
     ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
-
-Cloud default value: `'best_effort'`.
 
 See also:
 
