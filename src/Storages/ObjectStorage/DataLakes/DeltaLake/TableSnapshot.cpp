@@ -286,12 +286,12 @@ public:
                 continue;
             }
 
-            object->metadata = object_storage->getObjectMetadata(object->getPath());
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath()));
 
             if (callback)
             {
-                chassert(object->metadata);
-                callback(DB::FileProgress(0, object->metadata->size_bytes));
+                chassert(object->getObjectMetadata());
+                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
             }
             return object;
         }
@@ -344,7 +344,7 @@ public:
         }
 
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
+        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
 
         if (transform && !context->partition_columns.empty())
         {

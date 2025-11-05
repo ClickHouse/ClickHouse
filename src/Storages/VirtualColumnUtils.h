@@ -40,6 +40,9 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
+/// Builds ordered sets used by ActionsDAG inplace.
+void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
+
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
 

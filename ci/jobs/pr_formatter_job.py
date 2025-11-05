@@ -36,9 +36,11 @@ Header: "### Changelog category (leave one):"
 
 ### 2. Changelog Entry
 Header: "### Changelog entry (a [user-readable short description](https://github.com/ClickHouse/ClickHouse/blob/master/docs/changelog_entry_guidelines.md) of the changes that goes into CHANGELOG.md):"
-- Include this section UNLESS the category says "changelog entry is not required"
-- Reuse existing entry with grammar fixes, or generate from PR title if missing
-- Keep it plain text, ≤50 words, no quotes or markdown formatting
+- Always keep this section if an entry is present in the original PR body, even if the category says "changelog entry is not required"
+- If no entry exists and category says "changelog entry is not required", omit this section
+- If no entry exists and category requires one, generate from PR title
+- Entry may include markdown formatting (links, bold, italic, code) but must NOT contain new lines or checkboxes
+- Keep entry ≤50 words, no quotes
 - If PR mentions "Fixes/Resolves/Closes #NUMBER", append: "Resolves #NUMBER"
 
 ## Optional Sections
@@ -49,8 +51,13 @@ Header: "### Documentation entry for user-facing changes"
 
 ### 4. Details
 Header: "### Details"
-- Add any additional context from the original PR body
-- Include issue link if referenced. for example: "Resolves #NUMBER"
+- Move ALL user text from the original PR body to this section, including:
+  - Text under unknown/unrecognized headers
+  - Any text that was dropped or doesn't fit in other sections
+  - Additional context from the original PR body
+- Preserve all markdown formatting (links, lists, code blocks, bold, italic, etc.)
+- Make only minimal edits to fix grammatical mistakes or bad formatting
+- Include issue link if referenced, for example: "Resolves #NUMBER"
 
 ## Formatting
 - Separate all sections with blank lines
@@ -66,7 +73,7 @@ Header: "### Details"
     results = []
 
     os.environ["GH_TOKEN"] = Secret.Config(
-        name="/github-tokens/robot-2-copilot", type=Secret.Type.AWS_SSM_PARAMETER
+        name="/ci/robot-ch-test-poll-copilot", type=Secret.Type.AWS_SSM_PARAMETER
     ).get_value()
     if res:
         results.append(

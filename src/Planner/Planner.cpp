@@ -148,6 +148,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ServerSetting
@@ -1045,7 +1046,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+            limit->setStepDescription("preliminary LIMIT");
         query_plan.addStep(std::move(limit));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
@@ -1382,6 +1383,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
+        query_plan.addInterpreterContext(subquery_planner.getPlannerContext()->getQueryContext());
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
     }
 
@@ -1575,7 +1577,8 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
-    Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
+    Block union_common_header = buildCommonHeaderForUnion(
+        query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
     const auto & query_context = planner_context->getQueryContext();
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
     const auto & settings = query_context->getSettingsRef();

@@ -3214,7 +3214,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
-                limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+                limit->setStepDescription("preliminary LIMIT");
 
             query_plan.addStep(std::move(limit));
         }
