@@ -209,6 +209,8 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
+    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+
     /// TODO: Known problems with datalake prewhere:
     ///  * If the iceberg table went through schema evolution, columns read from file may need to
     ///    be renamed or typecast before applying prewhere. There's already a mechanism for
@@ -228,7 +230,10 @@ StorageObjectStorage::StorageObjectStorage(
     ///  * There's a bug in StorageObjectStorageSource::createReader: it makes a copy of
     ///    FormatFilterInfo, but for some reason unsets prewhere_info and row_level_filter_info.
     ///    There's probably no reason for this, and it should just copy those fields like the others.
-    supports_prewhere = !configuration->isDataLakeConfiguration() && FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    ///  * If the table contains files in different formats, with only some of them supporting
+    ///    prewhere, things break.
+    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
+    supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -368,7 +373,7 @@ void StorageObjectStorage::read(
         column_names,
         storage_snapshot,
         supportsSubsetOfColumns(local_context),
-        /*supports_tuple_elements=*/ supports_prewhere,
+        supports_tuple_elements,
         local_context,
         PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
     if (query_info.prewhere_info || query_info.row_level_filter)
