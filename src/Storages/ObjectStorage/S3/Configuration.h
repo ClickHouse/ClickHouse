@@ -79,7 +79,7 @@ struct S3StorageParsableArguments : private StorageParsableArguments
 public:
     void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
     void fromDiskImpl(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments);
+    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
     S3StorageParsableArguments() = default;
 };
 
@@ -130,6 +130,8 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
+
     S3::URI url;
 
 
@@ -149,12 +151,7 @@ protected:
 private:
     void initializeFromParsableArguments(S3StorageParsableArguments && parsable_arguments)
     {
-        format = std::move(parsable_arguments.format);
-        compression_method = std::move(parsable_arguments.compression_method);
-        structure = std::move(parsable_arguments.structure);
-        partition_strategy_type = parsable_arguments.partition_strategy_type;
-        partition_columns_in_data_file = parsable_arguments.partition_columns_in_data_file;
-        partition_strategy = std::move(parsable_arguments.partition_strategy);
+        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
         url = std::move(parsable_arguments.url);
         s3_settings = std::move(parsable_arguments.s3_settings);
         s3_capabilities = std::move(parsable_arguments.s3_capabilities);
@@ -165,8 +162,6 @@ private:
 
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 };
-
-bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 }
 
 #endif

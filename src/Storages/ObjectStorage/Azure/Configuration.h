@@ -54,7 +54,7 @@ struct AzureStorageParsableArguments : private StorageParsableArguments
 
     void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
     void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments);
+    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
@@ -111,16 +111,11 @@ public:
     DiskPtr disk;
 
 private:
-    void initializeFromParsableArguments(AzureStorageParsableArguments && parsable_arguments)
+    void initializeFromParsableArguments(const AzureStorageParsableArguments & parsable_arguments)
     {
-        format = std::move(parsable_arguments.format);
-        compression_method = std::move(parsable_arguments.compression_method);
-        structure = std::move(parsable_arguments.structure);
-        partition_strategy_type = parsable_arguments.partition_strategy_type;
-        partition_columns_in_data_file = parsable_arguments.partition_columns_in_data_file;
-        partition_strategy = std::move(parsable_arguments.partition_strategy);
+        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
         blob_path = parsable_arguments.blob_path;
-        connection_params = std::move(parsable_arguments.connection_params);
+        connection_params = parsable_arguments.connection_params;
     }
 };
 }

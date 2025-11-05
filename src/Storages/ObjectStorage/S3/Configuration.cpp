@@ -254,7 +254,7 @@ static ASTPtr extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
+bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
 {
     if (!maybe_credentials)
         return false;
@@ -324,7 +324,7 @@ void S3StorageParsableArguments::fromDiskImpl(const DiskPtr & disk, ASTs & args,
     path_suffix = parsing_result.path_suffix;
 }
 
-void S3StorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
+void S3StorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(args);
 
@@ -338,11 +338,11 @@ void S3StorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bo
         count -= key_value_asts.size();
     }
 
-    if (count == 0 || count > max_number_of_arguments)
+    if (count == 0 || count > S3StorageParsableArguments::getMaxNumberOfArguments(with_structure))
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage S3 requires 1 to {} arguments. All supported signatures:\n{}",
-            max_number_of_arguments,
+            S3StorageParsableArguments::getMaxNumberOfArguments(with_structure),
             S3StorageParsableArguments::getSignatures(with_structure));
 
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
@@ -580,7 +580,7 @@ void S3StorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bo
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+    StorageS3Configuration::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -970,7 +970,7 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     S3StorageParsableArguments parsable_arguments;
-    parsable_arguments.fromASTImpl(args, context, with_structure, S3StorageParsableArguments::getMaxNumberOfArguments(with_structure));
+    parsable_arguments.fromASTImpl(args, context, with_structure);
     initializeFromParsableArguments(std::move(parsable_arguments));
     keys = {parsable_arguments.url.key};
     static_configuration = !parsable_arguments.s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()

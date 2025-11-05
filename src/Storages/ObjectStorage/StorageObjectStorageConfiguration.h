@@ -1,20 +1,20 @@
 #pragma once
 
-#include <Storages/IPartitionStrategy.h>
-#include <Formats/FormatSettings.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Storages/prepareReadingFromFormat.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Storages/MutationCommands.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Formats/FormatSettings.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/StorageID.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Storages/IStorage.h>
-#include <Common/Exception.h>
+#include <Storages/MutationCommands.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -22,6 +22,8 @@ namespace DB
 class NamedCollection;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+
+struct StorageParsableArguments;
 
 namespace ErrorCodes
 {
@@ -261,6 +263,7 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
+    void initializeFromParsableArguments(const StorageParsableArguments & parsable_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)

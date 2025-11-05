@@ -90,12 +90,10 @@ public:
     Paths paths;
 
 private:
-    void initializeFromParsableArguments(LocalStorageParsableArguments && parsable_arguments)
+    void initializeFromParsableArguments(const LocalStorageParsableArguments & parsable_arguments)
     {
-        format = std::move(parsable_arguments.format);
-        compression_method = std::move(parsable_arguments.compression_method);
-        structure = std::move(parsable_arguments.structure);
-        path = std::move(parsable_arguments.path);
+        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
+        path = parsable_arguments.path;
     }
 };
 }

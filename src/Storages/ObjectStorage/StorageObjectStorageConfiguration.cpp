@@ -235,4 +235,14 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     ContextPtr) const
 {
 }
+
+void StorageObjectStorageConfiguration::initializeFromParsableArguments(const StorageParsableArguments & parsable_arguments)
+{
+    format = parsable_arguments.format;
+    compression_method = parsable_arguments.compression_method;
+    structure = parsable_arguments.structure;
+    partition_strategy_type = parsable_arguments.partition_strategy_type;
+    partition_columns_in_data_file = parsable_arguments.partition_columns_in_data_file;
+    partition_strategy = parsable_arguments.partition_strategy;
+}
 }

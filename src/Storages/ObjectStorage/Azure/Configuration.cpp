@@ -287,16 +287,16 @@ void AzureStorageParsableArguments::fromDiskImpl(DiskPtr disk, ASTs & args, Cont
         structure = *parsing_result.structure;
 }
 
-void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr context, bool with_structure, size_t max_number_of_arguments)
+void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(engine_args);
 
-    if (engine_args.empty() || engine_args.size() > max_number_of_arguments)
+    if (engine_args.empty() || engine_args.size() > AzureStorageParsableArguments::getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
-            max_number_of_arguments,
+            AzureStorageParsableArguments::getMaxNumberOfArguments(with_structure),
             AzureStorageParsableArguments::getSignatures(with_structure));
     }
 
@@ -629,8 +629,7 @@ void addStructureAndFormatToArgsIfNeededImpl(
     const String & structure_,
     const String & format_,
     ContextPtr context,
-    bool with_structure,
-    size_t max_number_of_arguments)
+    bool with_structure)
 {
     if (entity_to_initialize.disk)
     {
@@ -666,11 +665,11 @@ void addStructureAndFormatToArgsIfNeededImpl(
     }
     else
     {
-        if (args.size() < 3 || args.size() > max_number_of_arguments)
+        if (args.size() < 3 || args.size() > AzureStorageParsableArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
-                max_number_of_arguments,
+                AzureStorageParsableArguments::getMaxNumberOfArguments(),
                 args.size());
 
         for (auto & arg : args)
@@ -815,23 +814,21 @@ void addStructureAndFormatToArgsIfNeededImpl(
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    addStructureAndFormatToArgsIfNeededImpl(
-        *this, args, structure_, format_, context, with_structure, AzureStorageParsableArguments::getMaxNumberOfArguments());
+    addStructureAndFormatToArgsIfNeededImpl(*this, args, structure_, format_, context, with_structure);
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     AzureStorageParsableArguments parsable_arguments;
     parsable_arguments.fromNamedCollectionImpl(collection, context);
-    initializeFromParsableArguments(std::move(parsable_arguments));
+    initializeFromParsableArguments(parsable_arguments);
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     AzureStorageParsableArguments parsable_arguments;
-    parsable_arguments.fromASTImpl(
-        engine_args, context, with_structure, AzureStorageParsableArguments::getMaxNumberOfArguments(with_structure));
-    initializeFromParsableArguments(std::move(parsable_arguments));
+    parsable_arguments.fromASTImpl(engine_args, context, with_structure);
+    initializeFromParsableArguments(parsable_arguments);
     blobs_paths = {parsable_arguments.blob_path};
 }
 
@@ -840,7 +837,7 @@ void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, 
     AzureStorageParsableArguments parsable_arguments;
     disk = context->getDisk(disk_name);
     parsable_arguments.fromDiskImpl(disk, args, context, with_structure);
-    initializeFromParsableArguments(std::move(parsable_arguments));
+    initializeFromParsableArguments(parsable_arguments);
     setPathForRead(parsable_arguments.blob_path.path + "/");
     setPaths({parsable_arguments.blob_path.path + "/"});
     blobs_paths = {parsable_arguments.blob_path};

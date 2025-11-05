@@ -97,7 +97,7 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     LocalStorageParsableArguments parsable_arguemnts;
     parsable_arguemnts.fromASTImpl(args, context, with_structure);
     paths = {path};
-    initializeFromParsableArguments(std::move(parsable_arguemnts));
+    initializeFromParsableArguments(parsable_arguemnts);
 }
 void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
@@ -108,7 +108,7 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, 
     fs::path suffix = parsable_arguemnts.path_suffix;
     setPathForRead(String(root / suffix));
     setPaths({String(root / suffix)});
-    initializeFromParsableArguments(std::move(parsable_arguemnts));
+    initializeFromParsableArguments(parsable_arguemnts);
 }
 
 void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -116,6 +116,6 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     LocalStorageParsableArguments parsable_arguemnts;
     parsable_arguemnts.fromNamedCollectionImpl(collection, context);
     paths = {path};
-    initializeFromParsableArguments(std::move(parsable_arguemnts));
+    initializeFromParsableArguments(parsable_arguemnts);
 }
 }

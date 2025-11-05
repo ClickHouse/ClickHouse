@@ -1,9 +1,8 @@
-
+#pragma once
 
 #include <memory>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB {
 struct StorageParsableArguments {
