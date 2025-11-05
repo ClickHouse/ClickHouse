@@ -97,6 +97,18 @@ void MergeTreeReaderTextIndex::updateAllIndexRanges()
     }
 }
 
+void MergeTreeReaderTextIndex::prefetchBeginOfRange(Priority priority)
+{
+    if (all_index_ranges.empty())
+        return;
+
+    size_t from_mark = all_index_ranges.front().begin;
+    size_t to_mark = all_index_ranges.back().end;
+
+    index_reader->adjustRightMark(to_mark);
+    index_reader->prefetchBeginOfRange(from_mark, priority);
+}
+
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last_mark)
 {
     chassert(index_reader);
@@ -155,6 +167,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
     }
+    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
 
     if (res_columns.empty())
     {
@@ -169,7 +182,10 @@ size_t MergeTreeReaderTextIndex::readRows(
     while (read_rows < max_rows_to_read)
     {
         size_t index_mark = from_mark / granularity;
-        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+        /// When the number of rows in a part is smaller than `index_granularity`,
+        /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
+        /// contains no more data rows than actually exist in the part
+        size_t rows_to_read = std::min(data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark), data_part_info_for_read->getRowCount());
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.

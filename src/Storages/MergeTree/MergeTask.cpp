@@ -1230,7 +1230,7 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
 
     /// Add column gatherer step
     {
-        bool is_result_sparse = global_ctx->new_data_part->getSerialization(column_name)->getKind() == ISerialization::Kind::SPARSE;
+        bool is_result_sparse = ISerialization::hasKind(global_ctx->new_data_part->getSerialization(column_name)->getKindStack(), ISerialization::Kind::SPARSE);
         const auto merge_tree_settings = global_ctx->data->getSettings();
         auto merge_step = std::make_unique<ColumnGathererStep>(
             merge_column_query_plan.getCurrentHeader(),
@@ -1442,16 +1442,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_parts.size(),
             projection_parts.front()->name,
             projection_parts.back()->name);
-
-        /// Skip parts with empty parent parts.
-        chassert(global_ctx->future_part->parts.size() == projection_parts.size());
-        std::erase_if(
-            projection_parts,
-            [&](const auto & part)
-            {
-                size_t index = &part - projection_parts.data();
-                return global_ctx->future_part->parts[index]->isEmpty();
-            });
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {});

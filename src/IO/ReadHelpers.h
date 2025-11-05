@@ -713,7 +713,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
             if (size != 36)
             {
-                s[size] = 0;
+                s[std::min(size, size_t(36))] = 0;
 
                 if constexpr (throw_exception)
                 {
@@ -730,7 +730,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         return ReturnType(true);
     }
 
-    s[size] = 0;
+    s[std::min(size, size_t(36))] = 0;
 
     if constexpr (throw_exception)
     {

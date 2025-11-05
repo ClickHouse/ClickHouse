@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
@@ -29,6 +30,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/intExp.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
@@ -808,11 +810,13 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         ? (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert]
         : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
 
-    if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
+    const bool is_system_database = (data.getStorageID().getDatabaseName() == DatabaseCatalog::SYSTEM_DATABASE);
+
+    if (!is_system_database && (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0))
     {
         const auto & disk = data_part_volume->getDisk();
         const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
-        const UInt64 & free_disk_bytes = disk->getAvailableSpace().value_or(0);
+        const UInt64 & free_disk_bytes = disk->getUnreservedSpace().value_or(0);
 
         const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
         const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
@@ -821,17 +825,23 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         {
             throw Exception(
                 ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes left in the disk space ({}). "
-                "Configure this limit with user settings {} or {}",
-                needed_free_bytes,
-                free_disk_bytes,
-                "min_free_disk_bytes_to_perform_insert",
-                "min_free_disk_ratio_to_perform_insert");
+                "Could not perform insert. "
+                "The amount of free space ({}) on disk {} is less than the configured threshold ({})."
+                "The threshold can be configured either in MergeTree settings or User settings, "
+                "using the following settings: "
+                "(1) `min_free_disk_bytes_to_perform_insert` "
+                "(2) `min_free_disk_ratio_to_perform_insert`. "
+                "The total disk capacity of {} is {}",
+                formatReadableSizeWithBinarySuffix(free_disk_bytes),
+                backQuote(disk->getName()),
+                formatReadableSizeWithBinarySuffix(needed_free_bytes),
+                backQuote(disk->getName()),
+                formatReadableSizeWithBinarySuffix(total_disk_bytes));
         }
     }
 
     auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
-        .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
+        .withPartFormat(data.choosePartFormat(expected_size, block.rows(), new_part_level))
         .withPartInfo(new_part_info)
         .build();
 
@@ -854,7 +864,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     for (const auto & [column_name, _] : columns)
     {
         auto & column = block.getByName(column_name);
-        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
+        if (!ISerialization::hasKind(infos.getKindStack(column_name), ISerialization::Kind::SPARSE))
             column.column = recursiveRemoveSparse(column.column);
     }
 
@@ -987,7 +997,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows()).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();

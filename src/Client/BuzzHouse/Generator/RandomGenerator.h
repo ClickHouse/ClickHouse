@@ -26,7 +26,7 @@ private:
 
     std::uniform_int_distribution<uint16_t> uints16;
 
-    std::uniform_int_distribution<int32_t> ints32, time_hours;
+    std::uniform_int_distribution<int32_t> ints32, time_hours, second_offsets;
 
     std::uniform_int_distribution<uint32_t> uints32, dist1, dist2, dist3, dist4, date_years, datetime_years, datetime64_years, months,
         hours, minutes, subseconds, strlens;
@@ -95,6 +95,7 @@ public:
         , uints16(std::numeric_limits<uint16_t>::min(), std::numeric_limits<uint16_t>::max())
         , ints32(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max())
         , time_hours(-999, 999)
+        , second_offsets(-10, 80)
         , uints32(std::numeric_limits<uint32_t>::min(), std::numeric_limits<uint32_t>::max())
         , dist1(UINT32_C(1), UINT32_C(10))
         , dist2(UINT32_C(1), UINT32_C(100))
@@ -150,22 +151,22 @@ public:
     bool nextBool();
 
     /// Range [1970-01-01, 2149-06-06]
-    String nextDate();
+    String nextDate(const String & separator, bool allow_func);
 
     /// Range [1900-01-01, 2299-12-31]
-    String nextDate32();
+    String nextDate32(const String & separator, bool allow_func);
 
     /// Range [-999:59:59, 999:59:59]
-    String nextTime();
+    String nextTime(const String & separator, bool allow_func);
 
     /// Range [-999:59:59.999999999, 999:59:59.999999999]
-    String nextTime64(bool has_subseconds);
+    String nextTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1970-01-01 00:00:00, 2106-02-07 06:28:15]
-    String nextDateTime(bool has_subseconds);
+    String nextDateTime(const String & separator, bool allow_func, bool has_subseconds);
 
     /// Range [1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]
-    String nextDateTime64(bool has_subseconds);
+    String nextDateTime64(const String & separator, bool allow_func, bool has_subseconds);
 
     template <typename T>
     T thresholdGenerator(const double always_on_prob, const double always_off_prob, T min_val, T max_val)
@@ -184,19 +185,27 @@ public:
         {
             if constexpr (std::is_unsigned_v<T>)
             {
-                return std::numeric_limits<T>::max();
+                return (tmp <= always_on_prob + always_off_prob + 0.003) ? 0 : std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_signed_v<T>)
+            {
+                return (tmp <= always_on_prob + always_off_prob + 0.005) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
             }
             if constexpr (std::is_floating_point_v<T>)
             {
+                if (tmp <= always_on_prob + always_off_prob + 0.003)
+                {
+                    return std::numeric_limits<T>::min();
+                }
                 if (max_val >= 0.9 && max_val <= 1.1)
                 {
                     return max_val;
                 }
                 return std::numeric_limits<T>::max();
             }
-            chassert(0);
+            UNREACHABLE();
         }
-        if constexpr (std::is_unsigned_v<T>)
+        if constexpr (std::is_integral_v<T>)
         {
             std::uniform_int_distribution<T> d{min_val, max_val};
             return d(generator);
@@ -206,7 +215,7 @@ public:
             std::uniform_real_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-        chassert(0);
+        UNREACHABLE();
         return 0;
     }
 

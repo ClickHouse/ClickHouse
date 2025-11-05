@@ -117,7 +117,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCsumMapWithOverflow, 0, 0, 1, 2, false),
     CHAggregate(SQLFunc::FUNCsumMapFiltered, 1, 1, 2, 2, false),
     CHAggregate(SQLFunc::FUNCsumMapFilteredWithOverflow, 1, 1, 2, 2, false),
-    CHAggregate(SQLFunc::FUNCminMap, 0, 0, 2, 2, false),
+    CHAggregate(SQLFunc::FUNCminMap, 0, 0, 1, 2, false),
     CHAggregate(SQLFunc::FUNCmaxMap, 0, 0, 1, 2, false),
     CHAggregate(SQLFunc::FUNCskewSamp, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNCskewPop, 0, 0, 1, 1, false),
@@ -334,6 +334,10 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayLevenshteinDistanceWeighted, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCarraySimilarity, 0, 0, 4, 4),
     CHFunction(SQLFunc::FUNCarrayExcept, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCgroupUniqArrayArray, 0, 1, 1, 1),
+    CHFunction(SQLFunc::FUNCsumMappedArrays, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCminMappedArrays, 0, 0, 1, ulimited_params),
+    CHFunction(SQLFunc::FUNCmaxMappedArrays, 0, 0, 1, ulimited_params),
     /// Bit functions
     CHFunction(SQLFunc::FUNCbitAnd, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCbitOr, 0, 0, 2, 2),
@@ -1216,7 +1220,6 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCfinancialNetPresentValue, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCfinancialNetPresentValueExtended, 0, 0, 3, 4),
     /// Other
-    CHFunction(SQLFunc::FUNChostname, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCfqdn, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCbasename, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCvisibleWidth, 0, 0, 1, 1),
@@ -1301,6 +1304,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCrandFisherF, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCfuzzBits, 0, 0, 2, 2),
     /// Other
+    CHFunction(SQLFunc::FUNChostname, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCshowCertificate, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCdisplayName, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCcurrentDatabase, 0, 0, 0, 0),

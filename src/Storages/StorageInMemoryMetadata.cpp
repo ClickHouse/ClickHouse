@@ -18,6 +18,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSQLSecurity.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
@@ -601,6 +602,17 @@ ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
         return settings_changes->clone();
     return nullptr;
 }
+
+Field StorageInMemoryMetadata::getSettingChange(const String & setting_name) const
+{
+    if (!settings_changes)
+        return Field();
+
+    const auto & changes = settings_changes->as<const ASTSetQuery &>().changes;
+    auto it = std::ranges::find_if(changes, [&setting_name](const SettingChange & change) { return change.name == setting_name; });
+    return it != changes.end() ? it->value : Field();
+}
+
 const SelectQueryDescription & StorageInMemoryMetadata::getSelectQuery() const
 {
     return select;
@@ -685,7 +697,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 available_type->getName(),
                 column.type->getName());
 
-        if (unique_names.end() != unique_names.find(column.name))
+        if (unique_names.contains(column.name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 column.name);
@@ -733,7 +745,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 available_column_type->getName(),
                 provided_column_type->getName());
 
-        if (unique_names.end() != unique_names.find(name))
+        if (unique_names.contains(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 name);
@@ -796,11 +808,12 @@ std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColu
     return sizes;
 }
 
-NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions() const
+NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const
 {
+    auto exclude_map = exclude.getNameToTypeMap();
     NameSet names;
     for (const auto & col : columns)
-        if (!col.default_desc.expression)
+        if (!col.default_desc.expression && !exclude_map.contains(col.name))
             names.insert(col.name);
     return names;
 }

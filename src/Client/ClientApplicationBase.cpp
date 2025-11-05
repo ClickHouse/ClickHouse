@@ -6,7 +6,6 @@
 #include <Common/TerminalSize.h>
 #include <Common/Exception.h>
 #include <Common/SignalHandlers.h>
-#include <Client/JWTProvider.h>
 
 #include <Common/config_version.h>
 #include "config.h"
@@ -185,23 +184,23 @@ void ClientApplicationBase::init(int argc, char ** argv)
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
-    if (options.count("version") || options.count("V"))
+    if (options.contains("version") || options.contains("V"))
     {
         showClientVersion();
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
-    if (options.count("version-clean"))
+    if (options.contains("version-clean"))
     {
         output_stream << VERSION_STRING;
         exit(0); // NOLINT(concurrency-mt-unsafe)
     }
 
     /// If user writes -help instead of --help.
-    bool user_made_a_typo = options.count("host") && options["host"].as<std::string>() == "elp";
-    if (options.count("help") || user_made_a_typo)
+    bool user_made_a_typo = options.contains("host") && options["host"].as<std::string>() == "elp";
+    if (options.contains("help") || user_made_a_typo)
     {
-        if (options.count("verbose"))
+        if (options.contains("verbose"))
             printHelpMessage(options_description);
         else
             printHelpMessage(options_description_non_verbose);
@@ -212,7 +211,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
-    profile_events.print = options.count("print-profile-events");
+    profile_events.print = options.contains("print-profile-events");
     profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
@@ -248,7 +247,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_console_channel_ptr = new Poco::ConsoleChannel;
     fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
 
-    if (options.count("client_logs_file"))
+    if (options.contains("client_logs_file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing logs to a file is disabled in an embedded mode.");
