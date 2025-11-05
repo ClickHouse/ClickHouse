@@ -283,7 +283,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(StorageMetadataPtr metad
                     }
                     if (!column_type->equals(*common_type))
                     {
-                        /// we assume that is "cast(column) < const", will not esimate this condition.
+                        /// we assume that is "cast(column) < const", will not estimate this condition.
                         return false;
                     }
                 }
