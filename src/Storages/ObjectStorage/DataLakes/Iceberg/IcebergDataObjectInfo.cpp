@@ -53,7 +53,7 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_man
 {
 }
 
-IcebergDataObjectInfo::IcebergDataObjectInfo(const String & path_)
+IcebergDataObjectInfo::IcebergDataObjectInfo(const RelativePathWithMetadata & path_)
     : ObjectInfo(path_)
 {
 }

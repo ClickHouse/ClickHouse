@@ -47,7 +47,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// It is also used to create a filter for the data object in the position delete transform.
     explicit IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_, Int32 schema_id_relevant_to_iterator_);
 
-    explicit IcebergDataObjectInfo(const String & path_);
+    explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
 
     std::shared_ptr<ISimpleTransform> getPositionDeleteTransformer(
         ObjectStoragePtr object_storage,
