@@ -1230,8 +1230,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     \
-    M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes read within the query", ValueType::Number) \
-    M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes the query will output if executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsInputBytes, "Collected statistics on the number of bytes replicas will read if query was executed with parallel replicas", ValueType::Number) \
+    M(RuntimeDataflowStatisticsOutputBytes, "Collected statistics on the number of bytes replicas will send to the initiator if query was executed with parallel replicas", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

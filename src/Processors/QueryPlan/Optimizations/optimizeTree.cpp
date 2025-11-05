@@ -302,8 +302,16 @@ void considerEnablingParallelReplicas(
     {
         const auto * reading_step = corresponding_node_in_single_replica_plan;
         while (reading_step && !reading_step->children.empty())
+        {
             // TODO(nickitat): Maybe we should consider all leafs?
+            if (reading_step->children.size() > 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected single child while searching for ReadFromMergeTree, got {} children for step {}",
+                    reading_step->children.size(),
+                    reading_step->step->getName());
             reading_step = reading_step->children.front();
+        }
 
         if (!typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "The corresponding node in single node plan is not ReadFromMergeTree");

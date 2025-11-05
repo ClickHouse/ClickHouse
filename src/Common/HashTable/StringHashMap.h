@@ -179,23 +179,35 @@ public:
         if constexpr (requires { func(this->m0.zeroValue()->getMapped(), stop); })
         {
             if (this->m0.size())
+            {
                 func(this->m0.zeroValue()->getMapped(), stop);
-            if (stop)
-                return;
+                if (stop)
+                    return;
+            }
             for (auto & v : this->m1)
+            {
                 func(v.getMapped(), stop);
-            if (stop)
-                return;
+                if (stop)
+                    return;
+            }
             for (auto & v : this->m2)
+            {
                 func(v.getMapped(), stop);
-            if (stop)
-                return;
+                if (stop)
+                    return;
+            }
             for (auto & v : this->m3)
+            {
                 func(v.getMapped(), stop);
-            if (stop)
-                return;
+                if (stop)
+                    return;
+            }
             for (auto & v : this->ms)
+            {
                 func(v.getMapped(), stop);
+                if (stop)
+                    return;
+            }
         }
         else
         {
