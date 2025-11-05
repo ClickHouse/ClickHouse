@@ -1,4 +1,5 @@
 #include <memory>
+#include <Core/Settings.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 #if USE_PARQUET
@@ -58,6 +59,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_parquet_metadata_cache;
+}
 
 namespace ErrorCodes
 {
@@ -1359,7 +1365,7 @@ void registerInputFormatParquet(FormatFactory & factory)
             ParquetMetadataCachePtr metadata_cache = nullptr;
             if (auto context = CurrentThread::getQueryContext())
             {
-                if (context->getSettingsRef().use_parquet_metadata_cache)
+                if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
                     metadata_cache = context->getParquetMetadataCache();
             }
             
