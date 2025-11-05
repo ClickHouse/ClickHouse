@@ -83,4 +83,5 @@ SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_510');
 
 SYSTEM DROP TEXT INDEX HEADER CACHE;
+DROP VIEW text_index_cache_stats;
 DROP TABLE tab;
