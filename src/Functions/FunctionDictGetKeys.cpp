@@ -74,14 +74,14 @@ struct CacheKeyHash
 
 using SerializedKeys = PODArray<UInt8>;
 
-using MappedPtr = std::shared_ptr<SerializedKeys>;
+using SerializedKeysPtr = std::shared_ptr<SerializedKeys>;
 
-struct SerializedKeysPtr
+struct SerializedKeysWeight
 {
     size_t operator()(const SerializedKeys & mapped) const { return mapped.capacity() + sizeof(SerializedKeys); }
 };
 
-using ReverseLookupCache = CacheBase<CacheKey, SerializedKeys, CacheKeyHash, SerializedKeysPtr>;
+using ReverseLookupCache = CacheBase<CacheKey, SerializedKeys, CacheKeyHash, SerializedKeysWeight>;
 
 class ReverseLookupCacheHolder
 {
@@ -314,7 +314,7 @@ private:
         }
 
         auto & cache = ReverseLookupCacheHolder::instance().getCache();
-        std::vector<MappedPtr> bucket_cached_bytes(num_buckets);
+        std::vector<SerializedKeysPtr> bucket_cached_bytes(num_buckets);
         std::vector<size_t> missing_bucket_ids;
         missing_bucket_ids.reserve(num_buckets);
 
@@ -429,7 +429,7 @@ private:
         const DictionaryPtr & dict,
         const String & attr_name,
         const DataTypes & key_types,
-        std::vector<MappedPtr> & out,
+        std::vector<SerializedKeysPtr> & out,
         const std::vector<size_t> & missing_bucket_ids,
         const HashToBucket & value_hash_to_bucket_id) const
     {
