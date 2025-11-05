@@ -1064,7 +1064,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
-        file_status.reset();
+        file_status = nullptr;
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit

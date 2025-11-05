@@ -127,6 +127,7 @@ public:
     bool compile_sort_description = false;
 
     bool hasPrefix(const SortDescription & prefix) const;
+    bool hasPrefix(const Names & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
