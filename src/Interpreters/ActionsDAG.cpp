@@ -520,7 +520,7 @@ ActionsDAG::SplitPossibleOutputNamesResult ActionsDAG::splitPossibleOutputNames(
     for (const auto * output : outputs)
     {
         if (auto it = possible_output_names.find(output->result_name); it != possible_output_names.end())
-    {
+        {
             auto extracted_node = possible_output_names.extract(it);
             result.output_names.insert(std::move(extracted_node.value()));
         }

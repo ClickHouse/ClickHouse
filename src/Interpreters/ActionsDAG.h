@@ -184,7 +184,7 @@ public:
         Names not_output_names;
     };
 
-    /// Returns the names from possible_result_names that are among the outputs.
+    /// Returns the names from possible_output_names that are among the outputs.
     SplitPossibleOutputNamesResult splitPossibleOutputNames(NameMultiSet possible_output_names) const;
 
     /// Find first node with the same name in output nodes and replace it.
