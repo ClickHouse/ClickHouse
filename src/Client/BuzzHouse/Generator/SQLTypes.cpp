@@ -1633,9 +1633,8 @@ std::tuple<SQLType *, Integers> StatementGenerator::randomIntType(RandomGenerato
         case 12:
             return std::make_tuple(new IntType(256, false), Integers::Int256);
         default:
-            chassert(0);
+            UNREACHABLE();
     }
-    return std::make_tuple(new IntType(32, false), Integers::Int32);
 }
 
 std::tuple<SQLType *, FloatingPoints> StatementGenerator::randomFloatType(RandomGenerator & rg, const uint64_t allowed_types)
@@ -2165,7 +2164,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     return res;
 }
@@ -2308,9 +2307,8 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint64_
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
-    return nullptr;
 }
 
 String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t left, const uint32_t right)
@@ -2340,7 +2338,7 @@ String appendDecimal(RandomGenerator & rg, const bool use_func, const uint32_t l
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
         ret += "('";
     }
@@ -2507,7 +2505,7 @@ String strBuildJSONArray(RandomGenerator & rg, const int jdepth, const int jwidt
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
-                    chassert(0);
+                    UNREACHABLE();
             }
         }
         else
@@ -2609,7 +2607,7 @@ String strBuildJSONElement(RandomGenerator & rg)
             ret = nextFloatingPoint(rg, true);
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
     return ret;
 }
@@ -2649,7 +2647,7 @@ String strBuildJSON(RandomGenerator & rg, const int jdepth, const int jwidth)
                     ret += strBuildJSONElement(rg);
                     break;
                 default:
-                    chassert(0);
+                    UNREACHABLE();
             }
         }
     }

@@ -300,7 +300,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_insert_use_adaptive_busy_timeout", trueOrFalseSettingNoOracle},
     {"async_query_sending_for_remote", trueOrFalseSetting},
     {"async_socket_for_remote", trueOrFalseSetting},
-    {"azure_sdk_use_native_client", trueOrFalseSetting},
     {"cache_warmer_threads", threadSetting},
     {"calculate_text_stack_trace", trueOrFalseSettingNoOracle},
     {"cancel_http_readonly_queries_on_client_close", trueOrFalseSettingNoOracle},
@@ -681,6 +680,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_case_insensitive_column_matching", trueOrFalseSettingNoOracle},
     {"input_format_parquet_enable_json_parsing", trueOrFalseSettingNoOracle},
     {"input_format_parquet_enable_row_group_prefetch", trueOrFalseSettingNoOracle},
+    {"input_format_parquet_verify_checksums", trueOrFalseSettingNoOracle},
+    {"input_format_parquet_local_time_as_utc", trueOrFalseSettingNoOracle},
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
@@ -1419,7 +1420,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     /// Set hot settings
     for (const auto & entry : fc.hot_settings)
     {
-        if (serverSettings.find(entry) == serverSettings.end())
+        if (!serverSettings.contains(entry))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server setting: {}", entry);
         }

@@ -360,7 +360,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     addFieldAccess(rg, expr, nested_prob);
 }
@@ -710,7 +710,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
         addFieldAccess(rg, expr, 0);
     }
@@ -1431,7 +1431,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 
     addFieldAccess(rg, expr, 6);

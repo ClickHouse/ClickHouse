@@ -423,7 +423,7 @@ bool ParserKQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     else
                         --pos;
                 }
-                if (kql_parser.find(kql_operator) == kql_parser.end())
+                if (!kql_parser.contains(kql_operator))
                     return false;
                 return true;
             };

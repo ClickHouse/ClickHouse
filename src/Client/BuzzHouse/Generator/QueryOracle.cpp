@@ -1006,7 +1006,7 @@ bool QueryOracle::findTablesWithPeersAndReplace(
             {
                 const uint32_t tname = gen.getIdentifierFromString(est.table().table());
 
-                if (gen.tables.find(tname) != gen.tables.end())
+                if (gen.tables.contains(tname))
                 {
                     const SQLTable & t = gen.tables.at(tname);
 

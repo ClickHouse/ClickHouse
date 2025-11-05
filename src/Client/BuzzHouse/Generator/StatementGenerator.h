@@ -612,7 +612,7 @@ private:
                 next->set_key("structure");
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
-                    chassert(0);
+                    UNREACHABLE();
                 }
                 else
                 {
@@ -622,7 +622,7 @@ private:
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }

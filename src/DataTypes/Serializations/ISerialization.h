@@ -37,6 +37,7 @@ using SerializationPtr = std::shared_ptr<const ISerialization>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+using SerializationInfoMutablePtr = std::shared_ptr<SerializationInfo>;
 
 using ValueSizeMap = std::map<std::string, double>;
 
@@ -63,15 +64,24 @@ public:
         DEFAULT = 0,
         SPARSE = 1,
         DETACHED = 2,
-        DETACHED_OVER_SPARSE = 3,
+        REPLICATED = 3,
     };
 
-    virtual Kind getKind() const { return Kind::DEFAULT; }
+    /// We can have multiple serialization kinds created over each other.
+    /// For example:
+    ///  - Detached over Sparse over Default
+    ///  - Detached over Replicated over Default
+    ///  - etc
+    using KindStack = std::vector<Kind>;
+
+    virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    static Kind getKind(const IColumn & column);
-    static String kindToString(Kind kind);
-    static Kind stringToKind(const String & str);
+    static KindStack getKindStack(const IColumn & column);
+    static String kindStackToString(const KindStack & kind);
+    static KindStack stringToKindStack(const String & str);
+    /// Check if provided kind stack contains specific kind.
+    static bool hasKind(const KindStack & kind_stack, Kind kind);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -191,6 +201,9 @@ public:
 
             SparseElements,
             SparseOffsets,
+
+            ReplicatedElements,
+            ReplicatedIndexes,
 
             DeprecatedObjectStructure,
             DeprecatedObjectData,

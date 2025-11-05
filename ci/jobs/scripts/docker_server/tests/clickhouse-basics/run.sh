@@ -1,7 +1,8 @@
 #!/bin/bash
 set -eo pipefail
 
-lib_dir="$(realpath "$(dirname "$(readlink -f "$BASH_SOURCE")")/../../../../../tmp/docker-library/official-images/test")"
+dir="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+lib_dir="$(realpath "${dir}/../../../../../tmp/docker-library/official-images/test")"
 
 image="$1"
 
@@ -19,10 +20,9 @@ cid="$(
     --name "$cname" \
     "$image"
 )"
-trap "docker rm -vf $cid > /dev/null" EXIT
+trap 'docker rm -vf $cid > /dev/null' EXIT
 
 chCli() {
-  args="$@"
   docker run --rm -i \
     --link "$cname":clickhouse \
     -e CLICKHOUSE_USER \
@@ -32,7 +32,7 @@ chCli() {
     --host clickhouse \
     --user "$CLICKHOUSE_USER" \
     --password "$CLICKHOUSE_PASSWORD" \
-    --query "$(echo "${args}")"
+    --query "$*"
 }
 
 . "$lib_dir/retry.sh" \

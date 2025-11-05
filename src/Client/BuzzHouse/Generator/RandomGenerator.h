@@ -203,7 +203,7 @@ public:
                 }
                 return std::numeric_limits<T>::max();
             }
-            chassert(0);
+            UNREACHABLE();
         }
         if constexpr (std::is_integral_v<T>)
         {
@@ -215,7 +215,7 @@ public:
             std::uniform_real_distribution<T> d{min_val, max_val};
             return d(generator);
         }
-        chassert(0);
+        UNREACHABLE();
         return 0;
     }
 

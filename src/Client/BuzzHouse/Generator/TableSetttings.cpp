@@ -791,7 +791,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
 
     for (const auto & entry : fc.hot_table_settings)
     {
-        if (mergeTreeTableSettings.find(entry) == mergeTreeTableSettings.end())
+        if (!mergeTreeTableSettings.contains(entry))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown MergeTree table setting: {}", entry);
         }
