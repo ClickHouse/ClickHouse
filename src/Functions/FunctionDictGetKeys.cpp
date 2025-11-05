@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypeArray.h>
@@ -193,6 +194,13 @@ public:
 
 
         ColumnWithTypeAndName values_column_raw{arguments[2].column, arguments[2].type, arguments[2].name};
+
+        const bool is_values_column_const = isColumnConst(*arguments[2].column);
+
+        if (is_values_column_const)
+        {
+            return executeConstPath(attr_name, arguments[2], key_types, dict, input_rows_count);
+        }
         ColumnPtr values = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullIfNeeded();
 
         return executeVectorPath(dict_name, attr_name, *values, key_types, input_rows_count, dict);
@@ -202,6 +210,76 @@ private:
     mutable FunctionDictHelper helper;
 
     using HashToBucket = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
+
+    ColumnPtr executeConstPath(
+        const String & attr_name,
+        const ColumnWithTypeAndName & argument_values_column,
+        const DataTypes & key_types,
+        const auto & dict,
+        size_t input_rows_count) const
+    {
+        const auto & structure = dict->getStructure();
+        const auto & attribute_column_type = structure.getAttribute(attr_name).type;
+        ColumnPtr values_column = castColumn(argument_values_column, attribute_column_type);
+
+        const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
+
+        MutableColumns result_cols;
+        for (const auto & key_type : key_types)
+        {
+            auto col = key_type->createColumn();
+            result_cols.emplace_back(std::move(col));
+        }
+
+        auto offsets_col = ColumnArray::ColumnOffsets::create();
+        auto & offsets = offsets_col->getData();
+        offsets.resize(1);
+
+        const size_t num_keys = key_types.size();
+
+        Names column_names = structure.getKeysNames();
+        column_names.push_back(attr_name);
+
+        auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
+        QueryPipeline pipeline(std::move(pipe));
+        PullingPipelineExecutor executor(pipeline);
+
+        Block block;
+        size_t out_offset = 0;
+        while (executor.pull(block))
+        {
+            ColumnPtr attr_col = block.getByPosition(num_keys).column->convertToFullIfNeeded();
+
+            std::vector<ColumnPtr> key_columns(num_keys);
+            for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                key_columns[key_pos] = block.getByPosition(key_pos).column->convertToFullIfNeeded();
+
+            const size_t rows_in_block = attr_col->size();
+            for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
+            {
+                const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
+
+                if (value_hash != values_column_value_hash)
+                    continue;
+
+                for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+                {
+                    result_cols[key_pos]->insertFrom(*key_columns[key_pos], row_id);
+                }
+                ++out_offset;
+            }
+        }
+        offsets[0] = out_offset;
+
+        if (num_keys == 1)
+        {
+            auto array_column = ColumnArray::create(std::move(result_cols[0]), std::move(offsets_col));
+            return ColumnConst::create(std::move(array_column), input_rows_count);
+        }
+
+        auto array_column = ColumnArray::create(ColumnTuple::create(std::move(result_cols)), std::move(offsets_col));
+        return ColumnConst::create(std::move(array_column), input_rows_count);
+    }
 
     ColumnPtr executeVectorPath(
         const String & dict_name,
