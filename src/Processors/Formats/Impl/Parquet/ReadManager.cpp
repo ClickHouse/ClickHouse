@@ -236,7 +236,7 @@ void ReadManager::setTasksToSchedule(size_t row_group_idx, ReadStage stage, std:
     auto & tasks = stage_state.row_group_tasks_to_schedule.at(row_group_idx);
     chassert(tasks.empty());
     tasks = std::move(add_tasks);
-    bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);
+    bool changed = stage_state.schedulable_row_groups.set(row_group_idx, std::memory_order_release);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(changed);
     diff.scheduleStage(stage);
 }
@@ -299,7 +299,7 @@ void ReadManager::addTasksToReadColumns(size_t row_group_idx, size_t row_subgrou
                 .row_subgroup_idx = row_subgroup_idx,
                 .column_idx = UINT64_MAX});
 
-        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);
+        ReadStage prev_stage = row_subgroup.stage.exchange(stage, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(prev_stage <= stage);
         row_subgroup.stage_tasks_remaining.store(add_tasks.size(), std::memory_order_relaxed);
         setTasksToSchedule(row_group_idx, stage, std::move(add_tasks), diff);
@@ -338,7 +338,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         {
             chassert(!reader.prewhere_steps.empty());
             reader.applyPrewhere(row_subgroup);
-            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);
+            size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(prev == row_subgroup_idx);
             if (row_subgroup_idx + 1 < row_group.subgroups.size())
             {
@@ -356,6 +356,8 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         }
         case ReadStage::MainData:
         {
+            row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
+
             /// Must add to delivery_queue before advancing read_ptr to deliver subgroups in order.
             /// (If we advanced read_ptr first, another thread could start and finish reading the
             ///  next subgroup before we add this one to delivery_queue, and ReadManager::read could
@@ -368,7 +370,6 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
             size_t prev = row_group.read_ptr.exchange(row_subgroup_idx + 1);
             chassert(prev == row_subgroup_idx);
             advanced_read_ptr = prev + 1;
-            row_subgroup.stage.store(ReadStage::Deliver, std::memory_order::relaxed);
             delivery_cv.notify_one();
             break; // proceed to advancing read_ptr
         }
@@ -412,7 +413,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
 
         /// Skip subgroup that was filtered out by prewhere.
 
-        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);
+        size_t prev = row_group.read_ptr.exchange(read_ptr + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(prev == read_ptr);
         read_ptr += 1;
         advanced_read_ptr = read_ptr;
@@ -738,7 +739,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    bool ok = reader.decodeDictionaryPage(column, column_info);
+                    bool ok = reader.decodeDictionaryPage(column, column_info);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
                     chassert(ok);
                 }
                 break;
@@ -784,7 +785,7 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
     if (last_in_batch)
     {
         /// Decrement it before scheduling more tasks.
-        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);
+        size_t prev_batches_in_progress = stages.at(size_t(task.stage)).batches_in_progress.fetch_sub(1, std::memory_order_relaxed);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(prev_batches_in_progress > 0);
         diff.scheduleStage(task.stage);
     }
