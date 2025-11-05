@@ -48,7 +48,7 @@ You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-even
 Upcoming meetups
 * [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/311069048) - November 13, 2025
 * [Warsaw Meetup](https://www.meetup.com/clickhouse-poland-user-group/events/311309076) - November 26, 2025
-* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/31186819) - December 29, 2025
+* [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
 
 Recent meetups
 * [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/311630931/) - Nov 3, 2025
