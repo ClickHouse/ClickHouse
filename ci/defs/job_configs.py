@@ -885,7 +885,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -894,7 +894,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
     )
@@ -921,7 +921,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
