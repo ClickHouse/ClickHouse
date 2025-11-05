@@ -489,7 +489,7 @@ bool Client::processBuzzHouseQuery(const String & full_query)
     }
     if (error_code > 0)
     {
-        if (fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
+        if (fuzz_config->disallowed_error_codes.contains(error_code))
         {
             throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
@@ -889,7 +889,7 @@ bool Client::buzzHouse()
                 }
                 else
                 {
-                    chassert(0);
+                    UNREACHABLE();
                 }
             }
         }
