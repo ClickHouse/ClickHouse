@@ -1,4 +1,3 @@
-#include "DataTypes/DataTypeLowCardinality.h"
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <stack>
