@@ -232,20 +232,23 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
     {
         if (t.isMergeTreeFamily() && this->allow_not_deterministic)
         {
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
+            if (!this->inside_projection || rg.nextSmallNumber() < 2)
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_number"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_block_offset"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_disk_name"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_data_version"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_granule_offset"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_index"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
+            }
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_offset"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_starting_offset"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_part_uuid"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_id"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_partition_value"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_exists"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sample_factor"}));
         }
         else if (
             t.isAnyS3Engine() || t.isAnyAzureEngine() || t.isAnyDeltaLakeEngine() || t.isAnyIcebergEngine() || t.isFileEngine()
@@ -1689,7 +1692,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     if (!expr->has_comp_expr())
     {
         flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
-        colRefOrExpression(rg, createTableRelation(rg, true, "", t), t, rg.pickRandomly(this->entries), expr);
+        colRefOrExpression(rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), expr);
         this->entries.clear();
     }
     switch (itpe)
@@ -1866,7 +1869,7 @@ void StatementGenerator::addTableConstraint(RandomGenerator & rg, SQLTable & t, 
     cdef->mutable_constr()->set_constraint("c" + std::to_string(crname));
     if (!t.cols.empty())
     {
-        addTableRelation(rg, true, "", t);
+        addTableRelation(rg, rg.nextSmallNumber() < 2, "", t);
     }
     this->levels[this->current_level].allow_aggregates = rg.nextMediumNumber() < 11;
     this->levels[this->current_level].allow_window_funcs = rg.nextMediumNumber() < 11;

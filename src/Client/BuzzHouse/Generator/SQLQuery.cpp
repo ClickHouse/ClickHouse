@@ -1083,7 +1083,7 @@ bool StatementGenerator::joinedTableOrFunction(
         ufunc->set_uurl(std::move(url));
         ufunc->set_outformat(outf);
         ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-        addTableRelation(rg, false, rel_name, tt);
+        addTableRelation(rg, rg.nextMediumNumber() < 4, rel_name, tt);
     }
     else if (
         table_engine_udf
