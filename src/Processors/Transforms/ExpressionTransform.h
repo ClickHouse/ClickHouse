@@ -11,8 +11,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.

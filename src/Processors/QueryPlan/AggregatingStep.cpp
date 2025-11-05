@@ -502,7 +502,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
 
-        auto updater = std::make_shared<Updater>(dataflow_cache_key);
+        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(dataflow_cache_key);
 
         size_t counter = 0;
         pipeline.addSimpleTransform(

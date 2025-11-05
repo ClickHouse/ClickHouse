@@ -11,8 +11,8 @@ using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
 class MergeTreeLazilyReader;
 using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 class ColumnLazyTransform : public ISimpleTransform
 {

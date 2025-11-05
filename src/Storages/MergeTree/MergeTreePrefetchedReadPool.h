@@ -11,8 +11,8 @@ namespace DB
 class IMergeTreeReader;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.

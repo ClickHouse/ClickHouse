@@ -524,7 +524,7 @@ Pipe ReadFromMergeTree::readFromPool(
       */
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
 
-    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+    auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(dataflow_cache_key);
 
     if (use_prefetched_read_pool)
     {
@@ -665,7 +665,7 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
-    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+    auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(dataflow_cache_key);
 
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)

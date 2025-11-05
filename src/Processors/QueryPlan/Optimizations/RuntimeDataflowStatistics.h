@@ -93,15 +93,15 @@ inline RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
     return stats_cache;
 }
 
-class Updater
+class RuntimeDataflowStatisticsCacheUpdater
 {
 public:
-    explicit Updater(std::optional<size_t> cache_key_)
+    explicit RuntimeDataflowStatisticsCacheUpdater(std::optional<size_t> cache_key_)
         : cache_key(cache_key_)
     {
     }
 
-    ~Updater();
+    ~RuntimeDataflowStatisticsCacheUpdater();
 
     void setHeader(const Block & header_)
     {
@@ -151,5 +151,5 @@ private:
     std::array<size_t, 5> elapsed{};
 };
 
-using UpdaterPtr = std::shared_ptr<Updater>;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 }

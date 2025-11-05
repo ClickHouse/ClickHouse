@@ -14,7 +14,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-Updater::~Updater()
+RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
     if (!cache_key)
         return;
@@ -38,7 +38,7 @@ Updater::~Updater()
     dataflow_cache.update(*cache_key, statistics + statistics2);
 }
 
-void Updater::addOutputBytes(const Chunk & chunk)
+void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Chunk & chunk)
 {
     if (!cache_key)
         return;
@@ -74,7 +74,7 @@ void Updater::addOutputBytes(const Chunk & chunk)
     elapsed[0] += watch.elapsedMicroseconds();
 }
 
-void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, ssize_t bucket)
+void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, ssize_t bucket)
 {
     if (!cache_key)
         return;
@@ -101,7 +101,7 @@ void Updater::addOutputBytes(const Aggregator &, AggregatedDataVariants & varian
     elapsed[1] += watch.elapsedMicroseconds();
 }
 
-void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
+void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Aggregator & aggregator, const Block & block)
 {
     if (!cache_key)
         return;
@@ -137,7 +137,8 @@ void Updater::addOutputBytes(const Aggregator & aggregator, const Block & block)
     elapsed[2] += watch.elapsedMicroseconds();
 }
 
-void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
+void RuntimeDataflowStatisticsCacheUpdater::addInputBytes(
+    const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
 {
     if (!cache_key)
         return;
@@ -160,7 +161,8 @@ void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMerge
     elapsed[3] += watch.elapsedMicroseconds();
 }
 
-void Updater::addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes)
+void RuntimeDataflowStatisticsCacheUpdater::addInputBytes(
+    const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes)
 {
     if (!cache_key)
         return;

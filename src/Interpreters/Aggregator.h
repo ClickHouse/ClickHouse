@@ -53,8 +53,8 @@ struct GroupingSetsParams
 
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)

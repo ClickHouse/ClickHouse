@@ -37,8 +37,8 @@ using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 enum class MergeTreeReadType : uint8_t
 {

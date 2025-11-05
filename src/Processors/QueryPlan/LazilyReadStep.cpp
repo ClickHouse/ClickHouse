@@ -37,7 +37,7 @@ LazilyReadStep::LazilyReadStep(
 
 void LazilyReadStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto updater = std::make_shared<Updater>(dataflow_cache_key);
+    auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(dataflow_cache_key);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header)
                                 { return std::make_shared<ColumnLazyTransform>(header, std::move(lazy_column_reader), updater); });

@@ -34,8 +34,8 @@ public:
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 struct AggregatingTransformParams
 {

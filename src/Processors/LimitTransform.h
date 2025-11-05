@@ -9,8 +9,8 @@
 namespace DB
 {
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /// Implementation for LIMIT N OFFSET M
 /// This processor support multiple inputs and outputs (the same number).

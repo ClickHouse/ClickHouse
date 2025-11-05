@@ -9,8 +9,8 @@ using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
 struct ChunkAndProgress;
 
-class Updater;
-using UpdaterPtr = std::shared_ptr<Updater>;
+class RuntimeDataflowStatisticsCacheUpdater;
+using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 class MergeTreeSource final : public ISource
 {
