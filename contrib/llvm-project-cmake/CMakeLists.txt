@@ -25,9 +25,7 @@ set (LLVM_INCLUDE_DIRS
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
-# NOTE: You should not remove this line since otherwise it will use default 20,
-# and llvm cannot be compiled with bundled libcxx and 20 standard.
-set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_STANDARD 23)
 
 if (ARCH_AMD64)
     set (LLVM_TARGETS_TO_BUILD "X86" CACHE INTERNAL "")
