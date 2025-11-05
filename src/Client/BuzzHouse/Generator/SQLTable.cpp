@@ -682,9 +682,10 @@ static const std::vector<SQLFunc> arithmeticFuncs
        SQLFunc::FUNCmax2,
        SQLFunc::FUNCmin2,
        SQLFunc::FUNCicebergBucket,
+       SQLFunc::FUNCicebergHash,
        SQLFunc::FUNCicebergTruncate};
 
-static const std::vector<SQLFunc> icebergFuncs = {SQLFunc::FUNCicebergBucket, SQLFunc::FUNCicebergTruncate};
+static const std::vector<SQLFunc> icebergFuncs = {SQLFunc::FUNCicebergBucket, SQLFunc::FUNCicebergHash, SQLFunc::FUNCicebergTruncate};
 
 void StatementGenerator::columnPathRef(const ColumnPathChain & entry, Expr * expr) const
 {
