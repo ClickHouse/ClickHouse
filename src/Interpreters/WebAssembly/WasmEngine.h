@@ -31,9 +31,6 @@ public:
 protected:
     /// Implementation provides generic invocation returning all result values of generic WasmVal type.
     virtual std::vector<WasmVal> invokeImpl(std::string_view function_name, const std::vector<WasmVal> & params) = 0;
-
-    template <typename ResultType>
-    ResultType invoke(std::string_view function_name, const std::vector<WasmVal> & params);
 };
 
 /** WasmModule represents a WebAssembly module, typically containing code, imports and exports.
