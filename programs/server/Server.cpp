@@ -50,6 +50,7 @@
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
@@ -1598,7 +1599,20 @@ try
         }
     }
 
-    FailPointInjection::enableFromGlobalConfig(config());
+    /// Inject and enable failpoints declared in the configuration
+    {
+        auto & conf = config();
+        String root_key = "fail_points_active";
+        Poco::Util::AbstractConfiguration::Keys fail_point_names;
+        conf.keys(root_key, fail_point_names);
+
+        for (const auto & fail_point_name : fail_point_names)
+        {
+            if (ConfigHelper::getBool(conf, root_key + "." + fail_point_name))
+                FailPointInjection::enableFailPoint(fail_point_name);
+        }
+    }
+
 #endif
 
     memory_worker.start();
