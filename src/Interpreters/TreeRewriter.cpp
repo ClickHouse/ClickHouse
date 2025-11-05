@@ -373,7 +373,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
                 continue;
 
             size_t i = 1;
-            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+            while (all_column_names.contains(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
