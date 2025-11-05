@@ -220,7 +220,7 @@ private:
     {
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
-        ColumnPtr values_column = castColumn(argument_values_column, attribute_column_type);
+        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
 
         const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
 
