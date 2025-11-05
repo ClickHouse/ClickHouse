@@ -102,6 +102,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     fuzzer_arguments = ""
     # libFuzzer options
     libfuzzer_options = ""
+    libfuzzer_merge_options = ""
     # libFuzzer options which are allowed in user's .options in the "libfuzzer" section
     allowed_libfuzzer_options = [
         "seed",                 # Random seed. If 0 (the default), the seed is generated.
