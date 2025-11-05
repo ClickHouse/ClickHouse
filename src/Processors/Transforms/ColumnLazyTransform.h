@@ -12,12 +12,13 @@ class MergeTreeLazilyReader;
 using MergeTreeLazilyReaderPtr = std::unique_ptr<MergeTreeLazilyReader>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
-using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 class ColumnLazyTransform : public ISimpleTransform
 {
 public:
-    ColumnLazyTransform(SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, UpdaterPtr updater_ = nullptr);
+    ColumnLazyTransform(
+        SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     static Block transformHeader(Block header);
 
@@ -29,7 +30,7 @@ protected:
 private:
     MergeTreeLazilyReaderPtr lazy_column_reader;
 
-    UpdaterPtr updater;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 }

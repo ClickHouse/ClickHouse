@@ -323,7 +323,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTask::Readers task_readers,
     MarkRanges ranges,
     std::vector<MarkRanges> patches_ranges,
-    UpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto task_size_predictor = read_info->shared_size_predictor
         ? std::make_unique<MergeTreeBlockSizePredictor>(*read_info->shared_size_predictor)
@@ -344,7 +344,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MarkRanges ranges,
     std::vector<MarkRanges> patches_ranges,
     MergeTreeReadTask * previous_task,
-    UpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto get_part_name = [](const auto & task_info) -> String
     {
@@ -389,7 +389,10 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
-    MergeTreeReadTaskInfoPtr read_info, MarkRanges ranges, MergeTreeReadTask * previous_task, UpdaterPtr updater) const
+    MergeTreeReadTaskInfoPtr read_info,
+    MarkRanges ranges,
+    MergeTreeReadTask * previous_task,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto patches_ranges = ranges_in_patch_parts.getRanges(read_info->data_part, read_info->patch_parts, ranges);
     return createTask(std::move(read_info), std::move(ranges), std::move(patches_ranges), previous_task, updater);

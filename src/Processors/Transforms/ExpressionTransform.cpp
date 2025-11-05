@@ -14,7 +14,8 @@ Block ExpressionTransform::transformHeader(const Block & header, const ActionsDA
     return expression.updateHeader(header);
 }
 
-ExpressionTransform::ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_, UpdaterPtr updater_)
+ExpressionTransform::ExpressionTransform(
+    SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_, expression_->getActionsDAG())), false)
     , expression(std::move(expression_))
     , updater(std::move(updater_))

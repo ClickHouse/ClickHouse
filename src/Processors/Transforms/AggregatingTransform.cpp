@@ -159,7 +159,7 @@ public:
         ManyAggregatedDataVariantsPtr data_,
         SharedDataPtr shared_data_,
         Arena * arena_,
-        UpdaterPtr updater_)
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : ISource(std::make_shared<const Block>(params_->getHeader()), false)
         , params(std::move(params_))
         , data(std::move(data_))
@@ -196,7 +196,7 @@ private:
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
     Arena * arena;
-    UpdaterPtr updater;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 /// Asks Aggregator to convert accumulated aggregation state into blocks (without merging) and pushes them to later steps.
@@ -333,7 +333,10 @@ class ConvertingAggregatedToChunksTransform final : public IProcessor
 {
 public:
     ConvertingAggregatedToChunksTransform(
-        AggregatingTransformParamsPtr params_, ManyAggregatedDataVariantsPtr data_, size_t num_threads_, UpdaterPtr updater_)
+        AggregatingTransformParamsPtr params_,
+        ManyAggregatedDataVariantsPtr data_,
+        size_t num_threads_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
         : IProcessor({}, {params_->getHeader()})
         , params(std::move(params_))
         , data(std::move(data_))
@@ -594,7 +597,7 @@ private:
 
     size_t num_threads;
 
-    UpdaterPtr updater;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     bool is_initialized = false;
     bool finished = false;
@@ -741,7 +744,7 @@ AggregatingTransform::AggregatingTransform(
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
-    UpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)

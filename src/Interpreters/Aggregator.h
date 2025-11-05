@@ -54,7 +54,7 @@ struct GroupingSetsParams
 using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
-using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -555,8 +555,12 @@ private:
     Block convertOneBucketToBlock(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
 
     Block mergeAndConvertOneBucketToBlock(
-        ManyAggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, std::atomic<bool> & is_cancelled, UpdaterPtr updater)
-        const;
+        ManyAggregatedDataVariants & variants,
+        Arena * arena,
+        bool final,
+        Int32 bucket,
+        std::atomic<bool> & is_cancelled,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater) const;
 
     Block prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     BlocksList prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;

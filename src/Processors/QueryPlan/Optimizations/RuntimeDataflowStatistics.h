@@ -151,5 +151,5 @@ private:
     std::array<size_t, 5> elapsed{};
 };
 
-using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 }

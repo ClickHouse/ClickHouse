@@ -38,7 +38,7 @@ struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
 class RuntimeDataflowStatisticsCacheUpdater;
-using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 enum class MergeTreeReadType : uint8_t
 {
@@ -172,7 +172,7 @@ public:
         std::vector<MarkRanges> patches_mark_ranges_,
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_,
-        UpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
@@ -233,7 +233,7 @@ private:
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
 
-    UpdaterPtr updater;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;

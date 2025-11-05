@@ -20,7 +20,8 @@ Block ColumnLazyTransform::transformHeader(Block header)
     return header;
 }
 
-ColumnLazyTransform::ColumnLazyTransform(SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, UpdaterPtr updater_)
+ColumnLazyTransform::ColumnLazyTransform(
+    SharedHeader header_, MergeTreeLazilyReaderPtr lazy_column_reader_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : ISimpleTransform(header_, std::make_shared<const Block>(transformHeader(*header_)), true)
     , lazy_column_reader(std::move(lazy_column_reader_))
     , updater(std::move(updater_))

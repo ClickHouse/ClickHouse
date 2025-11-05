@@ -38,7 +38,7 @@ public:
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
         const ContextPtr & context_,
-        UpdaterPtr updater_);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     ~MergeTreeReadPool() override = default;
 
@@ -89,7 +89,7 @@ private:
         explicit BackoffState(size_t threads) : current_threads(threads) {}
     };
 
-    UpdaterPtr updater;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     const BackoffSettings backoff_settings;
     BackoffState backoff_state TSA_GUARDED_BY(mutex);

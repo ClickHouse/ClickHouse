@@ -12,7 +12,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 
 class RuntimeDataflowStatisticsCacheUpdater;
-using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
@@ -22,7 +22,8 @@ using UpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 class ExpressionTransform final : public ISimpleTransform
 {
 public:
-    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_, UpdaterPtr updater_ = nullptr);
+    ExpressionTransform(
+        SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
     String getName() const override { return "ExpressionTransform"; }
 
@@ -34,7 +35,7 @@ protected:
 private:
     ExpressionActionsPtr expression;
 
-    UpdaterPtr updater;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform

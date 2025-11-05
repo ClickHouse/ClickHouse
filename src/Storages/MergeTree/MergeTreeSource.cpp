@@ -136,7 +136,8 @@ private:
 };
 #endif
 
-MergeTreeSource::MergeTreeSource(MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, UpdaterPtr updater_)
+MergeTreeSource::MergeTreeSource(
+    MergeTreeSelectProcessorPtr processor_, const std::string & log_name_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : ISource(std::make_shared<const Block>(processor_->getHeader()))
     , processor(std::move(processor_))
     , log_name(log_name_)

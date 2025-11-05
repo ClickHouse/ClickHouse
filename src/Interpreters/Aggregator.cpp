@@ -1937,7 +1937,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     bool final,
     Int32 bucket,
     std::atomic<bool> & is_cancelled,
-    UpdaterPtr updater) const
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater) const
 {
     auto & merged_data = *variants[0];
     auto method = merged_data.type;

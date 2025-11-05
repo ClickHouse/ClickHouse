@@ -89,17 +89,20 @@ protected:
         MergeTreeReadTask::Readers task_readers,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
-        UpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges,
         MergeTreeReadTask * previous_task,
-        UpdaterPtr updater = nullptr) const;
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     MergeTreeReadTaskPtr createTask(
-        MergeTreeReadTaskInfoPtr read_info, MarkRanges ranges, MergeTreeReadTask * previous_task, UpdaterPtr updater = nullptr) const;
+        MergeTreeReadTaskInfoPtr read_info,
+        MarkRanges ranges,
+        MergeTreeReadTask * previous_task,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater = nullptr) const;
 
     MergeTreeReadTask::Extras getExtras() const;
 

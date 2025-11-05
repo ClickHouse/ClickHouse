@@ -21,7 +21,7 @@ LimitTransform::LimitTransform(
     bool always_read_till_end_,
     bool with_ties_,
     SortDescription description_,
-    UpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
     , limit(limit_)
     , offset(offset_)
