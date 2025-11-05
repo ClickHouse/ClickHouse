@@ -103,7 +103,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     # libFuzzer options
     libfuzzer_options = ""
     # libFuzzer options which are allowed in user's .options in the "libfuzzer" section
-    allowed_libfuzzer_options = (
+    allowed_libfuzzer_options = [
         "seed",                 # Random seed. If 0 (the default), the seed is generated.
         "max_len",              # Maximum length of a test input. If 0 (the default), libFuzzer tries to guess a good value based on the corpus.
         "len_control",          # Try generating small inputs first, then try larger inputs over time. Specifies the rate at which the length limit
@@ -116,16 +116,16 @@ def run_fuzzer(fuzzer: str, timeout: int):
                                 # same limit as rss_limit_mb is applied.
         "only_ascii",           # If 1, generate only ASCII (isprint``+``isspace) inputs. Defaults to 0.
         "dict",                 # Provide a dictionary of input keywords, if absent fuzzer specific dictionary with name <fuzzer>.dict is used when present.
-    )
+    ]
 
-    allowed_merge_libfuzzer_options = (
+    allowed_merge_libfuzzer_options = [
         "timeout",              # Timeout in seconds, default 1200. If an input takes longer than this timeout, the process is treated as a failure case.
         "report_slow_units",    # Not a standard documented flag. Report slowest units if they run for more than this number of seconds. Current default is 10.
         "rss_limit_mb",         # Memory usage limit in Mb, default 2048. Use 0 to disable the limit. If an input requires more than this amount
                                 # of RSS memory to execute, the process is treated as a failure case. The limit is checked in a separate thread every second.
         "malloc_limit_mb",      # If non-zero, the fuzzer will exit if the target tries to allocate this number of Mb with one malloc call. If zero (default)
                                 # same limit as rss_limit_mb is applied.
-    )
+    ]
 
     if INPUT_TIMEOUT:
         allowed_libfuzzer_options.remove("timeout")
