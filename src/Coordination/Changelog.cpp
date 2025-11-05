@@ -1886,7 +1886,10 @@ try
             /// We didn't find the first required log in this changelog so we move to the next changelog
             /// This can happen in case we failed to rename changelog to a name with correct first and last log index
             if (log_read_result.first_read_index == 0)
+            {
+                LOG_TRACE(log, "Changelog contains only logs before {}", start_to_read_from);
                 continue;
+            }
 
             last_log_read_result = std::move(log_read_result);
 
