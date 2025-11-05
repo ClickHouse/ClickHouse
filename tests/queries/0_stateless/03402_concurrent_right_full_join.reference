@@ -82,3 +82,11 @@ right_all_large
 20000	5000	112492500	199990000
 full_all_large
 15500	500	0
+Consistency of results with HashJoin for multiple conditions
+hash	200
+parallel_hash	200
+hash right-only	200
+parallel right-only	200
+hash	400
+parallel_hash	400
+

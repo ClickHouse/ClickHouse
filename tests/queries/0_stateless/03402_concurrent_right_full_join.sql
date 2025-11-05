@@ -125,3 +125,37 @@ DROP TABLE IF EXISTS t_l_null;
 DROP TABLE IF EXISTS t_r_null;
 DROP TABLE IF EXISTS t_l_cmp;
 DROP TABLE IF EXISTS t_r_cmp;
+
+SELECT 'Consistency of results with HashJoin for multiple conditions';
+
+SET allow_experimental_analyzer = 1;
+SET join_use_nulls = 1;
+
+DROP TABLE IF EXISTS l;
+DROP TABLE IF EXISTS r;
+CREATE TABLE l (k UInt8, v UInt8) ENGINE = Memory;
+CREATE TABLE r (k UInt8, v UInt8) ENGINE = Memory;
+
+INSERT INTO l SELECT toUInt8(number), toUInt8(number) FROM numbers(200);
+INSERT INTO r SELECT toUInt8(number), toUInt8(number) FROM numbers(200);
+
+SET max_threads = 8; SET join_algorithm = 'hash';
+SELECT 'hash' AS alg, count() AS cnt
+FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
+
+SET join_algorithm = 'parallel_hash';
+SELECT 'parallel_hash' AS alg, count() AS cnt
+FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
+
+SET join_algorithm = 'hash';
+SELECT 'hash right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
+SET join_algorithm = 'parallel_hash';
+SELECT 'parallel right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
+
+SET join_algorithm = 'hash';
+SELECT 'hash', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
+SET join_algorithm = 'parallel_hash';
+SELECT 'parallel_hash', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
+
+DROP TABLE IF EXISTS l;
+DROP TABLE IF EXISTS r;
