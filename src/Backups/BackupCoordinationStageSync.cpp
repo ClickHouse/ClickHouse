@@ -531,7 +531,7 @@ void BackupCoordinationStageSync::resetConnectedFlag()
 
 void BackupCoordinationStageSync::readCurrentState(Coordination::ZooKeeperWithFaultInjection::Ptr zookeeper)
 {
-    zk_nodes_changed->reset();
+    (*zk_nodes_changed).reset();
 
     /// Get zk nodes and subscribe on their changes.
     Strings new_zk_nodes = zookeeper->getChildren(zookeeper_path, nullptr, zk_nodes_changed);

@@ -697,7 +697,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns) 
                 available_type->getName(),
                 column.type->getName());
 
-        if (unique_names.end() != unique_names.find(column.name))
+        if (unique_names.contains(column.name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 column.name);
@@ -745,7 +745,7 @@ void StorageInMemoryMetadata::check(const NamesAndTypesList & provided_columns, 
                 available_column_type->getName(),
                 provided_column_type->getName());
 
-        if (unique_names.end() != unique_names.find(name))
+        if (unique_names.contains(name))
             throw Exception(ErrorCodes::COLUMN_QUERIED_MORE_THAN_ONCE,
                 "Column {} queried more than once",
                 name);

@@ -360,7 +360,7 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end();
+    return tables.contains(table_name);
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const

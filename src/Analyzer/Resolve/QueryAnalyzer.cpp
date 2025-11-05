@@ -2250,7 +2250,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         for (size_t i = 0; i < strict_transformer_column_names_size; ++i)
         {
             const auto & column_name = (*strict_transformer_column_names)[i];
-            if (used_column_names.find(column_name) == used_column_names.end())
+            if (!used_column_names.contains(column_name))
                 non_matched_column_names.push_back(column_name);
         }
 
