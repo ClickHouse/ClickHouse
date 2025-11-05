@@ -1439,16 +1439,6 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_parts.front()->name,
             projection_parts.back()->name);
 
-        /// Skip parts with empty parent parts.
-        chassert(global_ctx->future_part->parts.size() == projection_parts.size());
-        std::erase_if(
-            projection_parts,
-            [&](const auto & part)
-            {
-                size_t index = &part - projection_parts.data();
-                return global_ctx->future_part->parts[index]->isEmpty();
-            });
-
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {});
         projection_future_part->name = projection->name;
