@@ -43,6 +43,8 @@ Checks: [
 
   '-clang-analyzer-security.ArrayBound', # only false positives
 
+  '-clang-analyzer-cplusplus.NewDeleteLeaks', # false positives, slow
+
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
   '-darwin-*',
