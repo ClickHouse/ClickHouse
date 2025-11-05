@@ -47,7 +47,7 @@ def run(*popenargs,
                 raise
             else:
                 try:
-                    process.wait(timeout=timeout)
+                    process.wait(timeout=kill_timeout)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
@@ -247,6 +247,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
             merge_ok = False
         except Exception as e:
             logging.info("Unexpected exception while running corpus minimization %s: %s", fuzzer, e)
+            traceback.print_exc()
             with open(status_path, "w", encoding="utf-8") as status:
                 status.write(
                     f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
@@ -379,6 +380,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
             )
     except Exception as e:
         logging.info("Unexpected exception running %s: %s", fuzzer, e)
+        traceback.print_exc()
         with open(status_path, "w", encoding="utf-8") as status:
             status.write(
                 f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
