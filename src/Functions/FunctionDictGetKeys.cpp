@@ -186,24 +186,12 @@ public:
         const String dict_name = checkAndGetColumnConst<ColumnString>(arguments[0].column.get())->getValue<String>();
         const String attr_name = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())->getValue<String>();
 
-        auto dict = helper.getDictionary(arguments[0].column);
-        const auto & structure = dict->getStructure();
-        const auto key_types = structure.getKeyTypes();
-
-        const auto & attribute_column_type = structure.getAttribute(attr_name).type;
-
-
-        ColumnWithTypeAndName values_column_raw{arguments[2].column, arguments[2].type, arguments[2].name};
-
-        const bool is_values_column_const = isColumnConst(*arguments[2].column);
-
-        if (is_values_column_const)
+        if (isColumnConst(*arguments[2].column))
         {
-            return executeConstPath(attr_name, arguments[2], key_types, dict, input_rows_count);
+            return executeConstPath(dict_name, attr_name, arguments[2], input_rows_count);
         }
-        ColumnPtr values = castColumnAccurate(values_column_raw, attribute_column_type)->convertToFullIfNeeded();
 
-        return executeVectorPath(dict_name, attr_name, *values, key_types, input_rows_count, dict);
+        return executeVectorPath(dict_name, attr_name, arguments[2], input_rows_count);
     }
 
 private:
@@ -212,12 +200,12 @@ private:
     using HashToBucket = HashMap<UInt128, size_t, HashCRC32<UInt128>>;
 
     ColumnPtr executeConstPath(
+        const String & dict_name,
         const String & attr_name,
         const ColumnWithTypeAndName & argument_values_column,
-        const DataTypes & key_types,
-        const auto & dict,
         size_t input_rows_count) const
     {
+        auto dict = helper.getDictionary(dict_name);
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
@@ -225,6 +213,7 @@ private:
         const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
 
         MutableColumns result_cols;
+        const auto key_types = structure.getKeyTypes();
         for (const auto & key_type : key_types)
         {
             auto col = key_type->createColumn();
@@ -284,11 +273,14 @@ private:
     ColumnPtr executeVectorPath(
         const String & dict_name,
         const String & attr_name,
-        const IColumn & values_column,
-        const DataTypes & key_types,
-        size_t input_rows_count,
-        const auto & dict) const
+        const ColumnWithTypeAndName & argument_values_column,
+        size_t input_rows_count) const
     {
+        auto dict = helper.getDictionary(dict_name);
+        const auto & structure = dict->getStructure();
+        const auto & attribute_column_type = structure.getAttribute(attr_name).type;
+        ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfNeeded();
+
         HashToBucket value_hash_to_bucket_id;
         value_hash_to_bucket_id.reserve(input_rows_count);
 
@@ -305,7 +297,7 @@ private:
 
         for (size_t cur_row_id = 0; cur_row_id < input_rows_count; ++cur_row_id)
         {
-            const UInt128 value_hash = sipHash128AtRow(values_column, cur_row_id);
+            const UInt128 value_hash = sipHash128AtRow(*values_column, cur_row_id);
 
             auto * it = value_hash_to_bucket_id.find(value_hash);
             if (it)
@@ -334,6 +326,8 @@ private:
             else
                 missing_bucket_ids.push_back(bucket_id);
         }
+
+        const auto key_types = structure.getKeyTypes();
 
         if (!missing_bucket_ids.empty())
         {
