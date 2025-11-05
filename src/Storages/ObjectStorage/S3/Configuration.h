@@ -14,6 +14,60 @@ namespace DB
 
 struct S3StorageParsableArguments
 {
+    static constexpr auto max_number_of_arguments_with_structure = 10;
+    static constexpr auto signatures_with_structure
+        = " - url\n"
+          " - url, NOSIGN\n"
+          " - url, format\n"
+          " - url, NOSIGN, format\n"
+          " - url, format, structure\n"
+          " - url, NOSIGN, format, structure\n"
+          " - url, format, structure, compression_method\n"
+          " - url, NOSIGN, format, structure, compression_method\n"
+          " - url, access_key_id, secret_access_key, format, structure\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure\n"
+          " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure, partition_strategy\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, "
+          "partition_columnns_in_data_file\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, "
+          "partition_columnns_in_data_file\n"
+          " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, "
+          "partition_columnns_in_data_file, storage_class_name\n"
+          "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+
+    static constexpr auto max_number_of_arguments_without_structure = max_number_of_arguments_with_structure - 1;
+    /// All possible signatures for S3 storage without structure argument (for example for S3 table engine).
+    static constexpr auto signatures_without_structure
+        = " - url\n"
+          " - url, NOSIGN\n"
+          " - url, format\n"
+          " - url, NOSIGN, format\n"
+          " - url, format, compression_method\n"
+          " - url, NOSIGN, format, compression_method\n"
+          " - url, access_key_id, secret_access_key\n"
+          " - url, access_key_id, secret_access_key, session_token\n"
+          " - url, access_key_id, secret_access_key, format\n"
+          " - url, access_key_id, secret_access_key, session_token, format\n"
+          " - url, access_key_id, secret_access_key, format, compression_method\n"
+          " - url, access_key_id, secret_access_key, session_token, format, compression_method\n"
+          " - url, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy\n"
+          " - url, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, "
+          "partition_columnns_in_data_file\n"
+          "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+
+    static constexpr std::string getSignatures(bool with_structure = true)
+    {
+        return with_structure ? signatures_with_structure : signatures_without_structure;
+    }
+
+    static constexpr size_t getMaxNumberOfArguments(bool with_structure = true)
+    {
+        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
+    }
+
     using Paths = StorageObjectStorageConfiguration::Paths;
     using Path = StorageObjectStorageConfiguration::Path;
     String format = "auto";
@@ -26,16 +80,10 @@ struct S3StorageParsableArguments
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
     HTTPHeaderEntries headers_from_ast;
-    Paths keys;
-    bool static_configuration = true;
-    Path read_path;
+    String path_suffix;
 
 public:
     S3StorageParsableArguments() = default;
-
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
-    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
 };
 
 
@@ -46,49 +94,6 @@ public:
     static constexpr auto type_name = "s3";
     static constexpr auto namespace_name = "bucket";
     /// All possible signatures for S3 storage with structure argument (for example for s3 table function).
-    static constexpr auto max_number_of_arguments_with_structure = 10;
-    static constexpr auto signatures_with_structure =
-        " - url\n"
-        " - url, NOSIGN\n"
-        " - url, format\n"
-        " - url, NOSIGN, format\n"
-        " - url, format, structure\n"
-        " - url, NOSIGN, format, structure\n"
-        " - url, format, structure, compression_method\n"
-        " - url, NOSIGN, format, structure, compression_method\n"
-        " - url, access_key_id, secret_access_key\n"
-        " - url, access_key_id, secret_access_key, session_token\n"
-        " - url, access_key_id, secret_access_key, format\n"
-        " - url, access_key_id, secret_access_key, session_token, format\n"
-        " - url, access_key_id, secret_access_key, format, structure\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure\n"
-        " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure, partition_strategy\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure, partition_strategy, partition_columnns_in_data_file\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columnns_in_data_file\n"
-        " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method, partition_strategy, partition_columnns_in_data_file, storage_class_name\n"
-        "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
-
-    /// All possible signatures for S3 storage without structure argument (for example for S3 table engine).
-    static constexpr auto max_number_of_arguments_without_structure = 9;
-    static constexpr auto signatures_without_structure =
-        " - url\n"
-        " - url, NOSIGN\n"
-        " - url, format\n"
-        " - url, NOSIGN, format\n"
-        " - url, format, compression_method\n"
-        " - url, NOSIGN, format, compression_method\n"
-        " - url, access_key_id, secret_access_key\n"
-        " - url, access_key_id, secret_access_key, session_token\n"
-        " - url, access_key_id, secret_access_key, format\n"
-        " - url, access_key_id, secret_access_key, session_token, format\n"
-        " - url, access_key_id, secret_access_key, format, compression_method\n"
-        " - url, access_key_id, secret_access_key, session_token, format, compression_method\n"
-        " - url, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy\n"
-        " - url, access_key_id, secret_access_key, session_token, format, compression_method, partition_strategy, partition_columnns_in_data_file\n"
-        "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
     StorageS3Configuration() = default;
 
@@ -96,11 +101,6 @@ public:
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return url.storage_name; }
     std::string getNamespaceType() const override { return namespace_name; }
-
-    static constexpr std::string getSignatures(bool with_structure = true)
-    {
-        return with_structure ? signatures_with_structure : signatures_without_structure;
-    }
 
     const S3::S3AuthSettings & getAuthSettings() const { return s3_settings->auth_settings; }
 
@@ -159,37 +159,15 @@ private:
         partition_columns_in_data_file = parsable_arguments.partition_columns_in_data_file;
         partition_strategy = std::move(parsable_arguments.partition_strategy);
         url = std::move(parsable_arguments.url);
-        keys = std::move(parsable_arguments.keys);
         s3_settings = std::move(parsable_arguments.s3_settings);
         s3_capabilities = std::move(parsable_arguments.s3_capabilities);
         headers_from_ast = std::move(parsable_arguments.headers_from_ast);
-        static_configuration = parsable_arguments.static_configuration;
-    }
-
-    size_t getMaxNumberOfArguments(bool with_structure = true) const
-    {
-        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
 
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 };
-
-void fromNamedCollectionSimple(S3StorageParsableArguments & entity_to_initialize, const NamedCollection & collection, ContextPtr context);
-
-void addStructureAndFormatToArgsIfNeededSimple(
-    ASTs & args, const String & structure, const String & format, ContextPtr context, bool with_structure, size_t max_number_of_arguments);
-
-void fromASTSimple(
-    S3StorageParsableArguments & entity_to_initialize,
-    ASTs & args,
-    ContextPtr context,
-    bool with_structure,
-    size_t max_number_of_arguments);
-
-void fromDiskSimple(
-    S3StorageParsableArguments & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure);
 
 bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
 }
