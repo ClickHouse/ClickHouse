@@ -87,7 +87,7 @@ for i in {1..5}; do
 done
 exec 13>&-"""
     preserve_logs = r"""#!/bin/bash
-du -s / | sort -nr | head -30
+du / | sort -nr | head -30
 journalctl -u clickhouse-server > /packages/clickhouse-server.service.log || :
 journalctl -u clickhouse-keeper > /packages/clickhouse-keeper.service.log || :
 cp /var/log/clickhouse-server/clickhouse-server.* /packages/ || :
