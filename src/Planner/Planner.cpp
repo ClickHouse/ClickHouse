@@ -1044,7 +1044,7 @@ void addPreliminaryLimitStep(QueryPlan & query_plan,
         if (do_not_skip_offset)
             limit->setStepDescription("preliminary LIMIT (with OFFSET)");
         else
-            limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+            limit->setStepDescription("preliminary LIMIT");
         query_plan.addStep(std::move(limit));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
@@ -1381,6 +1381,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
+        query_plan.addInterpreterContext(subquery_planner.getPlannerContext()->getQueryContext());
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
     }
 

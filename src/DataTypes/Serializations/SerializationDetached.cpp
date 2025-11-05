@@ -19,6 +19,14 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 {
 }
 
+ISerialization::KindStack SerializationDetached::getKindStack() const
+{
+    auto kind_stack = nested->getKindStack();
+    kind_stack.push_back(Kind::DETACHED);
+    return kind_stack;
+}
+
+
 void SerializationDetached::serializeBinaryBulk(
     const IColumn & column, WriteBuffer & ostr, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t limit) const
 {
