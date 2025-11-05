@@ -88,6 +88,16 @@ bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
+bool updatedAnything(const IQueryPlanStep::UnusedColumnRemovalResult & result)
+{
+    return result != IQueryPlanStep::UnusedColumnRemovalResult::NothingChanged;
+}
+
+bool removedAnyInput(const IQueryPlanStep::UnusedColumnRemovalResult & result)
+{
+    return result == IQueryPlanStep::UnusedColumnRemovalResult::RemovedInputs;
+}
+
 RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, QueryPlan::Node & node)
 {
     bool updated = false;
@@ -101,9 +111,8 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
 
         // Here we never want to remove inputs because the grandchildren might cannot remove outputs
         const auto updated_anything
-            = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false).updated_anything;
+            = updatedAnything(child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false));
 
-        // TODO(antaljanosbenjamin): compare the header with name and types
         // As removeUnusedColumns might leave additional columns in the output, we have get rid of those outputs by adding a new ExpressionStep
         if (updated_anything)
         {
@@ -162,11 +171,11 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes & nodes, 
         const auto remove_result
             = child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), can_remove_inputs);
 
-        if (remove_result.updated_anything)
+        if (updatedAnything(remove_result))
         {
             ++current_update_depth;
 
-            if (remove_result.removed_any_input)
+            if (removedAnyInput(remove_result))
             {
                 auto result = removeChildrenOutputs(nodes, *child_node);
                 switch (result)
