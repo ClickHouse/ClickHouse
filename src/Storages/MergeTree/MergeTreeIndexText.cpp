@@ -314,11 +314,16 @@ TextIndexHeaderPtr deserializeHeader(
     /// Either retrieves a text index header from cache or from disk when cache is disabled.
     const auto load_header = [&]
     {
+        std::pair<String, String> range;
+        readStringBinary(range.first, istr);
+        readStringBinary(range.second, istr);
+
         size_t num_tokens;
         readVarUInt(num_tokens, istr);
+
         auto bloom_filter = deserializeBloomFilter(istr, params, num_tokens);
         auto sparse_index = deserializeSparseIndex(istr);
-        return std::make_shared<TextIndexHeader>(num_tokens, std::move(bloom_filter), std::move(sparse_index));
+        return std::make_shared<TextIndexHeader>(std::move(range), num_tokens, std::move(bloom_filter), std::move(sparse_index));
     };
 
     if (condition_text.useHeaderCache())
@@ -449,6 +454,18 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
     for (const auto & [token, _] : remaining_tokens)
     {
+        if (!header->inDictionaryRange(token.toView()))
+        {
+            if (global_search_mode == TextSearchMode::All)
+            {
+                remaining_tokens.clear();
+                return;
+            }
+
+            /// In case of TextSearchMode::Any, simply do not add the token into block_to_tokens
+            continue;
+        }
+
         size_t idx = header->sparseIndex().upperBound(token);
 
         if (idx != 0)
@@ -743,9 +760,8 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
 }
 
 template <typename Stream>
-void serializeBloomFilter(size_t num_tokens, const BloomFilter & bloom_filter, Stream & stream)
+void serializeBloomFilter(const BloomFilter & bloom_filter, Stream & stream)
 {
-    writeVarUInt(num_tokens, stream.compressed_hashing);
     const char * filter_data = reinterpret_cast<const char *>(bloom_filter.getFilter().data());
     stream.compressed_hashing.write(filter_data, bloom_filter.getFilterSizeBytes());
 }
@@ -784,7 +800,14 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         params,
         logger);
 
-    serializeBloomFilter(tokens_and_postings.size(), bloom_filter, *index_stream);
+    /// range min
+    writeStringBinary(tokens_and_postings.front().first, index_stream->compressed_hashing);
+    /// range max
+    writeStringBinary(tokens_and_postings.back().first, index_stream->compressed_hashing);
+    /// num tokens
+    writeVarUInt(tokens_and_postings.size(), index_stream->compressed_hashing);
+
+    serializeBloomFilter(bloom_filter, *index_stream);
     serializeSparseIndex(sparse_index_block, *index_stream);
 }
 

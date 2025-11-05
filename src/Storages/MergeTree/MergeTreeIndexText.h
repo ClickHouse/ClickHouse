@@ -205,8 +205,9 @@ public:
         ColumnPtr offsets_in_file;
     };
 
-    TextIndexHeader(size_t num_tokens_, BloomFilter bloom_filter_, DictionarySparseIndex sparse_index_)
-        : num_tokens(num_tokens_)
+    TextIndexHeader(std::pair<String, String> range_, size_t num_tokens_, BloomFilter bloom_filter_, DictionarySparseIndex sparse_index_)
+        : range(std::move(range_))
+        , num_tokens(num_tokens_)
         , bloom_filter(std::move(bloom_filter_))
         , sparse_index(std::move(sparse_index_))
     {
@@ -215,6 +216,8 @@ public:
     size_t numberOfTokens() const { return num_tokens; }
     const BloomFilter & bloomFilter() const { return bloom_filter; }
     const DictionarySparseIndex & sparseIndex() const { return sparse_index; }
+
+    bool inDictionaryRange(std::string_view token) const { return (token >= range.first) && (token <= range.second); }
 
     size_t memoryUsageBytes() const
     {
@@ -225,6 +228,7 @@ public:
     }
 
 private:
+    std::pair<String, String> range;
     size_t num_tokens;
     BloomFilter bloom_filter;
     DictionarySparseIndex sparse_index;
