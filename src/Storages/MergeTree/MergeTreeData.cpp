@@ -161,6 +161,9 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric FreezePartThreads;
+    extern const Metric FreezePartThreadsActive;
+    extern const Metric FreezePartThreadsScheduled;
 }
 
 
@@ -1608,7 +1611,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     size_t res = 0;
     for (const auto & part : parts)
     {
-        if ((part_values.empty() || part_values.find(part.data_part->name) != part_values.end())
+        if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
             res += part.data_part->rows_count;
     }
@@ -3660,12 +3663,14 @@ size_t MergeTreeData::clearEmptyParts()
 
 size_t MergeTreeData::clearUnusedPatchParts()
 {
-    if (!(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
+    if (!supportsLightweightUpdate() || !(*getSettings())[MergeTreeSetting::remove_unused_patch_parts])
         return 0;
 
     auto patch_parts = getPatchPartsVectorForInternalUsage();
-    auto regular_parts = getDataPartsVectorForInternalUsage();
+    if (patch_parts.empty())
+        return 0;
 
+    auto regular_parts = getDataPartsVectorForInternalUsage();
     std::unordered_map<std::string_view, UInt64> min_data_version_by_partition;
 
     for (const auto & part : regular_parts)
@@ -8229,7 +8234,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()->at(0);
+                auto index = part->getIndex();
+                const auto & primary_key_column = *index->at(0);
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, primary_key_column[0]);
             }
@@ -8240,7 +8246,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()->at(0);
+                auto index = part->getIndex();
+                const auto & primary_key_column = *index->at(0);
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, primary_key_column[primary_key_column.size() - 1]);
             }
@@ -8786,9 +8793,17 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";
 
-    PartitionCommandsResultInfo result;
 
-    size_t parts_processed = 0;
+    ThreadPool pool(
+        CurrentMetrics::FreezePartThreads,
+        CurrentMetrics::FreezePartThreadsActive,
+        CurrentMetrics::FreezePartThreadsScheduled,
+        local_context->getSettingsRef()[Setting::max_threads]);
+
+    PartitionCommandsResultInfo result;
+    std::mutex result_mutex;
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, "FreezePart");
+
     for (const auto & part : data_parts)
     {
         if (local_context->isCurrentQueryKilled())
@@ -8796,47 +8811,55 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
         if (!matcher(part->info.getPartitionId()))
             continue;
 
-        LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
+        runner(
+            [&]
+            {
+                LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
-        auto data_part_storage = part->getDataPartStoragePtr();
-        String backup_part_path = fs::path(backup_path) / relative_data_path;
+                auto data_part_storage = part->getDataPartStoragePtr();
+                String backup_part_path = fs::path(backup_path) / relative_data_path;
 
-        scope_guard src_flushed_tmp_dir_lock;
-        MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
+                scope_guard src_flushed_tmp_dir_lock;
+                MergeTreeData::MutableDataPartPtr src_flushed_tmp_part;
 
-        auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
-        {
-            // Store metadata for replicated table.
-            // Do nothing for non-replicated.
-            createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
-        };
+                auto callback = [this, &part, &backup_part_path](const DiskPtr & disk)
+                {
+                    // Store metadata for replicated table.
+                    // Do nothing for non-replicated.
+                    createAndStoreFreezeMetadata(disk, part, fs::path(backup_part_path) / part->getDataPartStorage().getPartDirectory());
+                };
 
-        IDataPartStorage::ClonePartParams params
-        {
-            .make_source_readonly = true
-        };
+                IDataPartStorage::ClonePartParams params
+                {
+                    .make_source_readonly = true
+                };
 
-        auto new_storage = data_part_storage->freeze(
-            backup_part_path,
-            part->getDataPartStorage().getPartDirectory(),
-            local_context->getReadSettings(),
-            local_context->getWriteSettings(),
-            callback,
-            params);
+                auto new_storage = data_part_storage->freeze(
+                    backup_part_path,
+                    part->getDataPartStorage().getPartDirectory(),
+                    local_context->getReadSettings(),
+                    local_context->getWriteSettings(),
+                    callback,
+                    params);
 
-        part->is_frozen.store(true, std::memory_order_relaxed);
-        result.push_back(PartitionCommandResultInfo{
-            .command_type = "FREEZE PART",
-            .partition_id = part->info.getPartitionId(),
-            .part_name = part->name,
-            .backup_path = new_storage->getFullRootPath(),
-            .part_backup_path = new_storage->getFullPath(),
-            .backup_name = backup_name,
-        });
-        ++parts_processed;
+                part->is_frozen.store(true, std::memory_order_relaxed);
+                {
+                    std::lock_guard lock(result_mutex);
+                    result.push_back(PartitionCommandResultInfo{
+                        .command_type = "FREEZE PART",
+                        .partition_id = part->info.getPartitionId(),
+                        .part_name = part->name,
+                        .backup_path = new_storage->getFullRootPath(),
+                        .part_backup_path = new_storage->getFullPath(),
+                        .backup_name = backup_name,
+                    });
+                }
+            }, Priority{0});
     }
 
-    LOG_DEBUG(log, "Froze {} parts", parts_processed);
+    runner.waitForAllToFinishAndRethrowFirstError();
+
+    LOG_DEBUG(log, "Froze {} parts", result.size());
     return result;
 }
 
@@ -9534,7 +9557,7 @@ bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_que
 
 bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries) const
 {
-    if (query_id_set.find(query_id) != query_id_set.end())
+    if (query_id_set.contains(query_id))
         return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
@@ -9554,7 +9577,7 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 
 void MergeTreeData::removeQueryIdNoLock(const String & query_id) const
 {
-    if (query_id_set.find(query_id) == query_id_set.end())
+    if (!query_id_set.contains(query_id))
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
     else
         query_id_set.erase(query_id);
@@ -9641,7 +9664,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         auto it = disk_occupation.find(name);
                         if (it != disk_occupation.end())
                         {
-                            if (submerging_big_parts_from_partition.find(part->name) == submerging_big_parts_from_partition.end())
+                            if (!submerging_big_parts_from_partition.contains(part->name))
                             {
                                 it->second += part->getBytesOnDisk();
                                 disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()));
@@ -9663,7 +9686,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             for (const auto & [name, emerging_part] : currently_emerging_big_parts)
             {
                 // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
-                if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
+                if (!committed_big_parts_from_partition.contains(name)
                     && part_info.getPartitionId() == emerging_part.partition_id)
                 {
                     auto it = disk_occupation.find(emerging_part.disk_name);
@@ -9892,18 +9915,21 @@ MergeTreeData::PartitionIdToMinBlockPtr MergeTreeData::getMinDataVersionForEachP
     return std::make_shared<PartitionIdToMinBlock>(std::move(partition_to_min_data_version));
 }
 
-StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr() const
+StorageMetadataPtr MergeTreeData::getInMemoryMetadataPtr(bool bypass_metadata_cache) const /// NOLINT
 {
+    if (bypass_metadata_cache)
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
+
     auto query_context = CurrentThread::get().getQueryContext();
     if (!query_context || !query_context->getSettingsRef()[Setting::enable_shared_storage_snapshot_in_query])
-        return IStorage::getInMemoryMetadataPtr();
+        return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
 
     auto [cache, lock] = query_context->getStorageMetadataCache();
     auto it = cache->find(this);
     if (it != cache->end())
         return it->second;
 
-    return cache->emplace(this, IStorage::getInMemoryMetadataPtr()).first->second;
+    return cache->emplace(this, IStorage::getInMemoryMetadataPtr(bypass_metadata_cache)).first->second;
 }
 
 StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const
@@ -10131,7 +10157,8 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
     for (const auto & name : new_added_disks)
     {
         auto disk = storage_policy->tryGetDiskByName(name);
-        if (disk)
+        /// It's unlikely that newly added disk is broken or readonly, but we check it anyway
+        if (disk && !disk->isBroken() && !disk->isReadOnly())
         {
             disk->createDirectories(relative_data_path);
             disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);

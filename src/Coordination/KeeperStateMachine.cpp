@@ -464,6 +464,7 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession& req
 {
     LockGuardWithStats<false> lock(storage_mutex);
     KeeperResponseForSession response = processReconfiguration(request_for_session);
+    response.response->enqueue_ts = std::chrono::steady_clock::now();
     if (!responses_queue.push(response))
     {
         ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -555,6 +556,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
 
     auto try_push = [&](const KeeperResponseForSession & response)
     {
+        response.response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(response))
         {
             ProfileEvents::increment(ProfileEvents::KeeperCommitsFailed);
@@ -953,6 +955,7 @@ void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSessi
     {
         if (response_for_session.response->xid != Coordination::WATCH_XID)
             response_for_session.request = request_for_session.request;
+        response_for_session.response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(response_for_session))
             LOG_WARNING(log, "Failed to push response with session id {} to the queue, probably because of shutdown", response_for_session.session_id);
     }

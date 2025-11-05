@@ -348,7 +348,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     addFieldAccess(rg, expr, nested_prob);
 }
@@ -499,7 +499,7 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if (nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens)
+    if ((nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens) && rg.nextBool())
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
@@ -698,7 +698,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
         addFieldAccess(rg, expr, 0);
     }
@@ -1419,7 +1419,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 
     addFieldAccess(rg, expr, 6);
