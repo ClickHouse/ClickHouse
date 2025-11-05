@@ -931,10 +931,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
             {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
             {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
-            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
             {"auto_statistics_types", "", "", "New setting"},
             {"exclude_materialize_skip_indexes_on_merge", "", "", "New setting."},
             {"serialization_info_version", "basic", "basic", "New setting"},
