@@ -421,7 +421,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
         if (structure)
         {
@@ -497,7 +497,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1124,7 +1124,7 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     return (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
         || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3));
