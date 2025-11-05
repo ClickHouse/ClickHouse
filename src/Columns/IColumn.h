@@ -8,6 +8,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
+#include <IO/WriteBufferFromString.h>
 #include "config.h"
 
 #include <span>
@@ -146,7 +147,18 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
-    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
+    struct Options
+    {
+        Int64 optimize_const_name_size = -1;
+
+        bool notFull(WriteBufferFromOwnString & buf) const
+        {
+            return optimize_const_name_size < 0 || static_cast<Int64>(buf.count()) <= optimize_const_name_size;
+        }
+    };
+
+    virtual DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const = 0;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n, const Options & options) const;
 
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
@@ -672,7 +684,7 @@ public:
     [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
+    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
     /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
     virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
 
