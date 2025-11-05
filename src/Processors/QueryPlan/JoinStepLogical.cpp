@@ -873,7 +873,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else if (!join_expression.empty())
     {
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected JOIN ON expression {} for {} JOIN",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected JOIN ON expression {} for {} JOIN",
             formatJoinCondition(join_expression), toString(join_operator.kind));
     }
 

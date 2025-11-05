@@ -1,6 +1,8 @@
 import dataclasses
 import json
+import os
 import re
+import tempfile
 import time
 import traceback
 from typing import Dict, List, Optional, Union
@@ -76,6 +78,9 @@ class GH:
                 break
             if not res and "Bad credentials" in err:
                 print("ERROR: GH credentials/auth failure")
+                break
+            if not res and "Resource not accessible" in err:
+                print("ERROR: GH permissions failure")
                 break
             if not res:
                 retry_count += 1
@@ -185,22 +190,33 @@ class GH:
                         f"Appended existing comment [{id_to_update}] tag [{tag}] with [{tag_body}], new [{body}]"
                     )
 
+        # Create temp file for body to avoid shell escaping issues
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".txt", encoding="utf-8"
+        ) as temp_file:
+            temp_file.write(body)
+            temp_file_path = temp_file.name
+
+        res = None
         if id_to_update:
             cmd = f'gh api -X PATCH \
                     -H "Accept: application/vnd.github.v3+json" \
                     "/repos/{repo}/issues/comments/{id_to_update}" \
-                    -f body=\'{body}\''
+                    -F body=@{temp_file_path}'
             print(f"Update existing comments [{id_to_update}]")
             res = cls.do_command_with_retries(cmd)
         else:
             if not only_update:
-                cmd = f'gh pr comment {pr} --body "{body}"'
+                cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
                 print(f"Create new comment")
                 res = cls.do_command_with_retries(cmd)
             else:
                 print(
                     f"WARNING: comment to update not found, tags [{[k for k in comment_tags_and_bodies.keys()]}]"
                 )
+
+        # Clean up temp file
+        os.unlink(temp_file_path)
 
         return res
 
@@ -268,6 +284,44 @@ class GH:
 
         cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login\''
         return Shell.get_output(cmd, verbose=True)
+
+    @classmethod
+    def get_pr_diff(cls, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        cmd = f"gh pr diff {pr} --repo {repo}"
+        return Shell.get_output(cmd, verbose=True)
+
+    @classmethod
+    def update_pr_body(cls, new_body=None, body_file=None, pr=None, repo=None):
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        assert new_body or body_file, "Either new_body or body_file must be provided"
+        assert not (
+            new_body and body_file
+        ), "Cannot provide both new_body and body_file"
+
+        if body_file:
+            # Use file for body to avoid shell escaping issues
+            cmd = f'gh api -X PATCH \
+                -H "Accept: application/vnd.github.v3+json" \
+                "/repos/{repo}/pulls/{pr}" \
+                -F body=@{body_file}'
+        else:
+            # Use inline body (original behavior)
+            escaped_body = new_body.replace("'", "'\"'\"'")
+            cmd = f'gh api -X PATCH \
+                -H "Accept: application/vnd.github.v3+json" \
+                "/repos/{repo}/pulls/{pr}" \
+                -f body=\'{escaped_body}\''
+
+        return cls.do_command_with_retries(cmd)
 
     @classmethod
     def post_commit_status(cls, name, status, description, url):

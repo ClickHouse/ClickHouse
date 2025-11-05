@@ -64,15 +64,15 @@ void SerializationInfo::Data::addDefaults(size_t length)
     num_defaults += length;
 }
 
-SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_)
+SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
     : settings(settings_)
-    , kind(kind_)
+    , kind_stack(kind_stack_)
 {
 }
 
-SerializationInfo::SerializationInfo(ISerialization::Kind kind_, const Settings & settings_, const Data & data_)
+SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_, const Data & data_)
     : settings(settings_)
-    , kind(kind_)
+    , kind_stack(kind_stack_)
     , data(data_)
 {
 }
@@ -81,21 +81,21 @@ void SerializationInfo::add(const IColumn & column)
 {
     data.add(column);
     if (settings.choose_kind)
-        kind = chooseKind(data, settings);
+        kind_stack = chooseKindStack(data, settings);
 }
 
 void SerializationInfo::add(const SerializationInfo & other)
 {
     data.add(other.data);
     if (settings.choose_kind)
-        kind = chooseKind(data, settings);
+        kind_stack = chooseKindStack(data, settings);
 }
 
 void SerializationInfo::remove(const SerializationInfo & other)
 {
     data.remove(other.data);
     if (settings.choose_kind)
-        kind = chooseKind(data, settings);
+        kind_stack = chooseKindStack(data, settings);
 }
 
 
@@ -103,7 +103,7 @@ void SerializationInfo::addDefaults(size_t length)
 {
     data.addDefaults(length);
     if (settings.choose_kind)
-        kind = chooseKind(data, settings);
+        kind_stack = chooseKindStack(data, settings);
 }
 
 void SerializationInfo::replaceData(const SerializationInfo & other)
@@ -113,7 +113,7 @@ void SerializationInfo::replaceData(const SerializationInfo & other)
 
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind, settings, data);
+    return std::make_shared<SerializationInfo>(kind_stack, settings, data);
 }
 
 /// Returns true if all rows with default values of type 'lhs'
@@ -140,38 +140,114 @@ std::shared_ptr<SerializationInfo> SerializationInfo::createWithType(
     const IDataType & new_type,
     const Settings & new_settings) const
 {
-    auto new_kind = kind;
-    if (new_kind == ISerialization::Kind::SPARSE)
+    ISerialization::KindStack new_kind_stack;
+    for (auto kind : kind_stack)
     {
-        if (!new_type.supportsSparseSerialization()
-            || !preserveDefaultsAfterConversion(old_type, new_type))
-            new_kind = ISerialization::Kind::DEFAULT;
+        if (kind == ISerialization::Kind::SPARSE && (!new_type.supportsSparseSerialization() || !preserveDefaultsAfterConversion(old_type, new_type)))
+            continue;
+        new_kind_stack.push_back(kind);
     }
 
     auto new_info = new_type.createSerializationInfo(new_settings);
-    new_info->kind = new_kind;
+    new_info->kind_stack = new_kind_stack;
     return new_info;
 }
 
-void SerializationInfo::serialializeKindBinary(WriteBuffer & out) const
+namespace
 {
-    writeBinary(static_cast<UInt8>(kind), out);
+
+enum class KindStackBinarySerializationType : UInt8
+{
+    /// First 4 added for compatibility with old versions where we didn't have kind stack but a single kind.
+    DEFAULT = 0,
+    SPARSE = 1, /// stack: {Default, Sparse}
+    DETACHED = 2,  /// stack: {Default, Detached}
+    DETACHED_OVER_SPARSE = 3,  /// stack: {Default, Sparse, Detached}
+    REPLICATED = 4,  /// stack: {Default, Replicated}
+
+    COMBINATION = 5, /// other stacks, serialized as number of kinds and all kinds one after another.
+};
+
+}
+
+void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
+{
+    if (kind_stack == ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+    {
+        writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::DEFAULT), out);
+    }
+    else if (kind_stack == ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE})
+    {
+        writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::SPARSE), out);
+    }
+    else if (kind_stack == ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::DETACHED})
+    {
+        writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::DETACHED), out);
+    }
+    else if (kind_stack == ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED})
+    {
+        writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::DETACHED_OVER_SPARSE), out);
+    }
+    else if (kind_stack == ISerialization::KindStack{ISerialization::Kind::DEFAULT, ISerialization::Kind::REPLICATED})
+    {
+        writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::REPLICATED), out);
+    }
+    else
+    {
+        writeBinary(static_cast<UInt8>(KindStackBinarySerializationType::COMBINATION), out);
+        writeVarUInt(kind_stack.size(), out);
+        for (auto kind : kind_stack)
+            writeBinary(static_cast<UInt8>(kind), out);
+    }
 }
 
 void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
 {
-    UInt8 kind_num;
-    readBinary(kind_num, in);
-    auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
-    if (!maybe_kind)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind {}", std::to_string(kind_num));
+    UInt8 type;
+    readBinary(type, in);
+    auto maybe_type = magic_enum::enum_cast<KindStackBinarySerializationType>(type);
+    if (!maybe_type)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind type {}", UInt32(type));
 
-    kind = *maybe_kind;
+    switch (*maybe_type)
+    {
+        case KindStackBinarySerializationType::DEFAULT:
+            kind_stack = {ISerialization::Kind::DEFAULT};
+            break;
+        case KindStackBinarySerializationType::SPARSE:
+            kind_stack = {ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE};
+            break;
+        case KindStackBinarySerializationType::DETACHED:
+            kind_stack = {ISerialization::Kind::DEFAULT, ISerialization::Kind::DETACHED};
+            break;
+        case KindStackBinarySerializationType::DETACHED_OVER_SPARSE:
+            kind_stack = {ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE, ISerialization::Kind::DETACHED};
+            break;
+        case KindStackBinarySerializationType::REPLICATED:
+            kind_stack = {ISerialization::Kind::DEFAULT, ISerialization::Kind::REPLICATED};
+            break;
+        case KindStackBinarySerializationType::COMBINATION:
+        {
+            size_t num_kinds;
+            readVarUInt(num_kinds, in);
+            for (size_t i = 0; i != num_kinds; ++i)
+            {
+                UInt8 kind;
+                readBinary(kind, in);
+                auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind);
+                if (!maybe_kind)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind {}", UInt32(kind));
+                kind_stack.push_back(*maybe_kind);
+            }
+
+            break;
+        }
+    }
 }
 
 void SerializationInfo::toJSON(Poco::JSON::Object & object) const
 {
-    object.set(KEY_KIND, ISerialization::kindToString(kind));
+    object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
     object.set(KEY_NUM_DEFAULTS, data.num_defaults);
     object.set(KEY_NUM_ROWS, data.num_rows);
 }
@@ -185,30 +261,33 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 
     data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
     data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
-    kind = ISerialization::stringToKind(object.getValue<String>(KEY_KIND));
+    kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
 }
 
-ISerialization::Kind SerializationInfo::chooseKind(const Data & data, const Settings & settings)
+ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, const Settings & settings)
 {
+    ISerialization::KindStack kind_stack = {ISerialization::Kind::DEFAULT};
     double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / data.num_rows, 1.0) : 0.0;
-    return ratio > settings.ratio_of_defaults_for_sparse ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
+    if (ratio > settings.ratio_of_defaults_for_sparse)
+        kind_stack.push_back(ISerialization::Kind::SPARSE);
+    return kind_stack;
 }
 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
     : settings(settings_)
 {
-    /// Downgrade to DEFAULT version if `string_serialization_version` is DEFAULT.
+    /// Downgrade to BASIC version if `string_serialization_version` is SINGLE_STREAM.
     ///
     /// Rationale:
-    /// - `DEFAULT` means old serialization format (no per-type specialization).
+    /// - `BASIC` means old serialization format (no per-type specialization).
     /// - `WITH_TYPES` means new format that supports per-type serialization versions,
     ///   where `string_serialization_version` is currently the only one specialization.
     ///
-    /// If `string_serialization_version` is DEFAULT, there is no effective type specialization
+    /// If `string_serialization_version` is SINGLE_STREAM, there is no effective type specialization
     /// in use, so writing `WITH_TYPES` would add no benefit but reduce compatibility.
-    /// Falling back to `DEFAULT` keeps the output fully compatible with older servers.
-    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::DEFAULT)
-        settings.version = MergeTreeSerializationInfoVersion::DEFAULT;
+    /// Falling back to `BASIC` keeps the output fully compatible with older servers.
+    if (settings.string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
+        settings.version = MergeTreeSerializationInfoVersion::BASIC;
 }
 
 SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings_)
@@ -285,10 +364,10 @@ void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
     }
 }
 
-ISerialization::Kind SerializationInfoByName::getKind(const String & column_name) const
+ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const
 {
     auto it = find(column_name);
-    return it != end() ? it->second->getKind() : ISerialization::Kind::DEFAULT;
+    return it != end() ? it->second->getKindStack() : ISerialization::KindStack{ISerialization::Kind::DEFAULT};
 }
 
 MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
@@ -298,7 +377,7 @@ MergeTreeSerializationInfoVersion SerializationInfoByName::getVersion() const
 
 bool SerializationInfoByName::needsPersistence() const
 {
-    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::DEFAULT;
+    return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
@@ -348,7 +427,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
-    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::DEFAULT;
+    MergeTreeSerializationInfoVersion version = MergeTreeSerializationInfoVersion::BASIC;
     {
         size_t version_value = object->getValue<size_t>(KEY_VERSION);
         auto maybe_enum = magic_enum::enum_cast<MergeTreeSerializationInfoVersion>(version_value);
@@ -379,7 +458,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
         }
     }
 
-    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::DEFAULT;
+    MergeTreeStringSerializationVersion string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     if (version >= MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
         /// types_serialization_versions is mandatory in WITH_TYPES mode

@@ -1414,7 +1414,7 @@ Default: 3.
 **Examples**
 
 ```sql
-SET schema_inference_make_columns_nullable = 1
+SET schema_inference_make_columns_nullable = 1;
 DESC format(JSONEachRow, $$
                                 {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
                                 {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
@@ -1699,7 +1699,7 @@ $$)
 
 ### JSON formats with metadata {#json-with-metadata}
 
-Some JSON input formats ([JSON](formats.md#json), [JSONCompact](/interfaces/formats/JSONCompact), [JSONColumnsWithMetadata](/interfaces/formats/JSONColumnsWithMetadata)) contain metadata with column names and types.
+Some JSON input formats ([JSON](/interfaces/formats/JSON), [JSONCompact](/interfaces/formats/JSONCompact), [JSONColumnsWithMetadata](/interfaces/formats/JSONColumnsWithMetadata)) contain metadata with column names and types.
 In schema inference for such formats, ClickHouse reads this metadata.
 
 **Example**
