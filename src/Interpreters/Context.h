@@ -541,7 +541,7 @@ protected:
     PreparedSetsCachePtr prepared_sets_cache;
 
     /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
-    /// This is a per query cache and not shared across queries. 
+    /// This is a per query cache and not shared across queries.
     mutable ReverseLookupCachePtr reverse_lookup_cache;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
