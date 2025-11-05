@@ -152,6 +152,12 @@ protected:
 private:
     void initializeFromParsableArguments(S3StorageParsableArguments && parsable_arguments)
     {
+        format = std::move(parsable_arguments.format);
+        compression_method = std::move(parsable_arguments.compression_method);
+        structure = std::move(parsable_arguments.structure);
+        partition_strategy_type = parsable_arguments.partition_strategy_type;
+        partition_columns_in_data_file = parsable_arguments.partition_columns_in_data_file;
+        partition_strategy = std::move(parsable_arguments.partition_strategy);
         url = std::move(parsable_arguments.url);
         keys = std::move(parsable_arguments.keys);
         s3_settings = std::move(parsable_arguments.s3_settings);
