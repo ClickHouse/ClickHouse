@@ -513,7 +513,7 @@ bool decompress(
             success = decompressImpl<32>(source, dest, source_size, dest_size);
 
         watch.stop();
-        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);
+        statistics.data[best_variant].update(watch.elapsedSeconds(), dest_size);  // NOLINT(clang-analyzer-security.ArrayBound)
 
         return success;
     }
