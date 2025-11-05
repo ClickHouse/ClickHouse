@@ -85,6 +85,23 @@ private:
     bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
+class BearerCredentials
+    : public Credentials
+{
+public:
+    explicit BearerCredentials(const String & user_name_)
+    {
+        user_name = user_name_;
+        is_ready = !user_name.empty();
+    }
+
+    void setToken(const String & token_) { token = token_; }
+    const String & getToken() const { return token; }
+
+private:
+    String token;
+};
+
 class JWTCredentials
     : public Credentials
 {
@@ -95,12 +112,13 @@ public:
 
     void setToken(const String & token_) { token = token_; }
     void setJWKS(const String & jwks_) { jwks = jwks_; }
-    bool verify();
     const String & getToken() const { return token; }
+    bool isValid() const { return valid; }
 
 private:
     String token;
     String jwks;
+    bool valid = false;
 };
 
 class CredentialsWithScramble : public Credentials

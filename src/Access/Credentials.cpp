@@ -39,18 +39,17 @@ String jwtGetUser(const String & jwt_str)
     return decoded_jwt.get_subject();
 }
 
-bool jwtVerify(const String & jwt_str, const String & jwks_str)
+bool jwtVerify(const String & jwt_str, const String & jwks_str, JWTClaims & out)
 {
     auto decoded_jwt = jwt::decode(jwt_str);
     auto jwks = jwt::parse_jwks(jwks_str);
     auto jwk = jwks.get_jwk(decoded_jwt.get_key_id());
 
-    if (!decoded_jwt.has_issuer())
-        throw std::runtime_error("no issuer in JWT");
     if (!decoded_jwt.has_subject())
         throw std::runtime_error("no subject in JWT");
 
-    const auto issuer = decoded_jwt.get_issuer();
+    out.issuer = decoded_jwt.get_issuer();
+    out.subject = decoded_jwt.get_subject();
 
     if (jwk.get_key_type() == "RSA")
     {
@@ -68,7 +67,7 @@ bool jwtVerify(const String & jwt_str, const String & jwks_str)
         else
             throw std::runtime_error("no 'x5c' and missing 'n', 'e' claims in JWK for RSA");
 
-        auto verifier = jwt::verify().allow_algorithm(chooseRSA(decoded_jwt.get_algorithm(), public_key_pem)).with_issuer(issuer);
+        auto verifier = jwt::verify().allow_algorithm(chooseRSA(decoded_jwt.get_algorithm(), public_key_pem)).with_issuer(out.issuer);
         verifier.verify(decoded_jwt);
     }
     else
@@ -180,19 +179,16 @@ JWTCredentials::JWTCredentials(const String & token_, const String & jwks_)
     : token(token_)
     , jwks(jwks_)
 {
-    user_name = jwtGetUser(token);
-    is_ready = !user_name.empty();
-}
-
-bool JWTCredentials::verify()
-{
     if (token.empty())
-        return false;
+        return;
 
     if (jwks.empty())
-        return false;
+        return;
 
-    return jwtVerify(token, jwks);
+    JWTClaims claims;
+    valid = jwtVerify(token, jwks, claims);
+    user_name = claims.subject;
+    is_ready = !user_name.empty();
 }
 
 }

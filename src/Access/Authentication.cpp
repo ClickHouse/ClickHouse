@@ -225,6 +225,37 @@ namespace
         return false;
     }
 
+    bool checkBearerAuthentication(
+        const BearerCredentials * bearer_credentials,
+        const AuthenticationData & authentication_method,
+        const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
+        SettingsChanges & settings)
+    {
+        switch (authentication_method.getType())
+        {
+            case AuthenticationType::JWT:
+            {
+                auto jwks_str = AuthenticationData::Util::digestToString(authentication_method.getPasswordHashBinary());
+                JWTCredentials jwt_creds(bearer_credentials->getToken(), jwks_str);
+                return jwt_creds.isValid() && jwt_creds.getUserName() == bearer_credentials->getUserName();
+            }
+            case AuthenticationType::HTTP:
+            {
+                if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BEARER)
+                {
+                    return external_authenticators.checkHTTPBearerCredentials(
+                        authentication_method.getHTTPAuthenticationServerName(), bearer_credentials->getToken(), client_info, settings);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+
+        return false;
+    }
+
 #if USE_SSL
     bool checkSSLCertificateAuthentication(
         const SSLCertificateCredentials * ssl_certificate_credentials,
@@ -316,11 +347,9 @@ bool Authentication::areCredentialsValid(
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
     }
 
-    if (const auto * jwt_credentials = typeid_cast<const JWTCredentials *>(&credentials))
+    if (const auto * bearer_credentials = typeid_cast<const BearerCredentials *>(&credentials))
     {
-        auto jwks_str = AuthenticationData::Util::digestToString(authentication_method.getPasswordHashBinary());
-        JWTCredentials cred(jwt_credentials->getToken(), jwks_str);
-        return (authentication_method.getType() == AuthenticationType::JWT) && cred.verify();
+        return checkBearerAuthentication(bearer_credentials, authentication_method, external_authenticators, client_info, settings);
     }
 
     if (const auto * scram_shh256_credentials = typeid_cast<const ScramSHA256Credentials *>(&credentials))
