@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_special_serialization_kinds_in_output_formats>1</allow_special_serialization_kinds_in_output_formats>
+        </default>
+    </profiles>
+</clickhouse>
