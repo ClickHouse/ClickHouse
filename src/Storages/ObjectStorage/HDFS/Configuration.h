@@ -8,7 +8,6 @@
 
 namespace DB
 {
-
 class StorageHDFSConfiguration : public StorageObjectStorageConfiguration
 {
 public:

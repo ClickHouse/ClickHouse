@@ -3,17 +3,19 @@
 #include "config.h"
 
 #if USE_AWS_S3
-#include <IO/S3Settings.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Parsers/IAST_fwd.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <IO/S3Settings.h>
+#include <Parsers/IAST_fwd.h>
+#include <Storages/ObjectStorage/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace DB
 {
 
-struct S3StorageParsableArguments
+struct S3StorageParsableArguments : private StorageParsableArguments
 {
+    friend class StorageS3Configuration;
     static constexpr auto max_number_of_arguments_with_structure = 10;
     static constexpr auto signatures_with_structure
         = " - url\n"
@@ -68,14 +70,6 @@ struct S3StorageParsableArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
-    using Paths = StorageObjectStorageConfiguration::Paths;
-    using Path = StorageObjectStorageConfiguration::Path;
-    String format = "auto";
-    String compression_method = "auto";
-    String structure = "auto";
-    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
-    bool partition_columns_in_data_file = true;
-    std::shared_ptr<IPartitionStrategy> partition_strategy;
     S3::URI url;
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;
@@ -83,6 +77,9 @@ struct S3StorageParsableArguments
     String path_suffix;
 
 public:
+    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
+    void fromDiskImpl(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments);
     S3StorageParsableArguments() = default;
 };
 

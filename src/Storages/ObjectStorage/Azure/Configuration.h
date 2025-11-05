@@ -3,17 +3,20 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/ObjectStorage/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+
 
 namespace DB
 {
 class BackupFactory;
 
-struct AzureStorageParsableArguments
+struct AzureStorageParsableArguments : private StorageParsableArguments
 {
+    friend class StorageAzureConfiguration;
     static constexpr auto max_number_of_arguments_with_structure = 10;
     static constexpr auto signatures_with_structure
         = " - connection_string, container_name, blobpath, structure \n"
@@ -49,14 +52,10 @@ struct AzureStorageParsableArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
-    using Paths = StorageObjectStorageConfiguration::Paths;
-    using Path = StorageObjectStorageConfiguration::Path;
-    String format = "auto";
-    String compression_method = "auto";
-    String structure = "auto";
-    PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
-    bool partition_columns_in_data_file = true;
-    std::shared_ptr<IPartitionStrategy> partition_strategy;
+    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
+    void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure, size_t max_number_of_arguments);
+
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
 };
