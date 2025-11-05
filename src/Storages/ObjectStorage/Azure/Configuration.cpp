@@ -151,7 +151,7 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     return connection_params;
 }
 
-void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+void fromNamedCollectionImpl(StorageAzureConfiguration & entity_to_initialalize, const NamedCollection & collection, ContextPtr context)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
@@ -168,7 +168,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
         connection_url = collection.get<String>("storage_account_url");
 
     container_name = collection.get<String>("container");
-    blob_path = collection.get<String>("blob_path");
+    entity_to_initialalize.blob_path = collection.get<String>("blob_path");
 
     if (collection.has("account_name"))
         account_name = collection.get<String>("account_name");
@@ -182,9 +182,10 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     if (collection.has("tenant_id"))
         tenant_id = collection.get<String>("tenant_id");
 
-    structure = collection.getOrDefault<String>("structure", "auto");
-    format = collection.getOrDefault<String>("format", format);
-    compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
+    entity_to_initialalize.structure = collection.getOrDefault<String>("structure", "auto");
+    entity_to_initialalize.format = collection.getOrDefault<String>("format", entity_to_initialalize.format);
+    entity_to_initialalize.compression_method
+        = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
 
     if (collection.has("partition_strategy"))
     {
@@ -196,16 +197,18 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} is not supported", partition_strategy_name);
         }
 
-        partition_strategy_type = partition_strategy_type_opt.value();
+        entity_to_initialalize.partition_strategy_type = partition_strategy_type_opt.value();
     }
 
-    partition_columns_in_data_file = collection.getOrDefault<bool>("partition_columns_in_data_file", partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
+    entity_to_initialalize.partition_columns_in_data_file = collection.getOrDefault<bool>(
+        "partition_columns_in_data_file", entity_to_initialalize.partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE);
 
-    blobs_paths = {blob_path};
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+    entity_to_initialalize.blobs_paths = {entity_to_initialalize.blob_path};
+    entity_to_initialalize.connection_params
+        = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-ASTPtr StorageAzureConfiguration::extractExtraCredentials(ASTs & args)
+static ASTPtr extractExtraCredentials(ASTs & args)
 {
     for (size_t i = 0; i != args.size(); ++i)
     {
@@ -270,38 +273,44 @@ bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std
     return true;
 }
 
-void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+void fromDiskImpl(
+    StorageAzureConfiguration & entity_to_initialize, const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    disk = context->getDisk(disk_name);
-    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
+    entity_to_initialize.disk = context->getDisk(disk_name);
+    const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*entity_to_initialize.disk->getObjectStorage());
 
-    connection_params = azure_object_storage.getConnectionParameters();
-    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
+    entity_to_initialize.connection_params = azure_object_storage.getConnectionParameters();
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, entity_to_initialize.disk->getPath());
 
-    blob_path = "/" + parsing_result.path_suffix;
-    setPathForRead(blob_path.path + "/");
-    setPaths({blob_path.path + "/"});
+    entity_to_initialize.blob_path = "/" + parsing_result.path_suffix;
+    entity_to_initialize.setPathForRead(entity_to_initialize.blob_path.path + "/");
+    entity_to_initialize.setPaths({entity_to_initialize.blob_path.path + "/"});
 
-    blobs_paths = {blob_path};
+    entity_to_initialize.blobs_paths = {entity_to_initialize.blob_path};
     if (parsing_result.format.has_value())
-        format = *parsing_result.format;
+        entity_to_initialize.format = *parsing_result.format;
     if (parsing_result.compression_method.has_value())
-        compression_method = *parsing_result.compression_method;
+        entity_to_initialize.compression_method = *parsing_result.compression_method;
     if (parsing_result.structure.has_value())
-        structure = *parsing_result.structure;
+        entity_to_initialize.structure = *parsing_result.structure;
 }
 
-void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+void fromASTImpl(
+    StorageAzureConfiguration & entity_to_initialalize,
+    ASTs & engine_args,
+    ContextPtr context,
+    bool with_structure,
+    size_t max_number_of_arguments)
 {
     auto extra_credentials = extractExtraCredentials(engine_args);
 
-    if (engine_args.empty() || engine_args.size() > getMaxNumberOfArguments(with_structure))
+    if (engine_args.empty() || engine_args.size() > max_number_of_arguments)
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
-            getMaxNumberOfArguments(with_structure),
-            getSignatures(with_structure));
+            max_number_of_arguments,
+            StorageAzureConfiguration::getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -311,8 +320,9 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     /// for listing tables of Unity Catalog
     if (engine_args.size() == 1)
     {
-        connection_params.endpoint.storage_account_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
-        connection_params.endpoint.container_already_exists = true;
+        entity_to_initialalize.connection_params.endpoint.storage_account_url
+            = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
+        entity_to_initialalize.connection_params.endpoint.container_already_exists = true;
         return;
     }
 
@@ -334,7 +344,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             if (pos_blob_path != std::string::npos)
             {
                 container_name = container_blob_path.substr(0, pos_blob_path);
-                blob_path = container_blob_path.substr(pos_blob_path);
+                entity_to_initialalize.blob_path = container_blob_path.substr(pos_blob_path);
             }
         }
 
@@ -355,17 +365,17 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
             auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
 
-            connection_params.endpoint.storage_account_url = "https://" + name + ".blob.core.windows.net";
+            entity_to_initialalize.connection_params.endpoint.storage_account_url = "https://" + name + ".blob.core.windows.net";
 
             if (!container_name.empty())
             {
-                blob_path.path = container_name + blob_path.path;
+                entity_to_initialalize.blob_path.path = container_name + entity_to_initialalize.blob_path.path;
             }
-            connection_params.endpoint.container_name = container_name_abfss;
+            entity_to_initialalize.connection_params.endpoint.container_name = container_name_abfss;
         }
 
-        blobs_paths = {blob_path};
-        connection_params.endpoint.sas_auth = sas_token;
+        entity_to_initialalize.blobs_paths = {entity_to_initialalize.blob_path};
+        entity_to_initialalize.connection_params.endpoint.sas_auth = sas_token;
 
         return;
     }
@@ -375,14 +385,14 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
     String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
     String container_name = checkAndGetLiteralArgument<String>(engine_args[1], "container");
-    blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
+    entity_to_initialalize.blob_path = checkAndGetLiteralArgument<String>(engine_args[2], "blobpath");
 
     std::optional<String> account_name;
     std::optional<String> account_key;
     std::optional<String> client_id;
     std::optional<String> tenant_id;
 
-    collectCredentials(extra_credentials, client_id, tenant_id, context);
+    StorageAzureConfiguration::collectCredentials(extra_credentials, client_id, tenant_id, context);
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
@@ -394,12 +404,12 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
-            format = fourth_arg;
+            entity_to_initialalize.format = fourth_arg;
         }
         else
         {
             if (with_structure)
-                structure = fourth_arg;
+                entity_to_initialalize.structure = fourth_arg;
             else
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
@@ -411,8 +421,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
-            format = fourth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            entity_to_initialalize.format = fourth_arg;
+            entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
         }
         else
         {
@@ -425,19 +435,20 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto fourth_arg = checkAndGetLiteralArgument<String>(engine_args[3], "format/account_name");
         if (is_format_arg(fourth_arg))
         {
-            format = fourth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            entity_to_initialalize.format = fourth_arg;
+            entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
 
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy/structure");
             if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive))
             {
-                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
+                entity_to_initialalize.partition_strategy_type
+                    = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(sixth_arg, magic_enum::case_insensitive).value();
             }
             else
             {
                 if (with_structure)
                 {
-                    structure = sixth_arg;
+                    entity_to_initialalize.structure = sixth_arg;
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", sixth_arg);
@@ -450,12 +461,12 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/structure");
             if (is_format_arg(sixth_arg))
             {
-                format = sixth_arg;
+                entity_to_initialalize.format = sixth_arg;
             }
             else
             {
                 if (with_structure)
-                    structure = sixth_arg;
+                    entity_to_initialalize.structure = sixth_arg;
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
             }
@@ -467,8 +478,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
         if (is_format_arg(fourth_arg))
         {
-            format = fourth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            entity_to_initialalize.format = fourth_arg;
+            entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
             const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy");
             const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
 
@@ -477,14 +488,14 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
             }
 
-            partition_strategy_type = partition_strategy_type_opt.value();
+            entity_to_initialalize.partition_strategy_type = partition_strategy_type_opt.value();
 
             /// If it's of type String, then it is not `partition_columns_in_data_file`
             if (const auto seventh_arg = tryGetLiteralArgument<String>(engine_args[6], "structure/partition_columns_in_data_file"))
             {
                 if (with_structure)
                 {
-                    structure = seventh_arg.value();
+                    entity_to_initialalize.structure = seventh_arg.value();
                 }
                 else
                 {
@@ -493,7 +504,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             }
             else
             {
-                partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+                entity_to_initialalize.partition_columns_in_data_file
+                    = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
             }
         }
         else
@@ -508,8 +520,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format/account_name");
             if (!is_format_arg(sixth_arg))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            format = sixth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            entity_to_initialalize.format = sixth_arg;
+            entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
         }
     }
     else if (engine_args.size() == 8)
@@ -524,8 +536,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
                 /// When using a connection string, the function only accepts 8 arguments in case `with_structure=true`
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid sequence / combination of arguments");
             }
-            format = fourth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
+            entity_to_initialalize.format = fourth_arg;
+            entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[4], "compression");
             const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[5], "partition_strategy");
             const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
 
@@ -534,9 +546,10 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
             }
 
-            partition_strategy_type = partition_strategy_type_opt.value();
-            partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
-            structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
+            entity_to_initialalize.partition_strategy_type = partition_strategy_type_opt.value();
+            entity_to_initialalize.partition_columns_in_data_file
+                = checkAndGetLiteralArgument<bool>(engine_args[6], "partition_columns_in_data_file");
+            entity_to_initialalize.structure = checkAndGetLiteralArgument<String>(engine_args[7], "structure");
         }
         else
         {
@@ -545,19 +558,20 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
             if (!is_format_arg(sixth_arg))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-            format = sixth_arg;
-            compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+            entity_to_initialalize.format = sixth_arg;
+            entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
 
             auto eighth_arg = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy/structure");
             if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive))
             {
-                partition_strategy_type = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
+                entity_to_initialalize.partition_strategy_type
+                    = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(eighth_arg, magic_enum::case_insensitive).value();
             }
             else
             {
                 if (with_structure)
                 {
-                    structure = eighth_arg;
+                    entity_to_initialalize.structure = eighth_arg;
                 }
                 else
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", eighth_arg);
@@ -572,8 +586,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
         if (!is_format_arg(sixth_arg))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-        format = sixth_arg;
-        compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+        entity_to_initialalize.format = sixth_arg;
+        entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
 
         const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy");
         const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
@@ -582,13 +596,13 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
         }
-        partition_strategy_type = partition_strategy_type_opt.value();
+        entity_to_initialalize.partition_strategy_type = partition_strategy_type_opt.value();
         /// If it's of type String, then it is not `partition_columns_in_data_file`
         if (const auto nineth_arg = tryGetLiteralArgument<String>(engine_args[8], "structure/partition_columns_in_data_file"))
         {
             if (with_structure)
             {
-                structure = nineth_arg.value();
+                entity_to_initialalize.structure = nineth_arg.value();
             }
             else
             {
@@ -597,7 +611,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         }
         else
         {
-            partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+            entity_to_initialalize.partition_columns_in_data_file
+                = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
         }
     }
     else if (engine_args.size() == 10 && with_structure)
@@ -608,8 +623,8 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         auto sixth_arg = checkAndGetLiteralArgument<String>(engine_args[5], "format");
         if (!is_format_arg(sixth_arg))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format {}", sixth_arg);
-        format = sixth_arg;
-        compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
+        entity_to_initialalize.format = sixth_arg;
+        entity_to_initialalize.compression_method = checkAndGetLiteralArgument<String>(engine_args[6], "compression");
 
         const auto partition_strategy_name = checkAndGetLiteralArgument<String>(engine_args[7], "partition_strategy");
         const auto partition_strategy_type_opt = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(partition_strategy_name, magic_enum::case_insensitive);
@@ -618,27 +633,35 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown partition strategy {}", partition_strategy_name);
         }
-        partition_strategy_type = partition_strategy_type_opt.value();
-        partition_columns_in_data_file = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
-        structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
+        entity_to_initialalize.partition_strategy_type = partition_strategy_type_opt.value();
+        entity_to_initialalize.partition_columns_in_data_file
+            = checkAndGetLiteralArgument<bool>(engine_args[8], "partition_columns_in_data_file");
+        entity_to_initialalize.structure = checkAndGetLiteralArgument<String>(engine_args[9], "structure");
     }
 
-    blobs_paths = {blob_path};
-    connection_params = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
+    entity_to_initialalize.blobs_paths = {entity_to_initialalize.blob_path};
+    entity_to_initialalize.connection_params
+        = getConnectionParams(connection_url, container_name, account_name, account_key, client_id, tenant_id, context);
 }
 
-void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
-    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+void addStructureAndFormatToArgsIfNeededImpl(
+    StorageAzureConfiguration & entity_to_initialize,
+    ASTs & args,
+    const String & structure_,
+    const String & format_,
+    ContextPtr context,
+    bool with_structure,
+    size_t max_number_of_arguments)
 {
-    if (disk)
+    if (entity_to_initialize.disk)
     {
-        if (format == "auto")
+        if (entity_to_initialize.format == "auto")
         {
             ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
             auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
-        if (structure == "auto")
+        if (entity_to_initialize.structure == "auto")
         {
             ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
@@ -664,8 +687,12 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
     else
     {
-        if (args.size() < 3 || args.size() > getMaxNumberOfArguments())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 3 to {} arguments in table function azureBlobStorage, got {}", getMaxNumberOfArguments(), args.size());
+        if (args.size() < 3 || args.size() > max_number_of_arguments)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
+                max_number_of_arguments,
+                args.size());
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -806,6 +833,27 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     }
 }
 
+void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
+    ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
+{
+    addStructureAndFormatToArgsIfNeededImpl(*this, args, structure_, format_, context, with_structure, getMaxNumberOfArguments());
 }
 
+void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+{
+    fromNamedCollectionImpl(*this, collection, context);
+}
+
+void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
+{
+    fromASTImpl(*this, engine_args, context, with_structure, getMaxNumberOfArguments(with_structure));
+}
+
+void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    fromDiskImpl(*this, disk_name, args, context, with_structure);
+}
+
+
 #endif
+}

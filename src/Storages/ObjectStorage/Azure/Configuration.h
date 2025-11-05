@@ -62,8 +62,14 @@ public:
     std::string getTypeName() const override { return type_name; }
     std::string getEngineName() const override { return engine_name; }
 
-    std::string getSignatures(bool with_structure = true) const { return with_structure ? signatures_with_structure : signatures_without_structure; }
-    size_t getMaxNumberOfArguments(bool with_structure = true) const { return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure; }
+    static constexpr std::string getSignatures(bool with_structure = true)
+    {
+        return with_structure ? signatures_with_structure : signatures_without_structure;
+    }
+    static constexpr size_t getMaxNumberOfArguments(bool with_structure = true)
+    {
+        return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
+    }
 
     Path getRawPath() const override { return blob_path; }
     const String & getRawURI() const override { return blob_path.path; }
@@ -86,12 +92,11 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
-protected:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
-    ASTPtr extractExtraCredentials(ASTs & args);
-    bool collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context);
+    static bool collectCredentials(
+        ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context);
 
     Path blob_path;
     Paths blobs_paths;
