@@ -88,8 +88,6 @@ def run_shell(name, command, **kwargs):
 def main():
     args = parse_args()
 
-    stop_watch = Utils.Stopwatch()
-
     stages = list(JobStages)
     stage = args.param or JobStages.CHECKOUT_SUBMODULES
     if stage:
@@ -271,9 +269,7 @@ def main():
         )
         res = results[-1].is_ok()
 
-    Result.create_from(
-        results=results, stopwatch=stop_watch, files=files
-    ).complete_job()
+    Result.create_from(results=results, files=files).complete_job()
 
 
 if __name__ == "__main__":

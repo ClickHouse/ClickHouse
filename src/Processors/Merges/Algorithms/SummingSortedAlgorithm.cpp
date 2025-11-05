@@ -573,8 +573,8 @@ static void setRow(Row & row, std::vector<ColumnPtr> & row_columns, const Column
 }
 
 
-SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, ColumnsDefinition & def_)
-    : MergedData(false, max_block_size_rows_, max_block_size_bytes_)
+SummingSortedAlgorithm::SummingMergedData::SummingMergedData(UInt64 max_block_size_rows_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_)
+    : MergedData(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_)
     , def(def_), current_row(def.column_names.size()), current_row_columns(def.column_names.size())
 {
 }
@@ -817,6 +817,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Names & partition_and_sorting_required_columns,
     size_t max_block_size_rows,
     size_t max_block_size_bytes,
+    std::optional<size_t> max_dynamic_subcolumns_,
     const String & sum_function_name,
     const String & sum_function_map_name,
     bool remove_default_values,
@@ -824,7 +825,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, std::move(description_))
     , columns_definition(
           defineColumns(*header_, description, column_names_to_sum, partition_and_sorting_required_columns, sum_function_name, sum_function_map_name, remove_default_values, aggregate_all_columns))
-    , merged_data(max_block_size_rows, max_block_size_bytes, columns_definition)
+    , merged_data(max_block_size_rows, max_block_size_bytes, max_dynamic_subcolumns_, columns_definition)
 {
 }
 

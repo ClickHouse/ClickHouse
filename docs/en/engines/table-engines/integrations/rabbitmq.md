@@ -3,11 +3,11 @@ description: 'This engine allows integrating ClickHouse with RabbitMQ.'
 sidebar_label: 'RabbitMQ'
 sidebar_position: 170
 slug: /engines/table-engines/integrations/rabbitmq
-title: 'RabbitMQ Engine'
+title: 'RabbitMQ table engine'
 doc_type: 'guide'
 ---
 
-# RabbitMQ engine
+# RabbitMQ table engine
 
 This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.com).
 

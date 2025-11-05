@@ -251,6 +251,7 @@ class JobConfigs:
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
             runs_on=RunnerLabels.AMD_LARGE,
+            timeout=3 * 3600,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_RELEASE,
@@ -350,6 +351,7 @@ class JobConfigs:
             ],
         ),
         timeout=900,
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
