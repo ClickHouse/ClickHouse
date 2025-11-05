@@ -2128,18 +2128,19 @@ message WindowDefn {
 }
 
 enum WindowFuncs {
-    WINdense_rank = 1;
-    WINfirst_value = 2;
-    WINlag = 3;
-    WINlagInFrame = 4;
-    WINlast_value = 5;
-    WINleadInFrame = 6;
-    WINlead = 7;
-    WINnth_value = 8;
-    WINntile = 9;
-    WINpercent_rank = 10;
-    WINrank = 11;
-    WINrow_number = 12;
+    WINcume_dist = 1;
+    WINdense_rank = 2;
+    WINfirst_value = 3;
+    WINlag = 4;
+    WINlagInFrame = 5;
+    WINlast_value = 6;
+    WINleadInFrame = 7;
+    WINlead = 8;
+    WINnth_value = 9;
+    WINntile = 10;
+    WINpercent_rank = 11;
+    WINrank = 12;
+    WINrow_number = 13;
 }
 
 message SQLWindowCall {
