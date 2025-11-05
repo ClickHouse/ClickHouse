@@ -1,31 +1,34 @@
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/IColumn_fwd.h>
+#include <base/StringRef.h>
+
+#include <Common/Arena.h>
+#include <Common/Exception.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/SipHash.h>
+
+#include <Core/Block.h>
+#include <Core/Names.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 #include <Functions/IFunction.h>
+
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Context_fwd.h>
+
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 
-#include <Common/Arena.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/Exception.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/PODArray.h>
-#include <Common/SipHash.h>
-
-#include <Common/CacheBase.h>
-#include <Common/LRUCachePolicy.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 
 namespace DB
 {
