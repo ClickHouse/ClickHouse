@@ -44,7 +44,7 @@ struct ParquetMetadataCacheKeyHash
 {
     size_t operator()(const ParquetMetadataCacheKey & key) const
     {
-        return std::hash<String>{}(key.file_path) ^ std::hash<String>{}(key.etag);
+        return std::hash<String>{}(key.file_path + key.etag);
     }
 };
 
