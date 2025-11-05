@@ -8,6 +8,7 @@ select sipHash64('{"a" : 42, "b" : "str", "c" : [{"d" : 1}, {"e" : 2}]}'::JSON(m
 select sipHash64('{"a" : 42, "b" : "str", "c" : [{"d" : 1}, {"e" : 2}]}'::JSON(max_dynamic_types=0));
 select sipHash64('{"a" : 42, "b" : "str", "c" : [{"d" : 1}, {"e" : 2}]}'::JSON(a Int64));
 select sipHash64('{"a" : 42, "b" : "str", "c" : [{"d" : 1}, {"e" : 2}]}'::JSON(a Dynamic));
+select sipHash64('{"a" : 42, "b" : "str", "c" : [{"d" : 1}, {"e" : 2}]}'::JSON(SKIP REGEXP '(abc)'));
 
 select sipHash64('{"a" : "1970-01-01 00:00:00.000000042", "b" : "str", "c" : [{"d" : 1}, {"e" : 2}]}'::JSON);
 

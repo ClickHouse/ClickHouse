@@ -1160,7 +1160,7 @@ void SerializationObject::serializeForHashCalculation(const IColumn & column, si
                 SerializationDynamic::serializeVariantForHashCalculation(
                     *path_info.column,
                     typed_paths_serializations.at(path_info.path),
-                    typed_paths_types.at(String(path_info.path))->getName(),
+                    typed_paths_types.at(String(path_info.path)),
                     path_info.row,
                     ostr);
             }
