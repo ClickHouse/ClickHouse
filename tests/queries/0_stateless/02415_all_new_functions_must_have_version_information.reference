@@ -24,7 +24,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-generateSerialID
 getMaxTableNameLengthForDatabase
 getSubcolumn
 globalIn
