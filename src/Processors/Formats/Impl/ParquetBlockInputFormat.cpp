@@ -22,6 +22,9 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
+#include <Interpreters/Context.h>
+#include <Common/CurrentThread.h>
 #include <base/scope_guard.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -29,7 +32,6 @@
 #include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -604,13 +606,15 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(
     const FormatSettings & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    size_t min_bytes_for_seek_)
+    size_t min_bytes_for_seek_,
+    ParquetMetadataCachePtr metadata_cache_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , metadata_cache(metadata_cache_)
     , pending_chunks(PendingChunk::Compare{.row_group_first = format_settings_.parquet.preserve_order})
     , previous_block_missing_values(getPort().getHeader().columns())
 {
@@ -1350,15 +1354,26 @@ void registerInputFormatParquet(FormatFactory & factory)
         {
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            
+            // Initialize Parquet metadata cache following Iceberg pattern
+            ParquetMetadataCachePtr metadata_cache = nullptr;
+            if (auto context = CurrentThread::getQueryContext())
+            {
+                if (context->getSettingsRef().use_parquet_metadata_cache)
+                    metadata_cache = context->getParquetMetadataCache();
+            }
+            
             if (settings.parquet.use_native_reader_v3)
             {
+                // do we want to use the metadata cache here for v3?
                 return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
                     settings,
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
-                    min_bytes_for_seek);
+                    min_bytes_for_seek,
+                    metadata_cache);
             }
             else
             {
@@ -1368,7 +1383,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                     settings,
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
-                    min_bytes_for_seek);
+                    min_bytes_for_seek,
+                    metadata_cache);
             }
         });
     factory.markFormatSupportsSubsetOfColumns("Parquet");

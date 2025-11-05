@@ -4,6 +4,7 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+#include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
@@ -54,13 +55,15 @@ class ParquetRecordReader;
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
+
     ParquetBlockInputFormat(
         ReadBuffer & buf,
         SharedHeader header,
         const FormatSettings & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        size_t min_bytes_for_seek_);
+        size_t min_bytes_for_seek_,
+        ParquetMetadataCachePtr metadata_cache_ = nullptr);
 
     ~ParquetBlockInputFormat() override;
 
@@ -299,6 +302,8 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;
+    // maybe not needed here?
+    ParquetMetadataCachePtr metadata_cache;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
     /// RandomAccessFile is thread safe, so we share it among threads.

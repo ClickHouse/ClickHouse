@@ -28,6 +28,11 @@ namespace CurrentMetrics
 namespace DB
 {
 
+/*
+Right now this only supports downloaded parquet files.
+We rely on the file path and etag (entity tag) to identify the file uniquely for caching
+Later on, we can implement support for local parquet files
+*/
 struct ParquetMetadataCacheKey
 {
     String file_path;
