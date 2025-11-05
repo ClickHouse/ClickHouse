@@ -43,8 +43,6 @@ class ReverseLookupCache : public CacheBase<CacheKey, SerializedKeys, CacheKeyHa
 public:
     using Base = CacheBase<CacheKey, SerializedKeys, CacheKeyHash, SerializedKeysWeight>;
     using Base::Base;
-
-    static constexpr size_t defaultMaxBytes() { return 100ULL << 20; } // 100 MiB
 };
 
 }

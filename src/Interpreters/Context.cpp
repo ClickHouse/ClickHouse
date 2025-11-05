@@ -320,6 +320,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
+    extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
 namespace MergeTreeSetting
@@ -6919,6 +6920,8 @@ ReverseLookupCache & Context::getReverseLookupCache() const
 {
     auto query_context = getQueryContext();
 
+    const auto & settings_ref = getSettingsRef();
+
     std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
     if (!query_context->reverse_lookup_cache)
     {
@@ -6926,7 +6929,7 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             "LRU",
             CurrentMetrics::end(),
             CurrentMetrics::end(),
-            ReverseLookupCache::defaultMaxBytes(),
+            settings_ref[Setting::max_reverse_dictionary_lookup_cache_size_bytes],
             ReverseLookupCache::NO_MAX_COUNT,
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
