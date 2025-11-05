@@ -37,10 +37,12 @@ def run(*popenargs,
         kwargs['stdout'] = PIPE
         kwargs['stderr'] = PIPE
 
+    stdout = None
+    stderr = None
     with subprocess.Popen(*popenargs, **kwargs) as process:
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
             process.send_signal(kill_signal)
             if kill_signal == signal.SIGKILL:
                 process.wait()
