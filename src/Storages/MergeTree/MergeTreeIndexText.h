@@ -178,15 +178,6 @@ struct DictionaryBlockBase
     size_t upperBound(const StringRef & token) const;
 };
 
-struct DictionarySparseIndex : public DictionaryBlockBase
-{
-    DictionarySparseIndex() = default;
-    DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
-    UInt64 getOffsetInFile(size_t idx) const;
-
-    ColumnPtr offsets_in_file;
-};
-
 struct DictionaryBlock : public DictionaryBlockBase
 {
     DictionaryBlock() = default;
@@ -198,6 +189,15 @@ struct DictionaryBlock : public DictionaryBlockBase
 class TextIndexHeader
 {
 public:
+    struct DictionarySparseIndex : public DictionaryBlockBase
+    {
+        DictionarySparseIndex() = default;
+        DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
+        UInt64 getOffsetInFile(size_t idx) const;
+
+        ColumnPtr offsets_in_file;
+    };
+
     TextIndexHeader(size_t num_tokens_, BloomFilter bloom_filter_, DictionarySparseIndex sparse_index_)
         : num_tokens(num_tokens_)
         , bloom_filter(std::move(bloom_filter_))
@@ -248,15 +248,13 @@ public:
     void resetAfterAnalysis();
 
 private:
-    /// Header of the text index contains the number of tokens, bloom filter and sparse index.
-    void deserializeHeader(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state);
-
     /// Analyzes bloom filters. Removes tokens that are not present in the bloom filter.
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
+    /// Header of the text index contains the number of tokens, bloom filter and sparse index.
     TextIndexHeaderPtr header;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;

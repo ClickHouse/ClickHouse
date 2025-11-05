@@ -102,12 +102,12 @@ size_t DictionaryBlockBase::upperBound(const StringRef & token) const
     return it - range.begin();
 }
 
-DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
+TextIndexHeader::DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_)
     : DictionaryBlockBase(std::move(tokens_)), offsets_in_file(std::move(offsets_in_file_))
 {
 }
 
-UInt64 DictionarySparseIndex::getOffsetInFile(size_t idx) const
+UInt64 TextIndexHeader::DictionarySparseIndex::getOffsetInFile(size_t idx) const
 {
     return assert_cast<const ColumnUInt64 &>(*offsets_in_file).getData()[idx];
 }
@@ -272,14 +272,14 @@ ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
 }
 
 /// TODO: add cache for dictionary sparse index
-DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr)
+TextIndexHeader::DictionarySparseIndex deserializeSparseIndex(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadSparseIndexBlocks);
 
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
-    DictionarySparseIndex sparse_index;
+    TextIndexHeader::DictionarySparseIndex sparse_index;
     sparse_index.tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
 
     auto offsets_in_file = ColumnUInt64::create();
@@ -299,33 +299,29 @@ BloomFilter deserializeBloomFilter(ReadBuffer & istr, const MergeTreeIndexTextPa
 
     return bloom_filter;
 }
-}
 
-void MergeTreeIndexGranuleText::deserializeHeader(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
+TextIndexHeaderPtr deserializeHeader(
+    ReadBuffer & istr,
+    const MergeTreeIndexTextParams & params,
+    const MergeTreeIndexDeserializationState & state)
 {
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
-
     /// Either retrieves a text index header from cache or from disk when cache is disabled.
-    const auto get_header = [&]() -> TextIndexHeaderPtr
+    const auto load_header = [&]
     {
-        const auto load_header = [&]
-        {
-            size_t num_tokens;
-            readVarUInt(num_tokens, istr);
-            auto bloom_filter = deserializeBloomFilter(istr, params, num_tokens);
-            auto sparse_index = deserializeSparseIndex(istr);
-            return std::make_shared<TextIndexHeader>(num_tokens, std::move(bloom_filter), std::move(sparse_index));
-        };
-
-        if (condition_text.useHeaderCache())
-            return condition_text.headerCache()->getOrSet(
-                TextIndexHeaderCache::hash(state.path_to_data_part, state.index_name, state.index_mark),
-                load_header);
-
-        return load_header();
+        size_t num_tokens;
+        readVarUInt(num_tokens, istr);
+        auto bloom_filter = deserializeBloomFilter(istr, params, num_tokens);
+        auto sparse_index = deserializeSparseIndex(istr);
+        return std::make_shared<TextIndexHeader>(num_tokens, std::move(bloom_filter), std::move(sparse_index));
     };
 
-    header = get_header();
+    if (condition_text.useHeaderCache())
+        return condition_text.headerCache()->getOrSet(
+            TextIndexHeaderCache::hash(state.path_to_data_part, state.index_name, state.index_mark), load_header);
+
+    return load_header();
+}
 }
 
 void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
@@ -338,7 +334,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     if (!index_stream || !dictionary_stream)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' must be deserialized with 3 streams: index, dictionary, postings. One of the streams is missing");
 
-    deserializeHeader(*index_stream->getDataBuffer(), state);
+    header = deserializeHeader(*index_stream->getDataBuffer(), params, state);
 
     analyzeBloomFilter(*state.condition);
     analyzeDictionary(*dictionary_stream, state);
@@ -640,7 +636,7 @@ void serializeTokensFrontCoding(
 }
 
 template <typename Stream>
-DictionarySparseIndex serializeTokensAndPostings(
+TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
     const SortedTokensAndPostings & tokens_and_postings,
     Stream & dictionary_stream,
     Stream & postings_stream,
@@ -732,7 +728,7 @@ DictionarySparseIndex serializeTokensAndPostings(
     }
     LOG_TRACE(logger, "Dictionary stats: {}", stats.toString());
 
-    return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
+    return TextIndexHeader::DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
 
 template <typename Stream>
@@ -744,7 +740,7 @@ void serializeBloomFilter(size_t num_tokens, const BloomFilter & bloom_filter, S
 }
 
 template <typename Stream>
-void serializeSparseIndex(const DictionarySparseIndex & sparse_index, Stream & stream)
+void serializeSparseIndex(const TextIndexHeader::DictionarySparseIndex & sparse_index, Stream & stream)
 {
     chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
 
