@@ -350,6 +350,7 @@ class JobConfigs:
             ],
         ),
         timeout=900,
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
