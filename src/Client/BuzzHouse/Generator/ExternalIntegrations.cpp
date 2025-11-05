@@ -69,7 +69,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         {
             SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
-            if (allSettings.find(sv.property()) != allSettings.end())
+            if (allSettings.contains(sv.property()))
             {
                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -187,7 +187,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         {
                             SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
-                            if (allSettings.find(sv.property()) != allSettings.end())
+                            if (allSettings.contains(sv.property()))
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 

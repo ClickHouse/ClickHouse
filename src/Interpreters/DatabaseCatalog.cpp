@@ -600,7 +600,7 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
 {
     assert(!database_name.empty());
-    if (databases.end() != databases.find(database_name))
+    if (databases.contains(database_name))
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", backQuoteIfNeed(database_name));
 }
 
@@ -835,7 +835,7 @@ bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
-    return databases.end() != databases.find(database_name);
+    return databases.contains(database_name);
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

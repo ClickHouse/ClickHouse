@@ -1054,7 +1054,7 @@ bool StatementGenerator::joinedTableOrFunction(
         const std::optional<String> & cluster = tt.getCluster();
         const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+        const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
