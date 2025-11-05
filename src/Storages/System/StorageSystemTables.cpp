@@ -41,6 +41,11 @@ namespace Setting
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
+}
 
 namespace
 {
@@ -283,7 +288,21 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+            StorageMetadataPtr metadata_snapshot;
+            /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
+            try
+            {
+                metadata_snapshot = table->getInMemoryMetadataPtr();
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+                {
+                    columns[res_index++]->insertDefault();
+                    return;
+                }
+                throw;
+            }
 
             NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
             if (!query_parameters_array.empty())
@@ -536,7 +555,18 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
+                {
+                    /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
+                    try
+                    {
+                        metadata_snapshot = table->getInMemoryMetadataPtr();
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE)
+                            throw;
+                    }
+                }
 
                 if (columns_mask[src_index++])
                 {
@@ -842,8 +872,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (table && table->getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
-                        res_columns[res_index++]->insert(*table->getInMemoryMetadataPtr()->definer);
+                    if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
+                        res_columns[res_index++]->insert(*metadata_snapshot->definer);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

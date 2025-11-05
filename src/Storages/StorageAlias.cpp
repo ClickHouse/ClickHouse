@@ -229,34 +229,6 @@ void StorageAlias::rename(const String & /* new_path_to_table_data */, const Sto
     renameInMemory(new_table_id);
 }
 
-StorageInMemoryMetadata StorageAlias::getInMemoryMetadata() const
-{
-    try
-    {
-        return getTargetTable()->getInMemoryMetadata();
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
-            return IStorage::getInMemoryMetadata();
-        throw;
-    }
-}
-
-StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr(bool bypass_metadata_cache) const
-{
-    try
-    {
-        return getTargetTable()->getInMemoryMetadataPtr(bypass_metadata_cache);
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
-            return IStorage::getInMemoryMetadataPtr(bypass_metadata_cache);
-        throw;
-    }
-}
-
 Strings StorageAlias::getDataPaths() const
 {
     try
