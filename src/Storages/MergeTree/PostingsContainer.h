@@ -9,7 +9,6 @@ extern "C" {
 #include <ic.h>
 }
 
-#pragma clang optimize off
 namespace DB
 {
 
