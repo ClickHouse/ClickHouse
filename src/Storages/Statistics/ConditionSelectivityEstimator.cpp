@@ -19,7 +19,7 @@
 namespace DB
 {
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(StorageMetadataPtr metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
@@ -48,7 +48,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(StorageMe
     return estimateRelationProfileImpl(rpn);
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(StorageMetadataPtr metadata, const RPNBuilderTreeNode & node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
 {
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
@@ -147,7 +147,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(StorageMetadataPtr metadata, const ActionsDAG::Node * node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
     RPNBuilderTreeContext tree_context(getContext());
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
@@ -166,7 +166,7 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     return false;
 }
 
-bool ConditionSelectivityEstimator::extractAtomFromTree(StorageMetadataPtr metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
+bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))

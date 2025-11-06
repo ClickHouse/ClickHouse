@@ -39,9 +39,9 @@ class ConditionSelectivityEstimator : public WithContext
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
-    RelationProfile estimateRelationProfile(StorageMetadataPtr metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(StorageMetadataPtr metadata, const ActionsDAG::Node * node) const;
-    RelationProfile estimateRelationProfile(StorageMetadataPtr metadata, const RPNBuilderTreeNode & node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile() const;
 
     bool isStale(const std::vector<DataPartPtr> & data_parts) const;
@@ -89,7 +89,7 @@ private:
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const;
-    bool extractAtomFromTree(StorageMetadataPtr metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
