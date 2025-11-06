@@ -3,14 +3,15 @@
 
 #include <optional>
 #include <base/types.h>
+#include <vector>
 
 namespace DB::Iceberg
 {
-struct PositionDeleteObject
+struct EqualityDeleteObject
 {
     String file_path;
     String file_format;
-    std::optional<String> reference_data_file_path;
+    std::optional<std::vector<Int32>> equality_ids;
+    Int32 schema_id;
 };
 }
-
