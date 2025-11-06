@@ -252,12 +252,16 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(StorageMetadataPtr metad
             else
                 return false;
 
-            column_type = metadata->getColumns().get(column_name).type;
-            column_type = removeLowCardinalityAndNullable(column_type);
+            if (metadata)
+            {
+                const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+                if (column_desc)
+                    column_type = removeLowCardinalityAndNullable(column_desc->type);
+            }
             /// In some cases we need to cast the type of const
-            bool cast_not_needed = metadata != nullptr &&
-                (isNativeInteger(column_type) || isDateTime(column_type))
-                && (isNativeInteger(const_type) || isDateTime(const_type));
+            bool cast_not_needed = !column_type ||
+                ((isNativeInteger(column_type) || isDateTime(column_type))
+                && (isNativeInteger(const_type) || isDateTime(const_type)));
 
             if (!cast_not_needed && !column_type->equals(*const_type))
             {
