@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree
+# Tags: no-fasttest, no-shared-merge-tree, no-replicated-database
 # Tag no-fasttest: requires S3
 # Tag no-shared-merge-tree: does not support replication
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
