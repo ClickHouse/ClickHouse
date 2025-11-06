@@ -88,12 +88,14 @@ namespace KafkaSetting
     extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
 }
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_NOT_ALLOWED;
@@ -455,7 +457,8 @@ KafkaConsumerPtr StorageKafka::createKafkaConsumer(size_t consumer_number)
         getPollTimeoutMillisecond(),
         intermediate_commit,
         stream_cancelled,
-        topics);
+        topics,
+        getSchemaRegistrySkipBytes());
     return kafka_consumer_ptr;
 }
 cppkafka::Configuration StorageKafka::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_info_sink_ptr)
@@ -550,6 +553,21 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
 {
     return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
                                                          : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
+}
+
+size_t StorageKafka::getSchemaRegistrySkipBytes() const
+{
+    constexpr size_t MAX_SKIP_BYTES = 255;
+    size_t skip_bytes = (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value;
+    
+    if (skip_bytes > MAX_SKIP_BYTES)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, 
+                       "kafka_schema_registry_skip_bytes value {} exceeds maximum allowed value of {}", 
+                       skip_bytes, MAX_SKIP_BYTES);
+    }
+    
+    return skip_bytes;
 }
 
 void StorageKafka::threadFunc(size_t idx)
