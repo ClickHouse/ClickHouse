@@ -488,22 +488,13 @@ public:
             bool success = false;
             json_paths[i]->reinitialize();
             JSONStringSerializer json_serializer(col_str);
+            std::vector<Element> elements_to_serialize;
             while ((status = json_paths[i]->getNextItem(current_element)) != VisitorStatus::Exhausted)
             {
                 if (status == VisitorStatus::Ok)
                 {
                     success = true;
-                    if (current_element.isString())
-                    {
-                        auto str = current_element.getString();
-                        json_serializer.addRawString(str);
-                        col_null_map.insert(0);
-                    }
-                    else
-                    {
-                        json_serializer.addElement(current_element);
-                        col_null_map.insert(0);
-                    }
+                    elements_to_serialize.emplace_back(current_element);
                 }
                 else if (status == VisitorStatus::Error)
                 {
@@ -519,8 +510,34 @@ public:
                 col_null.insertDefault();
                 continue;
             }
+
+            auto add_element_to_json_serializer = [&](const Element& element) -> void
+            {
+                if (element.isString())
+                    json_serializer.addRawString(element.getString());
+                else
+                    json_serializer.addElement(element);
+            };
+
+            if (elements_to_serialize.size() == 1) [[ likely ]]
+                add_element_to_json_serializer(elements_to_serialize[0]);
+            else if (elements_to_serialize.size() > 1)
+            {
+                json_serializer.addRawData("[", 1);
+                size_t j = 0;
+                while (j < elements_to_serialize.size() - 1)
+                {
+                    add_element_to_json_serializer(elements_to_serialize[j]);
+                    json_serializer.addRawData(",", 1);
+                    ++j;
+                }
+                add_element_to_json_serializer(elements_to_serialize[j]);
+                json_serializer.addRawData("]", 1);
+            }
+            col_null_map.insert(0);
             json_serializer.commit();
         }
+
         if (dest.getDataType() == TypeIndex::Array)
         {
             auto& offsets = assert_cast<ColumnArray &>(dest).getOffsets();
