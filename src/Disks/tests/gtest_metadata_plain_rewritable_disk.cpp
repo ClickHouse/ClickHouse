@@ -1531,3 +1531,46 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveVirtual)
 
     EXPECT_EQ(listAllBlobs("RemoveRecursiveVirtual"), std::vector<std::string>({}));
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, VirtualSubpathTrim)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("VirtualSubpathTrim");
+    auto object_storage = getObjectStorage("VirtualSubpathTrim");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->createDirectoryRecursive("/A/B/C/D/E");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/D/E"));
+
+    EXPECT_EQ(listAllBlobs("VirtualSubpathTrim"), std::vector<std::string>({
+        "./VirtualSubpathTrim/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./VirtualSubpathTrim/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+    }));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("/A/B/C/D/E");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D/E"));
+
+    metadata = restartMetadataStorage("VirtualSubpathTrim");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D/E"));
+
+    EXPECT_EQ(listAllBlobs("VirtualSubpathTrim"), std::vector<std::string>({
+        "./VirtualSubpathTrim/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+    }));
+}
