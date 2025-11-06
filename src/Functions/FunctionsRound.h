@@ -419,7 +419,7 @@ public:
         /// clang-21 vectorization on aarch64 shows 20% performance decrease.
         /// Let's use scalar variant instead.
 #if defined(__aarch64__)
-        _Pragma("clang loop vectorize(false)")
+        _Pragma("clang loop vectorize(disable)")
 #endif
         while (p_in < end_in)
         {
