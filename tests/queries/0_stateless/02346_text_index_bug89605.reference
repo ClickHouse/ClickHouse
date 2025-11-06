@@ -1,9 +1,5 @@
 sparseGrams tokenizer is provided to hasAnyTokens and hasAllTokens functions
-2
-5
+2048
+4096
 sparseGrams tokenizer is provided to the tokens function
-['Ali','lic','ick','lick']
-['cli','lic','ick','lick','ckh','kho','ckho','lickho','hou','ous','hous','use']
-['cli','lic','ick','lick','ckb','lickb','kbe','ben','enc','benc','kbenc','nch']
-['Eli','lic','ick','lick']
-['Ali','lic','ick','lick']
+32768

@@ -15,14 +15,13 @@ CREATE TABLE tab
   INDEX id_msg msg TYPE text(tokenizer = sparseGrams)
 )
 ENGINE = MergeTree()
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS index_granularity = 128;
 
-INSERT INTO tab VALUES
-  (1, 'Alick'),
-  (2, 'clickhouse'),
-  (3, 'clickbench'),
-  (4, 'Elick'),
-  (5, 'Alick');
+INSERT INTO tab SELECT number, 'alick' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'clickhouse' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'clickbench' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'blick' FROM numbers(1024);
 
 
 SELECT count() FROM tab WHERE hasAllTokens(msg, sparseGrams('click'));
@@ -42,13 +41,11 @@ CREATE TABLE tab
 ENGINE = MergeTree()
 ORDER BY tuple();
 
-INSERT INTO tab VALUES
-  (1, 'Alick'),
-  (2, 'clickhouse'),
-  (3, 'clickbench'),
-  (4, 'Elick'),
-  (5, 'Alick');
+INSERT INTO tab SELECT number, 'alick' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'clickhouse' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'clickbench' FROM numbers(1024);
+INSERT INTO tab SELECT number, 'blick' FROM numbers(1024);
 
-SELECT tokens(msg, 'sparseGrams') FROM tab;
+SELECT sum(length(tokens(msg, 'sparseGrams'))) FROM tab;
 
 DROP TABLE tab;
