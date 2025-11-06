@@ -684,7 +684,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     }
 
     throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 range [0 - 1)",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
         applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 

@@ -1524,7 +1524,7 @@ static std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const ASTPtr & node
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 [0 - 1)",
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
         applyVisitor(FieldVisitorToString(), field),
         expr);
 }
@@ -3372,10 +3372,10 @@ void InterpreterSelectQuery::executeLimit(QueryPlan & query_plan)
         }
 
         if (lim_info.is_limit_length_negative && lim_info.fractional_offset > 0)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET yet");
 
         if (lim_info.is_limit_offset_negative && lim_info.fractional_limit > 0)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET yet");
 
         /// only one of limit_length or fractional_limit should have a value not both
         if (lim_info.limit_length && lim_info.fractional_limit > 0)

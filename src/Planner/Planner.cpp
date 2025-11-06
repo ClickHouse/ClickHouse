@@ -389,7 +389,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
 
     throw Exception(
         ErrorCodes::INVALID_LIMIT_EXPRESSION,
-        "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float64 range [0 - 1)",
+        "The value {} of LIMIT/OFFSET expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
         applyVisitor(FieldVisitorToString(), field));
 }
 
@@ -1032,11 +1032,13 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
 void addLimitByStep(
     QueryPlan & query_plan, const LimitByAnalysisResult & limit_by_analysis_result, const QueryNode & query_node, bool do_not_skip_offset)
 {
+    /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_limit = query_node.getLimitByLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     UInt64 limit_by_offset = 0;
 
     if (query_node.hasLimitByOffset())
     {
+        /// Constness of LIMIT BY offset is validated during query analysis stage
         limit_by_offset = query_node.getLimitByOffset()->as<ConstantNode &>().getValue().safeGet<UInt64>();
     }
 
@@ -1332,10 +1334,10 @@ void addLimitStep(
     bool is_limit_offset_negative = query_analysis_result.is_limit_offset_negative;
 
     if (is_limit_length_negative && fractional_offset > 0)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Negative LIMIT is not supported with fractional OFFSET yet");
 
     if (is_limit_offset_negative && fractional_limit > 0)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT is not supported with negative OFFSET yet");
 
     /// only one of limit_length or fractional_limit should have a value not both
     if (limit_length && fractional_limit > 0)

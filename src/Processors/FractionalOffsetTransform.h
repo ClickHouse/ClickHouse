@@ -12,7 +12,7 @@ namespace DB
 {
 
 /// Implementation for OFFSET N (without limit)
-//  where N is a fraction from 0.1 to 0.9 representing a Percentage.
+//  where N is a fraction in (0, 1) representing a percentage.
 //
 /// This processor supports multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
