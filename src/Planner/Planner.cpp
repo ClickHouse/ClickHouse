@@ -1441,8 +1441,13 @@ void addOffsetStep(QueryPlan & query_plan, const QueryAnalysisResult & query_ana
     if ((!query_analysis_result.limit_length && query_analysis_result.fractional_limit == 0)
         && (query_analysis_result.limit_offset || query_analysis_result.fractional_offset > 0))
     {
-        // only one of limit_offset or fractional_offset will have a value
-        // if fractional_offset has value is_offset_negative should be always false
+        // only one of limit_offset or fractional_offset should have a value not both
+        if (query_analysis_result.limit_offset && query_analysis_result.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+            
+        // negative fractional offset is not supported yet
+        if (query_analysis_result.is_limit_offset_negative && query_analysis_result.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
 
         if (query_analysis_result.is_limit_offset_negative) [[unlikely]]
         {

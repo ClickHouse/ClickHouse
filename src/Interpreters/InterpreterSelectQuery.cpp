@@ -3467,8 +3467,13 @@ void InterpreterSelectQuery::executeOffset(QueryPlan & query_plan)
     {
         const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        // only one of limit_offset or fractional_offset will have a value
-        // if fractional_offset has value is_offset_negative should be always false
+        // only one of limit_offset or fractional_offset should have a value not both
+        if (lim_info.limit_offset && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both absolute and fractional values non-zero");
+
+        // negative fractional offset is not supported yet
+        if (lim_info.is_limit_offset_negative && lim_info.fractional_offset > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "OFFSET can't have both negative and fractional values non-zero");
 
         if (lim_info.is_limit_offset_negative) [[unlikely]]
         {
