@@ -6022,7 +6022,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
             }
 
             if (!can_execute_alter_on_disk)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Partition operation ALTER TABLE {} is not supported for disk '{}'", command.typeToString(), disk.getName());
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Partition operation ALTER TABLE {} is not supported for disk '{}'", command.typeToString(), disk->getName());
         }
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
