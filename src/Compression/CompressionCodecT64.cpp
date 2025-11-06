@@ -10,7 +10,6 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <bit>
-
 namespace DB
 {
 
@@ -505,13 +504,9 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     src += bytes_to_skip;
     dst += bytes_to_skip;
 
-    if (bytes_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not multiplier of {}",
-                        bytes_size, sizeof(T));
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
-
     T min;
     T max;
     findMinMax<T>(src, bytes_size, min, max);
@@ -568,15 +563,6 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     bytes_size -= bytes_to_skip;
     src += bytes_to_skip;
     dst += bytes_to_skip;
-
-    if (bytes_size < header_size)
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, data size ({}) is less than the size of T64 header",
-                        bytes_size);
-
-    if (uncompressed_size % sizeof(T))
-        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
-                        " isn't a multiple of the data type size ({})",
-                        uncompressed_size, sizeof(T));
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
