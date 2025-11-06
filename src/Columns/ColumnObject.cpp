@@ -268,79 +268,90 @@ void ColumnObject::get(size_t n, Field & res) const
     res = (*this)[n];
 }
 
-std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
+DataTypePtr ColumnObject::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    WriteBufferFromOwnString wb;
-    wb << '{';
+    if (options.notFull(name_buf))
+        name_buf << '{';
 
     bool first = true;
 
-    for (const auto & [path, column] : typed_paths)
+    if (options.notFull(name_buf))
     {
-        const auto & [value, type] = column->getValueNameAndType(n);
-
-        if (first)
-            first = false;
-        else
-            wb << ", ";
-
-        writeDoubleQuoted(path, wb);
-        wb << ": " << value;
-    }
-
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        /// Output only non-null values from dynamic paths. We cannot distinguish cases when
-        /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
-        if (column->isNullAt(n))
-            continue;
-
-        const auto & [value, type] = column->getValueNameAndType(n);
-
-        if (first)
-            first = false;
-        else
-            wb << ", ";
-
-        writeDoubleQuoted(path, wb);
-        wb << ": " << value;
-    }
-
-    const auto & shared_data_offsets = getSharedDataOffsets();
-    const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
-    size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
-    size_t end = shared_data_offsets[n];
-    for (size_t i = start; i != end; ++i)
-    {
-        if (first)
-            first = false;
-        else
-            wb << ", ";
-
-        String path = shared_paths->getDataAt(i).toString();
-        writeDoubleQuoted(path, wb);
-
-        auto value_data = shared_values->getDataAt(i);
-        ReadBufferFromMemory buf(value_data.data, value_data.size);
-        auto decoded_type = decodeDataType(buf);
-
-        if (isNothing(decoded_type))
+        for (const auto & [path, column] : typed_paths)
         {
-            wb << ": NULL";
-            continue;
+            if (!options.notFull(name_buf))
+                break;
+
+            if (first)
+                first = false;
+            else
+                name_buf << ", ";
+            writeDoubleQuoted(path, name_buf);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
         }
-
-        const auto column = decoded_type->createColumn();
-        decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
-
-        const auto & [value, type] = column->getValueNameAndType(0);
-
-        wb << ": " << value;
     }
 
-    wb << "}";
+    if (options.notFull(name_buf))
+    {
+        for (const auto & [path, column] : dynamic_paths_ptrs)
+        {
+            if (!options.notFull(name_buf))
+                break;
 
-    return {wb.str(), std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON)};
+            /// Output only non-null values from dynamic paths. We cannot distinguish cases when
+            /// dynamic path has Null value and when it's absent in the row and consider them equivalent.
+            if (column->isNullAt(n))
+                continue;
+
+            if (first)
+                first = false;
+            else
+                name_buf << ", ";
+            writeDoubleQuoted(path, name_buf);
+            column->getValueNameAndTypeImpl(name_buf, n, options);
+        }
+    }
+
+    if (options.notFull(name_buf))
+    {
+        const auto & shared_data_offsets = getSharedDataOffsets();
+        const auto [shared_paths, shared_values] = getSharedDataPathsAndValues();
+        size_t start = shared_data_offsets[static_cast<ssize_t>(n) - 1];
+        size_t end = shared_data_offsets[n];
+        for (size_t i = start; i != end; ++i)
+        {
+            if (!options.notFull(name_buf))
+                break;
+
+            if (first)
+                first = false;
+            else
+                name_buf << ", ";
+
+            String path = shared_paths->getDataAt(i).toString();
+            writeDoubleQuoted(path, name_buf);
+
+            auto value_data = shared_values->getDataAt(i);
+            ReadBufferFromMemory buf(value_data.data, value_data.size);
+            auto decoded_type = decodeDataType(buf);
+
+            if (isNothing(decoded_type))
+            {
+                name_buf << ": NULL";
+                continue;
+            }
+
+            const auto column = decoded_type->createColumn();
+            decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
+
+            column->getValueNameAndTypeImpl(name_buf, 0, options);
+        }
+    }
+
+    if (options.notFull(name_buf))
+        name_buf << "}";
+
+    return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
 }
 
 bool ColumnObject::isDefaultAt(size_t n) const
@@ -1660,7 +1671,7 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Object column");
@@ -1718,7 +1729,8 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     dynamic_paths.clear();
     dynamic_paths_ptrs.clear();
     sorted_dynamic_paths.clear();
-    max_dynamic_paths = global_max_dynamic_paths;
+    /// If max_dynamic_subcolumns is set, use it as max number of paths.
+    max_dynamic_paths = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_paths) : global_max_dynamic_paths;
     Statistics new_statistics(Statistics::Source::MERGE);
 
     /// Check if the number of all dynamic paths exceeds the limit.
@@ -1782,7 +1794,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
             if (it != source_object.dynamic_paths.end())
                 dynamic_path_source_columns.push_back(it->second);
         }
-        column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns);
+        column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns, max_dynamic_subcolumns);
     }
 
     /// Typed paths also can contain types with dynamic structure.
@@ -1792,7 +1804,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         typed_path_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
-        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns);
+        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns, max_dynamic_subcolumns);
     }
 }
 

@@ -407,13 +407,17 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
+DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+    {
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+    }
 
-    return variants[discr]->getValueNameAndType(offsetAt(n));
+    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -1753,7 +1757,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
@@ -1770,7 +1774,7 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source
     }
 
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

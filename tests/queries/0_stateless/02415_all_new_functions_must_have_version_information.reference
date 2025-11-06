@@ -12,7 +12,6 @@ __getScalar
 __scalarSubqueryResult
 caseWithExpression
 currentQueryID
-dateDiff
 dotProduct
 extractKeyValuePairs
 extractKeyValuePairsWithEscaping
@@ -24,7 +23,6 @@ formatQuery
 formatQueryOrNull
 formatQuerySingleLine
 formatQuerySingleLineOrNull
-generateSerialID
 getMaxTableNameLengthForDatabase
 getSubcolumn
 globalIn

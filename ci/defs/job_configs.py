@@ -20,6 +20,7 @@ build_digest_config = Job.CacheDigestConfig(
     include_paths=[
         "./src",
         "./contrib/",
+        "./.gitmodules",
         "./CMakeLists.txt",
         "./PreLoad.cmake",
         "./cmake",
@@ -136,6 +137,7 @@ class JobConfigs:
                 "./tests/clickhouse-test",
                 "./src",
                 "./contrib/",
+                "./.gitmodules",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -249,6 +251,7 @@ class JobConfigs:
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
             runs_on=RunnerLabels.AMD_LARGE,
+            timeout=3 * 3600,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_RELEASE,
@@ -257,6 +260,20 @@ class JobConfigs:
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
+            ],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
+    extra_validation_build_jobs = common_build_job_config.set_post_hooks(
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
+            "python3 ./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        ],
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_TSAN,
+            provides=[
+                ArtifactNames.CH_ARM_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -334,6 +351,7 @@ class JobConfigs:
             ],
         ),
         timeout=900,
+        post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
@@ -867,7 +885,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_AMD,
                 requires=[ArtifactNames.CH_AMD_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -876,7 +894,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ],
     )
@@ -903,7 +921,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.FUNC_TESTER_ARM,
                 requires=[ArtifactNames.CH_ARM_RELEASE],
             )
-            for total_batches in (3,)
+            for total_batches in (6,)
             for batch in range(1, total_batches + 1)
         ]
     )
@@ -947,7 +965,7 @@ class JobConfigs:
         run_in_docker="clickhouse/docs-builder",
         requires=[JobNames.STYLE_CHECK, ArtifactNames.CH_ARM_BINARY],
     )
-    docker_sever = Job.Config(
+    docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
