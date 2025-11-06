@@ -142,7 +142,7 @@ void SerializationStringSize::deserializeWithoutStringData(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        for (size_t i = 0; i < rows_offset; ++i)
+        for (size_t i = 0; unlikely(i < rows_offset); ++i)
         {
             UInt64 size;
             readVarUInt(size, *stream);
@@ -155,9 +155,9 @@ void SerializationStringSize::deserializeWithoutStringData(
         mutable_column_data.resize(prev_size + limit);
 
         size_t num_read_rows = 0;
-        for (; num_read_rows < limit; ++num_read_rows)
+        for (; likely(num_read_rows < limit); ++num_read_rows)
         {
-            if (stream->eof())
+            if (unlikely(stream->eof()))
                 break;
             UInt64 size;
             readVarUInt(size, *stream);
