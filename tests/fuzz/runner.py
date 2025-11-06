@@ -15,7 +15,6 @@ DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
-KILL_TIMEOUT = 20
 
 INPUT_TIMEOUT = 20 # for debugging
 
@@ -130,9 +129,12 @@ def run_fuzzer(fuzzer: str, timeout: int):
                                 # same limit as rss_limit_mb is applied.
     ]
 
+    input_timeout = 1200 # libFuzzer default value for '-timeout' option
+
     if INPUT_TIMEOUT:
         allowed_libfuzzer_options.remove("timeout")
         allowed_merge_libfuzzer_options.remove("timeout")
+        input_timeout = INPUT_TIMEOUT
 
     use_fuzzer_args = False
 
@@ -175,6 +177,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     for key, value in parser["libfuzzer"].items()
                     if key in allowed_merge_libfuzzer_options
                 )
+                input_timeout = parser["libfuzzer"].getint("timeout", fallback=input_timeout)
 
             # FUZZER_ARGS flag is used to make it deliver libFuzzer arguments throught FUZZER_ARGS environment variable
             # for special cases of fuzzers written in the way they don't use libFuzzer framework, but rather
@@ -237,11 +240,18 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     errors="replace",
                     timeout=timeout,
                     kill_signal=signal.SIGUSR1,
-                    kill_timeout= KILL_TIMEOUT,
+                    kill_timeout= input_timeout * 2,
                     env=env,
                 )
         except subprocess.CalledProcessError as e:
             logging.info("Unexpected termination while running corpus minimization %s: %s", fuzzer, e)
+            with open(status_path, "w", encoding="utf-8") as status:
+                status.write(
+                    f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"
+                )
+            merge_ok = False
+        except subprocess.TimeoutExpired:
+            logging.info("Unexpected timeout while finishing corpus minimization %s", fuzzer)
             with open(status_path, "w", encoding="utf-8") as status:
                 status.write(
                     f"ERROR\n{stopwatch.start_time_str}\n{stopwatch.duration_seconds}\n"

@@ -191,6 +191,7 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     error_source = ""
     error_reason = ""
     test_unit = ""
+    trace_file = ""
     stack_trace = []
     TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
     error_info = [] # [(error_source, error_reason, test_unit, trace_file), ...]
@@ -203,6 +204,14 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 match = re.search(ERROR_END, line)
                 if match:
                     is_error = False
+                    if test_unit:
+                        error_info.append((error_source, error_reason, test_unit, trace_file))
+                        # reset for next error
+                        error_source = ""
+                        error_reason = ""
+                        test_unit = ""
+                        trace_file = ""
+                        stack_trace = []
                     continue
                 stack_trace.append(line)                
                 continue
@@ -222,12 +231,14 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 trace_path = f"{fuzzer_result_dir}/{trace_file}"
                 with open(trace_path, "w", encoding="utf-8") as tracef:
                     tracef.write("\n".join(stack_trace))
-                error_info.append((error_source, error_reason, test_unit, trace_file))
-                # reset for next error
-                error_source = ""
-                error_reason = ""
-                test_unit = ""
-                stack_trace = []
+                if len(stack_trace) > 0:
+                    error_info.append((error_source, error_reason, test_unit, trace_file))
+                    # reset for next error
+                    error_source = ""
+                    error_reason = ""
+                    test_unit = ""
+                    trace_file = ""
+                    stack_trace = []
 
     return error_info
 
