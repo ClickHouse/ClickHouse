@@ -269,7 +269,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute( /* 
     if (!exists)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path);
     else if (!remote_info.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+        return;  /// No-Op because of https://github.com/ClickHouse/ClickHouse/pull/80393
     else if (auto children = fs_tree.listDirectory(path); !children.empty())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty. Children: [{}]", path, fmt::join(children, ", "));
     else if (path == "/")
@@ -592,10 +592,15 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
     if (path.empty())
         return;
 
-    if (fs_tree.existsDirectory(path).first)
+    if (auto [exists, remote_info] = fs_tree.existsDirectory(path); exists && remote_info)
     {
         move_tried = true;
         move_to_tmp_op->execute();
+    }
+    else if (exists)
+    {
+        /// No-Op because of https://github.com/ClickHouse/ClickHouse/pull/80393
+        return;
     }
 }
 
