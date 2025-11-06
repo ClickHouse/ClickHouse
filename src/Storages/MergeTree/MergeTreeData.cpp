@@ -6005,6 +6005,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     };
 
                     can_execute_alter_on_disk = std::ranges::contains(supported_commands, command.type);
+                    break;
                 }
                 case MetadataStorageType::StaticWeb:
                 {
