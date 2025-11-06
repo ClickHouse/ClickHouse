@@ -131,7 +131,7 @@ And executing it with ClickHouse Client to export it to a `trace.json` file that
 echo $(clickhouse client --query "$(cat chrome_trace.sql)") > trace.json
 ```
 
-We can ommit the stack part if we want a more compact but less informative trace.
+We can omit the stack part if we want a more compact but less informative trace.
 
 **See also**
 
