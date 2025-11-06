@@ -56,7 +56,7 @@ def test_schema_registry_skip_bytes_validation(kafka_cluster):
         )
         # This should succeed without errors
         instance.query(create_query)
-        instance.query(f"DROP TABLE IF EXISTS {table_name}")
+        instance.query(f"DROP TABLE IF EXISTS test.{table_name}")
     
     # Test invalid values: 256 and above should be rejected at table creation
     invalid_values = [256, 300, 1000, 65536]
@@ -119,20 +119,20 @@ def test_schema_registry_skip_bytes_message_processing(kafka_cluster):
         # Create materialized view to consume messages
         mv_table = f"mv_{table_name}"
         instance.query(f"""
-            CREATE TABLE {mv_table} (
+            CREATE TABLE test.{mv_table} (
                 message String
             ) ENGINE = MergeTree()
             ORDER BY message
         """)
         
         instance.query(f"""
-            CREATE MATERIALIZED VIEW {table_name}_mv TO {mv_table} AS
-            SELECT message FROM {table_name}
+            CREATE MATERIALIZED VIEW test.{table_name}_mv TO test.{mv_table} AS
+            SELECT message FROM test.{table_name}
         """)
         
         # Wait for message to be processed and check the exact result
         result = instance.query_with_retry(
-            f"SELECT message FROM {mv_table}",
+            f"SELECT message FROM test.{mv_table}",
             check_callback=lambda res: res.strip() == "test_value",
             retry_count=30,
             sleep_time=1
@@ -142,6 +142,6 @@ def test_schema_registry_skip_bytes_message_processing(kafka_cluster):
         assert result.strip() == "test_value", f"Expected 'test_value', got '{result.strip()}'"
         
         # Clean up
-        instance.query(f"DROP VIEW IF EXISTS {table_name}_mv")
-        instance.query(f"DROP TABLE IF EXISTS {mv_table}")
-        instance.query(f"DROP TABLE IF EXISTS {table_name}")
+        instance.query(f"DROP VIEW IF EXISTS test.{table_name}_mv")
+        instance.query(f"DROP TABLE IF EXISTS test.{mv_table}")
+        instance.query(f"DROP TABLE IF EXISTS test.{table_name}")
