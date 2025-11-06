@@ -101,6 +101,7 @@ SELECT JSON_VALUE('{"1key":1}', tuple('$..1key')); -- { serverError BAD_ARGUMENT
 SELECT JSON_VALUE('{"1key":1}', tuple('$1key')); -- { serverError BAD_ARGUMENTS }
 SELECT JSON_VALUE('{"1key":1}', tuple('$key')); -- { serverError BAD_ARGUMENTS }
 SELECT JSON_VALUE('{"1key":1}', tuple('$.[key]')); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_VALUE('{"1key":1}', tuple('$.[key]', 1));  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT JSON_VALUE('{"1key":1}', tuple('$.key', '$.1key'));
 
 SELECT '--JSON_VALUE WITH ARRAY OUTPUT--';
@@ -125,6 +126,7 @@ SELECT JSON_VALUE('{"1key":1}', array('$..1key')); -- { serverError BAD_ARGUMENT
 SELECT JSON_VALUE('{"1key":1}', array('$1key')); -- { serverError BAD_ARGUMENTS }
 SELECT JSON_VALUE('{"1key":1}', array('$key')); -- { serverError BAD_ARGUMENTS }
 SELECT JSON_VALUE('{"1key":1}', array('$.[key]')); -- { serverError BAD_ARGUMENTS }
+SELECT JSON_VALUE('{"1key":1}', array(0, 1));  -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT JSON_VALUE('{"1key":1}', array('$.key', '$.1key'));
 
 SELECT '--MANY ROWS--';
