@@ -222,12 +222,13 @@ NULLs are treated as equal.
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a subset of the source array", {"Array(T)"}};
 
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation documentation = {
         description, syntax,
         {{"arr", "Array(T)"}, {"elem", "T"}},
         returned_value,
         examples,
-        {1, 1},
+        introduced_in,
         FunctionDocumentation::Category::Array
     };
 
