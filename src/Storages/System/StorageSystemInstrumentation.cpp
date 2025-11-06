@@ -1,4 +1,4 @@
-#include <Storages/System/SystemStorageInstrumentation.h>
+#include <Storages/System/StorageSystemInstrumentation.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,7 +18,7 @@
 namespace DB
 {
 
-ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
+ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
 {
     return ColumnsDescription
     {
@@ -32,7 +32,7 @@ ColumnsDescription SystemStorageInstrumentation::getColumnsDescription()
 }
 
 
-void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, ContextPtr, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto instrumented_points = InstrumentationManager::instance().getInstrumentedPoints();
 
