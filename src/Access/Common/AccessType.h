@@ -74,7 +74,7 @@ public: \
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find AccessTypeObject {} by name {}", #NAME, name); \
     } \
     \
-    bool validate(const String & name) const { return aliases.find(name) != aliases.end(); } \
+    bool validate(const String & name) const { return aliases.contains(name); } \
     \
     const std::map<String, NAME> & getAliasesMap() const { return aliases; } \
     \
