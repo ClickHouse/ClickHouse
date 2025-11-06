@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
 from typing import Any, List, Sequence, Tuple, Union
+from filelock import FileLock
 
 import requests
 import urllib3
