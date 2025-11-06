@@ -80,6 +80,17 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/** List of types. */
+class ParserTypeList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "type list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return ParserList(std::make_unique<ParserDataType>(), std::make_unique<ParserToken>(TokenType::Comma), false).parse(pos, node, expected);
+    }
+};
+
 /** List of table names. */
 class ParserNameList : public IParserBase
 {
