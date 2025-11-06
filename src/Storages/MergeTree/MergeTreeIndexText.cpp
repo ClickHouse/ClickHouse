@@ -21,7 +21,7 @@
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
-
+#include <Storages/MergeTree/PostingsContainer.h>
 
 #include <base/range.h>
 #include <fmt/ranges.h>
@@ -65,6 +65,7 @@ static constexpr UInt64 DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 16;
 /// 0.1 may seem quite high. The motivation of it is to minimize the size of the bloom filter.
 /// Rate of 0.1 gives 5 bits per token. 0.05 gives 7 bits; 0.025 - 8 bits.
 static constexpr double DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE = 0.1; /// 10%
+static constexpr bool DEFAULT_ENABLE_POSTINGS_COMPRESSION = false;
 
 enum class TokensSerializationFormat : UInt64
 {
@@ -121,9 +122,35 @@ DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInf
 {
 }
 
-UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr)
+static UInt64 serializeWithCompressedPostings(PostingListBuilder && postings, WriteBuffer & ostr)
+{
+    PostingsContainer32 container;
+    if (postings.isSmall())
+    {
+        const auto &small = postings.getSmall();
+        assert(postings.size() <= small.size());
+        for (size_t i = 0; i < postings.size(); ++i)
+            container.add(small[i]);
+    }
+    else
+    {
+        const auto & posting_list = postings.getLarge();
+        for (const auto row_id : posting_list)
+        {
+            container.add(row_id);
+        }
+    }
+    return container.serialize(ostr);
+}
+
+UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr, PostingsSerializationSettings settings)
 {
     UInt64 written_bytes = 0;
+    if (settings.enable_postings_compression)
+    {
+        chassert(header & Flags::CompressedPostings);
+        return serializeWithCompressedPostings(std::forward<PostingListBuilder>(postings), ostr);
+    }
     if (header & Flags::RawPostings)
     {
         if (postings.isSmall())
@@ -166,6 +193,13 @@ UInt64 PostingsSerialization::serialize(UInt64 header, PostingListBuilder && pos
 
 PostingListPtr PostingsSerialization::deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr)
 {
+    if (header & Flags::CompressedPostings)
+    {
+        PostingsContainer32 container;
+        PostingList postings;
+        container.decodeTo(istr, postings);
+        return postings;
+    }
     if (header & Flags::RawPostings)
     {
         std::vector<UInt32> values(cardinality);
@@ -712,7 +746,12 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
             UInt64 header = 0;
             bool raw_postings = cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS;
             bool embedded_postings = cardinality <= params.max_cardinality_for_embedded_postings;
-
+            PostingsSerializationSettings settings;
+            if (params.enable_compressed_postings)
+            {
+                header |= PostingsSerialization::CompressedPostings;
+                settings.enable_postings_compression = true;
+            }
             if (raw_postings)
                 header |= PostingsSerialization::RawPostings;
 
@@ -726,7 +765,7 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
 
             if (embedded_postings)
             {
-                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing);
+                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), dictionary_stream.compressed_hashing, settings);
             }
             else
             {
@@ -738,7 +777,7 @@ TextIndexHeader::DictionarySparseIndex serializeTokensAndPostings(
 
                 writeVarUInt(offset_in_file, dictionary_stream.compressed_hashing);
                 stats.posting_lists_size += getLengthOfVarUInt(offset_in_file);
-                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing);
+                stats.posting_lists_size += PostingsSerialization::serialize(header, std::move(postings), postings_stream.compressed_hashing, settings);
             }
         }
     }
@@ -1026,6 +1065,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = "max_cardinality_for_embedded_postings";
 static const String ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE = "bloom_filter_false_positive_rate";
+static const String ARGUMENT_BLOOM_ENABLE_POSTINGS_COMPRESSION = "enable_postings_compression";
 
 namespace
 {
@@ -1233,6 +1273,7 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     UInt64 dictionary_block_frontcoding_compression = extractOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION).value_or(DEFAULT_DICTIONARY_BLOCK_USE_FRONTCODING);
     UInt64 max_cardinality_for_embedded_postings = extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS).value_or(DEFAULT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     double bloom_filter_false_positive_rate = extractOption<double>(options, ARGUMENT_BLOOM_FILTER_FALSE_POSITIVE_RATE).value_or(DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE);
+    bool enable_postings_compression = extractOption<bool>(options, ARGUMENT_BLOOM_ENABLE_POSTINGS_COMPRESSION).value_or(DEFAULT_ENABLE_POSTINGS_COMPRESSION);
 
     const auto [bits_per_rows, num_hashes] = BloomFilterHash::calculationBestPractices(bloom_filter_false_positive_rate);
     MergeTreeIndexTextParams index_params{
@@ -1241,7 +1282,8 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         max_cardinality_for_embedded_postings,
         bits_per_rows,
         num_hashes,
-        preprocessor};
+        preprocessor,
+        enable_postings_compression};
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));
@@ -1354,6 +1396,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// No validation for max_cardinality_for_embedded_postings.
     extractOption<UInt64>(options, ARGUMENT_MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS);
     auto preprocessor = extractOption<String>(options, ARGUMENT_PREPROCESSOR, false);
+
+    extractOption<bool>(options, ARGUMENT_BLOOM_ENABLE_POSTINGS_COMPRESSION).value_or(DEFAULT_ENABLE_POSTINGS_COMPRESSION);
 
     if (!options.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));

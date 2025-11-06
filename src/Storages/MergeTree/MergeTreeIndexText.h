@@ -78,6 +78,7 @@ struct MergeTreeIndexTextParams
     size_t bloom_filter_bits_per_row = 0;
     size_t bloom_filter_num_hashes = 0;
     String preprocessor;
+    bool enable_compressed_postings = 0;
 };
 
 using PostingList = roaring::Roaring;
@@ -119,6 +120,11 @@ private:
     UInt8 small_size;
 };
 
+struct PostingsSerializationSettings
+{
+    bool enable_postings_compression = 0;
+};
+
 struct PostingsSerialization
 {
     enum Flags : UInt64
@@ -128,9 +134,10 @@ struct PostingsSerialization
         RawPostings = 1ULL << 0,
         /// If set, the posting list is embedded into the dictionary block to avoid additional random reads from disk.
         EmbeddedPostings = 1ULL << 1,
+        CompressedPostings = 1ULL << 2,
     };
 
-    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
+    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr, PostingsSerializationSettings settings);
     static PostingListPtr deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
