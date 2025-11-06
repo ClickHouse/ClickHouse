@@ -1,0 +1,11 @@
+Test 1: Check that X-ClickHouse-Exception-Tag header is present
+X-ClickHouse-Exception-Tag:
+Test 2: Verify exception tag is alphanumeric
+Tag is 16-char alphanumeric: OK
+Test 3: Check exception marker format on error
+Tagged exception marker found: OK
+Test 4: Check reverse marker format (length + tag + __exception__)
+Reverse marker found: OK
+Test 5: Verify exception message handling
+exception message handling: OK
+

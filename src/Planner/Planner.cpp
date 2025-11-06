@@ -148,6 +148,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const SettingsBool enable_parallel_blocks_marshalling;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ServerSetting
@@ -1381,8 +1382,14 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
-        query_plan.addInterpreterContext(subquery_planner.getPlannerContext()->getQueryContext());
-        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_planner).extractQueryPlan()));
+        auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+        /// Contexts should be copied into the root query plan, because some functions may
+        /// be created using them while this subquery plan will be destroyed after
+        /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
+        /// with a "Context has expired" exception.
+        for (const auto & context : subquery_plan.getInterpretersContexts())
+            query_plan.addInterpreterContext(context);
+        subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
     if (!subqueries.empty())
@@ -1575,7 +1582,8 @@ void Planner::buildPlanForUnionNode()
         query_plans.push_back(std::move(query_node_plan));
     }
 
-    Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
+    Block union_common_header = buildCommonHeaderForUnion(
+        query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
     addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
 
     const auto & query_context = planner_context->getQueryContext();

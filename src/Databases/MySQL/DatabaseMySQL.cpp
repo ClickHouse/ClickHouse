@@ -154,7 +154,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
 
     fetchTablesIntoLocalCache(local_context);
 
-    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
+    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.contains(mysql_table_name))
         return local_tables_cache[mysql_table_name].second;
 
     return StoragePtr{};
@@ -182,7 +182,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    if (local_tables_cache.find(table_name) == local_tables_cache.end())
+    if (!local_tables_cache.contains(table_name))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
@@ -231,7 +231,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 
     fetchTablesIntoLocalCache(getContext());
 
-    if (local_tables_cache.find(table_name) == local_tables_cache.end())
+    if (!local_tables_cache.contains(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
 
     return time_t(local_tables_cache[table_name].first);
@@ -261,7 +261,7 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
 {
     for (auto iterator = local_tables_cache.begin(); iterator != local_tables_cache.end();)
     {
-        if (tables_with_modification_time.find(iterator->first) != tables_with_modification_time.end())
+        if (tables_with_modification_time.contains(iterator->first))
             ++iterator;
         else
         {

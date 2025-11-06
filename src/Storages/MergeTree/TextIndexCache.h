@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <vector>
@@ -10,12 +11,16 @@ namespace ProfileEvents
 {
     extern const Event TextIndexDictionaryBlockCacheHits;
     extern const Event TextIndexDictionaryBlockCacheMisses;
+    extern const Event TextIndexHeaderCacheHits;
+    extern const Event TextIndexHeaderCacheMisses;
 }
 
 namespace CurrentMetrics
 {
     extern const Metric TextIndexDictionaryBlockCacheBytes;
     extern const Metric TextIndexDictionaryBlockCacheCells;
+    extern const Metric TextIndexHeaderCacheBytes;
+    extern const Metric TextIndexHeaderCacheCells;
 }
 
 namespace DB
@@ -100,7 +105,44 @@ public:
     }
 };
 
-using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
-using TextIndexDictionaryBlockCacheEntryPtr = TextIndexDictionaryBlockCache::MappedPtr;
+/// Estimate of the memory usage (bytes) of a text index header in cache
+struct TextIndexHeaderWeightFunction
+{
+    size_t operator()(const TextIndexHeader & header) const
+    {
+        return header.memoryUsageBytes();
+    }
+};
 
+class TextIndexHeaderCache : public CacheBase<UInt128, TextIndexHeader, UInt128TrivialHash, TextIndexHeaderWeightFunction>
+{
+public:
+    TextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+        : CacheBase(cache_policy, CurrentMetrics::TextIndexHeaderCacheBytes, CurrentMetrics::TextIndexHeaderCacheCells, max_size_in_bytes, max_count, size_ratio)
+    {}
+
+    template <typename... ARGS>
+    static UInt128 hash(ARGS... args)
+    {
+        SipHash hasher;
+        (hasher.update(args),...);
+        return hasher.get128();
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSet(UInt128 key, LoadFunc && load_func)
+    {
+        auto [cache_entry, cache_miss] = CacheBase::getOrSet(key, load_func);
+        if (cache_miss)
+            ProfileEvents::increment(ProfileEvents::TextIndexHeaderCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::TextIndexHeaderCacheHits);
+        return std::move(cache_entry);
+    }
+};
+
+using TextIndexDictionaryBlockCacheEntryPtr = std::shared_ptr<TextIndexDictionaryBlockCacheEntry>;
+using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
+
+using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
 }
