@@ -34,6 +34,8 @@ struct TextSearchQuery
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
+class MergeTreeIndexTextPreprocessor;
+using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
@@ -45,7 +47,8 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context,
         const Block & index_sample_block,
-        TokenExtractorPtr token_extactor_);
+        TokenExtractorPtr token_extractor_,
+        MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunctionForDirectRead(const String & function_name);
@@ -134,6 +137,8 @@ private:
     bool use_bloom_filter = true;
     /// If global mode is All, then we can exit analysis earlier if any token is missing in granule.
     TextSearchMode global_search_mode = TextSearchMode::All;
+    /// Reference preprocessor expression
+    MergeTreeIndexTextPreprocessorPtr preprocessor;
     /// Using text index dictionary block cache can be enabled to reduce I/O
     bool use_dictionary_block_cache;
     /// Instance of the text index dictionary block cache
