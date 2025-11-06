@@ -8,6 +8,7 @@ namespace DB
 {
 
 class TextIndexDictionaryBlockCache;
+class TextIndexHeaderCache;
 
 enum class TextSearchMode : uint8_t
 {
@@ -66,6 +67,9 @@ public:
 
     bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
     TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
+
+    bool useHeaderCache() const { return use_header_cache; }
+    TextIndexHeaderCache * headerCache() const { return header_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -134,6 +138,10 @@ private:
     bool use_dictionary_block_cache;
     /// Instance of the text index dictionary block cache
     TextIndexDictionaryBlockCache * dictionary_block_cache;
+    /// Using text index header can be enabled to reduce I/O
+    bool use_header_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexHeaderCache * header_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
