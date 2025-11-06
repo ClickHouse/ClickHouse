@@ -226,6 +226,7 @@ private:
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     size_t num_tokens = 0;
     BloomFilter bloom_filter;
@@ -260,6 +261,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     bool empty() const override { return tokens_and_postings.empty(); }
     size_t memoryUsageBytes() const override;
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     /// Pointers to tokens and posting lists in the granule.
