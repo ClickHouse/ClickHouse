@@ -15,6 +15,7 @@ INSERT INTO orders SELECT number, number/10000, number%1000 FROM numbers(1000000
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=1;
 SET enable_parallel_replicas=0;
+SET join_algorithm = 'hash,parallel_hash';
 
 SELECT avg(o_totalprice)
 FROM orders, customer, nation
