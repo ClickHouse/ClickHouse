@@ -19,7 +19,35 @@ set(DBMS_FUNCTIONS
     CastOverloadResolver.cpp # createInternalCast (Used by WindowTransform.cpp, KeyCondition.cpp...)
     FunctionsConversion.cpp # createFunctionBaseCast (Used by CastOverloadResolver.cpp)
     hasAnyAllTokens.cpp # FunctionSearchImpl (Used by MergeTreeIndexConditionText.cpp)
-    FunctionsConversion_impl0.cpp
+    FunctionsConversion_impl00.cpp
+    FunctionsConversion_impl01.cpp
+    FunctionsConversion_impl02.cpp
+    FunctionsConversion_impl03.cpp
+    FunctionsConversion_impl04.cpp
+    FunctionsConversion_impl05.cpp
+    FunctionsConversion_impl06.cpp
+    FunctionsConversion_impl07.cpp
+    FunctionsConversion_impl08.cpp
+    FunctionsConversion_impl09.cpp
+    FunctionsConversion_impl10.cpp
+    FunctionsConversion_impl11.cpp
+    FunctionsConversion_impl12.cpp
+    FunctionsConversion_impl13.cpp
+    FunctionsConversion_impl14.cpp
+    FunctionsConversion_impl15.cpp
+    FunctionsConversion_impl16.cpp
+    FunctionsConversion_impl17.cpp
+    FunctionsConversion_impl18.cpp
+    FunctionsConversion_impl19.cpp
+    FunctionsConversion_impl20.cpp
+    FunctionsConversion_impl21.cpp
+    FunctionsConversion_impl22.cpp
+    FunctionsConversion_impl23.cpp
+    FunctionsConversion_impl24.cpp
+    FunctionsConversion_impl25.cpp
+    FunctionsConversion_impl26.cpp
+    FunctionsConversion_impl27.cpp
+    FunctionsConversion_impl28.cpp
     FunctionsConversion_impl1.cpp
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
