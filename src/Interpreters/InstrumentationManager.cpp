@@ -68,7 +68,8 @@ void InstrumentationManager::registerHandler(const String & name, XRayHandlerFun
 
 void InstrumentationManager::ensureInitialization()
 {
-    callOnce(initialized, [this]() {
+    callOnce(initialized, [this]()
+    {
         parseInstrumentationMap();
         __xray_set_handler(&InstrumentationManager::dispatchHandler);
     });
