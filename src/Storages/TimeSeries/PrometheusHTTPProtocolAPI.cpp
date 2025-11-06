@@ -32,11 +32,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_REQUEST_PARAMETER;
+    extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
 
-PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextPtr & context_)
-    : WithContext{context_}
+PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
+    : WithMutableContext{context_}
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusHTTPProtocolAPI"))
 {
@@ -48,114 +49,94 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
     const Params & params)
 {
-    try
+    auto query_tree = std::make_unique<PrometheusQueryTree>();
+    query_tree->parse(params.promql_query);
+    if (!query_tree)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to parse PromQL query");
+
+    LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
+
+    // Create TimeSeriesTableInfo structure
+    PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
+    table_info.storage_id = time_series_storage->getStorageID();
+    table_info.timestamp_data_type = std::make_shared<DataTypeDateTime64>(0);
+    table_info.value_data_type = std::make_shared<DataTypeFloat64>();
+
+    Field start_time;
+    Field end_time;
+    Field step;
+    Field evaluation_time;
+    Field lookback_delta;
+
+    if (params.type == Type::Instant)
     {
-        auto query_tree = std::make_unique<PrometheusQueryTree>();
-        query_tree->parse(params.promql_query);
-        if (!query_tree)
-        {
-            writeErrorResponse(response, "bad_data", "Failed to parse PromQL query");
-            return;
-        }
-        LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
-
-        // Create TimeSeriesTableInfo structure
-        PrometheusQueryToSQLConverter::TimeSeriesTableInfo table_info;
-        table_info.storage_id = time_series_storage->getStorageID();
-        table_info.timestamp_data_type = std::make_shared<DataTypeDateTime64>(0);
-        table_info.value_data_type = std::make_shared<DataTypeFloat64>();
-
-        Field start_time;
-        Field end_time;
-        Field step;
-        Field evaluation_time;
-        Field lookback_delta;
-
-        if (params.type == Type::Instant)
-        {
-            evaluation_time = parseTimestamp(params.time_param);
-            lookback_delta = Field(300.0);
-            step = Field(15.0);
-        }
-        else if (params.type == Type::Range)
-        {
-            start_time = parseTimestamp(params.start_param);
-            end_time = parseTimestamp(params.end_param);
-            step = parseStep(params.step_param);
-            lookback_delta = Field(end_time.safeGet<Float64>() - start_time.safeGet<Float64>());
-        }
-
-        PrometheusQueryToSQLConverter converter(
-            *query_tree,
-            table_info,
-            lookback_delta,
-            step
-        );
-
-        if (params.type == Type::Instant)
-            converter.setEvaluationTime(evaluation_time);
-        else if (params.type == Type::Range)
-            converter.setEvaluationRange({start_time, end_time, step});
-
-        auto sql_query = converter.getSQL();
-        if (!sql_query)
-        {
-            writeErrorResponse(response, "execution", "Failed to convert PromQL to SQL");
-            return;
-        }
-
-        auto query_context = Context::createCopy(getContext());
-        query_context->makeQueryContext();
-        query_context->setCurrentQueryId(toString(thread_local_rng()));
-
-        auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
-
-        PullingPipelineExecutor executor(io.pipeline);
-        Block result_block;
-
-        /// FIXME: For this query
-        /// http://172.16.2.5:9093/api/v1/query_range?query=test_data&start=120&end=220&step=15
-        /// we get InstantVector result type from query_tree->getResultType().
-        if (params.type == Type::Range || query_tree->getResultType() == PrometheusQueryTree::ResultType::RANGE_VECTOR)
-        {
-            writeRangeQueryHeader(response);
-            while (executor.pull(result_block))
-                writeRangeQueryResponse(response, result_block);
-            writeRangeQueryFooter(response);
-            return;
-        }
-        else if (query_tree->getResultType() == PrometheusQueryTree::ResultType::INSTANT_VECTOR)
-        {
-            writeInstantQueryHeader(response);
-            while (executor.pull(result_block))
-                writeInstantQueryResponse(response, result_block);
-            writeInstantQueryFooter(response);
-            return;
-        }
-        else if (query_tree->getResultType() == PrometheusQueryTree::ResultType::SCALAR)
-        {
-            writeInstantQueryHeader(response);
-            while (executor.pull(result_block))
-                writeScalarQueryResponse(response, result_block);
-            writeInstantQueryFooter(response);
-            return;
-        }
-        else
-        {
-            LOG_ERROR(log, "Unsupported result type: {}", query_tree->getResultType());
-            writeErrorResponse(response, "execution", "Unsupported result type");
-            return;
-        }
+        evaluation_time = parseTimestamp(params.time_param);
+        lookback_delta = Field(300.0);
+        step = Field(15.0);
     }
-    catch (const Exception & e)
+    else if (params.type == Type::Range)
     {
-        LOG_ERROR(log, "Error executing instant query: {}", e.displayText());
-        writeErrorResponse(response, "execution", e.message());
+        start_time = parseTimestamp(params.start_param);
+        end_time = parseTimestamp(params.end_param);
+        step = parseStep(params.step_param);
+        lookback_delta = Field(end_time.safeGet<Float64>() - start_time.safeGet<Float64>());
     }
-    catch (...)
+
+    PrometheusQueryToSQLConverter converter(
+        *query_tree,
+        table_info,
+        lookback_delta,
+        step
+    );
+
+    if (params.type == Type::Instant)
+        converter.setEvaluationTime(evaluation_time);
+    else if (params.type == Type::Range)
+        converter.setEvaluationRange({start_time, end_time, step});
+
+    auto sql_query = converter.getSQL();
+    if (!sql_query)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to convert PromQL to SQL");
+
+    auto query_context = getContext();
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId(toString(thread_local_rng()));
+    query_context->setSetting("allow_experimental_time_series_aggregate_functions", Field(1));
+
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
+
+    PullingPipelineExecutor executor(io.pipeline);
+    Block result_block;
+
+    /// Mind using the getResultType() method from PrometheusQueryToSQLConverter, not from the PrometheusQueryTree.
+    if (converter.getResultType() == PrometheusQueryTree::ResultType::RANGE_VECTOR)
     {
-        LOG_ERROR(log, "Unknown error executing instant query");
-        writeErrorResponse(response, "internal", "Internal server error");
+        writeRangeQueryHeader(response);
+        while (executor.pull(result_block))
+            writeRangeQueryResponse(response, result_block);
+        writeRangeQueryFooter(response);
+        return;
+    }
+    else if (converter.getResultType() == PrometheusQueryTree::ResultType::INSTANT_VECTOR)
+    {
+        writeInstantQueryHeader(response);
+        while (executor.pull(result_block))
+            writeInstantQueryResponse(response, result_block);
+        writeInstantQueryFooter(response);
+        return;
+    }
+    else if (converter.getResultType() == PrometheusQueryTree::ResultType::SCALAR)
+    {
+        writeInstantQueryHeader(response);
+        while (executor.pull(result_block))
+            writeScalarQueryResponse(response, result_block);
+        writeInstantQueryFooter(response);
+        return;
+    }
+    else
+    {
+        LOG_ERROR(log, "Unsupported result type: {}", converter.getResultType());
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported result type");
     }
 }
 
@@ -486,15 +467,6 @@ void DB::PrometheusHTTPProtocolAPI::writeLabelsResponse(WriteBuffer & response, 
 void DB::PrometheusHTTPProtocolAPI::writeLabelValuesResponse(WriteBuffer & response, const Block & /* result_block */)
 {
     writeString(R"({"status":"success","data":[]})", response);
-}
-
-void DB::PrometheusHTTPProtocolAPI::writeErrorResponse(WriteBuffer & response, const String & error_type, const String & error_message)
-{
-    writeString(R"({"status":"error","errorType":")", response);
-    writeString(error_type, response);
-    writeString(R"(","error":")", response);
-    writeString(error_message, response);
-    writeString(R"("})", response);
 }
 
 }

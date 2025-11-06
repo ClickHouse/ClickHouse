@@ -51,6 +51,7 @@ public:
     explicit Impl(PrometheusRequestHandler & parent) : parent_ref(parent) {}
     virtual ~Impl() = default;
     virtual void beforeHandlingRequest(HTTPServerRequest & /* request */) {}
+    virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) = 0;
     virtual void onException() {}
 
@@ -154,6 +155,18 @@ protected:
         return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
     }
 
+    bool isSettingLikeParameter(const String & name) override
+    {
+        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+        if (name.empty())
+            return false;
+
+        /// Some parameters (database, default_format, everything used in the code above) do not
+        /// belong to the Settings class.
+        static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
+        return !reserved_param_names.contains(name);
+    }
+
     void makeContext(HTTPServerRequest & request)
     {
         context = session->makeQueryContext();
@@ -165,23 +178,10 @@ protected:
         if (!roles.empty())
             context->setCurrentRoles(roles);
 
-        /// Settings can be overridden in the URL query.
-        auto is_setting_like_parameter = [&] (const String & name)
-        {
-            /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
-            if (name.empty())
-                return false;
-
-            /// Some parameters (database, default_format, everything used in the code above) do not
-            /// belong to the Settings class.
-            static const NameSet reserved_param_names{"user", "password", "quota_key", "stacktrace", "role", "query_id"};
-            return !reserved_param_names.contains(name);
-        };
-
         SettingsChanges settings_changes;
         for (const auto & [key, value] : *params)
         {
-            if (is_setting_like_parameter(key))
+            if (isSettingLikeParameter(key))
             {
                 /// This query parameter should be considered as a ClickHouse setting.
                 settings_changes.push_back({key, value});
@@ -331,72 +331,16 @@ public:
         chassert(config().type == PrometheusRequestHandlerConfig::Type::QueryAPI);
     }
 
-    // Override handleRequest to create HTMLForm without Settings validation
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response) override
+    bool isSettingLikeParameter(const String & name) override
     {
-        SCOPE_EXIT({
-            request_credentials.reset();
-            context.reset();
-            session.reset();
-            params.reset();
-        });
+        /// Empty parameter appears when URL like ?&a=b or a=b&&c=d. Just skip them for user's convenience.
+        if (name.empty())
+            return false;
 
-        // Create HTMLForm with empty settings to avoid parameter validation
-        Settings empty_settings;
-
-        // Debug: Log request details before parsing
-        LOG_DEBUG(log(), "Request method: {}, Content-Type: {}, URI: {}", request.getMethod(), request.getContentType(), request.getURI());
-        LOG_DEBUG(log(), "Content-Length: {}", request.getContentLength());
-
-        // Handle both GET and POST requests properly
-        // For POST requests, we need to provide the request body stream
-        auto stream = request.getStream();
-        params = std::make_unique<HTMLForm>(empty_settings, request, *stream);
-
-        // Debug: Log all parameters that were parsed
-        LOG_DEBUG(log(), "Parsed {} parameters:", params->size());
-        for (auto it = params->begin(); it != params->end(); ++it)
-        {
-            LOG_DEBUG(log(), "Parameter: {} = {}", it->first, it->second);
-        }
-
-        // Specifically check for query parameter
-        String query_param = params->get("query", "NOT_FOUND");
-        LOG_DEBUG(log(), "Query parameter value: '{}'", query_param);
-
-        // Create session
-        session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
-
-        // Authenticate user first
-        if (!authenticateUser(request, response))
-            return; // Authentication failed
-
-        // Now create query context after authentication
-        makeContext(request);
-
-        // Initialize query scope
-        std::optional<CurrentThread::QueryScope> query_scope;
-        if (context)
-            query_scope.emplace(context);
-
-        handlingRequestWithContext(request, response);
-    }
-
-    bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
-    {
-        // Use the already created params instead of creating new HTMLForm
-        // to avoid consuming the request body twice
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
-    }
-
-    void makeContext(HTTPServerRequest & request)
-    {
-        context = session->makeQueryContext();
-
-        /// Anything else beside HTTP POST should be readonly queries.
-        setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
-
-        // For Query API, we don't need to handle roles like regular HTTP handler
+        /// Some parameters (database, default_format, everything used in the code above) do not
+        /// belong to the Settings class.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step"};
+        return !reserved_param_names.contains(name);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -404,14 +348,11 @@ public:
         auto table = DatabaseCatalog::instance().getTable(StorageID{config().time_series_table_name}, context);
         PrometheusHTTPProtocolAPI protocol{table, context};
 
-        // Use the params that were already created in handleRequest
 
         const String & uri = request.getURI();
-
         LOG_DEBUG(log(), "Processing Query API request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
-
         try
         {
             if (uri.starts_with("/api/v1/query_range"))
@@ -513,6 +454,8 @@ public:
             writeString(R"("})", error_buf);
             error_buf.finalize();
             writeString(error_str, getOutputStream(response));
+
+            LOG_ERROR(log(), "Error executing query: {}", e.displayText());
         }
     }
 };

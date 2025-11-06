@@ -252,8 +252,6 @@ public:
     /// Returns the type of the query's returning value.
     ResultType getResultType() const;
 
-    void setResultType(ResultType result_type);
-
     /// Dumps the tree to string as a tree for debugging purposes.
     String dumpTree(size_t indent = 0) const;
 

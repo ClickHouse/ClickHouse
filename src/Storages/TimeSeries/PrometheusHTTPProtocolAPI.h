@@ -13,10 +13,10 @@ class PrometheusQueryTree;
 
 /// Helper class to support the Prometheus Query API endpoints.
 /// Implements /api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values
-class PrometheusHTTPProtocolAPI : public WithContext
+class PrometheusHTTPProtocolAPI : public WithMutableContext
 {
 public:
-    PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextPtr & context_);
+    PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_);
     ~PrometheusHTTPProtocolAPI();
 
     enum class Type
@@ -95,9 +95,6 @@ private:
 
     /// Write JSON response for label values
     void writeLabelValuesResponse(WriteBuffer & response, const Block & result_block);
-
-    /// Write error response
-    void writeErrorResponse(WriteBuffer & response, const String & error_type, const String & error_message);
 
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
     Poco::LoggerPtr log;
