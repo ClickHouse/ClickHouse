@@ -232,7 +232,7 @@ bool authenticateUserByHTTP(
         else
         {
             // There's no info here if we should check token ourself or pass it to IDENTIFIED WITH http SERVER 'http_server' SCHEME 'bearer'.
-            // So we create BaererCredentials and transfrom it to JWTCredentials later if needed
+            // So we create BaererCredentials and transform it to JWTCredentials later if needed
 
             // Extract the user name from the "X-ClickHouse-User" HTTP header. Try to get JWT's subject if header is not set.
             if (user.empty())
