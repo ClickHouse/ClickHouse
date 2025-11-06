@@ -155,8 +155,6 @@ SELECT JSON_VALUE('{"hello":"world"}', tuple('$', '$.hello'));
 ('{"hello":"world"}','world')
 SELECT JSON_VALUE('{"hello":["world","world2"], "hello1": {"a": "b"}}', tuple('$', '$.hello', '$.hello[1]', '$.hello1', '$.hello1.a'));
 ('{"hello":["world","world2"],"hello1":{"a":"b"}}','["world","world2"]','world2','{"a":"b"}','b')
-SELECT JSON_VALUE('{"hello":[{"a":"b"}, {"a":"b1"}, {"b":"c1"}]}', tuple('$.hello[0]', '$.hello[*]', '$.hello[*].a', '$.hello[*].b'));
-('{"a":"b"}','[{"a":"b"},{"a":"b1"},{"b":"c1"}]','["b","b1"]','"c1"')
 SELECT JSON_VALUE('{"hello":{"world":"!"}}', tuple('$.hello'));
 ('{"world":"!"}')
 SELECT JSON_VALUE('{hello:world}', tuple('$.hello')); -- invalid json => default value (empty string)
@@ -199,8 +197,6 @@ SELECT JSON_VALUE('{"hello":"world"}', array('$', '$.hello'));
 ['{"hello":"world"}','world']
 SELECT JSON_VALUE('{"hello":["world","world2"], "hello1": {"a": "b"}}', array('$', '$.hello', '$.hello[1]', '$.hello1', '$.hello1.a'));
 ['{"hello":["world","world2"],"hello1":{"a":"b"}}','["world","world2"]','world2','{"a":"b"}','b']
-SELECT JSON_VALUE('{"hello":[{"a":"b"}, {"a":"b1"}, {"b":"c1"}]}', array('$.hello[0]', '$.hello[*]', '$.hello[*].a', '$.hello[*].b'));
-['{"a":"b"}','[{"a":"b"},{"a":"b1"},{"b":"c1"}]','["b","b1"]','"c1"']
 SELECT JSON_VALUE('{"hello":{"world":"!"}}', array('$.hello'));
 ['{"world":"!"}']
 SELECT JSON_VALUE('{hello:world}', array('$.hello')); -- invalid json => default value (empty string)

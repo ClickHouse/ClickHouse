@@ -206,7 +206,6 @@ public:
             };
             /// Prepare to parse 1 argument (JSONPath)
             std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> generator_json_paths;
-            std::vector<bool> path_asterisks;
             if (isString(json_path_column.type))
             {
                 String query = typeid_cast<const ColumnConst &>(*json_path_column.column).getValue<String>();
@@ -224,7 +223,6 @@ public:
                         const auto* path_column = checkAndGetColumn<ColumnString>(tuple_column->getColumnPtr(i).get());
                         String path = path_column->getDataAt(0).toString();
                         generator_json_paths.emplace_back(parse_json_path(path));
-                        path_asterisks.emplace_back(path.find("[*]") != std::string::npos);
                     }
                 }
                 else if (array_column)
@@ -235,7 +233,6 @@ public:
                     {
                         String path = path_column->getDataAt(i).toString();
                         generator_json_paths.emplace_back(parse_json_path(path));
-                        path_asterisks.emplace_back(path.find("[*]") != std::string::npos);
                     }
                 }
             }
@@ -255,7 +252,7 @@ public:
                 if (document_ok)
                 {
                     /// Instead of creating a new generator for each row, we can reuse the same one.
-                    added_to_column = impl.insertResultToColumn(*to, document, generator_json_paths, path_asterisks, function_json_value_return_type_allow_complex);
+                    added_to_column = impl.insertResultToColumn(*to, document, generator_json_paths, function_json_value_return_type_allow_complex);
                 }
                 if (!added_to_column)
                 {
@@ -375,7 +372,7 @@ public:
         return true;
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, std::vector<bool> &, bool)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, bool)
     {
         generator_json_paths[0]->reinitialize();
         return insertResultToColumn(dest, root, *generator_json_paths[0], false);
@@ -472,7 +469,7 @@ public:
         return true;
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, std::vector<bool> & path_asterisks, bool function_json_value_return_type_allow_complex)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & json_paths, bool function_json_value_return_type_allow_complex)
     {
         if (dest.getDataType() == TypeIndex::String || (dest.isNullable() && assert_cast<ColumnNullable *>(&dest)->getNestedColumn().getDataType() == TypeIndex::String))
         {
@@ -489,7 +486,6 @@ public:
             Element current_element = root;
             VisitorStatus status;
             bool success = false;
-            bool path_has_asterisk = path_asterisks[i];
             json_paths[i]->reinitialize();
             JSONStringSerializer json_serializer(col_str);
             std::vector<Element> elements_to_serialize;
@@ -498,11 +494,7 @@ public:
                 if (status == VisitorStatus::Ok)
                 {
                     success = true;
-                    if (path_has_asterisk)
-                    {
-                        elements_to_serialize.emplace_back(current_element);
-                    }
-                    else if (current_element.isString())
+                    if (current_element.isString())
                     {
                         auto str = current_element.getString();
                         json_serializer.addRawString(str);
@@ -527,29 +519,6 @@ public:
                 json_serializer.rollback();
                 col_null.insertDefault();
                 continue;
-            }
-            /// If path has '[*]', e.g. `$.a[*].b`, then we should seriliaze multiple elements into a string.
-            /// E.g. Select('{"a":[{"b":"d", "b":"c"}]}', '$.a[*].b'), the result should be '["d", "c"]'.
-            if (path_has_asterisk)
-            {
-                if (elements_to_serialize.size() == 1)
-                {
-                    json_serializer.addElement(elements_to_serialize[0]);
-                }
-                else if (elements_to_serialize.size() > 1)
-                {
-                    json_serializer.addRawData("[", 1);
-                    size_t j = 0;
-                    while (j < elements_to_serialize.size() - 1)
-                    {
-                        json_serializer.addElement(elements_to_serialize[j]);
-                        json_serializer.addRawData(",", 1);
-                        ++j;
-                    }
-                    json_serializer.addElement(elements_to_serialize[j]);
-                    json_serializer.addRawData("]", 1);
-                }
-                col_null_map.insert(0);
             }
             json_serializer.commit();
         }
@@ -617,7 +586,7 @@ public:
         return true;
     }
 
-    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, std::vector<bool> &, bool function_json_value_return_type_allow_complex)
+    static bool insertResultToColumn(IColumn & dest, const Element & root, std::vector<std::shared_ptr<GeneratorJSONPath<JSONParser>>> & generator_json_paths, bool function_json_value_return_type_allow_complex)
     {
         generator_json_paths[0]->reinitialize();
         return insertResultToColumn(dest, root, *generator_json_paths[0], function_json_value_return_type_allow_complex);
