@@ -15,6 +15,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 #include <Common/ThreadStatus.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -50,6 +51,13 @@ extern const int LOGICAL_ERROR;
 static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
+
+/// The offset of 4 is to remove all the frames added by the instrumentation itself:
+/// StackTrace::StackTrace()
+/// DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)
+/// DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)
+/// __xray_FunctionEntry
+static const auto STACK_OFFSET = 4;
 
 auto logger = getLogger("InstrumentationManager");
 
@@ -319,7 +327,7 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
         {
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
         }
-        LOG_TRACE(logger, "Sleeping for {}s", seconds);
+        LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {}s", instrumented_point.function_name, instrumented_point.function_id, seconds);
         std::this_thread::sleep_for(std::chrono::seconds(seconds));
     }
     else if (std::holds_alternative<Float64>(param))
@@ -355,8 +363,12 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
     if (std::holds_alternative<String>(param))
     {
         String logger_info = std::get<String>(param);
-        LOG_INFO(logger, "{} ({}): {}\nStack trace:\n{}",
-            instrumented_point.function_name, entry_type == XRayEntryType::ENTRY ? "entry" : "exit", logger_info, StackTrace().toString());
+        StackTrace stack_trace;
+        String stack_trace_str = StackTrace::toString(stack_trace.getFramePointers().data(), stack_trace.getOffset() + STACK_OFFSET, stack_trace.getSize() - STACK_OFFSET);
+
+        LOG_INFO(logger, "Log ({}, function_id {}, {}): {}\nStack trace:\n{}",
+            instrumented_point.function_name, instrumented_point.function_id,
+            entry_type == XRayEntryType::ENTRY ? "entry" : "exit", logger_info, stack_trace_str);
     }
     else
     {
@@ -376,7 +388,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
     using namespace std::chrono;
     auto now = system_clock::now();
 
-    LOG_TRACE(logger, "Profile: function with id {}", instrumented_point.function_id);
+    LOG_TRACE(logger, "Profile ({}, function_id {})", instrumented_point.function_name, instrumented_point.function_id);
 
     if (entry_type == XRayEntryType::ENTRY)
     {
@@ -389,19 +401,13 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         const auto stack_trace = StackTrace();
         const auto frame_pointers = stack_trace.getFramePointers();
 
-        /// The offset of 4 is to remove all the frames added by the instrumentation itself:
-        /// StackTrace::StackTrace()
-        /// DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)
-        /// DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)
-        /// __xray_FunctionEntry
-        const auto stack_offset = 4;
-        element.trace.reserve(stack_trace.getSize() - stack_offset);
+        element.trace.reserve(stack_trace.getSize() - STACK_OFFSET);
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
         const auto * object = SymbolIndex::instance().thisObject();
 #endif
 
-        for (size_t i = stack_trace.getOffset() + stack_offset; i < stack_trace.getSize(); ++i)
+        for (size_t i = stack_trace.getOffset() + STACK_OFFSET; i < stack_trace.getSize(); ++i)
         {
             /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
             uintptr_t offset = 0;
