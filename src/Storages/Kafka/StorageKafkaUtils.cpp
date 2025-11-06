@@ -224,8 +224,8 @@ void registerStorageKafka(StorageFactory & factory)
         constexpr size_t MAX_SKIP_BYTES = 255;
         if ((*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value > MAX_SKIP_BYTES)
         {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, 
-                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}", 
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}",
                            (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value, MAX_SKIP_BYTES);
         }
         NamesAndTypesList supported_columns;
