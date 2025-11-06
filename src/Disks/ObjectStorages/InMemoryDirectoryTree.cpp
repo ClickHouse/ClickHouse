@@ -197,9 +197,6 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
     if (!inode)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
 
-    if (inode->isVirtual())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
-
     if (inode->isRoot())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_path.string());
 
@@ -228,9 +225,6 @@ void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::s
 
     if (!inode_from)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_from.string());
-
-    if (inode_from->isVirtual())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_from.string());
 
     if (inode_from->isRoot())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_from.string());
