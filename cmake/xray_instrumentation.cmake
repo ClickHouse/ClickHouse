@@ -8,7 +8,7 @@ if (NOT ENABLE_XRAY)
 endif()
 
 if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX))
-    message (STATUS "Not using LLVM XRay, only amd64 Linux or FreeBSD are supported")
+    message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported")
     return()
 endif()
 
