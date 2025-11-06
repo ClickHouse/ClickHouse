@@ -1,0 +1,29 @@
+5	UInt16
+150	UInt16
+-6	Int16
+100	Int16
+0	Int64
+275	Int64
+-37	Int32
+150	Int32
+6	Float64
+15	Float64
+18	Float64
+24	Float64
+-49.25	Float64
+130	Float64
+47.5	Float64
+114	Float64
+6.11	Decimal(18, 3)
+150.289	Decimal(18, 3)
+0.567	Decimal(9, 3)
+50.186	Decimal(9, 3)
+-23.004	Decimal(18, 3)
+156.818	Decimal(18, 3)
+2025-01-03	Date
+2025-01-02 06:00:00	DateTime
+13:00:00	Time64(0)
+123	UInt8
+2.25	Float64
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
