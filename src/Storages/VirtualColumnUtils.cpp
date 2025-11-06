@@ -64,7 +64,7 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -80,11 +80,26 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                        set_from_subquery->buildSetInplace(context);
+                    {
+                        if (ordered)
+                            set_from_subquery->buildOrderedSetInplace(context);
+                        else
+                            set_from_subquery->buildSetInplace(context);
+                    }
                 }
             }
         }
     }
+}
+
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+{
+    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+{
+    buildSetsForDagImpl(dag, context, /* ordered = */ true);
 }
 
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
