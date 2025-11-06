@@ -495,7 +495,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
         auto queue = queues[i]->getCurrentQueueAndClear();
         while (!queue.empty())
         {
-            auto notif = queue.front();
+            auto notif = std::move(queue.front());
             queue.pop_front();
             log_notification(notif);
         }
