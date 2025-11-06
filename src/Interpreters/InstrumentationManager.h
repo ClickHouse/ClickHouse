@@ -4,12 +4,12 @@
 
 #if USE_XRAY
 
-#include <unordered_map>
 #include <vector>
 #include <variant>
 
 #include <base/types.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
 #include <xray/xray_interface.h>
 
@@ -152,6 +152,8 @@ private:
         >>;
 
     InstrumentationManager();
+
+    [[clang::xray_never_instrument]] void ensureInitialization();
     [[clang::xray_never_instrument]] void registerHandler(const String & name, XRayHandlerFunction handler);
     [[clang::xray_never_instrument]] void parseInstrumentationMap();
 
@@ -164,6 +166,7 @@ private:
     [[clang::xray_never_instrument]] void log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
     [[clang::xray_never_instrument]] void profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
 
+    OnceFlag initialized;
     FunctionsContainer functions_container;
     std::vector<std::pair<String, XRayHandlerFunction>> handler_name_to_function;
 

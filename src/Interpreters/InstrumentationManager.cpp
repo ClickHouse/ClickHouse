@@ -47,11 +47,6 @@ static const auto STACK_OFFSET = 4;
 
 auto logger = getLogger("InstrumentationManager");
 
-void InstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
-{
-    handler_name_to_function.emplace_back(std::make_pair(name, handler));
-}
-
 InstrumentationManager::InstrumentationManager()
 {
     /// The order in which handlers are registered is important because they will be executed in that same order.
@@ -66,6 +61,18 @@ InstrumentationManager & InstrumentationManager::instance()
     return instance;
 }
 
+void InstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
+{
+    handler_name_to_function.emplace_back(std::make_pair(name, handler));
+}
+
+void InstrumentationManager::ensureInitialization()
+{
+    callOnce(initialized, [this]() {
+        parseInstrumentationMap();
+        __xray_set_handler(&InstrumentationManager::dispatchHandler);
+    });
+}
 
 void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 {
@@ -110,25 +117,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
     /// Lazy load the XRay instrumentation map only once we need to set up a handler
-    if (initialization_status != InitializationStatus::INITIALIZED)
-    {
-        auto expected_status = InitializationStatus::UNINITIALIZED;
-        if (initialization_status.compare_exchange_strong(expected_status, InitializationStatus::INITIALIZING))
-        {
-            LOG_DEBUG(logger, "Initializing InstrumentationManager by reading the instrumentation map");
-            parseInstrumentationMap();
-            __xray_set_handler(&InstrumentationManager::dispatchHandler);
-            initialization_status = InitializationStatus::INITIALIZED;
-            LOG_DEBUG(logger, "InstrumentationManager initialized in this thread. Setting up handler");
-            initialization_status.notify_all();
-        }
-        else
-        {
-            LOG_DEBUG(logger, "InstrumentationManager is initializing. Waiting for it");
-            initialization_status.wait(InitializationStatus::INITIALIZING);
-            LOG_DEBUG(logger, "InstrumentationManager initialized by some other query. Setting up handler");
-        }
-    }
+    ensureInitialization();
 
     Int32 function_id;
     auto fn_it = functions_container.get<FunctionName>().find(function_name);
