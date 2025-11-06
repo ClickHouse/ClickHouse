@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import subprocess
+import psutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import traceback
@@ -18,12 +19,14 @@ RUNNERS = int(os.getenv("RUNNERS", "16"))
 
 INPUT_TIMEOUT = 20 # for debugging
 
-# Run process with custom kill signal on timeout. If custom signal is not SIGKILL and process does not exit
-# on custom signal, then SIGKILL is issued after additional kill_timeout time.
-# If process exits on custom signal it is treated as a normal exit.
-# If process termination is a result of the SIGKILL signal then subprocess.TimeoutExpired will be raised.
-def run(*popenargs,
-        input=None, capture_output=False, timeout=None, check=False, kill_signal=signal.SIGKILL, kill_timeout=10, **kwargs):
+# Run merge fuzzer process with timeout. On timeout send SIGUSR1 graceful termination signal.
+# If process does not exit, SIGKILL is issued after additional kill_timeout time.
+# If process exits on SIGUSR1 signal it is treated as a normal exit.
+# If process termination is a result of the SIGKILL signal then subprocess.TimeoutExpired is raised.
+# Fuzzer merge starts a child process, so to gracefully terminate fuzzer we need to send SIGUSR1 signal
+# to this child instead of parent (seems to be some kind of bug in libFuzzer)
+def run_merge_fuzzer(*popenargs,
+        input=None, capture_output=False, timeout=None, check=False, kill_timeout=10, **kwargs):
     if input is not None:
         if kwargs.get('stdin') is not None:
             raise ValueError('stdin and input arguments may not both be used.')
@@ -42,17 +45,17 @@ def run(*popenargs,
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
         except subprocess.TimeoutExpired:
-            process.send_signal(kill_signal)
-            if kill_signal == signal.SIGKILL:
+            current_process = psutil.Process(process.pid)
+            for child in current_process.children(recursive=True):
+                if child.name() == current_process.name():
+                    os.kill(child.pid, signal.SIGUSR1)
+                    break
+            try:
+                process.wait(timeout=kill_timeout)
+            except subprocess.TimeoutExpired:
+                process.kill()
                 process.wait()
                 raise
-            else:
-                try:
-                    process.wait(timeout=kill_timeout)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                    raise
         except:  # Including KeyboardInterrupt, communicate handled that.
             process.kill()
             # We don't call process.wait() as .__exit__ does that for us.
@@ -229,7 +232,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
         stopwatch = Stopwatch()
         try:
             with open(out_path, "wb") as out, open(stdout_path, "wb") as stdout:
-                run(
+                run_merge_fuzzer(
                     cmd_line.split(),
                     stdin=subprocess.DEVNULL,
                     stdout=stdout,
@@ -239,7 +242,6 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     shell=False,
                     errors="replace",
                     timeout=timeout,
-                    kill_signal=signal.SIGUSR1,
                     kill_timeout= input_timeout * 2,
                     env=env,
                 )
@@ -326,6 +328,9 @@ def run_fuzzer(fuzzer: str, timeout: int):
 
             logging.info("Successful run, corpus minimization for %s, original corpus size %d, processed %d, not processed %d, minimized size %d, reduced to %d%%",
                 fuzzer, orig_corpus_size, len(processed_files), not_processed_size, mini_corpus_size, reduction)
+        else:
+            # Delete minimized corpus directory
+            shutil.rmtree(mini_corpus_dir)
     else:
         logging.info("Not running corpus minimization for fuzzer %s - persistent corpus is empty", fuzzer)
 
