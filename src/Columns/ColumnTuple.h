@@ -154,6 +154,8 @@ public:
     /// Empty tuple needs a public method to manage its size.
     void addSize(size_t delta) { column_length += delta; }
 
+    bool canBeInsideNullable() const override { return true; }
+
 private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
