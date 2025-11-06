@@ -4,7 +4,7 @@ description: 'This engine provides an integration with the Azure Blob Storage ec
 sidebar_label: 'AzureQueue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/azure-queue
-title: 'AzureQueue Table Engine'
+title: 'AzureQueue table engine'
 doc_type: 'reference'
 ---
 

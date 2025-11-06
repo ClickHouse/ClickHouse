@@ -109,7 +109,7 @@ result: Row 1: [1, 2, 3], Row2: [4]
 
         return ColumnArray::create(
             prev_data->getPtr(),
-            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());
+            result_offsets_column ? std::move(result_offsets_column) : src_col->getOffsetsPtr());  /// NOLINT(performance-move-const-arg)
     }
 
 private:
