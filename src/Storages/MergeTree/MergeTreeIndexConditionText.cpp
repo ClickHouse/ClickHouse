@@ -23,6 +23,7 @@ namespace Setting
 {
     extern const SettingsBool text_index_use_bloom_filter;
     extern const SettingsBool use_text_index_dictionary_cache;
+    extern const SettingsBool use_text_index_header_cache;
 }
 
 SipHash TextSearchQuery::getHash() const
@@ -51,6 +52,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , preprocessor(preprocessor_)
     , use_dictionary_block_cache(context_->getSettingsRef()[Setting::use_text_index_dictionary_cache])
     , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
+    , use_header_cache(context_->getSettingsRef()[Setting::use_text_index_header_cache])
+    , header_cache(context_->getTextIndexHeaderCache().get())
 {
     if (!predicate)
     {
