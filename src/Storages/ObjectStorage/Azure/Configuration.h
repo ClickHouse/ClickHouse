@@ -103,6 +103,8 @@ protected:
         ASTs & args,
         ContextPtr context);
 
+    void fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix);
+
     Path blob_path;
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;

@@ -467,8 +467,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     settings_copy[Setting::use_hive_partitioning] = false;
     context_copy->setSettings(settings_copy);
 
-    /// with_table_structure = false: because there will be
-    /// no table structure in table definition AST.
     if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
     {
         auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
@@ -485,6 +483,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         );
     }
 
+    /// with_table_structure = false: because there will be
+    /// no table structure in table definition AST.
     StorageObjectStorageConfiguration::initialize(*configuration, args, context_copy, /* with_table_structure */false);
 
     const auto & query_settings = context_->getSettingsRef();

@@ -152,6 +152,55 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     return connection_params;
 }
 
+void StorageAzureConfiguration::fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix)
+{
+    String container_name;
+
+    auto pos_container = connection_url.find(suffix);
+
+    if (pos_container != std::string::npos)
+    {
+        String container_blob_path = connection_url.substr(pos_container+5);
+        connection_url = connection_url.substr(0,pos_container+4);
+        container_name = connection_url.substr(pos_container+4);
+        auto pos_blob_path = container_blob_path.find('/');
+
+        if (pos_blob_path != std::string::npos)
+        {
+            container_name = container_blob_path.substr(0, pos_blob_path);
+            blob_path = container_blob_path.substr(pos_blob_path);
+        }
+    }
+
+    /// Added for Unity Catalog on top of AzureBlobStorage
+    // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
+    if (connection_url.starts_with("abfss"))
+    {
+        auto pos_slash = connection_url.find("://");
+        auto pos_at = connection_url.find('@');
+        auto pos_dot = connection_url.find('.');
+        auto pos_net = connection_url.find(suffix);
+
+        if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
+            || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
+        }
+        auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
+        auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
+
+        connection_params.endpoint.storage_account_url = "https://" + name + full_suffix;
+
+        if (!container_name.empty())
+        {
+            blob_path.path = container_name + blob_path.path;
+        }
+        connection_params.endpoint.container_name = container_name_abfss;
+    }
+    blobs_paths = {blob_path};
+}
+
+
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
@@ -298,51 +347,8 @@ void StorageAzureConfiguration::initializeForOneLake(ASTs & args, ContextPtr con
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
 
     String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
-    String container_name;
 
-    auto pos_container = connection_url.find(".com");
-
-    if (pos_container != std::string::npos)
-    {
-        String container_blob_path = connection_url.substr(pos_container+5);
-        connection_url = connection_url.substr(0,pos_container+4);
-        container_name = connection_url.substr(pos_container+4);
-        auto pos_blob_path = container_blob_path.find('/');
-
-        if (pos_blob_path != std::string::npos)
-        {
-            container_name = container_blob_path.substr(0, pos_blob_path);
-            blob_path = container_blob_path.substr(pos_blob_path);
-        }
-    }
-
-    /// Added for Unity Catalog on top of AzureBlobStorage
-    // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
-    if (connection_url.starts_with("abfss"))
-    {
-        auto pos_slash = connection_url.find("://");
-        auto pos_at = connection_url.find('@');
-        auto pos_dot = connection_url.find('.');
-        auto pos_net = connection_url.find(".com");
-
-        if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
-            || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
-        }
-        auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
-        auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
-
-        connection_params.endpoint.storage_account_url = "https://" + name + ".dfs.fabric.microsoft.com";
-
-        if (!container_name.empty())
-        {
-            blob_path.path = container_name + blob_path.path;
-        }
-        connection_params.endpoint.container_name = container_name_abfss;
-    }
-
-    blobs_paths = {blob_path};
+    fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
     connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
 
     connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
@@ -350,11 +356,6 @@ void StorageAzureConfiguration::initializeForOneLake(ASTs & args, ContextPtr con
         onelake_client_id,
         onelake_client_secret
     );
-
-    if (connection_params.auth_method.index() == 0)
-    {
-        AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
-    }
 
     auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
@@ -395,51 +396,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
     {
         String connection_url = checkAndGetLiteralArgument<String>(engine_args[0], "connection_string/storage_account_url");
         String sas_token = checkAndGetLiteralArgument<String>(engine_args[1], "sas_token");
-        String container_name;
-
-        auto pos_container = connection_url.find(".net");
-
-        if (pos_container != std::string::npos)
-        {
-            String container_blob_path = connection_url.substr(pos_container+5);
-            connection_url = connection_url.substr(0,pos_container+4);
-            container_name = connection_url.substr(pos_container+4);
-            auto pos_blob_path = container_blob_path.find('/');
-
-            if (pos_blob_path != std::string::npos)
-            {
-                container_name = container_blob_path.substr(0, pos_blob_path);
-                blob_path = container_blob_path.substr(pos_blob_path);
-            }
-        }
-
-        /// Added for Unity Catalog on top of AzureBlobStorage
-        // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
-        if (connection_url.starts_with("abfss"))
-        {
-            auto pos_slash = connection_url.find("://");
-            auto pos_at = connection_url.find('@');
-            auto pos_dot = connection_url.find('.');
-            auto pos_net = connection_url.find(".net");
-
-            if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
-                || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
-            }
-            auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
-            auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
-
-            connection_params.endpoint.storage_account_url = "https://" + name + ".blob.core.windows.net";
-
-            if (!container_name.empty())
-            {
-                blob_path.path = container_name + blob_path.path;
-            }
-            connection_params.endpoint.container_name = container_name_abfss;
-        }
-
-        blobs_paths = {blob_path};
+        fillBlobsFromURLCommon(connection_url, ".net", ".blob.core.windows.net");
         connection_params.endpoint.sas_auth = sas_token;
 
         return;
