@@ -39,22 +39,8 @@ DataTypePtr FunctionArrayRemove::getReturnTypeImpl(const DataTypes & arguments) 
                         "First argument for function {} must be an array but it has type {}.",
                         getName(), arguments[0]->getName());
 
-    const auto & array_inner_type = array_type->getNestedType();
-    const auto & elem_type = arguments[1];
-
-    auto array_inner_no_null = removeNullable(array_inner_type);
-    bool array_inner_is_nothing = typeid_cast<const DataTypeNothing *>(array_inner_no_null.get());
-    auto elem_no_null = removeNullable(elem_type);
-
-    // TODO: Should we use tryGetLeastSupertype to allow elem to be a different integer size from
-    // the array element?
-    // How would compareAt work in that case?
-    if (!array_inner_is_nothing && !array_inner_no_null->equals(*elem_no_null))
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Second argument for function {} must be of same type as array elements ({}), got {}",
-            getName(), array_inner_no_null->getName(), elem_no_null->getName());
-
-    return arguments[0];
+    DataTypes types = {array_type->getNestedType(), arguments[1]};
+    return std::make_shared<DataTypeArray>(getLeastSupertype(types));
 }
 
 template <typename T>
@@ -115,19 +101,31 @@ static bool executeType(
 
 ColumnPtr FunctionArrayRemove::executeImpl(
     const ColumnsWithTypeAndName & arguments,
-    const DataTypePtr & /*result_type*/,
-    size_t /*input_rows_count*/) const
+    const DataTypePtr & return_type,
+    size_t input_rows_count) const
 {
-    const auto * src_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    if (return_type->onlyNull())
+        return return_type->createColumnConstWithDefaultValue(input_rows_count);
+
+    auto array_column = arguments[0].column;
+    auto elem_column = arguments[1].column;
+
+    if (!arguments[0].type->equals(*return_type))
+        array_column = castColumn(arguments[0], return_type);
+
+    const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
+    if (!arguments[1].type->equals(*return_nested_type))
+        elem_column = castColumn(arguments[1], return_nested_type);
+
+    const auto * src_array = checkAndGetColumn<ColumnArray>(array_column.get());
     if (!src_array)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "First argument for function {} must be Array", getName());
 
-    const auto elem_column = arguments[1].column;
-    bool elem_is_const = isColumnConst(*arguments[1].column);
+    bool elem_is_const = isColumnConst(*elem_column);
     const IColumn * elem_values_col =
         (elem_is_const) ?
-            &checkAndGetColumn<ColumnConst>(arguments[1].column.get())->getDataColumn() :
+            &checkAndGetColumn<ColumnConst>(elem_column.get())->getDataColumn() :
             elem_column.get();
 
     if (elem_values_col->size() != 1)
