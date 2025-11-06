@@ -12,6 +12,7 @@ instance = cluster.add_instance(
     main_configs=["configs/kafka.xml"],
     user_configs=["configs/users.xml"],
     with_kafka=True,
+    with_zookeeper=True,
     stay_alive=True,
     macros={
         "kafka_broker": "kafka1",
