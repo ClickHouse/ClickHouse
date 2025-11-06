@@ -28,7 +28,9 @@ namespace
 {
 struct PostingListDataSorted
 {
-    using PostingListDataType = UInt32;
+    using PostingsContainerType = PostingsContainer64;
+    using PostingListDataType = PostingsContainerType::ValueType;
+
     PostingsContainer64 container;
 
     static constexpr auto name() { return "postingList"; }
