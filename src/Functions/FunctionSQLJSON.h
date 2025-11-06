@@ -488,7 +488,6 @@ public:
             bool success = false;
             json_paths[i]->reinitialize();
             JSONStringSerializer json_serializer(col_str);
-            std::vector<Element> elements_to_serialize;
             while ((status = json_paths[i]->getNextItem(current_element)) != VisitorStatus::Exhausted)
             {
                 if (status == VisitorStatus::Ok)
