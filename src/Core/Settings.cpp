@@ -6921,7 +6921,7 @@ If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` 
 )", 0) \
     \
     DECLARE(UInt64, max_autoincrement_series, 1000, R"(
-The limit on the number of series created by the `generateSeriesID` function.
+The limit on the number of series created by the `generateSerialID` function.
 
 As each series represents a node in Keeper, it is recommended to have no more than a couple of millions of them.
 )", 0) \
