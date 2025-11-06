@@ -1523,9 +1523,11 @@ TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveVirtual)
     }
 
     EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B"));
 
     metadata = restartMetadataStorage("RemoveRecursiveVirtual");
     EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B"));
 
     EXPECT_EQ(listAllBlobs("RemoveRecursiveVirtual"), std::vector<std::string>({}));
 }
