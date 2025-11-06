@@ -14,4 +14,4 @@ CREATE TABLE FailsAfterSubcolumnLimit
     `Subcolumns` Nested(subcolumn1 UInt32, subcolumn2 UInt32, subcolumn3 DateTime, subcolumn4 Int64, subcolumn5 String, subcolumn6 UInt32)
 )
 ENGINE = MergeTree
-ORDER BY ID;
+ORDER BY ID; -- { serverError TOO_MANY_SUBCOLUMNS }

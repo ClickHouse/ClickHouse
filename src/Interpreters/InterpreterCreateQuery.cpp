@@ -2018,7 +2018,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
         if (subcolumn_count > max_subcolumns)
             throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
-                                    "Too many subcolumns. The limit is set to {}, the number of subcolumns in table is {}",
+                                    "Too many subcolumns. The limit is set to {}, the number of subcolumns in the table is {}",
                                     max_subcolumns, subcolumn_count);
     }
 
