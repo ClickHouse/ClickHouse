@@ -18,9 +18,9 @@ The `offset_row_count` or `fetch_row_count` value can be a number or a literal c
 
 Negative OFFSET is supported: `OFFSET -n` skips the last `n` rows from the result.  
 
-Fractional OFFSET is also supported: `OFFSET n` - If 0 < n < 1 then skip the first (n * 100)% percent from the result.
+Fractional OFFSET is also supported: `OFFSET n` - if 0 < n < 1, then the first n * 100% of the result is skipped.
 
-Examples:
+Example:
     • `OFFSET 0.1` - skips the first 10% of the result.
 
 > **Note**

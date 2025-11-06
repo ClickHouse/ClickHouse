@@ -14,21 +14,21 @@ doc_type: 'reference'
 
 In the standard forms above, `n` and `m` are non-negative integers.
 
-Negative limits are supported:
+Additionally, negative limits are supported:
 
 `LIMIT -m` selects the last `m` rows from the result.
 
 `LIMIT -m OFFSET -n` selects the last `m` rows after skipping the last `n` rows. The `LIMIT -n, -m` syntax is equivalent.
 
-Selecting a fraction of the result is also supported:
+Moreover, selecting a fraction of the result is also supported:
 
-`LIMIT m` - If 0 < m < 1 then the first (m * 100)% percent from the result is returned.
+`LIMIT m` - if 0 < m < 1, then the first m * 100% of rows are returned.
 
-`LIMIT m OFFSET n` - If 0 < m < 1 and 0 < n < 1 then (m * 100)% percent from the result is returned, after skipping the first (n * 100)%.
+`LIMIT m OFFSET n` - if 0 < m < 1 and 0 < n < 1, then the first m * 100% of the result is returned after skipping the first n * 100% of rows. The `LIMIT n, m` syntax is equivalent.
 
 Examples:
     • `LIMIT 0.1` - selects the first 10% of the result.
-    • `LIMIT 0.5 OFFSET 1` - selects the median row.
+    • `LIMIT 1 OFFSET 0.5` - selects the median row.
     • `LIMIT 0.25 OFFSET 0.5` - selects 3rd quartile of the result.
 
 > **Note**
