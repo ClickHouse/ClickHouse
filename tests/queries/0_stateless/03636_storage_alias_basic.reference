@@ -120,4 +120,4 @@ Test alias with missing target table
 missing_target_alias	Alias
 1
 1
-missing_target_alias	Alias	0	0	[]
+missing_target_alias	Alias	\N	\N	[]

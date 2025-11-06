@@ -102,7 +102,7 @@ void fillDataWithTableColumns(
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+        if (table->getName() != "Alias" || e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
             return;
         throw;
     }

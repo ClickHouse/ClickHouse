@@ -157,9 +157,10 @@ protected:
                 }
                 catch (const Exception & e)
                 {
-                    if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE)
+                    if (storage->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
                         throw;
                     metadata_snapshot = std::make_shared<StorageInMemoryMetadata>();
+                    tryLogCurrentException(getLogger("SystemColumns"), fmt::format("Cannot find target database/table for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
                 }
 
                 columns = metadata_snapshot->getColumns();
@@ -175,7 +176,7 @@ protected:
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                        if ((storage->getName() != "Merge" && storage->getName() != "Alias") || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
                             throw;
                         tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
                     }

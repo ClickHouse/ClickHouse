@@ -147,18 +147,16 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         SelectQueryInfo & query_info) const override;
 
-    Strings getDataPaths() const override;
+    Strings getDataPaths() const override { return getTargetTable()->getDataPaths(); }
 
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
-    ColumnSizeByName getColumnSizes() const override;
-    IndexSizeByName getSecondaryIndexSizes() const override;
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getTargetTable()->totalBytes(query_context); }
+    ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
+    IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
 
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
-
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
 
     /// These operations are not proxied (executed on alias itself)
     /// Drop alias, not the target table

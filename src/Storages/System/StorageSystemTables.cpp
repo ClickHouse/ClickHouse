@@ -296,7 +296,7 @@ protected:
             }
             catch (const Exception & e)
             {
-                if (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE)
+                if (table->getName() != "Alias" || (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE))
                 {
                     columns[res_index++]->insertDefault();
                     return;
@@ -538,10 +538,22 @@ protected:
                 {
                     chassert(lock != nullptr);
                     Array table_paths_array;
-                    auto paths = table->getDataPaths();
-                    table_paths_array.reserve(paths.size());
-                    for (const String & path : paths)
-                        table_paths_array.push_back(path);
+
+                    /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
+                    try
+                    {
+                        auto paths = table->getDataPaths();
+                        table_paths_array.reserve(paths.size());
+                        for (const String & path : paths)
+                            table_paths_array.push_back(path);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
+                            throw;
+                        tryLogCurrentException(getLogger("StorageSystemTables"), fmt::format("While obtaining data paths for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
+                    }
+
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
                     lock = nullptr;
@@ -563,8 +575,9 @@ protected:
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE)
+                        if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
                             throw;
+                        tryLogCurrentException(getLogger("StorageSystemTables"), fmt::format("Cannot find target database/table for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
                     }
                 }
 
