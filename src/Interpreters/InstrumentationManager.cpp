@@ -15,6 +15,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/SymbolIndex.h>
 #include <Common/ThreadStatus.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
@@ -383,14 +384,39 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
         element.instrumented_point_id = instrumented_point.id;
         element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->stripped_function_name;
         element.tid = getThreadId();
-
-        auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
-
-        element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
-        element.event_time_microseconds = Decimal64(now_us);
-
         element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
         element.function_id = instrumented_point.function_id;
+        const auto stack_trace = StackTrace();
+        const auto frame_pointers = stack_trace.getFramePointers();
+
+        /// The offset of 4 is to remove all the frames added by the instrumentation itself:
+        /// StackTrace::StackTrace()
+        /// DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)
+        /// DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)
+        /// __xray_FunctionEntry
+        const auto stack_offset = 4;
+        element.trace.reserve(stack_trace.getSize() - stack_offset);
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        const auto * object = SymbolIndex::instance().thisObject();
+#endif
+
+        for (size_t i = stack_trace.getOffset() + stack_offset; i < stack_trace.getSize(); ++i)
+        {
+            /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
+            uintptr_t offset = 0;
+            const uintptr_t addr = reinterpret_cast<uintptr_t>(frame_pointers[i]);
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
+                offset = uintptr_t(object->address_begin);
+#endif
+            element.trace.emplace_back(addr - offset);
+        }
+
+        now = system_clock::now();
+        auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
+        element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
+        element.event_time_microseconds = Decimal64(now_us);
 
         active_elements[instrumented_point.function_id] = std::move(element);
     }

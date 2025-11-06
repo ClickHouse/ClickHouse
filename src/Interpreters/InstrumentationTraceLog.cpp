@@ -2,13 +2,14 @@
 
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -26,6 +27,7 @@ ColumnsDescription InstrumentationTraceLogElement::getColumnsDescription()
         {"tid", std::make_shared<DataTypeUInt64>(), "Thread ID."},
         {"duration_microseconds", std::make_shared<DataTypeUInt64>(), "Time the function was running for in microseconds."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
+        {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of each function execution. Each element is a virtual memory address inside ClickHouse server process."},
     };
 }
 
@@ -42,6 +44,7 @@ void InstrumentationTraceLogElement::appendToBlock(MutableColumns & columns) con
     columns[i++]->insert(tid);
     columns[i++]->insert(duration_microseconds);
     columns[i++]->insert(query_id);
+    columns[i++]->insert(Array(trace.begin(), trace.end()));
 }
 
 }

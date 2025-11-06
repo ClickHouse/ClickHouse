@@ -60,7 +60,7 @@ void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, Contex
         {
             const auto & param = (*parameters)[0];
 
-            Field field = Field(); // fallback
+            Field field = Field();
             if (std::holds_alternative<std::string>(param))
                 field = Field(std::get<std::string>(param));
             else if (std::holds_alternative<Int64>(param))
@@ -71,7 +71,7 @@ void SystemStorageInstrumentation::fillData(MutableColumns & res_columns, Contex
             column_parameters.insert(field);
         }
         else
-            column_parameters.insert(Field()); /// NULL
+            column_parameters.insert(Field());
     };
 
     for (const auto & ip : instrumented_points)
