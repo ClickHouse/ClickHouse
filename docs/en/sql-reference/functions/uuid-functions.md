@@ -3,6 +3,7 @@ description: 'Documentation for Functions for Working with UUIDs'
 sidebar_label: 'UUIDs'
 slug: /sql-reference/functions/uuid-functions
 title: 'Functions for Working with UUIDs'
+doc_type: 'reference'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
@@ -221,7 +222,7 @@ empty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [Arrays](/sql-reference/functions/array-functions#empty) and [Strings](string-functions.md#empty).
+The function also works for Arrays and Strings.
 
 **Arguments**
 
@@ -261,7 +262,7 @@ notEmpty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [Arrays](/sql-reference/functions/array-functions#notEmpty) or [Strings](string-functions.md#notempty).
+The function also works for Arrays and Strings.
 
 **Arguments**
 

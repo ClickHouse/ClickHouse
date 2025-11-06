@@ -39,6 +39,7 @@
 #include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
+#include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
 
@@ -338,7 +339,6 @@ void HTTPHandler::processQuery(
     if (!params.has("http_wait_end_of_query"))
         wait_end_of_query = params.getParsedLast<bool>("wait_end_of_query", wait_end_of_query);
 
-
     bool enable_http_compression = params.getParsedLast<bool>("enable_http_compression", settings[Setting::enable_http_compression]);
     Int64 http_zlib_compression_level
         = params.getParsed<Int64>("http_zlib_compression_level", settings[Setting::http_zlib_compression_level]);
@@ -387,7 +387,7 @@ void HTTPHandler::processQuery(
             auto tmp_data = server.context()->getTempDataOnDisk();
             cascade_buffers_lazy.emplace_back([tmp_data](const WriteBufferPtr &) -> WriteBufferPtr
             {
-                return std::make_unique<TemporaryDataBuffer>(tmp_data.get());
+                return std::make_unique<TemporaryDataBuffer>(tmp_data);
             });
         }
         else
@@ -587,16 +587,29 @@ void HTTPHandler::processQuery(
         used_output.finalize();
     };
 
+    /// Create callback to defer HTTP 100 Continue response to after quota checks
+    HTTPContinueCallback http_continue_callback = {};
+    if (shouldDeferHTTP100Continue(request))
+    {
+        http_continue_callback = [&request, &response]()
+        {
+            if (request.getExpectContinue() && response.getStatus() == HTTPResponse::HTTP_OK)
+            {
+                response.sendContinue();
+            }
+        };
+    }
+
     executeQuery(
         std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
-        /* allow_into_outfile = */ false,
         context,
         set_query_result,
         QueryFlags{},
         {},
         handle_exception_in_output_format,
-        query_finish_callback);
+        query_finish_callback,
+        http_continue_callback);
 }
 
 bool HTTPHandler::trySendExceptionToClient(
@@ -713,7 +726,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
-        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code,X-ClickHouse-Exception-Tag");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())

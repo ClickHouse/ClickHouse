@@ -16,26 +16,26 @@ template <typename HashMap, typename KeyGetter>
 struct Inserter
 {
     static ALWAYS_INLINE bool
-    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, const Columns * stored_columns, size_t i, Arena & pool)
+    insertOne(const HashJoin & join, HashMap & map, KeyGetter & key_getter, const ColumnsInfo * stored_columns_info, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
         if (emplace_result.isInserted() || join.anyTakeLastRow())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns, i);
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns_info, i);
         return emplace_result.isInserted() || join.anyTakeLastRow();
     }
 
     static ALWAYS_INLINE bool
-    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const Columns * stored_columns, size_t i, Arena & pool)
+    insertAll(const HashJoin &, HashMap & map, KeyGetter & key_getter, const ColumnsInfo * stored_columns_info, size_t i, Arena & pool)
     {
         auto emplace_result = key_getter.emplaceKey(map, i, pool);
 
         if (emplace_result.isInserted())
-            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns, i);
+            new (&emplace_result.getMapped()) typename HashMap::mapped_type(stored_columns_info, i);
         else
         {
             /// The first element of the list is stored in the value of the hash table, the rest in the pool.
-            emplace_result.getMapped().insert({stored_columns, i}, pool);
+            emplace_result.getMapped().insert({stored_columns_info, i}, pool);
         }
         return emplace_result.isInserted();
     }
@@ -44,7 +44,7 @@ struct Inserter
         HashJoin & join,
         HashMap & map,
         KeyGetter & key_getter,
-        const Columns * stored_columns,
+        const ColumnsInfo * stored_columns_info,
         size_t i,
         Arena & pool,
         const IColumn & asof_column)
@@ -55,7 +55,7 @@ struct Inserter
         TypeIndex asof_type = *join.getAsofType();
         if (emplace_result.isInserted())
             time_series_map = new (time_series_map) typename HashMap::mapped_type(createAsofRowRef(asof_type, join.getAsofInequality()));
-        (*time_series_map)->insert(asof_column, stored_columns, i);
+        (*time_series_map)->insert(asof_column, stored_columns_info, i);
         return emplace_result.isInserted();
     }
 };
@@ -71,7 +71,7 @@ public:
         MapsTemplate & maps,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const Columns * stored_columns,
+        const ColumnsInfo * stored_columns_info,
         const ScatteredBlock::Selector & selector,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,
@@ -105,7 +105,7 @@ private:
         HashMap & map,
         const ColumnRawPtrs & key_columns,
         const Sizes & key_sizes,
-        const Columns * stored_columns,
+        const ColumnsInfo * stored_columns_info,
         const Selector & selector,
         ConstNullMapPtr null_map,
         const JoinCommon::JoinMask & join_mask,

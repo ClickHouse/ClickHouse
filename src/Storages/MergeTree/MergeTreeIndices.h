@@ -72,12 +72,9 @@ evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUs
 
 class ActionsDAG;
 class Block;
-class IDataPartStorage;
 struct MergeTreeWriterSettings;
 struct SelectQueryInfo;
-
-class GinIndexStore;
-using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
+struct MergeTreeDataPartChecksums;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
@@ -290,18 +287,14 @@ struct IMergeTreeIndex
     /// (to avoid breaking backward compatibility).
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns extension for deserialization.
-    ///
-    /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
+    /// Returns substreams and version for deserialization.
+    virtual MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     /// A more optimal filtering method
-    virtual bool supportsBulkFiltering() const
-    {
-        return false;
-    }
+    virtual bool supportsBulkFiltering() const { return false; }
+    virtual bool supportsReadingOnParallelReplicas() const { return false; }
 
     virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
@@ -309,11 +302,6 @@ struct IMergeTreeIndex
     }
 
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
-
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
-    {
-        return createIndexAggregator(settings);
-    }
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;

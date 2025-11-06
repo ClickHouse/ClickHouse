@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
@@ -22,9 +23,9 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
     return index.expression->getRequiredColumns();
 }
 
-MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
 
     return {0 /*unknown*/, {}};
@@ -143,6 +144,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
     registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
+    registerCreator("sparse_grams", bloomFilterIndexTextCreator);
+    registerValidator("sparse_grams", bloomFilterIndexTextValidator);
+
     registerCreator("bloom_filter", bloomFilterIndexCreator);
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
@@ -153,9 +157,6 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("vector_similarity", vectorSimilarityIndexCreator);
     registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
-
-    // registerCreator("text", ginIndexCreator);
-    // registerValidator("text", ginIndexValidator);
 
     registerCreator("text", textIndexCreator);
     registerValidator("text", textIndexValidator);
