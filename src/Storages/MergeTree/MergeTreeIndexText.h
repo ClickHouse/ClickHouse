@@ -258,7 +258,7 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens_and_postings.empty(); }
-    size_t memoryUsageBytes() const override { return 0; }
+    size_t memoryUsageBytes() const override;
 
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;

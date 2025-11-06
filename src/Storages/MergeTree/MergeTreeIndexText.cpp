@@ -759,6 +759,20 @@ void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTre
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Deserialization of MergeTreeIndexGranuleTextWritable is not implemented");
 }
 
+size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes()
+{
+    size_t posting_lists_size = 0;
+    for (auto plist : posting_lists)
+        posting_lists_size += plist.getSizeInBytes();
+
+    return sizeof(*this)
+        + bloom_filter.getFilterSizeBytes()
+        + tokens_and_postings.capacity() * (sizeof(std::pair<StringRef, PostingListBuilder *>) + sizeof(PostingListBuilder))
+        + tokens_map.getBufferSizeInBytes()
+        + posting_lists_size
+        + arena->allocatedBytes();
+}
+
 MergeTreeIndexTextGranuleBuilder::MergeTreeIndexTextGranuleBuilder(MergeTreeIndexTextParams params_, TokenExtractorPtr token_extractor_)
     : params(std::move(params_))
     , token_extractor(token_extractor_)
