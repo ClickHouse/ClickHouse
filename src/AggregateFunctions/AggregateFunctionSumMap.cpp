@@ -77,7 +77,7 @@ private:
 public:
     using Base = IAggregateFunctionDataHelper<AggregateFunctionMapData, Derived>;
 
-    AggregateFunctionMapBase(const DataTypePtr & keys_type_,
+    [[clang::xray_never_instrument]] AggregateFunctionMapBase(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_)
         : Base(argument_types_, {} /* parameters */, createResultType(keys_type_, values_types_))
         , keys_type(keys_type_)
@@ -115,7 +115,7 @@ public:
         return 0;
     }
 
-    static DataTypePtr createResultType(
+    [[clang::xray_never_instrument]] static DataTypePtr createResultType(
         const DataTypePtr & keys_type_,
         const DataTypes & values_types_)
     {
@@ -187,7 +187,7 @@ public:
         }
     }
 
-    void add(AggregateDataPtr __restrict place, const IColumn ** columns_, const size_t row_num, Arena *) const override
+    [[clang::xray_never_instrument]] void add(AggregateDataPtr __restrict place, const IColumn ** columns_, const size_t row_num, Arena *) const override
     {
         const auto & columns = getArgumentColumns(columns_);
 
@@ -242,7 +242,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    [[clang::xray_never_instrument]] void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & merged_maps = this->data(place).merged_maps;
         const auto & rhs_maps = this->data(rhs).merged_maps;
@@ -270,7 +270,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    [[clang::xray_never_instrument]] void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         if (!version)
             version = getDefaultVersion();
@@ -325,7 +325,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
+    [[clang::xray_never_instrument]] void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
         if (!version)
             version = getDefaultVersion();
@@ -389,7 +389,7 @@ public:
         }
     }
 
-    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    [[clang::xray_never_instrument]] void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         size_t num_columns = values_types.size();
 
@@ -469,7 +469,7 @@ private:
     using Base = AggregateFunctionMapBase<Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
 public:
-    AggregateFunctionSumMap(const DataTypePtr & keys_type_,
+    [[clang::xray_never_instrument]] AggregateFunctionSumMap(const DataTypePtr & keys_type_,
             DataTypes & values_types_, const DataTypes & argument_types_,
             const Array & params_)
         : Base{keys_type_, values_types_, argument_types_}
@@ -512,7 +512,7 @@ private:
     ContainerT keys_to_keep;
 
 public:
-    AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type_,
+    [[clang::xray_never_instrument]] AggregateFunctionSumMapFiltered(const DataTypePtr & keys_type_,
             const DataTypes & values_types_, const DataTypes & argument_types_,
             const Array & params_)
         : Base{keys_type_, values_types_, argument_types_}
@@ -546,7 +546,7 @@ public:
         }
     }
 
-    bool keepKey(const Field & key) const
+    [[clang::xray_never_instrument]] bool keepKey(const Field & key) const
     {
         if (keys_to_keep.contains(key))
             return true;
