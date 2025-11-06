@@ -219,16 +219,10 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         auto pin_it = query_graph.pinned.find(edge);
         if (pin_it != query_graph.pinned.end())
         {
-            /** We pin the expression in two cases:
-              * 1. The expression is part of an OUTER JOIN ON clause.
-              * 2. The expression depends on a relation that was previously part of an OUTER JOIN.
-              * In the first case, the OUTER JOINed relation can only appear as a singleton in the `left` or `right` set.
-              * In the second case, the relation can be part of a bushy tree,
-              * so the expression is not strictly applied the first time its pinned relation is joined.
-              * Here, we just check if the expression is pinned to another join,
-              * which can be different from the expression's source relations.
-              */
-            if (!joined_rels.test(pin_it->second))
+            bool can_apply = (left.count() == 1 && left.test(pin_it->second)) ||
+                             (right.count() == 1 && right.test(pin_it->second));
+            if (!can_apply)
+                /// Pinned to different join
                 continue;
         }
 
@@ -267,15 +261,13 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edge = getApplicableExpressions(left->relations, right->relations);
-                if (edge.empty() && best_plan)
+                if (edge.empty() && (best_plan || join_kind.value() == JoinKind::Inner))
                     continue;
 
                 auto selectivity = computeSelectivity(edge);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (!edge.empty() && join_kind == JoinKind::Cross)
-                        join_kind = JoinKind::Inner;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
@@ -320,9 +312,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
             auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
             JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Unspecified);
-            /// Use left: min idx, right: max idx to keep original order order of joins
-            /// We will swap tables later if needed
-            best_plan = std::make_shared<DPJoinEntry>(components[std::min(best_i, best_j)], components[std::max(best_i, best_j)], cost, cardinality, join_operator);
+            best_plan = std::make_shared<DPJoinEntry>(components[best_i], components[best_j], cost, cardinality, join_operator);
             applied_edge.clear();
         }
 

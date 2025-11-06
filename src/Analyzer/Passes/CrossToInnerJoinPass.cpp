@@ -375,7 +375,6 @@ private:
             return nodes.front();
 
         auto function_node = std::make_shared<FunctionNode>("and");
-        function_node->markAsOperator();
         for (const auto & node : nodes)
             function_node->getArguments().getNodes().push_back(node);
 

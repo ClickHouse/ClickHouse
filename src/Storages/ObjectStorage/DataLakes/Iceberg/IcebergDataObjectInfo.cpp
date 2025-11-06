@@ -37,7 +37,7 @@ extern const SettingsBool use_roaring_bitmap_iceberg_positional_deletes;
 };
 
 IcebergDataObjectInfo::IcebergDataObjectInfo(Iceberg::ManifestFileEntry data_manifest_file_entry_)
-    : ObjectInfo(RelativePathWithMetadata(data_manifest_file_entry_.file_path))
+    : RelativePathWithMetadata(data_manifest_file_entry_.file_path)
     , data_object_file_path_key(data_manifest_file_entry_.file_path_key)
     , underlying_format_read_schema_id(data_manifest_file_entry_.schema_id)
     , sequence_number(data_manifest_file_entry_.added_sequence_number)

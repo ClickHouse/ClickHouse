@@ -134,7 +134,7 @@ bool DatabaseLazy::isTableExist(const String & table_name) const
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
-    return tables_cache.contains(table_name);
+    return tables_cache.find(table_name) != tables_cache.end();
 }
 
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
@@ -156,16 +156,7 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
         }
     }
 
-    try
-    {
-        return loadTable(table_name);
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
-            return {};
-        throw;
-    }
+    return loadTable(table_name);
 }
 
 DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const

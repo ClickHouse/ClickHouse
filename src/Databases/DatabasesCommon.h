@@ -29,8 +29,6 @@ void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & 
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {
 public:
-    bool isExternal() const override { return false; }
-
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;

@@ -25,8 +25,6 @@ ClickHouse can expose its own metrics for scraping from Prometheus:
     <asynchronous_metrics>true</asynchronous_metrics>
     <events>true</events>
     <errors>true</errors>
-    <histograms>true</histograms>
-    <dimensional_metrics>true</dimensional_metrics>
 </prometheus>
 
 Section `<prometheus.handlers>` can be used to make more extended handlers.
@@ -44,8 +42,6 @@ This section is similar to [<http_handlers>](/interfaces/http) but works for pro
                 <asynchronous_metrics>true</asynchronous_metrics>
                 <events>true</events>
                 <errors>true</errors>
-                <histograms>true</histograms>
-                <dimensional_metrics>true</dimensional_metrics>
             </handler>
         </my_rule_1>
     </handlers>
@@ -63,8 +59,6 @@ Settings:
 | `asynchronous_metrics`       | true       | Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.                                                               |
 | `events`                     | true       | Expose metrics from the [system.events](/operations/system-tables/events) table.                                                                                                          |
 | `errors`                     | true       | Expose the number of errors by error codes occurred since the last server restart. This information could be obtained from the [system.errors](/operations/system-tables/errors) as well. |
-| `histograms`                 | true       | Expose histogram metrics from [system.histogram_metrics](/operations/system-tables/histogram_metrics) |
-| `dimensional_metrics`        | true       | Expose dimensional metrics from [system.dimensional_metrics](/operations/system-tables/dimensional_metrics) |
 
 Check (replace `127.0.0.1` with the IP addr or hostname of your ClickHouse server):
 ```bash
@@ -148,8 +142,6 @@ Multiple protocols can be specified together in one place:
                 <asynchronous_metrics>true</asynchronous_metrics>
                 <events>true</events>
                 <errors>true</errors>
-                <histograms>true</histograms>
-                <dimensional_metrics>true</dimensional_metrics>
             </handler>
         </my_rule_1>
         <my_rule_2>

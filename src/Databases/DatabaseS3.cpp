@@ -98,7 +98,7 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
     std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
+    if (loaded_tables.find(name) != loaded_tables.end())
         return true;
 
     return checkUrl(getFullUrl(name), context_, false);

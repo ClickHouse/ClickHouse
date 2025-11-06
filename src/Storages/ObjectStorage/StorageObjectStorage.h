@@ -36,6 +36,10 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
+    using ObjectInfo = RelativePathWithMetadata;
+    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+    using ObjectInfos = std::vector<ObjectInfoPtr>;
+
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
@@ -129,7 +133,7 @@ public:
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
-    void updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
+    bool updateExternalDynamicMetadataIfExists(ContextPtr query_context) override;
 
     IDataLakeMetadata * getExternalMetadata(ContextPtr query_context);
 
@@ -147,9 +151,6 @@ public:
         ContextPtr context) override;
 
     bool supportsDelete() const override { return configuration->supportsDelete(); }
-
-    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
-
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 

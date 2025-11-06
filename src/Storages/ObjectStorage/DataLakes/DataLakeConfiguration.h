@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
@@ -7,7 +6,6 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
@@ -41,6 +39,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int FORMAT_VERSION_TOO_OLD;
     extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
 }
@@ -84,19 +83,31 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
+    bool update(
+        ObjectStoragePtr object_storage,
+        ContextPtr local_context,
+        bool if_not_updated_before,
+        bool check_consistent_with_previous_metadata) override
     {
         const bool updated_before = current_metadata != nullptr;
         if (updated_before && if_not_updated_before)
-            return;
+            return false;
 
-        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
-        if (current_metadata && current_metadata->supportsUpdate())
+        BaseStorageConfiguration::update(
+            object_storage, local_context, if_not_updated_before, check_consistent_with_previous_metadata);
+
+        const bool changed = updateMetadataIfChanged(object_storage, local_context);
+        if (!changed)
+            return true;
+
+        if (check_consistent_with_previous_metadata && hasExternalDynamicMetadata() && updated_before)
         {
-            current_metadata->update(local_context);
-            return;
+            throw Exception(
+                ErrorCodes::FORMAT_VERSION_TOO_OLD,
+                "Metadata is not consinsent with the one which was used to infer table schema. "
+                "Please, retry the query.");
         }
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
+        return true;
     }
 
     void create(
@@ -112,25 +123,27 @@ public:
         {
             auto user_files_path = local_context->getUserFilesPath();
             if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
+                throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
         }
-        BaseStorageConfiguration::update(object_storage, local_context, true);
+        BaseStorageConfiguration::create(
+            object_storage, local_context, columns, partition_by, if_not_exists, catalog, table_id_);
 
         DataLakeMetadata::createInitial(
-            object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
+            object_storage,
+            weak_from_this(),
+            local_context,
+            columns,
+            partition_by,
+            if_not_exists,
+            catalog,
+            table_id_
+        );
     }
 
     bool supportsDelete() const override
     {
         assertInitialized();
         return current_metadata->supportsDelete();
-    }
-
-    bool supportsParallelInsert() const override
-    {
-        assertInitialized();
-        return current_metadata->supportsParallelInsert();
     }
 
     void mutate(const MutationCommands & commands,
@@ -170,10 +183,10 @@ public:
         return BaseStorageConfiguration::createObjectStorage(context, is_readonly);
     }
 
-    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata(ContextPtr local_context) const override
+    std::optional<ColumnsDescription> tryGetTableStructureFromMetadata() const override
     {
         assertInitialized();
-        if (auto schema = current_metadata->getTableSchema(local_context); !schema.empty())
+        if (auto schema = current_metadata->getTableSchema(); !schema.empty())
             return ColumnsDescription(std::move(schema));
         return std::nullopt;
     }
@@ -202,19 +215,10 @@ public:
         return current_metadata->getSchemaTransformer(local_context, object_info);
     }
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr context) const override
+    bool hasExternalDynamicMetadata() override
     {
         assertInitialized();
-        return current_metadata->getStorageSnapshotMetadata(context);
-    }
-
-    /// This method should work even if metadata is not initialized
-    bool needsUpdateForSchemaConsistency() const override
-    {
-#if USE_AVRO
-        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
-#endif
-        return false;
+        return current_metadata->supportsSchemaEvolution();
     }
 
     IDataLakeMetadata * getExternalMetadata() override
@@ -235,11 +239,10 @@ public:
         const ActionsDAG * filter_dag,
         IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
-        StorageMetadataPtr storage_metadata,
         ContextPtr context) override
     {
         assertInitialized();
-        return current_metadata->iterate(filter_dag, callback, list_batch_size, storage_metadata, context);
+        return current_metadata->iterate(filter_dag, callback, list_batch_size, context);
     }
 
 #if USE_PARQUET
@@ -258,10 +261,10 @@ public:
     }
 #endif
 
-    void modifyFormatSettings(FormatSettings & settings_, const Context & local_context) const override
+    void modifyFormatSettings(FormatSettings & settings_) const override
     {
         assertInitialized();
-        current_metadata->modifyFormatSettings(settings_, local_context);
+        current_metadata->modifyFormatSettings(settings_);
     }
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override
@@ -269,10 +272,10 @@ public:
         assertInitialized();
         return current_metadata->getColumnMapperForObject(object_info);
     }
-    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
+    ColumnMapperPtr getColumnMapperForCurrentSchema() const override
     {
         assertInitialized();
-        return current_metadata->getColumnMapperForCurrentSchema(storage_metadata_snapshot, context);
+        return current_metadata->getColumnMapperForCurrentSchema();
     }
 
     void drop(ContextPtr local_context) override
@@ -389,27 +392,53 @@ private:
         return current_metadata->prepareReadingFromFormat(
             requested_columns, storage_snapshot, local_context, supports_subset_of_columns, supports_tuple_elements);
     }
+
+    bool updateMetadataIfChanged(
+        ObjectStoragePtr object_storage,
+        ContextPtr context)
+    {
+        if (!current_metadata)
+        {
+            current_metadata = DataLakeMetadata::create(
+                object_storage,
+                weak_from_this(),
+                context);
+            return true;
+        }
+
+        if (current_metadata->supportsUpdate())
+        {
+            return current_metadata->update(context);
+        }
+
+        auto new_metadata = DataLakeMetadata::create(
+            object_storage,
+            weak_from_this(),
+            context);
+
+        if (*current_metadata == *new_metadata)
+            return false;
+
+        current_metadata = std::move(new_metadata);
+        return true;
+    }
 };
 
 
 #if USE_AVRO
 #    if USE_AWS_S3
 using StorageS3IcebergConfiguration = DataLakeConfiguration<StorageS3Configuration, IcebergMetadata>;
-using StorageS3PaimonConfiguration = DataLakeConfiguration<StorageS3Configuration, PaimonMetadata>;
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
 using StorageAzureIcebergConfiguration = DataLakeConfiguration<StorageAzureConfiguration, IcebergMetadata>;
-using StorageAzurePaimonConfiguration = DataLakeConfiguration<StorageAzureConfiguration, PaimonMetadata>;
 #endif
 
 #if USE_HDFS
 using StorageHDFSIcebergConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, IcebergMetadata>;
-using StorageHDFSPaimonConfiguration = DataLakeConfiguration<StorageHDFSConfiguration, PaimonMetadata>;
 #endif
 
 using StorageLocalIcebergConfiguration = DataLakeConfiguration<StorageLocalConfiguration, IcebergMetadata>;
-using StorageLocalPaimonConfiguration = DataLakeConfiguration<StorageLocalConfiguration, PaimonMetadata>;
 #endif
 
 #if USE_PARQUET

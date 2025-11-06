@@ -36,9 +36,7 @@
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
 #include <Backups/RestorerFromBackup.h>
-
 #include <Disks/TemporaryFileOnDisk.h>
-#include <Disks/IDiskTransaction.h>
 
 #include <cassert>
 #include <chrono>
@@ -857,17 +855,7 @@ void StorageLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    /// We need to remove files here instead of doing truncate because truncate can break hardlinks used by concurrent backups
-    auto clear_tx = disk->createTransaction();
-
-    for (auto & data_file : data_files)
-        clear_tx->removeFileIfExists(data_file.path);
-
-    if (use_marks_file)
-        clear_tx->removeFileIfExists(marks_file_path);
-
-    clear_tx->removeFileIfExists(file_checker.getPath());
-    clear_tx->commit();
+    disk->clearDirectory(table_path);
 
     for (auto & data_file : data_files)
     {

@@ -12,15 +12,14 @@ workflow = Workflow.Config(
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan", "amd_tsan", "debug"))
+            if any(t in job.name for t in ("amd_asan", "amd_tsan", "release", "debug"))
         ],
-        *JobConfigs.release_build_jobs,
         *[
             job
             for job in JobConfigs.special_build_jobs
             if any(t in job.name for t in ("darwin",))
         ],
-        JobConfigs.docker_server,
+        JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,

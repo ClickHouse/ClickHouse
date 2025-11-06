@@ -65,9 +65,10 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since
+        /// Remove table without lock since:
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
         table->drop();
 
         if (table->storesDataOnDisk())

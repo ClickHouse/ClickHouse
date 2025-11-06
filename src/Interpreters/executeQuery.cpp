@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
+#include <IO/EmptyReadBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
@@ -600,8 +601,7 @@ void logQueryFinishImpl(
     if (process_list_elem)
     {
 
-        if (!query_pipeline.getProcessors().empty())
-            logProcessorProfile(context, query_pipeline.getProcessors());
+        logProcessorProfile(context, query_pipeline.getProcessors());
 
         auto result_progress = flushQueryProgress(query_pipeline, pulling_pipeline, context->getProgressCallback(), process_list_elem);
 
@@ -1006,8 +1006,7 @@ static BlockIO executeQueryImpl(
     QueryProcessingStage::Enum stage,
     ReadBufferUniquePtr & istr,
     ASTPtr & out_ast,
-    ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
-    HTTPContinueCallback http_continue_callback = {})
+    ImplicitTransactionControlExecutorPtr implicit_tcl_executor)
 {
     const bool internal = flags.internal;
 
@@ -1099,7 +1098,6 @@ static BlockIO executeQueryImpl(
             {
                 /// Verify that AST formatting is consistent:
                 /// If you format AST, parse it back, and format it again, you get the same string.
-                std::string_view original_query{begin, static_cast<size_t>(end - begin)};
 
                 String formatted1 = out_ast->formatWithPossiblyHidingSensitiveData(
                     /*max_length=*/0,
@@ -1129,7 +1127,7 @@ static BlockIO executeQueryImpl(
                     if (e.code() == ErrorCodes::SYNTAX_ERROR)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Inconsistent AST formatting: the query:\n{}\ncannot parse query back from {}",
-                            formatted1, original_query);
+                            formatted1, std::string_view(begin, end-begin));
                     else
                         throw;
                 }
@@ -1146,10 +1144,10 @@ static BlockIO executeQueryImpl(
 
                 if (formatted1 != formatted2)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Inconsistent AST formatting: the query:\n{}\nFormatted as:\n{}\nWas parsed and formatted back as:\n{}",
-                        original_query, formatted1, formatted2);
+                        "Inconsistent AST formatting: the query:\n{}\nWas parsed and formatted back as:\n{}",
+                        formatted1, formatted2);
             }
-            catch (const Exception & e)
+            catch (Exception & e)
             {
                 /// Method formatImpl is not supported by MySQLParser::ASTCreateQuery. That code would fail inder debug build.
                 if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
@@ -1421,10 +1419,6 @@ static BlockIO executeQueryImpl(
                 quota->checkExceeded(QuotaType::ERRORS);
             }
 
-            /// Invoke HTTP 100-Continue callback after async insert quota checks are completed
-            if (http_continue_callback && !internal)
-                http_continue_callback();
-
             auto result = queue->pushQueryWithInlinedData(out_ast, context);
 
             if (result.status == AsynchronousInsertQueue::PushResult::OK)
@@ -1565,10 +1559,6 @@ static BlockIO executeQueryImpl(
                         quota->checkExceeded(QuotaType::ERRORS);
                     }
                 }
-
-                /// Invoke HTTP 100-Continue callback after quota checks are completed
-                if (http_continue_callback && !internal)
-                    http_continue_callback();
 
                 if (interpreter)
                 {
@@ -1826,29 +1816,29 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
+    bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    QueryFinishCallback query_finish_callback)
 {
     executeQuery(
-        wrapReadBufferReference(istr), ostr, context, std::move(set_result_details), flags,
-        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
+        wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
+        output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback));
 }
 
 void executeQuery(
     ReadBufferUniquePtr istr,
     WriteBuffer & ostr,
+    bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
     const std::optional<FormatSettings> & output_format_settings,
     HandleExceptionInOutputFormatFunc handle_exception_in_output_format,
-    QueryFinishCallback query_finish_callback,
-    HTTPContinueCallback http_continue_callback)
+    QueryFinishCallback query_finish_callback)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1872,12 +1862,9 @@ void executeQuery(
             context->getSettingsRef()[Setting::max_os_cpu_wait_time_ratio_to_throw],
             /*should_throw*/ true);
 
-    if (istr->available() > max_query_size || http_continue_callback)
+    if (istr->available() > max_query_size)
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
-        /// Also, if the HTTP 100 Continue response is deferred (which is the case if http_continue_callback is set),
-        /// we should not attempt to read anything from the body. We expect the query (without insert data) to be present
-        /// in the buffer already because it should have been extracted from the query parameter.
         begin = istr->position();
         end = istr->buffer().end();
         istr->position() += end - begin;
@@ -1970,7 +1957,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor);
     }
     catch (...)
     {
@@ -2020,6 +2007,7 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
+    std::unique_ptr<WriteBuffer> compressed_buffer;
     try
     {
         if (pipeline.pushing())
@@ -2036,11 +2024,29 @@ void executeQuery(
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
-                throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
+            {
+                if (!allow_into_outfile)
+                    throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
+
+                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+
+                std::string compression_method;
+                if (ast_query_with_output->compression)
+                {
+                    const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
+                    compression_method = compression_method_node.value.safeGet<std::string>();
+                }
+                const auto & settings = context->getSettingsRef();
+                compressed_buffer = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    chooseCompressionMethod(out_file, compression_method),
+                    /* compression level = */ static_cast<int>(settings[Setting::output_format_compression_level]),
+                    /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+            }
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
-                *out_buf,
+                compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
@@ -2118,9 +2124,6 @@ void executeQuery(
     /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
     if (implicit_tcl_executor->transactionRunning())
         implicit_tcl_executor->commit(context);
-
-    /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseQuerySlot();
 
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us

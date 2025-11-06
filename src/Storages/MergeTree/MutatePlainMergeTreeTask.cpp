@@ -75,11 +75,6 @@ void MutatePlainMergeTreeTask::prepare()
             time(nullptr), task_context, merge_mutate_entry->txn, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
-void MutatePlainMergeTreeTask::finish()
-{
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
-}
 
 bool MutatePlainMergeTreeTask::executeStep()
 {
@@ -142,7 +137,6 @@ bool MutatePlainMergeTreeTask::executeStep()
         case State::NEED_FINISH:
         {
             // Nothing to do
-            finish();
             state = State::SUCCESS;
             return false;
         }
@@ -162,9 +156,6 @@ void MutatePlainMergeTreeTask::cancel() noexcept
 
     if (new_part)
         new_part->removeIfNeeded();
-
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
 }
 
 
