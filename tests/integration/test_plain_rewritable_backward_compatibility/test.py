@@ -185,6 +185,9 @@ def test_backward_compatibility_bug_80393(start_cluster):
     node_master.query("DROP TABLE mt SYNC")
     node_master.stop_clickhouse()
 
+    for node in [node_25_4, node_master]:
+        node.exec_in_container(["rm", "/var/lib/clickhouse/metadata/default/mt.sql"])
+
     blobs = [obj.object_name for obj in cluster.minio_client.list_objects(cluster.minio_bucket, 'data/', recursive=True)]
     data = [cluster.minio_client.get_object(cluster.minio_bucket, blob).data for blob in blobs]
     print(*zip(blobs, data))
