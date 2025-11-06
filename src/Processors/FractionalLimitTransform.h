@@ -14,7 +14,7 @@ namespace DB
 {
 
 /// Implementation for LIMIT N OFFSET M
-/// where N and M are fractions in (0,  1) representing percentages.
+/// where N and M are fractions in (0, 1) representing percentages.
 ///
 /// This processor support multiple inputs and outputs (the same number).
 /// Each pair of input and output port works independently.
