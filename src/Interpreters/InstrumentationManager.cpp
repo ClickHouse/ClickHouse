@@ -22,21 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/String.h>
 
-#include <llvm/Object/Binary.h>
-#include <llvm/Object/ObjectFile.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/raw_ostream.h>
 #include <llvm/XRay/InstrumentationMap.h>
-#include <llvm/DebugInfo/Symbolize/Symbolize.h>
-#include <llvm/Support/Path.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/IR/Function.h>
-
-using namespace llvm;
-using namespace llvm::object;
-using namespace llvm::xray;
-using namespace llvm::symbolize;
 
 namespace DB
 {
@@ -264,7 +250,7 @@ void InstrumentationManager::parseInstrumentationMap()
 {
     auto binary_path = std::filesystem::canonical(std::filesystem::path("/proc/self/exe")).string();
 
-    auto instr_map_or_error = loadInstrumentationMap(binary_path);
+    auto instr_map_or_error = llvm::xray::loadInstrumentationMap(binary_path);
     if (!instr_map_or_error)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to load instrumentation map: {}", toString(instr_map_or_error.takeError()));
 
@@ -275,33 +261,26 @@ void InstrumentationManager::parseInstrumentationMap()
 
     LOG_DEBUG(logger, "Starting to parse the XRay instrumentation map. This takes a few seconds...");
 
-    LLVMSymbolizer symbolizer;
-    std::optional<String> function_name;
     functions_container.reserve(function_addresses.size());
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
+    size_t errors = 0;
 
     for (const auto & [func_id, addr] : function_addresses)
     {
-        object::SectionedAddress module_address;
-        module_address.Address = addr;
-        module_address.SectionIndex = object::SectionedAddress::UndefSection;
-
-        function_name.reset();
-
-        if (auto res_or_err = symbolizer.symbolizeCode(binary_path, module_address))
+        const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(addr));
+        if (symbol)
         {
-            auto & di = *res_or_err;
-            if (di.FunctionName != DILineInfo::BadString)
-                function_name = di.FunctionName;
+            const auto symbol_demangled = demangle(symbol->name);
+            auto stripped_function_name = extractNearestNamespaceAndFunction(symbol_demangled);
+            functions_container.emplace(func_id, symbol_demangled, stripped_function_name);
         }
-
-        if (function_name.has_value())
+        else
         {
-            auto stripped_function_name = extractNearestNamespaceAndFunction(function_name.value());
-            functions_container.emplace(func_id, function_name.value(), stripped_function_name);
+            errors++;
         }
     }
 
-    LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map: {} symbols parsed successfully", functions_container.size());
+    LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map: {} symbols parsed successfully, {} with errors", functions_container.size(), errors);
 }
 
 void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
