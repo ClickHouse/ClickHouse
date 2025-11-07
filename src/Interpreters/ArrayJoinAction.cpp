@@ -267,7 +267,7 @@ Block ArrayJoinResultIterator::next()
                 }
                 else
                 {
-                    ColumnPtr map_ptr = current.column->convertToFullColumnIfConst();
+                    ColumnPtr map_ptr = current.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
                     const ColumnMap & map = typeid_cast<const ColumnMap &>(*map_ptr);
                     array_ptr = (is_left && !is_unaligned) ? non_empty_array_columns[current.name]->cut(current_row, next_row - current_row)
                                                            : map.getNestedColumnPtr();
