@@ -46,7 +46,7 @@ void ProtobufListOutputFormat::finalizeImpl()
 
 void ProtobufListOutputFormat::resetFormatterImpl()
 {
-    serializer->reset();
+    (*serializer).reset();
 }
 
 void registerOutputFormatProtobufList(FormatFactory & factory)

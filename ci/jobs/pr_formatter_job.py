@@ -36,9 +36,11 @@ Header: "### Changelog category (leave one):"
 
 ### 2. Changelog Entry
 Header: "### Changelog entry (a [user-readable short description](https://github.com/ClickHouse/ClickHouse/blob/master/docs/changelog_entry_guidelines.md) of the changes that goes into CHANGELOG.md):"
-- Include this section UNLESS the category says "changelog entry is not required"
-- Reuse existing entry with grammar fixes, or generate from PR title if missing
-- Keep it plain text, ≤50 words, no quotes or markdown formatting
+- Always keep this section if an entry is present in the original PR body, even if the category says "changelog entry is not required"
+- If no entry exists and category says "changelog entry is not required", omit this section
+- If no entry exists and category requires one, generate from PR title
+- Entry may include markdown formatting (links, bold, italic, code) but must NOT contain new lines or checkboxes
+- Keep entry ≤50 words, no quotes
 - If PR mentions "Fixes/Resolves/Closes #NUMBER", append: "Resolves #NUMBER"
 
 ## Optional Sections
@@ -49,8 +51,13 @@ Header: "### Documentation entry for user-facing changes"
 
 ### 4. Details
 Header: "### Details"
-- Add any additional context from the original PR body
-- Include issue link if referenced. for example: "Resolves #NUMBER"
+- Move ALL user text from the original PR body to this section, including:
+  - Text under unknown/unrecognized headers
+  - Any text that was dropped or doesn't fit in other sections
+  - Additional context from the original PR body
+- Preserve all markdown formatting (links, lists, code blocks, bold, italic, etc.)
+- Make only minimal edits to fix grammatical mistakes or bad formatting
+- Include issue link if referenced, for example: "Resolves #NUMBER"
 
 ## Formatting
 - Separate all sections with blank lines
@@ -87,7 +94,7 @@ Header: "### Details"
                 command=[
                     f"cat {output_file}",
                     f"test -f {output_file} && test $(wc -l < {output_file}) -gt 1 && test $(wc -c < {output_file}) -gt 50",
-                    f"sed -i.bak '1s/^/<!---AI changelog entry and formatting assistance: false-->\\n/' {output_file} && rm -f {output_file}.bak",
+                    f"sed -i.bak '1s/^/<!--- Disable AI PR formatting assistant: true -->\\n/' {output_file} && rm -f {output_file}.bak",
                 ],
             )
         )

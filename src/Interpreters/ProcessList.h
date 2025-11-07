@@ -285,6 +285,9 @@ public:
     {
         return is_internal;
     }
+
+    /// Manually release query slot (if any).
+    void releaseQuerySlot() { query_slot.reset(); }
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;

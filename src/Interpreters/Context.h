@@ -103,6 +103,7 @@ class UncompressedCache;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
 class TextIndexDictionaryBlockCache;
+class TextIndexHeaderCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -807,6 +808,7 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
@@ -1282,6 +1284,11 @@ public:
     void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
     void clearTextIndexDictionaryBlockCache() const;
+
+    void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexHeaderCache> getTextIndexHeaderCache() const;
+    void clearTextIndexHeaderCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
