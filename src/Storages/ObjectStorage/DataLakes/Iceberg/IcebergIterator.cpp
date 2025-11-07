@@ -339,7 +339,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
+        IcebergDataObjectInfoPtr object_info
+            = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
         for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
         {
             object_info->addPositionDeleteObject(position_delete);
@@ -348,7 +349,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
-        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
