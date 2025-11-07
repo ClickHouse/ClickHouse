@@ -15,9 +15,11 @@ ARG apt_archive="http://archive.ubuntu.com"
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
+ARG DEFAULT_UID="101"
+ARG DEFAULT_GID="101"
 RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
-    && groupadd -r clickhouse --gid=101 \
-    && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
+    && groupadd -r clickhouse --gid="$DEFAULT_UID" \
+    && useradd -r -g clickhouse --uid="$DEFAULT_GID" --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
     && apt-get install --yes --no-install-recommends \
         busybox \
@@ -137,6 +139,7 @@ COPY entrypoint.sh /entrypoint.sh
 
 EXPOSE 9000 8123 9009
 VOLUME /var/lib/clickhouse
+USER clickhouse
 
 ENV CLICKHOUSE_CONFIG=/etc/clickhouse-server/config.xml
 

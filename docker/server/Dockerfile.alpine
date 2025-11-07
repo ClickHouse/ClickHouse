@@ -98,5 +98,6 @@ RUN mkdir -p \
 
 VOLUME "${DEFAULT_DATA_DIR}"
 EXPOSE 9000 8123 9009
+USER clickhouse
 
 ENTRYPOINT ["/entrypoint.sh"]
