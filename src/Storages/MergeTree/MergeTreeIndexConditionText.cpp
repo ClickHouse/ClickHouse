@@ -50,11 +50,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , token_extractor(token_extactor_)
     , use_bloom_filter(context_->getSettingsRef()[Setting::text_index_use_bloom_filter])
     , use_dictionary_block_cache(context_->getSettingsRef()[Setting::use_text_index_dictionary_cache])
-    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
+    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache())
     , use_header_cache(context_->getSettingsRef()[Setting::use_text_index_header_cache])
-    , header_cache(context_->getTextIndexHeaderCache().get())
+    , header_cache(context_->getTextIndexHeaderCache())
     , use_postings_cache(context_->getSettingsRef()[Setting::use_text_index_postings_cache])
-    , postings_cache(context_->getTextIndexPostingsCache().get())
+    , postings_cache(context_->getTextIndexPostingsCache())
 {
     if (!predicate)
     {
