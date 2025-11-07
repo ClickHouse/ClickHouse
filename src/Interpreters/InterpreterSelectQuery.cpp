@@ -2135,8 +2135,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                     }
             }
 
+
             bool apply_limit = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregation;
-            bool try_apply_prelimit = apply_limit &&
+            bool apply_prelimit = apply_limit &&
                                   query.limitLength() && !query.limit_with_ties &&
                                   !hasWithTotalsInAnySubqueryInFromClause(query) &&
                                   !query.arrayJoinExpressionList().first &&
@@ -2144,11 +2145,20 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                                   !expressions.hasLimitBy() &&
                                   !settings[Setting::extremes] &&
                                   !has_withfill;
-            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-            bool applied_prelimit = false;
-            if (try_apply_prelimit)
+            /// Preliminary Limits mustn't be added if there is a fractional limit/offset
+            /// because in order to correctly calculate the number of rows to be produced
+            /// based on the given fraction the final limit/offset processor must count the entire dataset.
+            /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+            if (apply_prelimit)
             {
-                applied_prelimit = executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
+                const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
+                apply_prelimit = apply_prelimit && (lim_info.fractional_limit == 0 && lim_info.fractional_offset == 0);
+            }
+
+            bool apply_offset = options.to_stage != QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+            if (apply_prelimit)
+            {
+                executePreLimit(query_plan, /* do_not_skip_offset= */!apply_offset);
             }
 
             /** If there was more than one stream,
@@ -2183,7 +2193,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             /// Extremes are calculated before LIMIT, but after LIMIT BY. This is Ok.
             executeExtremes(query_plan);
 
-            bool limit_applied = applied_prelimit || (query.limit_with_ties && apply_offset);
+            bool limit_applied = apply_prelimit || (query.limit_with_ties && apply_offset);
             /// Limit is no longer needed if there is prelimit.
             ///
             /// NOTE: that LIMIT cannot be applied if OFFSET should not be applied,
@@ -3209,7 +3219,7 @@ void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before
 
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-bool InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
+void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
@@ -3217,17 +3227,13 @@ bool InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
     {
         LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-        /// Preliminary Limits mustn't be added if there is a fractional limit/offset
-        /// because in order to correctly calculate the number of rows to be produced
-        /// based on the given fraction the final limit/offset processor must count the entire dataset.
-        /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
         if (lim_info.fractional_offset > 0 || lim_info.fractional_limit > 0)
-            return false;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Preliminary LIMIT with Fractional LIMIT/OFFSET non-zero");
 
         if (do_not_skip_offset)
         {
             if (lim_info.limit_length > std::numeric_limits<UInt64>::max() - lim_info.limit_offset)
-                return false;
+                return;
 
             lim_info.limit_length += lim_info.limit_offset;
             lim_info.limit_offset = 0;
@@ -3270,9 +3276,7 @@ bool InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             query_plan.addStep(std::move(limit));
         }
-        return true;
     }
-    return false;
 }
 
 
