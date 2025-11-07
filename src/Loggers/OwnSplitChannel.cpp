@@ -505,15 +505,11 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
     {
         try
         {
+            log_notification(notification);
             if (queues[i]->request_flush)
             {
-                log_notification(notification);
                 flush_queue();
                 queues[i]->request_flush = false;
-            }
-            else
-            {
-                log_notification(notification);
             }
 
             notification = queues[i]->waitDequeueMessage();
