@@ -42,6 +42,20 @@ public:
 
     void merge(const Self & rhs)
     {
+        if (rhs.empty())
+            return;
+
+        if (Base::empty())
+        {
+            *this = rhs;
+            return;
+        }
+
+        /// We know 100% we will need to resize so let's do it preemtively and add enough to hold all elements even in the case
+        /// there are no duplicates (might use more memory than needed in case of many duplicates between the 2 tables).
+        if (rhs.grower.bufSize() > Base::grower.bufSize())
+            Base::resize(rhs.size() + Base::size());
+
         if (!this->hasZero() && rhs.hasZero())
         {
             this->setHasZero();
@@ -50,7 +64,7 @@ public:
 
         for (size_t i = 0; i < rhs.grower.bufSize(); ++i)
             if (!rhs.buf[i].isZero(*this))
-                this->insert(rhs.buf[i].getValue());
+                this->insert(rhs.buf[i]);
     }
 };
 
@@ -74,7 +88,16 @@ public:
     void merge(const HashSetTable<Key, Args...> & rhs)
     {
         for (auto it = rhs.begin(), end = rhs.end(); it != end; ++it)
-            this->insert(it->getValue());
+            this->insert(*it);
+    }
+
+    void merge(const Self & rhs)
+    {
+        if (rhs.empty())
+            return;
+
+        for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
+            this->impls[i].merge(rhs.impls[i]);
     }
 
     /// Writes its content in a way that it will be correctly read by HashSetTable.

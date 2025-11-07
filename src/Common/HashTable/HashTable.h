@@ -747,6 +747,23 @@ public:
         return *this;
     }
 
+    HashTable & operator=(const HashTable & rhs) noexcept
+    {
+        destroyElements();
+        free();
+
+        grower = rhs.grower;
+        m_size = rhs.m_size;
+        buf = reinterpret_cast<Cell *>(Allocator::alloc(rhs.grower.bufSize()));
+        std::memcpy(buf, rhs.buf, m_size);
+
+        Hash::operator=(rhs);
+        Cell::State::operator=(rhs);
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(rhs);
+
+        return *this;
+    }
+
     class Reader final : private Cell::State
     {
     public:
@@ -975,6 +992,24 @@ public:
         if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
         {
             emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
+        }
+
+        if (res.second)
+            res.first->setMapped(x);
+
+        return res;
+    }
+
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const Cell & cell)
+    {
+        std::pair<LookupResult, bool> res;
+        auto hash = cell.getHash(*this);
+        const value_type & x = cell.getValue();
+        const Key & key = cell.getKey();
+
+        if (!emplaceIfZero(key, res.first, res.second, hash))
+        {
+            emplaceNonZero(key, res.first, res.second, hash);
         }
 
         if (res.second)
