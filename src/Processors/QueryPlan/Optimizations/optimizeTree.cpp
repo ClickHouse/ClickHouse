@@ -1,10 +1,7 @@
-#include <IO/WriteBufferFromString.h>
-#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -13,21 +10,11 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
-
 #include <memory>
 #include <stack>
 
 namespace DB
 {
-
-// namespace Setting
-// {
-// extern const SettingsMaxThreads max_threads;
-// extern const SettingsNonZeroUInt64 max_parallel_replicas;
-// extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-// }
 
 namespace ErrorCodes
 {
@@ -178,7 +165,18 @@ void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter,
     }
 }
 
-QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_replicas_root)
+/// Find the top node of the parallel replicas plan. E.g.:
+///
+/// Expression ((Project names + Projection))
+///  MergingAggregated
+///    Union
+///      Aggregating  <-- this node is the last plan step to be executed on replicas
+///        Expression (Before GROUP BY)
+///          Expression ((WHERE + Change column names to column identifiers))
+///            ReadFromMergeTree (default.hits)
+///      ReadFromRemoteParallelReplicas (Query: ... Replicas: ...)
+///
+QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel_replicas_root)
 {
     QueryPlan::Node * replicas_plan_top_node = nullptr;
 
@@ -191,27 +189,22 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
 
         if (typeid_cast<UnionStep *>(frame.node->step.get()))
         {
-            bool found_read_from_parallel_replicas = false;
             for (const auto & child : frame.node->children)
             {
                 auto * node = child;
+                /// ExpressionStep can be placed on top of ReadFromRemoteParallelReplicas
                 if (typeid_cast<const ExpressionStep *>(node->step.get()))
-                    node = child->children.front();
-                if (typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
                 {
-                    found_read_from_parallel_replicas = true;
+                    node = child->children.front();
                 }
-                else
+                if (!typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
                 {
                     if (replicas_plan_top_node)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "");
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Top node for parallel replicas plan is already found");
 
                     replicas_plan_top_node = node;
                 }
             }
-
-            if (!found_read_from_parallel_replicas)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "");
 
             if (replicas_plan_top_node)
                 break;
@@ -229,8 +222,6 @@ QueryPlan::Node * findReplicasTopNode(QueryPlan::Node * plan_with_parallel_repli
         stack.pop_back();
     }
 
-    // if (!replicas_plan_top_node)
-    //     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find top node for parallel replicas plan");
     return replicas_plan_top_node;
 }
 
@@ -285,7 +276,7 @@ void considerEnablingParallelReplicas(
 
     auto plan_with_parallel_replicas = optimization_settings.query_plan_builder();
 
-    const auto * final_node_in_replica_plan = findReplicasTopNode(plan_with_parallel_replicas->getRootNode());
+    const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
         return;
     chassert(final_node_in_replica_plan);
