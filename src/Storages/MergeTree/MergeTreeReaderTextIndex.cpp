@@ -209,7 +209,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         }
         else
         {
-            readPostingsIfNeeded(granule);
+            readPostingsIfNeeded(granule, index_mark);
 
             const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
             size_t mark_at_index_granule = index_mark * granularity;
@@ -247,7 +247,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
+void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t index_mark)
 {
     if (!granule.need_read_postings)
         return;
@@ -258,6 +258,10 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto * data_buffer = postings_stream->getDataBuffer();
     auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
+
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const auto & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
+    const auto & index_name = index.index->getFileName();
 
     PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
@@ -270,7 +274,6 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         else
         {
             const auto & future_postings = postings.getFuturePostings();
-            const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*future_postings.state.condition);
             const auto load_postings = [&]() -> PostingListPtr
             {
                 ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
@@ -279,9 +282,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
             };
 
             posting_list = condition_text.usePostingsCache()
-                ? condition_text.postingsCache()->getOrSet(
-                    TextIndexPostingsCache::hash(future_postings.state.path_to_data_part, future_postings.state.index_name, future_postings.state.index_mark, token.toView()),
-                    load_postings)
+                ? condition_text.postingsCache()->getOrSet(TextIndexPostingsCache::hash(data_path, index_name, index_mark, token.toView()), load_postings)
                 : load_postings();
         }
 
