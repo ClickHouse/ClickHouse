@@ -113,14 +113,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
-    extern const ServerSettingsString parquet_metadata_files_cache_policy;
-    extern const ServerSettingsUInt64 parquet_metadata_files_cache_size;
-    extern const ServerSettingsUInt64 parquet_metadata_files_cache_max_entries;
-    extern const ServerSettingsDouble parquet_metadata_files_cache_size_ratio;
-    extern const ServerSettingsString parquet_v3_metadata_cache_policy;
-    extern const ServerSettingsUInt64 parquet_v3_metadata_cache_size;
-    extern const ServerSettingsUInt64 parquet_v3_metadata_cache_max_entries;
-    extern const ServerSettingsDouble parquet_v3_metadata_cache_size_ratio;
+    extern const ServerSettingsString parquet_metadata_cache_policy;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_size;
+    extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
+    extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -935,17 +931,8 @@ void LocalServer::processConfig()
         parquet_metadata_files_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_files_cache_size));
     }
-    global_context->setParquetMetadataCache(parquet_metadata_files_cache_policy, parquet_metadata_files_cache_size, parquet_metadata_files_cache_max_entries, parquet_metadata_files_cache_size_ratio);
-    String parquet_v3_metadata_cache_policy = server_settings[ServerSetting::parquet_v3_metadata_cache_policy];
-    size_t parquet_v3_metadata_cache_size = server_settings[ServerSetting::parquet_v3_metadata_cache_size];
-    size_t parquet_v3_metadata_cache_max_entries = server_settings[ServerSetting::parquet_v3_metadata_cache_max_entries];
-    double parquet_v3_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_v3_metadata_cache_size_ratio];
-    if (parquet_v3_metadata_cache_size > max_cache_size)
-    {
-        parquet_v3_metadata_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered Parquet v3 metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_v3_metadata_cache_size));
-    }
-    global_context->setParquetV3MetadataCache(parquet_v3_metadata_cache_policy, parquet_v3_metadata_cache_size, parquet_v3_metadata_cache_max_entries, parquet_v3_metadata_cache_size_ratio);
+    global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
+    global_context->setParquetV3MetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
 #endif
 
     Names allowed_disks_table_engines;
