@@ -322,7 +322,7 @@ void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 
     if (!fs_tree.existsFile(path))
     {
-        fs_tree.recordFile(path, {object.bytes_size});
+        fs_tree.recordFile(path, {object.bytes_size, std::time(nullptr)});
         written = true;
     }
 }

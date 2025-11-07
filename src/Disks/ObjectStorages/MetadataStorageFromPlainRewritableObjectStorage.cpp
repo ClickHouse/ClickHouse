@@ -35,6 +35,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace FailPoints
@@ -273,11 +274,6 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     object_storage->setKeysGenerator(keys_gen);
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
-{
-    return existsDirectory(path) || existsFile(path);
-}
-
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
     return fs_tree->existsFile(path);
@@ -288,9 +284,56 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
     return fs_tree->existsDirectory(path).first;
 }
 
+bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(const std::string & path) const
+{
+    return existsFile(path) || existsDirectory(path);
+}
+
+uint64_t MetadataStorageFromPlainRewritableObjectStorage::getFileSize(const std::string & path) const
+{
+    if (auto file_size = getFileSizeIfExists(path))
+        return file_size.value();
+
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", path);
+}
+
+std::optional<uint64_t> MetadataStorageFromPlainRewritableObjectStorage::getFileSizeIfExists(const std::string & path) const
+{
+    if (auto remote_info = fs_tree->getFileRemoteInfo(path))
+        return remote_info->bytes_size;
+
+    return std::nullopt;
+}
+
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
     return fs_tree->listDirectory(path);
+}
+
+StoredObjects MetadataStorageFromPlainRewritableObjectStorage::getStorageObjects(const std::string & path) const
+{
+    size_t object_size = getFileSize(path);
+    auto object_key = object_storage->generateObjectKeyForPath(path, /*key_prefix=*/std::nullopt);
+    return {StoredObject(object_key.serialize(), path, object_size)};
+}
+
+std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::getStorageObjectsIfExist(const std::string & path) const
+{
+    if (auto object_size = getFileSizeIfExists(path))
+    {
+        auto object_key = object_storage->generateObjectKeyForPath(path, /*key_prefix=*/std::nullopt);
+        return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
+    }
+
+    return std::nullopt;
+}
+
+Poco::Timestamp MetadataStorageFromPlainRewritableObjectStorage::getLastModified(const std::string & path) const
+{
+    if (auto last_modified = getLastModifiedIfExists(path))
+        return last_modified.value();
+
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File or directory {} does not exist", path);
 }
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
@@ -304,8 +347,8 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
         return Poco::Timestamp::fromEpochTime(0);
     }
 
-    if (auto object_metadata = getObjectMetadataEntryWithCache(path))
-        return Poco::Timestamp::fromEpochTime(object_metadata->last_modified);
+    if (auto remote_info = fs_tree->getFileRemoteInfo(path))
+        return remote_info->last_modified;
 
     return std::nullopt;
 }

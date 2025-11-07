@@ -17,6 +17,7 @@ namespace DB
 struct FileRemoteInfo
 {
     size_t bytes_size;
+    time_t last_modified;
 };
 
 struct DirectoryRemoteInfo

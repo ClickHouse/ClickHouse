@@ -33,20 +33,23 @@ namespace DB
 class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataStorageFromPlainObjectStorage
 {
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(
-        ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size);
-
+    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_, size_t object_metadata_cache_size);
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
 
     bool existsFile(const std::string & path) const override;
-
     bool existsDirectory(const std::string & path) const override;
-
     bool existsFileOrDirectory(const std::string & path) const override;
+
+    uint64_t getFileSize(const std::string & path) const override;
+    std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
 
-    std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
+    StoredObjects getStorageObjects(const std::string & path) const override;
+    std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
+
+    Poco::Timestamp getLastModified(const std::string & path) const override;
+    std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
 
     void refresh(UInt64 not_sooner_than_milliseconds) override;
 
