@@ -367,7 +367,9 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
 
 void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
 {
-    if (this->fc.max_depth > this->depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
+    const uint32_t nopt = rg.nextMediumNumber();
+
+    if (nopt < 15)
     {
         /// Generate a few arrays/tuples with literal values
         ExprList * elist
@@ -379,6 +381,22 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         {
             /// There are no recursive calls here, so don't bother about width and depth
             this->generateLiteralValue(rg, complex, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+        }
+        this->depth--;
+    }
+    else if (nopt < 20)
+    {
+        /// Generate a few map key/value pairs
+        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4));
+        SQLFuncCall * fcall = expr->mutable_comp_expr()->mutable_func_call();
+
+        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCmap);
+        this->depth++;
+        for (uint32_t i = 0; i < nvalues; i++)
+        {
+            /// There are no recursive calls here, so don't bother about width and depth
+            this->generateLiteralValue(rg, complex, fcall->add_args()->mutable_expr());
+            this->generateLiteralValue(rg, complex, fcall->add_args()->mutable_expr());
         }
         this->depth--;
     }
