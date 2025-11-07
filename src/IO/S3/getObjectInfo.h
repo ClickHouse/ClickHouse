@@ -26,7 +26,8 @@ ObjectInfo getObjectInfoIfExists(
     const String & bucket,
     const String & key,
     const String & version_id = {},
-    bool with_metadata = false);
+    bool with_metadata = false,
+    bool with_tags = false);
 
 ObjectInfo getObjectInfo(
     const S3::Client & client,

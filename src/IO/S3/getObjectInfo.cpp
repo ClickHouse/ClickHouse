@@ -115,11 +115,12 @@ ObjectInfo getObjectInfoIfExists(
     const String & bucket,
     const String & key,
     const String & version_id,
-    bool with_metadata)
+    bool with_metadata,
+    bool with_tags)
 {
     Expect404ResponseScope scope; // 404 is not an error
 
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
     if (object_info)
         return *object_info;
 

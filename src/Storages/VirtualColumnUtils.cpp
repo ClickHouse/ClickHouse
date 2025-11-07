@@ -143,14 +143,15 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
-    return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())}};
-            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())}
+    return {
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
+        {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
     };
 }
 

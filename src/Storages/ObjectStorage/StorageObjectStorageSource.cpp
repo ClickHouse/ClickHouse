@@ -320,13 +320,15 @@ Chunk StorageObjectStorageSource::generate()
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
                 read_from_format_info.requested_virtual_columns,
-                {.path = path,
-                 .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_metadata->size_bytes,
-                 .filename = &filename,
-                 .last_modified = object_metadata->last_modified,
-                 .etag = &(object_metadata->etag),
-                 .tags = &(object_info->metadata->tags)
-                 .data_lake_snapshot_version = file_iterator->getSnapshotVersion()},
+                {
+                    .path = path,
+                    .size = object_info->isArchive() ? object_info->fileSizeInArchive() : object_metadata->size_bytes,
+                    .filename = &filename,
+                    .last_modified = object_metadata->last_modified,
+                    .etag = &(object_metadata->etag),
+                    .tags = &(object_metadata->tags),
+                    .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
+                },
                 read_context);
 
 
