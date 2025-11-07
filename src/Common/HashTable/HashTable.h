@@ -749,13 +749,19 @@ public:
 
     HashTable & operator=(const HashTable & rhs) noexcept
     {
+        size_t new_buffer_size = rhs.getBufferSizeInBytes();
+        size_t old_buffer_size = getBufferSizeInBytes();
         destroyElements();
-        free();
+        if (new_buffer_size != old_buffer_size)
+        {
+            free();
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_buffer_size));
+        }
 
         grower = rhs.grower;
         m_size = rhs.m_size;
-        buf = reinterpret_cast<Cell *>(Allocator::alloc(rhs.grower.bufSize()));
-        std::memcpy(buf, rhs.buf, m_size);
+        static_assert(std::is_trivially_copyable_v<Cell>);
+        std::memcpy(buf, rhs.buf, new_buffer_size);
 
         Hash::operator=(rhs);
         Cell::State::operator=(rhs);
