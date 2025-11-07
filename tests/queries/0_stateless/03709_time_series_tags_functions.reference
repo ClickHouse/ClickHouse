@@ -1,0 +1,20 @@
+---- timeSeriesTagsToGroup() -> timeSeriesGroupToTags()
+1	[('__name__','http_requests_count'),('env','dev'),('region','eu')]	2	2	0	[('__name__','http_failures')]	0	[]
+---- timeSeriesStoreTags() -> timeSeriesIdToGroup(), timeSeriesIdToTags()
+8374283493092	8374283493092	0	1	[('__name__','http_requests_count'),('env','dev'),('region','eu')]	[('__name__','http_requests_count'),('env','dev'),('region','eu')]
+---- timeSeriesExtractTag()
+1	http_requests_count	dev	\N
+---- timeSeriesCopyTag()
+1	2	3	[('__name__','http_codes'),('env','dev'),('region','eu')]	4	[('__name__','http_codes'),('code','404'),('env','dev'),('region','eu')]	5	[('__name__','http_codes'),('code','404'),('region','eu')]
+---- timeSeriesCopyTags()
+1	2	3	[('__name__','http_codes'),('code','404'),('region','eu')]
+---- timeSeriesRemoveTag()
+1	2	[('env','dev'),('region','eu')]	3	[('region','eu')]	0	[]
+---- timeSeriesRemoveTags()
+1	2	[('__name__','http_requests_count')]	0	[]
+---- timeSeriesRemoveAllTagsExcept()
+1	2	[('env','dev')]
+---- timeSeriesJoinTags
+1	2	[('__name__','up'),('foo','a,b,c'),('job','api-server'),('src1','a'),('src2','b'),('src3','c')]
+---- timeSeriesReplaceTag()
+1	2	[('__name__','up'),('foo','a'),('job','api-server'),('service','a:c')]
