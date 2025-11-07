@@ -233,10 +233,7 @@ size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit
         ++code_point;
     }
 
-    if (bytes > size)
-        bytes = size;
-
-    return bytes;
+    return std::min(bytes, size);
 }
 
 
