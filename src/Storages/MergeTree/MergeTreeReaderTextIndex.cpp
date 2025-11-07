@@ -280,7 +280,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
 
             posting_list = condition_text.usePostingsCache()
                 ? condition_text.postingsCache()->getOrSet(
-                    TextIndexPostingsCache::hash(future_postings.state.path_to_data_part, future_postings.state.index_name, future_postings.state.index_mark, token),
+                    TextIndexPostingsCache::hash(future_postings.state.path_to_data_part, future_postings.state.index_name, future_postings.state.index_mark, token.toView()),
                     load_postings)
                 : load_postings();
         }
