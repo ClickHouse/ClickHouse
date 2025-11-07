@@ -120,7 +120,16 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
 
     last_log_ts = get_last_ddl_worker_log_ts(node2, db_name)
 
-    node1.query(f"SYSTEM REFRESH VIEW {db_name}.mv")
+    last_refresh_time = node1.query(
+        "SELECT last_refresh_time FROM system.view_refreshes WHERE view='mv'"
+    )
+    for i in range(2):
+        node1.query(f"SYSTEM REFRESH VIEW {db_name}.mv")
+    # Ensure that the mv is refresh
+    node1.query_with_retry(
+        "SELECT last_refresh_time FROM system.view_refreshes WHERE view='mv'",
+        check_callback=lambda x: x != last_refresh_time,
+    )
 
     # Make sure that the view is not refreshing, and it is scheduled to be refreshed in at least 10 minutes
     node1.query_with_retry(
