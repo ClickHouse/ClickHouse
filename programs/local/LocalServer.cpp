@@ -935,7 +935,7 @@ void LocalServer::processConfig()
         parquet_metadata_files_cache_size = max_cache_size;
         LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_files_cache_size));
     }
-    global_context->setParquetMetadataFilesCache(parquet_metadata_files_cache_policy, parquet_metadata_files_cache_size, parquet_metadata_files_cache_max_entries, parquet_metadata_files_cache_size_ratio);
+    global_context->setParquetMetadataCache(parquet_metadata_files_cache_policy, parquet_metadata_files_cache_size, parquet_metadata_files_cache_max_entries, parquet_metadata_files_cache_size_ratio);
     String parquet_v3_metadata_cache_policy = server_settings[ServerSetting::parquet_v3_metadata_cache_policy];
     size_t parquet_v3_metadata_cache_size = server_settings[ServerSetting::parquet_v3_metadata_cache_size];
     size_t parquet_v3_metadata_cache_max_entries = server_settings[ServerSetting::parquet_v3_metadata_cache_max_entries];
