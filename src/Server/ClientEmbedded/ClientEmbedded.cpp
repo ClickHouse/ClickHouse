@@ -24,7 +24,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_insert_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
 }
 
 
@@ -164,14 +164,14 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.count("version") || options.count("V"))
+    if (options.contains("version") || options.contains("V"))
     {
         showClientVersion();
         cleanup();
         return 0;
     }
 
-    if (options.count("help"))
+    if (options.contains("help"))
     {
         printHelpMessage(options_description);
         cleanup();
@@ -215,8 +215,8 @@ try
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
     initKeystrokeInterceptor();
 
-    client_context = session->sessionContext();
-    initClientContext();
+    initClientContext(session->sessionContext());
+    /// Note, QueryScope will be initialized in the LocalConnection
 
     if (is_interactive)
     {

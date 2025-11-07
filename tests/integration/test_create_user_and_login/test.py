@@ -81,6 +81,7 @@ EOF""",
         instance.exec_in_container(
             ["bash", "-c", "rm /etc/clickhouse-server/users.d/user_c.xml"]
         )
+        instance.query("SYSTEM RELOAD CONFIG")
 
         expected_errors = [
             "no user with such name",

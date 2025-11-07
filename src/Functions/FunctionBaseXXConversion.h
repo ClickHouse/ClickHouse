@@ -10,6 +10,7 @@
 #include <fmt/format.h>
 #include <Common/Base58.h>
 
+
 namespace DB
 {
 
@@ -44,13 +45,10 @@ struct BaseXXEncode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t current_src_offset = src_offsets[row];
-            size_t src_length = current_src_offset - prev_src_offset - 1;
+            size_t src_length = current_src_offset - prev_src_offset;
             size_t encoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
             prev_src_offset = current_src_offset;
             current_dst_offset += encoded_size;
-            dst[current_dst_offset] = '\0';
-            ++current_dst_offset;
-
             dst_offsets[row] = current_dst_offset;
         }
 
@@ -76,9 +74,6 @@ struct BaseXXEncode
         {
             size_t encoded_size = Traits::perform({&src[row * N], N}, &dst[current_dst_offset]);
             current_dst_offset += encoded_size;
-            dst[current_dst_offset] = 0;
-            ++current_dst_offset;
-
             dst_offsets[row] = current_dst_offset;
         }
 
@@ -117,7 +112,7 @@ struct BaseXXDecode
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t current_src_offset = src_offsets[row];
-            size_t src_length = current_src_offset - prev_src_offset - 1;
+            size_t src_length = current_src_offset - prev_src_offset;
             std::optional<size_t> decoded_size = Traits::perform({&src[prev_src_offset], src_length}, &dst[current_dst_offset]);
             if (!decoded_size)
             {
@@ -133,9 +128,6 @@ struct BaseXXDecode
 
             prev_src_offset = current_src_offset;
             current_dst_offset += *decoded_size;
-            dst[current_dst_offset] = '\0';
-            ++current_dst_offset;
-
             dst_offsets[row] = current_dst_offset;
         }
 
@@ -169,9 +161,6 @@ struct BaseXXDecode
             }
 
             current_dst_offset += *decoded_size;
-            dst[current_dst_offset] = '\0';
-            ++current_dst_offset;
-
             dst_offsets[row] = current_dst_offset;
         }
 

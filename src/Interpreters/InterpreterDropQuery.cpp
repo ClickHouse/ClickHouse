@@ -447,6 +447,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         // For truncate operation on database, drop the tables
         if (truncate)
             query_for_table.kind = query.has_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
+        if (database->getDisk()->isReadOnly())
+            query_for_table.kind = ASTDropQuery::Detach;
         query_for_table.if_exists = true;
         query_for_table.if_empty = false;
         query_for_table.setDatabase(database_name);
@@ -709,6 +711,11 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
+
+        /// We need to propagate settings related to drop size limits,
+        ///  otherwise we will not be able to drop large inner tables.
+        drop_context->setSettings(current_context->getSettingsRef());
+
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);

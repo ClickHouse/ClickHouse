@@ -54,7 +54,7 @@ REGISTER_FUNCTION(Abs)
     FunctionDocumentation::Description description = "Calculates the absolute value of `x`. Has no effect if `x` is of an unsigned type. If `x` is of a signed type, it returns an unsigned number.";
     FunctionDocumentation::Syntax syntax = "abs(x)";
     FunctionDocumentation::Arguments argument = {{"x", "Value to get the absolute value of"}};
-    FunctionDocumentation::ReturnedValue returned_value = "The absolute value of `x`";
+    FunctionDocumentation::ReturnedValue returned_value = {"The absolute value of `x`"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT abs(-0.5)", "0.5"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;

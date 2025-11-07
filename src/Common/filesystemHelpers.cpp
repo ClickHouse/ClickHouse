@@ -1,4 +1,4 @@
-#include "filesystemHelpers.h"
+#include <Common/filesystemHelpers.h>
 
 #if defined(OS_LINUX)
 #    include <mntent.h>
@@ -73,11 +73,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(folder_path);
-    return std::make_unique<PocoTemporaryFile>(folder_path);
+    return std::make_unique<Poco::TemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -218,9 +218,8 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
 
 bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
 {
-    String absolute_path = std::filesystem::weakly_canonical(path);
-    String absolute_prefix_path = std::filesystem::weakly_canonical(prefix_path);
-    return absolute_path.starts_with(absolute_prefix_path);
+    auto rel = fs::relative(path, prefix_path);
+    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
 }
 
 static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::filesystem::path & prefix_path)
@@ -230,11 +229,8 @@ static bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, cons
     /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
     /// not be a path of a symlink itself.
 
-    String absolute_path = std::filesystem::absolute(path);
-    absolute_path = fs::path(absolute_path).lexically_normal(); /// Normalize path.
-    String absolute_prefix_path = std::filesystem::absolute(prefix_path);
-    absolute_prefix_path = fs::path(absolute_prefix_path).lexically_normal(); /// Normalize path.
-    return absolute_path.starts_with(absolute_prefix_path);
+    auto rel = fs::absolute(path).lexically_normal().lexically_relative(fs::absolute(prefix_path).lexically_normal());
+    return (!rel.empty() && (rel.native() == "." || rel.native()[0] != '.'));
 }
 
 bool pathStartsWith(const String & path, const String & prefix_path)

@@ -1,4 +1,5 @@
 SET session_timezone = 'UTC';
+SET use_legacy_to_time = 0;
 -- Operations <Time> + <number>
 SELECT toTime(12) + 1;
 SELECT toTime(12) + 25;

@@ -9,18 +9,18 @@ using FunctionAddMilliseconds = FunctionDateOrDateTimeAddInterval<AddMillisecond
 
 REGISTER_FUNCTION(AddMilliseconds)
 {
-    FunctionDocumentation::Description description_addMilliseconds = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of milliseconds to a date with time or a string-encoded date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addMilliseconds = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addMilliseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addMilliseconds = {
-        {"datetime", "Date with time to add specified number of milliseconds to. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of milliseconds to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "Date with time to add specified number of milliseconds to.", {"DateTime", "DateTime64", "String"}},
+        {"num", "Number of milliseconds to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addMilliseconds = "Returns `datetime` plus `num` milliseconds. [`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples_addMilliseconds = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` milliseconds", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Add milliseconds to different date time types", R"(
 WITH
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -43,19 +43,11 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 millisecond)
 └──────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addMilliseconds = {22, 6};
-    FunctionDocumentation::Category category_addMilliseconds = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addMilliseconds = {
-        description_addMilliseconds,
-        syntax_addMilliseconds,
-        arguments_addMilliseconds,
-        returned_value_addMilliseconds,
-        examples_addMilliseconds,
-        introduced_in_addMilliseconds,
-        category_addMilliseconds
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddMilliseconds>(documentation_addMilliseconds);
+    factory.registerFunction<FunctionAddMilliseconds>(documentation);
 }
 
 }

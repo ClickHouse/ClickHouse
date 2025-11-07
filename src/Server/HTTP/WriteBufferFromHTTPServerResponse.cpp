@@ -8,12 +8,14 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/IDataType.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Poco/Net/HTTPResponse.h>
 
 #include <fmt/core.h>
+#include <cstddef>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -38,32 +40,19 @@ void WriteBufferFromHTTPServerResponse::startSendHeaders()
 
     headers_started_sending = true;
 
-    if (!response.getChunkedTransferEncoding() && response.getContentLength() == Poco::Net::HTTPMessage::UNKNOWN_CONTENT_LENGTH)
-    {
-        /// In case there is no Content-Length we cannot use keep-alive,
-        /// since there is no way to know when the server send all the
-        /// data, so "Connection: close" should be sent.
-        response.setKeepAlive(false);
-    }
-
-    if (add_cors_header)
-        response.set("Access-Control-Allow-Origin", "*");
-
-    setResponseDefaultHeaders(response);
-
     std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    response.beginWrite(header);
+    response.writeStatus(header);
     auto header_str = header.str();
     socketSendBytes(header_str.data(), header_str.size());
 }
 
-void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name)
+void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * header_name, Progress::DisplayMode mode)
 {
     if (is_http_method_head || headers_finished_sending || !headers_started_sending)
         return;
 
     WriteBufferFromOwnString progress_string_writer;
-    accumulated_progress.writeJSON(progress_string_writer);
+    accumulated_progress.writeJSON(progress_string_writer, mode);
     progress_string_writer.finalize();
 
     socketSendBytes(header_name, strlen(header_name));
@@ -74,12 +63,14 @@ void WriteBufferFromHTTPServerResponse::writeHeaderProgressImpl(const char * hea
 void WriteBufferFromHTTPServerResponse::writeHeaderSummary()
 {
     accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
-    writeHeaderProgressImpl("X-ClickHouse-Summary: ");
+    /// Write the verbose summary with all the zero values included, if any.
+    /// This is needed for compatibility with an old version of the third-party ClickHouse driver for Elixir.
+    writeHeaderProgressImpl("X-ClickHouse-Summary: ", Progress::DisplayMode::Verbose);
 }
 
 void WriteBufferFromHTTPServerResponse::writeHeaderProgress()
 {
-    writeHeaderProgressImpl("X-ClickHouse-Progress: ");
+    writeHeaderProgressImpl("X-ClickHouse-Progress: ", Progress::DisplayMode::Minimal);
 }
 
 void WriteBufferFromHTTPServerResponse::writeExceptionCode()
@@ -104,39 +95,35 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
     if (!headers_started_sending)
     {
-        if (compression_method != CompressionMethod::None)
-            response.set("Content-Encoding", toContentEncodingName(compression_method));
         startSendHeaders();
     }
+
+    setResponseDefaultHeaders(response);
+
+    if (count() && compression_method != CompressionMethod::None)
+        response.set("Content-Encoding", toContentEncodingName(compression_method));
+
+    if (add_cors_header)
+        response.set("Access-Control-Allow-Origin", "*");
+
+    response.set("X-ClickHouse-Exception-Tag", exception_tag);
 
     writeHeaderSummary();
     writeExceptionCode();
 
-    headers_finished_sending = true;
+    std::stringstream header; //STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    response.writeHeaders(header);
+    auto header_str = header.str();
+    socketSendBytes(header_str.data(), header_str.size());
 
-    /// Send end of headers delimiter.
-    socketSendBytes("\r\n", 2);
+    headers_finished_sending = true;
 }
 
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
-    if (!initialized)
     {
         std::lock_guard lock(mutex);
-        /// Initialize as early as possible since if the code throws,
-        /// next() should not be called anymore.
-        initialized = true;
-
-        if (compression_method != CompressionMethod::None)
-        {
-            /// If we've already sent headers, just send the `Content-Encoding` down the socket directly
-            if (headers_started_sending)
-                socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-            else
-                response.set("Content-Encoding", toContentEncodingName(compression_method));
-        }
-
         startSendHeaders();
         finishSendHeaders();
     }
@@ -156,6 +143,8 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 {
     if (response.getChunkedTransferEncoding())
         setChunked();
+
+    exception_tag = getRandomASCIIString(EXCEPTION_TAG_LENGTH);
 }
 
 
@@ -168,14 +157,22 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
         return;
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
-    if (send_progress && progress_watch.elapsed() >= send_progress_interval_ms * 1000000)
+    if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))
     {
         accumulated_progress.incrementElapsedNs(progress_watch.elapsed());
         progress_watch.restart();
 
-        /// Send all common headers before our special progress headers.
-        startSendHeaders();
-        writeHeaderProgress();
+        try {
+            /// Do not send headers before our special progress headers
+            /// For example, header "Connection: close|keep-alive" is defined only right before sending response
+            startSendHeaders();
+            writeHeaderProgress();
+        }
+        catch (...)
+        {
+            cancel();
+            throw;
+        }
     }
 }
 
@@ -196,19 +193,9 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    if (!headers_finished_sending)
     {
         std::lock_guard lock(mutex);
-        /// If no body data just send header
         startSendHeaders();
-
-        /// `finalizeImpl` must be idempotent, so set `initialized` here to not send stuff twice
-        if (!initialized && offset() && compression_method != CompressionMethod::None)
-        {
-            initialized = true;
-            socketSendStr("Content-Encoding: " + toContentEncodingName(compression_method) + "\r\n");
-        }
-
         finishSendHeaders();
     }
 
@@ -264,7 +251,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             discarded_data = rejectBufferedDataSave();
 
         bool is_response_sent = response.sent();
-        // proper senging bad http code
+        // proper sending bad http code
         if (!is_response_sent)
         {
             drainRequestIfNeeded(request, response);
@@ -301,7 +288,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // In case of plain stream all ways are questionable, but lets send the error any way.
 
             // no point to drain request, transmission has been already started hence the request has been read
-            // but make sense to try to send proper `connnection: close` header if headers are not finished yet
+            // but make sense to try to send proper `connection: close` header if headers are not finished yet
             response.setKeepAlive(false);
 
             // try to send proper header in case headers are not finished yet
@@ -341,16 +328,49 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             }
 
             auto & out = use_compression_buffer ? *compression_buffer : *this;
+
+            // Write the exception block in response in new format as follows.
+            // The whole exception block should not exceed MAX_EXCEPTION_SIZE
+            // __exception__
+            // <TAG>
+            // <error message of max 16K bytes>
+            // <message_length> <TAG>
+            // __exception__
+
+            // 2 bytes represents - \r\n
+            // 1 byte represents - ' ' (space between <message_length> <TAG>) in the above exception block format
+            // 8 byte represents - <message_length>
+            size_t size_message_excluded = 2 + EXCEPTION_MARKER.size() + 2 + EXCEPTION_TAG_LENGTH + 2 + 8 + 1 + EXCEPTION_TAG_LENGTH + 2 + EXCEPTION_MARKER.size() + 2;
+
+            size_t max_exception_message_size = MAX_EXCEPTION_SIZE - size_message_excluded;
+
+            writeCString("\r\n", out);
             writeString(EXCEPTION_MARKER, out);
             writeCString("\r\n", out);
-            writeString(message, out);
-            if (!message.ends_with('\n'))
+            writeString(exception_tag, out);
+            writeCString("\r\n", out);
+
+            std::string limited_message = message;
+            if (limited_message.size() > max_exception_message_size)
+                limited_message = limited_message.substr(0, max_exception_message_size);
+
+            writeString(limited_message, out);
+            if (!limited_message.ends_with('\n'))
                 writeChar('\n', out);
 
+            writeIntText(limited_message.size() + (limited_message.ends_with('\n') ? 0 : 1), out);
+            writeChar(' ', out);
+            writeString(exception_tag, out);
+            writeCString("\r\n", out);
+            writeString(EXCEPTION_MARKER, out);
+            writeCString("\r\n", out);
 
             // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
+            {
                 compression_buffer->next();
+                compression_buffer->finalize();
+            }
             next();
 
             LOG_DEBUG(

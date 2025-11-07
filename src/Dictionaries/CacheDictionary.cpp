@@ -1,4 +1,4 @@
-#include "CacheDictionary.h"
+#include <Dictionaries/CacheDictionary.h>
 
 #include <memory>
 #include <base/chrono_io.h>
@@ -655,7 +655,7 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
 
-                convertToFullIfSparse(block);
+                removeSpecialColumnRepresentations(block);
                 auto block_columns = block.getColumns();
 
                 /// Split into keys columns and attribute columns

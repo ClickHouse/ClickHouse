@@ -75,9 +75,9 @@ public:
     }
     String getName() const override { return "Numbers"; }
 
-    static Block createHeader(const std::string & column_name)
+    static SharedHeader createHeader(const std::string & column_name)
     {
-        return {ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)};
+        return std::make_shared<const Block>(Block{ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), column_name)});
     }
 
 protected:
@@ -399,17 +399,21 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
 }
 
-/// This is idealogically wrong. We should only get it from the query plan optimization.
+/// This is ideologically wrong. We should only get it from the query plan optimization.
 std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, const ContextPtr & context)
 {
     if (!query_info.query)
         return {};
 
-    auto limit_length_and_offset = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
-    if (!shouldPushdownLimit(query_info, limit_length_and_offset.first))
+    const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
+
+    if (lim_info.is_limit_length_negative)
         return {};
 
-    return limit_length_and_offset.first + limit_length_and_offset.second;
+    if (!shouldPushdownLimit(query_info, lim_info.limit_length))
+        return {};
+
+    return lim_info.limit_length + lim_info.limit_offset;
 }
 
 }
@@ -423,7 +427,7 @@ ReadFromSystemNumbersStep::ReadFromSystemNumbersStep(
     size_t max_block_size_,
     size_t num_streams_)
     : SourceStepWithFilter(
-        storage_snapshot_->getSampleBlockForColumns(column_names_),
+        std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)),
         column_names_,
         query_info_,
         storage_snapshot_,
@@ -450,8 +454,8 @@ void ReadFromSystemNumbersStep::initializePipeline(QueryPipelineBuilder & pipeli
 
     if (pipe.empty())
     {
-        assert(output_header != std::nullopt);
-        pipe = Pipe(std::make_shared<NullSource>(*output_header));
+        chassert(output_header != nullptr);
+        pipe = Pipe(std::make_shared<NullSource>(output_header));
     }
 
     /// Add storage limits.

@@ -4,7 +4,6 @@ from typing import List
 from . import Artifact, Job, Workflow
 from .mangle import _get_workflows
 from .parser import WorkflowConfigParser
-from .runtime import RunConfig
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -139,6 +138,7 @@ jobs:
     name: "{JOB_NAME_GH}"
     outputs:
       data: ${{{{ steps.run.outputs.DATA }}}}
+      pipeline_status: ${{{{ steps.run.outputs.pipeline_status }}}}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -147,8 +147,8 @@ jobs:
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
-          mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
+          rm -rf {UNIQUE_WORK_DIRS}
+          mkdir -p {UNIQUE_WORK_DIRS}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
@@ -160,7 +160,8 @@ jobs:
       - name: Run
         id: run
         run: |
-          . {TEMP_DIR}/praktika_setup_env.sh
+          echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
+          . {ENV_SETUP_SCRIPT}
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
@@ -187,12 +188,6 @@ jobs:
         TEMPLATE_SETUP_ENVS_INPUTS = """\
           cat > {WORKFLOW_INPUTS_FILE} << 'EOF'
           ${{{{ toJson(github.event.inputs) }}}}
-          EOF\
-"""
-
-        TEMPLATE_SETUP_ENV_WF_CONFIG = """\
-          cat > {WORKFLOW_CONFIG_FILE} << 'EOF'
-          ${{{{ needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data }}}}
           EOF\
 """
 
@@ -229,11 +224,7 @@ jobs:
 """
 
         TEMPLATE_IF_EXPRESSION = """
-    if: ${{{{ !failure() && !cancelled() && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
-"""
-
-        TEMPLATE_IF_EXPRESSION_SKIPPED_OR_SUCCESS = """
-    if: ${{ !failure() && !cancelled() }}\
+    if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
 """
 
         TEMPLATE_IF_EXPRESSION_NOT_CANCELLED = """
@@ -312,7 +303,7 @@ class PullRequestPushYamlGen:
 
             if_expression = ""
             if (
-                self.workflow_config.enable_cache
+                self.workflow_config.config.enable_cache
                 and job_name_normalized != config_job_name_normalized
             ):
                 if_expression = YamlGenerator.Templates.TEMPLATE_IF_EXPRESSION.format(
@@ -341,15 +332,6 @@ class PullRequestPushYamlGen:
                         WORKFLOW_INPUTS_FILE=Settings.WORKFLOW_INPUTS_FILE
                     )
                 )
-            if self.workflow_config.enable_cache:
-                secrets_envs.append(
-                    YamlGenerator.Templates.TEMPLATE_SETUP_ENV_WF_CONFIG.format(
-                        WORKFLOW_CONFIG_FILE=RunConfig.file_name_static(
-                            self.workflow_config.name
-                        ),
-                        WORKFLOW_CONFIG_JOB_NAME=config_job_name_normalized,
-                    )
-                )
 
             job_item = YamlGenerator.Templates.TEMPLATE_JOB_0.format(
                 JOB_NAME_NORMALIZED=job_name_normalized,
@@ -370,8 +352,9 @@ class PullRequestPushYamlGen:
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
-                INPUT_DIR=Settings.INPUT_DIR,
-                OUTPUT_DIR=Settings.OUTPUT_DIR,
+                UNIQUE_WORK_DIRS=" ".join(
+                    {Settings.TEMP_DIR, Settings.INPUT_DIR, Settings.OUTPUT_DIR}
+                ),
                 PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)

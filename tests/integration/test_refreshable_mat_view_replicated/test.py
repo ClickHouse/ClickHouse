@@ -1,6 +1,7 @@
 import datetime
 import logging
 import time
+import math
 from datetime import datetime
 from typing import Optional
 
@@ -238,11 +239,6 @@ def fn_setup_tables():
     "empty",
     [True, False],
 )
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
-)
 def test_append(
     module_setup_tables,
     fn_setup_tables,
@@ -250,9 +246,11 @@ def test_append(
     with_append,
     empty,
 ):
+    opposite_minutes = math.floor((time.time() + 1800) % 3600 / 60)
+
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval=f"EVERY 1 HOUR OFFSET {opposite_minutes} MINUTE",
         to_clause="tgt1",
         select_query=select_query,
         with_append=with_append,
@@ -301,11 +299,6 @@ def test_append(
             "refresh_retry_max_backoff_ms": "20",
         },
     ],
-)
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
 )
 def test_alters(
     module_setup_tables,
