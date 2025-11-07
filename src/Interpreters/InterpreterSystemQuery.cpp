@@ -417,9 +417,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_PARQUET_METADATA_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
             system_context->clearParquetMetadataCache();
-            break;
-        case Type::DROP_PARQUET_V3_METADATA_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_V3_METADATA_CACHE);
             system_context->clearParquetV3MetadataCache();
             break;
 #else
@@ -1866,7 +1863,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_MARK_CACHE:
         case Type::DROP_ICEBERG_METADATA_CACHE:
         case Type::DROP_PARQUET_METADATA_CACHE:
-        case Type::DROP_PARQUET_V3_METADATA_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
