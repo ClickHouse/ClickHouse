@@ -1,4 +1,5 @@
 #include <Access/AccessControl.h>
+#include <Access/Role.h>
 #include <Access/User.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
@@ -37,6 +38,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool distributed_ddl_preserve_query_user_and_roles;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -44,6 +50,8 @@ namespace ErrorCodes
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
     extern const int DNS_ERROR;
+    extern const int UNKNOWN_USER;
+    extern const int UNKNOWN_ROLE;
 }
 
 
@@ -291,12 +299,29 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
 
-    const auto & access_control = from_context->getAccessControl();
-    const auto user = access_control.tryRead<User>(entry.initiator_user);
-    if (!user)
-        LOG_INFO(getLogger("DDLTask"), "Initiator user is not present on the instance. Will use the global user for the query execution.");
-    else
-        query_context->setUser(entry.initiator_user, entry.initiator_user_roles);
+    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_preserve_query_user_and_roles];
+    if (preserve_user && !entry.initiator_user.empty())
+    {
+        const auto & access_control = from_context->getAccessControl();
+
+        /// Find the user by name
+        auto user_id = access_control.find<User>(entry.initiator_user);
+        if (!user_id)
+            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
+
+        /// Find all roles by name
+        std::vector<UUID> role_ids;
+        role_ids.reserve(entry.initiator_user_roles.size());
+        for (const auto & role_name : entry.initiator_user_roles)
+        {
+            auto role_id = access_control.find<Role>(role_name);
+            if (!role_id)
+                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
+            role_ids.push_back(*role_id);
+        }
+
+        query_context->setUser(*user_id, role_ids);
+    }
 
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
