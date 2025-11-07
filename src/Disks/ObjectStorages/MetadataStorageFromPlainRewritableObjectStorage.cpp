@@ -117,7 +117,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
         for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0); iterator->isValid(); iterator->next())
-            remote_layout[""].file_names.insert(fs::path(iterator->current()->getPath()).filename());
+            remote_layout[""].files.emplace(fs::path(iterator->current()->getPath()).filename(), iterator->current()->metadata->size_bytes);
 
         for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
         {
@@ -156,7 +156,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                 String local_path;
                 /// Assuming that local and the object storage clocks are synchronized.
                 Poco::Timestamp last_modified = metadata->last_modified;
-                std::unordered_set<std::string> files;
+                std::unordered_map<std::string, FileRemoteInfo> files;
 
                 try
                 {
@@ -187,7 +187,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                         /// Check that the file is a direct child.
                         chassert(full_prefix_length < remote_file_path.size());
                         if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
-                            files.insert(std::move(filename));
+                            files.emplace(std::move(filename), remote_file->metadata->size_bytes);
                     }
 
 #if USE_AZURE_BLOB_STORAGE

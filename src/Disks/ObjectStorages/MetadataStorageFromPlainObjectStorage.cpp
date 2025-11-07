@@ -268,13 +268,13 @@ void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::st
         true, path_from, path_to, *metadata_storage.getFsTree(), object_storage));
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & /* objects */)
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
     if (metadata_storage.object_storage->isWriteOnce())
         return;
 
     operations.addOperation(
-        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getFsTree(), object_storage));
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, objects.front(), *metadata_storage.getFsTree(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
