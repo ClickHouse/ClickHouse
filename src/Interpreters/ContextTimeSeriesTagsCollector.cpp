@@ -88,27 +88,28 @@ namespace
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
         {
             size_t old_size = old_tags->size();
-            size_t mismatch_pos = static_cast<size_t>(-1);
+            size_t remove_pos = static_cast<size_t>(-1);
 
             for (size_t i = 0; i != old_size; ++i)
             {
                 const auto & tag_name = (*old_tags)[i].first;
                 if (tag_name == tag_to_remove)
                 {
-                    mismatch_pos = i;
+                    remove_pos = i;
                     break;
                 }
             }
 
-            if (mismatch_pos == static_cast<size_t>(-1))
+            if (remove_pos == static_cast<size_t>(-1))
                 return old_tags;
 
             auto new_tags = std::make_shared<TagNamesAndValues>();
             new_tags->reserve(old_size - 1);
-            new_tags->assign(old_tags->begin(), old_tags->begin() + mismatch_pos);
 
-            if (mismatch_pos + 1 < old_size)
-                new_tags->insert(new_tags->end(), old_tags->begin() + mismatch_pos + 1, old_tags->end());
+            new_tags->assign(old_tags->begin(), old_tags->begin() + remove_pos);
+
+            if (remove_pos + 1 < old_size)
+                new_tags->insert(new_tags->end(), old_tags->begin() + remove_pos + 1, old_tags->end());
 
             return new_tags;
         }
@@ -128,26 +129,26 @@ namespace
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
         {
             size_t old_size = old_tags->size();
-            size_t mismatch_pos = static_cast<size_t>(-1);
+            size_t remove_pos = static_cast<size_t>(-1);
 
             for (size_t i = 0; i != old_size; ++i)
             {
                 const auto & tag_name = (*old_tags)[i].first;
                 if (tags_to_remove.contains(tag_name))
                 {
-                    mismatch_pos = i;
+                    remove_pos = i;
                     break;
                 }
             }
 
-            if (mismatch_pos == static_cast<size_t>(-1))
+            if (remove_pos == static_cast<size_t>(-1))
                 return old_tags;
 
             auto new_tags = std::make_shared<TagNamesAndValues>();
             new_tags->reserve(old_size - 1);
-            new_tags->assign(old_tags->begin(), old_tags->begin() + mismatch_pos);
+            new_tags->assign(old_tags->begin(), old_tags->begin() + remove_pos);
 
-            for (size_t i = mismatch_pos + 1; i != old_size; ++i)
+            for (size_t i = remove_pos + 1; i != old_size; ++i)
             {
                 const auto & tag_name_and_value = (*old_tags)[i];
                 if (!tags_to_remove.contains(tag_name_and_value.first))
@@ -172,26 +173,26 @@ namespace
         TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & old_tags) const
         {
             size_t old_size = old_tags->size();
-            size_t mismatch_pos = static_cast<size_t>(-1);
+            size_t remove_pos = static_cast<size_t>(-1);
 
             for (size_t i = 0; i != old_size; ++i)
             {
                 const auto & tag_name = (*old_tags)[i].first;
                 if (!tags_to_keep.contains(tag_name))
                 {
-                    mismatch_pos = i;
+                    remove_pos = i;
                     break;
                 }
             }
 
-            if (mismatch_pos == static_cast<size_t>(-1))
+            if (remove_pos == static_cast<size_t>(-1))
                 return old_tags;
 
             auto new_tags = std::make_shared<TagNamesAndValues>();
             new_tags->reserve(old_size - 1);
-            new_tags->assign(old_tags->begin(), old_tags->begin() + mismatch_pos);
+            new_tags->assign(old_tags->begin(), old_tags->begin() + remove_pos);
 
-            for (size_t i = mismatch_pos + 1; i != old_size; ++i)
+            for (size_t i = remove_pos + 1; i != old_size; ++i)
             {
                 const auto & tag_name_and_value = (*old_tags)[i];
                 if (tags_to_keep.contains(tag_name_and_value.first))
@@ -205,6 +206,77 @@ namespace
         std::unordered_set<std::string_view> tags_to_keep;
     };
 
+    /// Implements transformation for function copyTag().
+    class CopyTagTransformFunc2
+    {
+    public:
+        explicit CopyTagTransformFunc2(const String & tag_to_copy_)
+            : tag_to_copy(tag_to_copy_)
+        {
+        }
+
+        TagNamesAndValuesPtr operator()(const TagNamesAndValuesPtr & dest_tags, const TagNamesAndValuesPtr & src_tags)
+        {
+            /// Extract the value of the tag we're going to copy from `src_tags`.
+            std::string_view value_to_copy;
+            for (const auto & [tag_name, tag_value] : *src_tags)
+            {
+                if (tag_name == tag_to_copy)
+                {
+                    value_to_copy = tag_value;
+                    break;
+                }
+            }
+
+            /// Finds the insert position of this tag in `dest_tags`.
+            size_t insert_pos = dest_tags->size();
+            bool found_tag_name_in_dest_tags = false;
+
+            for (size_t i = 0; i != dest_tags->size(); ++i)
+            {
+                int cmp = (*dest_tags)[i].first.compare(tag_to_copy);
+                if (cmp == 0)
+                {
+                    if ((*dest_tags)[i].second == value_to_copy)
+                        return src_tags; /// No need to copy.
+                    found_tag_name_in_dest_tags = true;
+                    insert_pos = i;
+                    break;
+                }
+                else if (cmp > 0)
+                {
+                    insert_pos = i;
+                    break;
+                }
+            }
+
+            if (value_to_copy.empty() && !found_tag_name_in_dest_tags)
+                return src_tags; /// No need to copy.
+
+            /// Calculate number of tags in the result group.
+            size_t new_size = dest_tags->size() + !value_to_copy.empty() - found_tag_name_in_dest_tags;
+
+            auto new_tags = std::make_shared<TagNamesAndValues>();
+            new_tags->reserve(new_size);
+
+            /// Copy all the tags before `tag_to_copy`.
+            new_tags->assign(dest_tags->begin(), dest_tags->begin() + insert_pos);
+
+            if (!value_to_copy.empty())
+                new_tags->emplace_back(tag_to_copy, value_to_copy);
+
+            /// Copy all the tags after `tag_to_copy`.
+            size_t next_pos = found_tag_name_in_dest_tags ? (insert_pos + 1) : insert_pos;
+            new_tags->insert(new_tags->end(), dest_tags->begin() + next_pos, dest_tags->end());
+
+            chassert(new_tags->size() == new_size);
+            return new_tags;
+        }
+
+    private:
+        std::string_view tag_to_copy;
+    };
+
     /// Implements transformation for function copyTags().
     class CopyTagsTransformFunc2
     {
@@ -213,11 +285,15 @@ namespace
         {
             tags_to_copy.reserve(tags_to_copy_.size());
             for (const auto & tag_name : tags_to_copy_)
-            {
-                bool inserted = positions_in_tags_to_copy.try_emplace(tag_name, tags_to_copy.size()).second;
-                if (inserted)
-                    tags_to_copy.emplace_back(tag_name, std::string_view{});
-            }
+                tags_to_copy.emplace_back(tag_name, std::string_view{});
+
+            /// We make the list `tags_to_copy` sorted because we'll use the merge algorighm in operator().
+            std::sort(tags_to_copy.begin(), tags_to_copy.end());
+            tags_to_copy.erase(std::unique(tags_to_copy.begin(), tags_to_copy.end()), tags_to_copy.end());
+
+            for (size_t i = 0; i != tags_to_copy.size(); ++i)
+                positions_in_tags_to_copy[tags_to_copy[i].first] = i;
+
             num_tags_to_copy = tags_to_copy.size();
         }
 
@@ -563,6 +639,11 @@ String ContextTimeSeriesTagsCollector::toString(const TagNamesAndValues & tags)
     }
     ostr << "}";
     return ostr.str();
+}
+
+String ContextTimeSeriesTagsCollector::toString(const TagNamesAndValuesPtr & tags)
+{
+    return toString(*tags);
 }
 
 
@@ -1070,6 +1151,30 @@ std::vector<Group> ContextTimeSeriesTagsCollector::transformTags2(const std::vec
     }
 
     return res;
+}
+
+
+Group ContextTimeSeriesTagsCollector::copyTag(Group dest_group, Group src_group, const String & tag_to_copy)
+{
+    return transformTags2(dest_group, src_group, CopyTagTransformFunc2{tag_to_copy});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(Group dest_group, const std::vector<Group> & src_groups, const String & tag_to_copy)
+{
+    return transformTags2(dest_group, src_groups, CopyTagTransformFunc2{tag_to_copy});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(const std::vector<Group> & dest_groups, Group src_group, const String & tag_to_copy)
+{
+    return transformTags2(dest_groups, src_group, CopyTagTransformFunc2{tag_to_copy});
+}
+
+
+std::vector<Group> ContextTimeSeriesTagsCollector::copyTag(const std::vector<Group> & dest_groups, const std::vector<Group> & src_groups, const String & tag_to_copy)
+{
+    return transformTags2(dest_groups, src_groups, CopyTagTransformFunc2{tag_to_copy});
 }
 
 
