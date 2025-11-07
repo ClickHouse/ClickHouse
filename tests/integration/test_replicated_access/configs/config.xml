@@ -1,4 +1,5 @@
 <clickhouse>
+    <distributed_ddl_use_initial_user_and_roles>1</distributed_ddl_use_initial_user_and_roles>
     <remote_servers>
         <default>
             <shard>
