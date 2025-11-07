@@ -51,7 +51,6 @@ bool madviseSupportsMadvPopulateWrite()
 }
 
 const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
-const size_t page_size = ::getPageSize();
 
 #endif
 
@@ -64,7 +63,7 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (unlikely(!is_supported_by_kernel))
         return;
 
-    auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
+    auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
     ::madvise(buf, len, MADV_POPULATE_WRITE);
 #endif
 }
