@@ -1,12 +1,13 @@
 ---
-description: 'Overview of Data Replication in ClickHouse'
-sidebar_label: 'Data Replication'
+description: 'Overview of data replication with the Replicated* family of table engines in ClickHouse'
+sidebar_label: 'Replicated*'
 sidebar_position: 20
 slug: /engines/table-engines/mergetree-family/replication
-title: 'Data Replication'
+title: 'Replicated* table engines'
+doc_type: 'reference'
 ---
 
-# Data replication
+# Replicated* table engines
 
 :::note
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -154,7 +155,6 @@ Avoid using `ReplicatedMergeTree` or specifying replication parameters, as repli
 | `zoo_path`      | The path to the table in ClickHouse Keeper.                                  |
 | `replica_name`  | The replica name in ClickHouse Keeper.                                       |
 | `other_parameters` | Parameters of an engine used for creating the replicated version, for example, version in `ReplacingMergeTree`. |
-
 
 Example:
 

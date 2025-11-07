@@ -505,7 +505,7 @@ void StorageFileLog::openFilesAndSetPos()
             auto & reader = file_ctx.reader.value();
             assertStreamGood(reader);
 
-            reader.seekg(0, reader.end); /// NOLINT(readability-static-accessed-through-instance)
+            reader.seekg(0, std::ios::end);
             assertStreamGood(reader);
 
             auto file_end = reader.tellg();
@@ -516,7 +516,7 @@ void StorageFileLog::openFilesAndSetPos()
             {
                 throw Exception(
                     ErrorCodes::CANNOT_READ_ALL_DATA,
-                    "Last saved offsset for File {} is bigger than file size ({} > {})",
+                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
                     file,
                     meta.last_writen_position,
                     std::streamoff{file_end});
@@ -775,6 +775,10 @@ bool StorageFileLog::streamToViews()
     insert->table_id = table_id;
 
     auto new_context = Context::createCopy(filelog_context);
+
+    /// Create a fresh query context from filelog_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
 
     InterpreterInsertQuery interpreter(
         insert,

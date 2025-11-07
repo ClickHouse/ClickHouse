@@ -24,11 +24,12 @@ struct PrewhereExprStep
 {
     enum Type
     {
+        None,
         Filter,
         Expression,
     };
 
-    Type type = Type::Filter;
+    Type type = Type::None;
     ExpressionActionsPtr actions;
     String filter_column_name;
 
@@ -74,10 +75,19 @@ public:
         return performance_counters[step];
     }
 
+    ReadStepPerformanceCountersPtr getCounterForIndexStep()
+    {
+        if (!index_performance_counter)
+            index_performance_counter = std::make_shared<ReadStepPerformanceCounters>();
+        return index_performance_counter;
+    }
+
     const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
+    const ReadStepPerformanceCountersPtr & getIndexCounter() const { return index_performance_counter; }
 
 private:
     std::vector<ReadStepPerformanceCountersPtr> performance_counters;
+    ReadStepPerformanceCountersPtr index_performance_counter;
 };
 
 class FilterWithCachedCount
@@ -157,10 +167,14 @@ private:
         ///       some columns may have different size (for example, default columns may be zero size).
         size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
+        size_t numDelayedRows() const { return num_delayed_rows; }
+
         /// Skip extra rows to current_offset and perform actual reading
         size_t finalize(Columns & columns);
 
         bool isFinished() const { return is_finished; }
+
+        size_t currentTaskLastMark() const { return current_task_last_mark; }
 
     private:
         size_t current_mark = 0;
@@ -223,6 +237,8 @@ private:
 
         void checkNotFinished() const;
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
+        void checkNoDelayedRows() const;
+
         size_t readRows(Columns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
@@ -384,7 +400,6 @@ public:
 
     static void filterColumns(Columns & columns, const FilterWithCachedCount & filter);
     static void filterBlock(Block & block, const FilterWithCachedCount & filter);
-    static String addDummyColumnWithRowCount(Block & block, size_t num_rows);
 
 private:
     void fillVirtualColumns(Columns & columns, ReadResult & result);

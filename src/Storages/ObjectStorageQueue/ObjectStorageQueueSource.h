@@ -87,15 +87,15 @@ public:
         ExpressionActionsPtr filter_expr;
         bool recursive{false};
 
-        Source::ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
+        ObjectInfos object_infos TSA_GUARDED_BY(next_mutex);
         std::vector<FileMetadataPtr> file_metadatas;
         bool is_finished = false;
         std::mutex next_mutex;
         size_t index = 0;
 
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
-        void filterProcessableFiles(Source::ObjectInfos & objects);
-        void filterOutProcessedAndFailed(Source::ObjectInfos & objects);
+        void filterProcessableFiles(ObjectInfos & objects);
+        void filterOutProcessedAndFailed(ObjectInfos & objects);
 
         std::atomic<bool> & shutdown_called;
         std::mutex mutex;
@@ -154,7 +154,7 @@ public:
         ProcessingProgressPtr progress_,
         const ReadFromFormatInfo & read_from_format_info_,
         const std::optional<FormatSettings> & format_settings_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
         const CommitSettings & commit_settings_,
         std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
         ContextPtr context_,
@@ -172,7 +172,7 @@ public:
 
     Chunk generate() override;
 
-    void onFinish() override { parser_group->finishStream(); }
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -213,7 +213,7 @@ private:
     const ProcessingProgressPtr progress;
     ReadFromFormatInfo read_from_format_info;
     const std::optional<FormatSettings> format_settings;
-    FormatParserGroupPtr parser_group;
+    FormatParserSharedResourcesPtr parser_shared_resources;
     const CommitSettings commit_settings;
     const std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
     const size_t max_block_size;

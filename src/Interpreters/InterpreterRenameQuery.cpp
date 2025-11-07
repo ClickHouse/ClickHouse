@@ -146,6 +146,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
         }
         else
         {
+            database->checkTableNameLength(to_table_id.table_name);
+
             DatabaseCatalog::instance().checkTableCanBeRenamedWithNoCyclicDependencies(from_table_id, to_table_id);
             bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
             bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];

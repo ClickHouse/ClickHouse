@@ -382,7 +382,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         return;
 
     connections = create_connections(async_callback);
-    AsyncCallbackSetter async_callback_setter(connections.get(), async_callback);
+    AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
     const auto & settings = context->getSettingsRef();
     if (isReplicaUnavailable() || needToSkipUnavailableShard())
@@ -408,6 +408,9 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
 
+    if (extension)
+        modified_client_info.collaborate_with_initiator = true;
+
     if (!duplicated_part_uuids.empty())
         connections->sendIgnoredPartUUIDs(duplicated_part_uuids);
 
@@ -422,7 +425,8 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
             const auto & access_control = context->getAccessControl();
             for (const auto & e : user->granted_roles.getElements())
             {
-                auto names = access_control.readNames(e.ids);
+                // `tryReadNames` instead of `readNames` because the original user might have a dropped role.
+                auto names = access_control.tryReadNames(e.ids);
                 granted_roles.insert(names.begin(), names.end());
             }
         }

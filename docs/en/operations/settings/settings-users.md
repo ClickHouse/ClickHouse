@@ -4,6 +4,7 @@ sidebar_label: 'User Settings'
 sidebar_position: 63
 slug: /operations/settings/settings-users
 title: 'Users and roles settings'
+doc_type: 'reference'
 ---
 
 # Users and roles settings
@@ -150,7 +151,6 @@ Example:
 This setting can't be specified at the same time with
 `dictionaries`, `access_management`, `named_collection_control`, `show_named_collections_secrets`
 and `allow_databases` settings.
-
 
 ### user_name/networks {#user-namenetworks}
 

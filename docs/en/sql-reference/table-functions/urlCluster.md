@@ -5,6 +5,7 @@ sidebar_label: 'urlCluster'
 sidebar_position: 201
 slug: /sql-reference/table-functions/urlCluster
 title: 'urlCluster'
+doc_type: 'reference'
 ---
 
 # urlCluster Table Function
@@ -32,7 +33,7 @@ A table with the specified format and structure and with data from the defined `
 
 ## Examples {#examples}
 
-Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](../../interfaces/formats.md#csv) format.
+Getting the first 3 lines of a table that contains columns of `String` and [UInt32](../../sql-reference/data-types/int-uint.md) type from HTTP-server which answers in [CSV](/interfaces/formats/CSV) format.
 
 1. Create a basic HTTP server using the standard Python 3 tools and start it:
 
