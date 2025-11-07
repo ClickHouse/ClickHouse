@@ -1,21 +1,21 @@
 #include <Backups/BackupsWorker.h>
 
 #include <Backups/BackupConcurrencyCheck.h>
+#include <Backups/BackupCoordinationLocal.h>
+#include <Backups/BackupCoordinationOnCluster.h>
+#include <Backups/BackupCoordinationStage.h>
+#include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupInMemory.h>
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/IBackupEntry.h>
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupCoordinationStage.h>
-#include <Backups/BackupCoordinationOnCluster.h>
-#include <Backups/BackupCoordinationLocal.h>
-#include <Backups/BackupInMemory.h>
-#include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreCoordinationLocal.h>
+#include <Backups/RestoreCoordinationOnCluster.h>
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
-#include <Backups/getBackupDataFileNameGenerator.h>
+#include <Backups/getBackupDataFileName.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -369,7 +369,6 @@ struct BackupsWorker::BackupStarter
     String backup_name_for_logging;
     bool on_cluster;
     bool is_internal_backup;
-    BackupDataFileNameGeneratorPtr backup_data_file_name_gen;
     std::shared_ptr<IBackupCoordination> backup_coordination;
     ClusterPtr cluster;
     BackupMutablePtr backup;
@@ -406,7 +405,13 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
 
-        backup_data_file_name_gen = getBackupDataFileNameGenerator(backup_context->getConfigRef(), backup_settings);
+        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::None)
+            backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
+                backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
+
+        if (!backup_settings.data_file_name_prefix_length)
+            backup_settings.data_file_name_prefix_length
+                = backup_context->getConfigRef().getUInt64("backups.data_file_name_prefix_length", 3);
 
         /// process_list_element_holder is used to make an element in ProcessList live while BACKUP is working asynchronously.
         auto process_list_element = backup_context->getProcessListElement();
@@ -457,11 +462,12 @@ struct BackupsWorker::BackupStarter
             cluster = backup_context->getCluster(backup_query->cluster);
             backup_settings.cluster_host_ids = cluster->getHostIDs();
         }
-        backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context, backup_data_file_name_gen);
+        chassert(backup_settings.data_file_name_prefix_length);
+        backup_coordination = backups_worker.makeBackupCoordination(on_cluster, backup_settings, backup_context);
         backup_coordination->startup();
 
         chassert(!backup);
-        backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_data_file_name_gen, backup_coordination, backup_context);
+        backup = backups_worker.openBackupForWriting(backup_info, backup_settings, backup_coordination, backup_context);
 
         backups_worker.doBackup(backup, backup_query, backup_id, backup_settings, backup_coordination, backup_context, query_context,
                                 on_cluster, cluster);
@@ -571,7 +577,11 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 }
 
 
-BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, BackupDataFileNameGeneratorPtr backup_data_file_name_gen, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const
+BackupMutablePtr BackupsWorker::openBackupForWriting(
+    const BackupInfo & backup_info,
+    const BackupSettings & backup_settings,
+    std::shared_ptr<IBackupCoordination> backup_coordination,
+    const ContextPtr & context) const
 {
     LOG_TRACE(log, "Opening backup for writing");
     BackupFactory::CreateParams backup_create_params;
@@ -585,7 +595,8 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(const BackupInfo & backup_i
     backup_create_params.s3_storage_class = backup_settings.s3_storage_class;
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
-    backup_create_params.data_file_name_gen = backup_data_file_name_gen;
+    backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
+    backup_create_params.data_file_name_prefix_length = backup_settings.data_file_name_prefix_length.value();
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;
@@ -1093,12 +1104,11 @@ void BackupsWorker::sendQueryToOtherHosts(const ASTBackupQuery & backup_or_resto
 
 
 std::shared_ptr<IBackupCoordination>
-BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context, BackupDataFileNameGeneratorPtr backup_data_file_name_gen) const
+BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const
 {
     if (!on_cluster)
     {
-        return std::make_shared<BackupCoordinationLocal>(
-            /*is_plain_backup*/!backup_settings.deduplicate_files, backup_data_file_name_gen, allow_concurrent_backups, *concurrency_counters);
+        return std::make_shared<BackupCoordinationLocal>(backup_settings, allow_concurrent_backups, *concurrency_counters);
     }
 
     bool is_internal_backup = backup_settings.internal;
@@ -1117,9 +1127,9 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     String thread_name = is_internal_backup ? "BackupCoordInt" : "BackupCoord";
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
+    chassert(backup_settings.backup_uuid);
     return std::make_shared<BackupCoordinationOnCluster>(
-        *backup_settings.backup_uuid,
-        !backup_settings.deduplicate_files,
+        backup_settings,
         root_zk_path,
         get_zookeeper,
         keeper_settings,
@@ -1128,8 +1138,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
         allow_concurrent_backups,
         *concurrency_counters,
         schedule,
-        context->getProcessListElement(),
-        backup_data_file_name_gen);
+        context->getProcessListElement());
 }
 
 std::shared_ptr<IRestoreCoordination>

@@ -20,8 +20,6 @@ struct BackupInfo;
 class IBackupCoordination;
 class IRestoreCoordination;
 class IBackup;
-class IBackupDataFileNameGenerator;
-using BackupDataFileNameGeneratorPtr = std::shared_ptr<IBackupDataFileNameGenerator>;
 using BackupMutablePtr = std::shared_ptr<IBackup>;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
@@ -78,7 +76,11 @@ private:
     std::pair<BackupOperationID, BackupStatus> startMakingBackup(const ASTPtr & query, const ContextPtr & context);
     struct BackupStarter;
 
-    BackupMutablePtr openBackupForWriting(const BackupInfo & backup_info, const BackupSettings & backup_settings, BackupDataFileNameGeneratorPtr backup_data_file_name_gen, std::shared_ptr<IBackupCoordination> backup_coordination, const ContextPtr & context) const;
+    BackupMutablePtr openBackupForWriting(
+        const BackupInfo & backup_info,
+        const BackupSettings & backup_settings,
+        std::shared_ptr<IBackupCoordination> backup_coordination,
+        const ContextPtr & context) const;
 
     void doBackup(
         BackupMutablePtr backup,
@@ -117,7 +119,8 @@ private:
         bool on_cluster,
         const ClusterPtr & cluster);
 
-    std::shared_ptr<IBackupCoordination> makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context, BackupDataFileNameGeneratorPtr backup_data_file_name_gen) const;
+    std::shared_ptr<IBackupCoordination>
+    makeBackupCoordination(bool on_cluster, const BackupSettings & backup_settings, const ContextPtr & context) const;
     std::shared_ptr<IRestoreCoordination> makeRestoreCoordination(bool on_cluster, const RestoreSettings & restore_settings, const ContextPtr & context) const;
 
     /// Sends a BACKUP or RESTORE query to other hosts.

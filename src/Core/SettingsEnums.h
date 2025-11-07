@@ -494,4 +494,12 @@ enum class IcebergMetadataLogLevel : uint8_t
 };
 
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
+
+enum class BackupDataFileNameGeneratorType : uint8_t
+{
+    None = 0,
+    Checksum = 1,
+};
+
+DECLARE_SETTING_ENUM(BackupDataFileNameGeneratorType)
 }

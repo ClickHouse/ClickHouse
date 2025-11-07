@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Backups/IBackupCoordination.h>
-#include <Backups/IBackupDataFileNameGenerator.h>
 #include <Backups/BackupConcurrencyCheck.h>
 #include <Backups/BackupCoordinationFileInfos.h>
 #include <Backups/BackupCoordinationReplicatedAccess.h>
 #include <Backups/BackupCoordinationReplicatedSQLObjects.h>
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
+#include <Backups/BackupSettings.h>
 #include <base/defines.h>
 #include <cstddef>
 #include <mutex>
@@ -19,14 +19,12 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-
 /// Implementation of the IBackupCoordination interface performing coordination in memory.
 class BackupCoordinationLocal : public IBackupCoordination
 {
 public:
     explicit BackupCoordinationLocal(
-        bool is_plain_backup_,
-        BackupDataFileNameGeneratorPtr data_file_name_gen_,
+        const BackupSettings & backup_settings_,
         bool allow_concurrent_backup_,
         BackupConcurrencyCounters & concurrency_counters_);
 

@@ -6,6 +6,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Parsers/IAST_fwd.h>
+#include <Core/SettingsEnums.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
 #include <optional>
@@ -15,8 +16,6 @@
 namespace DB
 {
 class IBackupCoordination;
-class IBackupDataFileNameGenerator;
-using BackupDataFileNameGeneratorPtr = std::shared_ptr<IBackupDataFileNameGenerator>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
@@ -38,7 +37,8 @@ public:
         ContextPtr context;
         bool is_internal_backup = false;
         bool is_lightweight_snapshot = false;
-        BackupDataFileNameGeneratorPtr data_file_name_gen;
+        BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::None;
+        size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;
         std::optional<UUID> backup_uuid;
         bool deduplicate_files = true;

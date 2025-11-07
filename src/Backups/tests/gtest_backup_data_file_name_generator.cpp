@@ -2,7 +2,7 @@
 
 #include <Backups/BackupFileInfo.h>
 #include <Backups/BackupSettings.h>
-#include <Backups/getBackupDataFileNameGenerator.h>
+#include <Backups/getBackupDataFileName.h>
 
 #include <Poco/Util/MapConfiguration.h>
 #include <Common/Exception.h>
@@ -22,69 +22,31 @@ BackupFileInfo makeFileInfo(const std::string & name, UInt128 checksum)
 }
 }
 
-TEST(BackupDataFileNameGeneratorTest, ReturnsFirstFileNameGeneratorForPlainBackup)
+TEST(BackupDataFileNameGeneratorTest, NoGeneratorProvided)
 {
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = false; /// plain backup
-
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "first_file_name");
-
-    auto info = makeFileInfo("file1.bin", 123);
-    EXPECT_EQ(generator->generate(info), "file1.bin");
-}
-
-TEST(BackupDataFileNameGeneratorTest, ReturnsChecksumGeneratorWhenChecksumSelected)
-{
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "checksum";
-    settings.data_file_name_prefix_length = 3;
-
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "checksum");
-
+    auto prefix_length = 4;
     auto info = makeFileInfo("data.bin", UInt128(0x1234ABCDULL) << 96);
-    auto path = generator->generate(info);
+    auto path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::None, prefix_length);
 
-    EXPECT_TRUE(path.starts_with("123/"));
+    EXPECT_EQ(path, "data.bin");
 }
 
-TEST(BackupDataFileNameGeneratorTest, ReadsGeneratorFromConfigIfNotInSettings)
+TEST(BackupDataFileNameGeneratorTest, ChecksumGenerator)
 {
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    config->setString("backups.data_file_name_generator", "checksum");
-    config->setUInt64("backups.data_file_name_prefix_length", 4);
+    auto prefix_length = 4;
+    auto info = makeFileInfo("data.bin", UInt128(0x1234ABCDULL) << 96);
+    auto path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length);
 
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = ""; /// not set explicitly
-
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "checksum");
-
-    auto info = makeFileInfo("test.bin", DB::UInt128(0xABCDEF12ULL) << 96);
-    auto path = generator->generate(info);
-    EXPECT_TRUE(path.starts_with("abcd/"));
+    EXPECT_TRUE(path.starts_with("1234/"));
 }
 
 TEST(BackupDataFileNameGeneratorTest, ChecksumGeneratorWithZeroPrefixLength)
 {
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "checksum";
-    settings.data_file_name_prefix_length = 0;
-
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "checksum");
-
     UInt128 checksum = static_cast<UInt128>(0x1234ABCDULL) << 96;
     auto info = makeFileInfo("test.bin", checksum);
 
-    std::string path = generator->generate(info);
+    auto prefix_length = 0;
+    std::string path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length);
     EXPECT_EQ(path.find('/'), std::string::npos) << "Path should not contain slash";
 
     auto hex = getHexUIntLowercase(checksum);
@@ -93,85 +55,34 @@ TEST(BackupDataFileNameGeneratorTest, ChecksumGeneratorWithZeroPrefixLength)
 
 TEST(BackupDataFileNameGeneratorTest, ChecksumGeneratorWithMaxPrefixLength32)
 {
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "checksum";
-    settings.data_file_name_prefix_length = 32;
-
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "checksum");
-
     UInt128 checksum = static_cast<UInt128>(0x1234ABCDULL) << 96;
     auto info = makeFileInfo("test.bin", checksum);
 
-    std::string path = generator->generate(info);
+    auto prefix_length = 32;
+    std::string path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length);
 
     auto hex = getHexUIntLowercase(checksum);
 
-    auto prefix = hex.substr(0, 32);
+    auto prefix = hex.substr(0, prefix_length);
     EXPECT_EQ(prefix, path);
 
-    auto suffix = hex.substr(32);
+    auto suffix = hex.substr(prefix_length);
     EXPECT_TRUE(suffix.empty());
-
-    std::cout << path << std::endl;
 
     EXPECT_TRUE(path.find('/') == std::string::npos) << "Should not contain slash";
 }
 
-TEST(BackupDataFileNameGeneratorTest, ThrowsOnInvalidGeneratorName)
-{
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "unknown";
-
-    EXPECT_THROW({ auto generator = getBackupDataFileNameGenerator(*config, settings); }, Exception);
-}
-
-TEST(BackupDataFileNameGeneratorTest, ThrowsWhenPrefixUsedWithFirstFileName)
-{
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "first_file_name";
-    settings.data_file_name_prefix_length = 2;
-
-    EXPECT_THROW({ auto generator = getBackupDataFileNameGenerator(*config, settings); }, Exception);
-}
-
 TEST(BackupDataFileNameGeneratorTest, ThrowsWhenChecksumPrefixOutOfBound)
 {
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "checksum";
-    settings.data_file_name_prefix_length = 33; /// invalid (>32)
+    UInt128 checksum = static_cast<UInt128>(0x1234ABCDULL) << 96;
+    auto info = makeFileInfo("test.bin", checksum);
 
-    EXPECT_THROW({ auto generator = getBackupDataFileNameGenerator(*config, settings); }, Exception);
-}
+    auto prefix_length = 33;
+    std::string path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length);
 
-TEST(BackupDataFileNameGeneratorTest, ThrowsOnEmptyFileName)
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "checksum";
-    settings.data_file_name_prefix_length = 2;
+    auto hex = getHexUIntLowercase(checksum);
 
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "checksum");
-
-    BackupFileInfo info;
-    info.file_name = "";
-    info.checksum = 0x123;
-
-    EXPECT_THROW(generator->generate(info), Exception);
-#endif
+    EXPECT_TRUE(path.find('/') == std::string::npos) << "Should not contain slash";
 }
 
 TEST(BackupDataFileNameGeneratorTest, ThrowsOnZeroChecksum)
@@ -179,19 +90,10 @@ TEST(BackupDataFileNameGeneratorTest, ThrowsOnZeroChecksum)
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
-    ConfigurationPtr config = Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration());
-    BackupSettings settings;
-    settings.deduplicate_files = true;
-    settings.data_file_name_generator = "checksum";
-    settings.data_file_name_prefix_length = 2;
+    UInt128 checksum = 0;
+    auto info = makeFileInfo("test.bin", checksum);
 
-    auto generator = getBackupDataFileNameGenerator(*config, settings);
-    EXPECT_EQ(generator->getName(), "checksum");
-
-    BackupFileInfo info;
-    info.file_name = "data.bin";
-    info.checksum = 0;
-
-    EXPECT_THROW(generator->generate(info), Exception);
+    auto prefix_length = 2;
+    EXPECT_THROW(getBackupDataFileName(info, BackupDataFileNameGeneratorType::Checksum, prefix_length), Exception);
 #endif
 }

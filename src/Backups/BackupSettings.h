@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
+#include <Core/SettingsEnums.h>
 #include <Common/SettingsChanges.h>
 #include <optional>
 
@@ -8,6 +9,7 @@
 namespace DB
 {
 class ASTBackupQuery;
+
 
 /// Settings specified in the "SETTINGS" clause of a BACKUP query.
 struct BackupSettings
@@ -90,11 +92,13 @@ struct BackupSettings
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
 
-    /// Generator for a unique and deterministic backup file name.
-    /// If specified, should be one of ["first_file_name", "checksum"]. Defaults to "first_file_name".
-    String data_file_name_generator;
+    /// Defines how backup data file names are generated.
+    /// - `None`: use the original file name from BackupFileInfo.
+    /// - `Checksum`: derive the name from the file checksum.
+    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::None;
 
-    /// A length of backup file name prefix. Only applicable to "checksum" generator.
+    /// Optional length of the checksum prefix used as a directory path segment
+    /// when `data_file_name_generator` is `Checksum`.
     std::optional<size_t> data_file_name_prefix_length;
 
     /// Internal, should not be specified by user.

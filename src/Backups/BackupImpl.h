@@ -17,8 +17,6 @@ class IBackupWriter;
 class SeekableReadBuffer;
 class IArchiveReader;
 class IArchiveWriter;
-class IBackupDataFileNameGenerator;
-using BackupDataFileNameGeneratorPtr = std::shared_ptr<IBackupDataFileNameGenerator>;
 
 /// Implementation of IBackup.
 /// Along with passed files it also stores backup metadata - a single file named ".backup" in XML format
@@ -145,7 +143,8 @@ private:
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
 
-    BackupDataFileNameGeneratorPtr data_file_name_gen;
+    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::None;
+    size_t data_file_name_prefix_length = 3;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
