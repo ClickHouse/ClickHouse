@@ -288,7 +288,7 @@ public:
 
         /// Populate @rows_per_granule and @granule_offsets. See comments below.
         void addGranule(size_t num_rows_, GranuleOffset granule_offset);
-        void adjustLastGranule(std::optional<size_t> actual_num_read_rows = {});
+        void adjustLastGranule(ssize_t actual_num_read_rows = -1);
 
         void addRows(size_t rows) { num_read_rows += rows; }
 
