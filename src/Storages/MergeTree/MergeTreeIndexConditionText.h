@@ -8,7 +8,13 @@ namespace DB
 {
 
 class TextIndexDictionaryBlockCache;
+using TextIndexDictionaryBlockCachePtr = std::shared_ptr<TextIndexDictionaryBlockCache>;
+
 class TextIndexHeaderCache;
+using TextIndexHeaderCachePtr = std::shared_ptr<TextIndexHeaderCache>;
+
+class TextIndexPostingsCache;
+using TextIndexPostingsCachePtr = std::shared_ptr<TextIndexPostingsCache>;
 
 enum class TextSearchMode : uint8_t
 {
@@ -69,10 +75,13 @@ public:
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
 
     bool useDictionaryBlockCache() const { return use_dictionary_block_cache; }
-    TextIndexDictionaryBlockCache * dictionaryBlockCache() const { return dictionary_block_cache; }
+    TextIndexDictionaryBlockCachePtr dictionaryBlockCache() const { return dictionary_block_cache; }
 
     bool useHeaderCache() const { return use_header_cache; }
-    TextIndexHeaderCache * headerCache() const { return header_cache; }
+    TextIndexHeaderCachePtr headerCache() const { return header_cache; }
+
+    bool usePostingsCache() const { return use_postings_cache; }
+    TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
 
 private:
     /// Uses RPN like KeyCondition
@@ -142,11 +151,15 @@ private:
     /// Using text index dictionary block cache can be enabled to reduce I/O
     bool use_dictionary_block_cache;
     /// Instance of the text index dictionary block cache
-    TextIndexDictionaryBlockCache * dictionary_block_cache;
-    /// Using text index header can be enabled to reduce I/O
+    TextIndexDictionaryBlockCachePtr dictionary_block_cache;
+    /// Using text index header cache can be enabled to reduce I/O
     bool use_header_cache;
     /// Instance of the text index dictionary block cache
-    TextIndexHeaderCache * header_cache;
+    TextIndexHeaderCachePtr header_cache;
+    /// Using text index posting list cache can be enabled to reduce I/O
+    bool use_postings_cache;
+    /// Instance of the text index dictionary block cache
+    TextIndexPostingsCachePtr postings_cache;
 };
 
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
