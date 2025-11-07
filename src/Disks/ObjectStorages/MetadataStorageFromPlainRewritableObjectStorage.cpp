@@ -278,13 +278,6 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
     return existsDirectory(path) || existsFile(path);
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
-{
-    return command.type == PartitionCommand::DROP_PARTITION || command.type == PartitionCommand::DROP_DETACHED_PARTITION
-        || command.type == PartitionCommand::ATTACH_PARTITION || command.type == PartitionCommand::MOVE_PARTITION
-        || command.type == PartitionCommand::REPLACE_PARTITION;
-}
-
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
     return fs_tree->existsFile(path);
@@ -304,10 +297,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 {
     if (auto [exists, remote_info] = fs_tree->existsDirectory(path); exists)
     {
-        if (!remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+        if (remote_info)
+            return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
 
-        return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
+        /// Let's return something in this case to unblock fs garbage cleanup.
+        return Poco::Timestamp::fromEpochTime(0);
     }
 
     if (auto object_metadata = getObjectMetadataEntryWithCache(path))
