@@ -25,6 +25,7 @@ Example:
 
 > **Note**
 > • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
+> • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 
