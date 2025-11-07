@@ -3,7 +3,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/FailPoint.h>
+
 #include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -45,6 +45,8 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
     if (!source_ptr->supportsSelectiveLoad())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
 }
+
+Pipe getSourcePipe(QueryPipeline & pipeline, const bool use_async_executor);
 
 template <DictionaryKeyType dictionary_key_type>
 Columns DirectDictionary<dictionary_key_type>::getColumns(
@@ -88,7 +90,7 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
+    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
     PullingPipelineExecutor executor(pipeline);
 
     Stopwatch watch;
@@ -260,7 +262,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
 
     BlockIO io = loadKeys(requested_keys, key_columns);
 
-    QueryPipeline pipeline(getSourcePipe(io.pipeline, key_columns, requested_keys));
+    QueryPipeline pipeline(getSourcePipe(io.pipeline, use_async_executor));
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
@@ -401,11 +403,7 @@ private:
     TExecutor executor;
 };
 
-template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
-    QueryPipeline & pipeline,
-    const Columns & key_columns [[maybe_unused]],
-    const PaddedPODArray<KeyType> & requested_keys [[maybe_unused]]) const
+Pipe getSourcePipe(QueryPipeline & pipeline, const bool use_async_executor)
 {
     if (use_async_executor)
         return Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(pipeline));
@@ -421,7 +419,9 @@ BlockIO DirectDictionary<dictionary_key_type>::loadKeys(const PaddedPODArray<Key
         return source_ptr->loadIds(ids);
     }
 
-    auto requested_rows = std::views::iota(size_t{0}, requested_keys.size()) | std::ranges::to<std::vector>();
+    std::vector<size_t> requested_rows;
+    iota(requested_rows.data(), requested_keys.size(), size_t(0));
+
     return source_ptr->loadKeys(key_columns, requested_rows);
 }
 

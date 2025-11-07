@@ -177,6 +177,7 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
         {
             io.onException();
         }
+        throw;
     }
 
     for (auto & io : io_holders)

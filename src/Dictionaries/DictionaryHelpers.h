@@ -544,7 +544,7 @@ template <DictionaryKeyType dictionary_key_type>
 Block mergeBlockWithPipe(
     size_t key_columns_size,
     const Block & block_to_update,
-    BlockIO io)
+    BlockIO && io)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 

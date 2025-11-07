@@ -1,9 +1,6 @@
 #pragma once
 
-#include <exception>
 #include <functional>
-#include <vector>
-#include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>

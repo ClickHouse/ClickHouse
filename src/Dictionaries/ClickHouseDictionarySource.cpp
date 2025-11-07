@@ -1,9 +1,7 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <memory>
 #include <Client/ConnectionPool.h>
-#include <Common/SettingsChanges.h>
 #include <Common/CurrentThread.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Processors/Sources/RemoteSource.h>
@@ -19,7 +17,6 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/IDictionary.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -29,7 +26,6 @@
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <fmt/format.h>
 
 namespace DB
 {
