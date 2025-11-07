@@ -749,6 +749,9 @@ public:
 
     HashTable & operator=(const HashTable & rhs) noexcept
     {
+        if (this == &rhs)
+            return *this;
+
         size_t new_buffer_size = rhs.getBufferSizeInBytes();
         size_t old_buffer_size = getBufferSizeInBytes();
         destroyElements();
