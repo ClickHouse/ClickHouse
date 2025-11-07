@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <exception>
+#include <type_traits>
 
 namespace DB
 {
@@ -76,8 +77,8 @@ private:
     {
         try
         {
-            if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>)
-                this->attributes.push_back(Tuple{name, value});
+            if constexpr (std::is_same_v<T, std::string_view> || std::is_same_v<T, String> || std::is_same_v<T, const char *>)
+                this->attributes.push_back(Tuple{name, std::move(value)});
             else
                 this->attributes.push_back(Tuple{name, toString(value)});
         }
