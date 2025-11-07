@@ -393,10 +393,10 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 
 bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
 {
+    /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
     bool is_suitable_kind = join_operator.kind == JoinKind::Inner
         || join_operator.kind == JoinKind::Cross
         || join_operator.kind == JoinKind::Comma
-        || join_operator.kind == JoinKind::Paste
         || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
         || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
 
@@ -873,7 +873,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else if (!join_expression.empty())
     {
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected JOIN ON expression {} for {} JOIN",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected JOIN ON expression {} for {} JOIN",
             formatJoinCondition(join_expression), toString(join_operator.kind));
     }
 

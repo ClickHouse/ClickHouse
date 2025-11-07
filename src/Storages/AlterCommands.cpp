@@ -381,11 +381,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistics_decl = command_ast->statistics_decl->clone();
         command.type = AlterCommand::DROP_STATISTICS;
-        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistics_columns = ast_stat_decl.getColumnNames();
+        if (command_ast->statistics_decl)
+        {
+            command.statistics_decl = command_ast->statistics_decl->clone();
+
+            const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
+            command.statistics_columns = ast_stat_decl.getColumnNames();
+        }
+
         command.if_exists = command_ast->if_exists;
         command.clear = command_ast->clear_statistics;
 
@@ -495,6 +500,11 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
 void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
+    /// Helper function for column existence check with IF EXISTS
+    auto should_skip_column_operation = [&]() -> bool {
+        return if_exists && !metadata.columns.has(column_name);
+    };
+
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -585,10 +595,16 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
 
         /// Otherwise just clear data on disk
         if (!clear && !partition)
+        {
+            if (should_skip_column_operation())
+                return;
             metadata.columns.remove(column_name);
+        }
     }
     else if (type == MODIFY_COLUMN)
     {
+        if (should_skip_column_operation())
+            return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
             if (to_remove == RemoveProperty::DEFAULT
@@ -679,8 +695,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == COMMENT_COLUMN)
     {
-        // If column doesn't exist and IF EXISTS is used, skip silently
-        if (!metadata.columns.has(column_name) && if_exists)
+        if (should_skip_column_operation())
             return;
 
         metadata.columns.modify(column_name,
@@ -947,6 +962,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == RENAME_COLUMN)
     {
+        if (should_skip_column_operation())
+            return;
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);

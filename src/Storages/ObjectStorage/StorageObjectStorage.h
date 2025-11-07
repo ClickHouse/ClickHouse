@@ -36,10 +36,6 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
-    using ObjectInfo = RelativePathWithMetadata;
-    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-    using ObjectInfos = std::vector<ObjectInfoPtr>;
-
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
@@ -151,6 +147,9 @@ public:
         ContextPtr context) override;
 
     bool supportsDelete() const override { return configuration->supportsDelete(); }
+
+    bool supportsParallelInsert() const override { return configuration->supportsParallelInsert(); }
+
     void mutate(const MutationCommands &, ContextPtr) override;
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const override;
 

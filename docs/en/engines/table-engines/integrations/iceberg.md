@@ -4,7 +4,7 @@ description: 'This engine provides a read-only integration with existing Apache 
 sidebar_label: 'Iceberg'
 sidebar_position: 90
 slug: /engines/table-engines/integrations/iceberg
-title: 'Iceberg Table Engine'
+title: 'Iceberg table engine'
 doc_type: 'reference'
 ---
 

@@ -49,6 +49,7 @@
             --element-color-ok: #080;
             --element-background-color-fail: #FEE;
             --bar-color: #FF8; /* Light bar in background of table cells. */
+            --bar-color-negative: #FEE;
             --border-color: #CCC;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FF0;
@@ -81,6 +82,7 @@
             --element-color-ok: #8F8;
             --element-background-color-fail: #300;
             --bar-color: #320;
+            --bar-color-negative: #311;
             --border-color: #444;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --text-color: #CCC;
@@ -329,6 +331,7 @@
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
             contain: strict; /* Less input lag even if the table is large. */
+            resize: none; /* Disable default browser resizer */
         }
 
         #inputs
@@ -555,6 +558,26 @@
         {
             border-radius: 0.25rem;
             background-color: var(--border-color-selected);
+        }
+
+        .textarea-resizer {
+            position: absolute;
+            bottom: -0.3rem;
+            left: 0;
+            width: 100%;
+            height: 0.5rem;
+            cursor: row-resize;
+            user-select: none;
+        }
+
+        .textarea-resizer:hover, .textarea-resizer-dragging
+        {
+            border-radius: 0.25rem;
+            background-color: var(--border-color);
+        }
+
+        #query_div {
+            position: relative;
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -1044,19 +1067,29 @@ function checkCredentials() {
     });
 }
 
-user_elem.addEventListener('input', checkCredentials);
-password_elem.addEventListener('input', checkCredentials);
+function resetCredentialsStatus() {
+    [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
+}
+
+user_elem.addEventListener('input', resetCredentialsStatus);
+password_elem.addEventListener('input', resetCredentialsStatus);
+
+/// The password is usually copy-pasted.
+/// To not worry about extracting the clipboard data, but use the value instead,
+/// and not worry too much about input/paste race, add the timeout.
+user_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
+password_elem.addEventListener('paste', () => setTimeout(checkCredentials, 100));
 
 
 function queryToColor(str) {
-    let hash = 0;
+    let hash = 2166136261;
     for (let i = 0; i < str.length; i++) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash = hash & hash;
+        hash ^= str.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
     }
 
     /// Limited range to avoid violet colors.
-    return 50 + Math.abs(hash % 200);
+    return 50 + ((hash >>> 0) % 200);
 }
 
 function toBase64(str) {
@@ -1341,6 +1374,8 @@ async function restoreFromHistory(state) {
 }
 
 let query_area = document.getElementById('query');
+
+appendTextareaResizer();
 
 window.onpopstate = function(event) {
     if (!event.state) return;
@@ -1783,6 +1818,58 @@ function appendHeaderResizer(header) {
     header.appendChild(resizer);
 }
 
+
+function appendTextareaResizer() {
+    const queryDiv = document.getElementById('query_div');
+    const textarea = document.getElementById('query');
+
+    let drag_state = {
+        elem: null,
+        is_dragging: false,
+        offset_y: null,
+        offset_height: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return; }
+
+        drag_state.offset_y = e.clientY;
+        drag_state.offset_height = textarea.offsetHeight;
+        drag_state.is_dragging = true;
+        drag_state.elem = e.target;
+        drag_state.elem.classList.add('textarea-resizer-dragging');
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
+
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dy = e.clientY - drag_state.offset_y;
+        const newHeight = drag_state.offset_height + dy;
+
+        textarea.style.height = `${newHeight}px`;
+    }
+
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+        drag_state.elem.classList.remove('textarea-resizer-dragging');
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'textarea-resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+    queryDiv.appendChild(resizer);
+}
+
 function appendHeader(meta) {
     if (meta.length == 0) { return; }
     header = meta;
@@ -1879,19 +1966,51 @@ function renderExtremes() {
             && extremes.min[name] !== undefined && extremes.max[name] !== undefined
             && Number(extremes.max[name]) > Number(extremes.min[name])) {
             let table = document.getElementById('data-table');
+
+            const double_sided = extremes.min[name] < 0;
+            const ratio_positive = extremes.max[name] / (extremes.max[name] - extremes.min[name]);
+            const ratio_negative = 1 - ratio_positive;
+
             for (let row of table.rows) {
                 let cell = row.cells[col_idx];
                 let value = +cell.innerText;
-                if (value > 0) {
-                    const ratio = 100 * value / extremes.max[name];
 
-                    cell.style.cssText = `
-                        background-size: 100% 50%;
-                        background-position: center;
-                        background-repeat: no-repeat;
-                        background: linear-gradient(to right,
-                            var(--bar-color) 0%, var(--bar-color) ${ratio}%,
-                            var(--element-background-color) ${ratio}%, var(--element-background-color) 100%)`;
+                if (!double_sided) {
+                    if (value > 0) {
+                        const ratio = value / extremes.max[name];
+
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
+                            background: linear-gradient(to right,
+                                var(--bar-color) 0%, var(--bar-color) ${100 * ratio}%,
+                                var(--element-background-color) ${100 * ratio}%, var(--element-background-color) 100%)`;
+                    }
+                } else {
+                    if (value > 0) {
+                        const ratio = value / extremes.max[name];
+
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
+                            background: linear-gradient(to right,
+                                var(--element-background-color) 0%, var(--element-background-color) ${100 * ratio_negative}%,
+                                var(--bar-color) ${100 * ratio_negative}%, var(--bar-color) ${100 * (ratio_negative + ratio * ratio_positive)}%,
+                                var(--element-background-color) ${100 * (ratio_negative + ratio * ratio_positive)}%, var(--element-background-color) 100%)`;
+                    } else if (value < 0) {
+                        const ratio = value / extremes.min[name];
+
+                        cell.style.cssText = `
+                            background-size: 100% 50%;
+                            background-position: center;
+                            background-repeat: no-repeat;
+                            background: linear-gradient(to right,
+                                var(--element-background-color) 0%, var(--element-background-color) ${100 * (1 - ratio) * ratio_negative}%,
+                                var(--bar-color-negative) ${100 * (1 - ratio) * ratio_negative}%, var(--bar-color-negative) ${100 * ratio_negative}%,
+                                var(--element-background-color) ${100 * ratio_negative}%, var(--element-background-color) 100%)`;
+                    }
                 }
             }
         }
