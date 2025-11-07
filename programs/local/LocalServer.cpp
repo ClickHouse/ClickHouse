@@ -922,14 +922,14 @@ void LocalServer::processConfig()
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
-    String parquet_metadata_files_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
-    size_t parquet_metadata_files_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
-    size_t parquet_metadata_files_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
-    double parquet_metadata_files_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
+    String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
+    size_t parquet_metadata_cache_size = server_settings[ServerSetting::parquet_metadata_cache_size];
+    size_t parquet_metadata_cache_max_entries = server_settings[ServerSetting::parquet_metadata_cache_max_entries];
+    double parquet_metadata_cache_size_ratio = server_settings[ServerSetting::parquet_metadata_cache_size_ratio];
     if (parquet_metadata_cache_size > max_cache_size)
     {
         parquet_metadata_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_files_cache_size));
+        LOG_INFO(log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(parquet_metadata_cache_size));
     }
     global_context->setParquetMetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
     global_context->setParquetV3MetadataCache(parquet_metadata_cache_policy, parquet_metadata_cache_size, parquet_metadata_cache_max_entries, parquet_metadata_cache_size_ratio);
