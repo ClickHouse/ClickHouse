@@ -792,7 +792,7 @@ void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTre
 size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
 {
     size_t posting_lists_size = 0;
-    for (auto plist : posting_lists)
+    for (const auto & plist : posting_lists)
         posting_lists_size += plist.getSizeInBytes();
 
     return sizeof(*this)
