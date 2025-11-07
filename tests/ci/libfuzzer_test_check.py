@@ -294,6 +294,10 @@ def process_results(result_path: Path):
                         raw_logs.append("Regressions:")
                         for line in err:
                             raw_logs.append("\t".join(s for s in line))
+                        if file_path_out_mini.exists():
+                            log_files.append(str(file_path_out_mini))
+                        if file_path_stdout_mini.exists():
+                            log_files.append(str(file_path_stdout_mini))
 
             # Collect all crash, timeout and trace files
             for file in list(fuzzer_result_dir.glob("mini-crash-*")):
@@ -337,10 +341,10 @@ def process_results(result_path: Path):
                         raw_logs.append("\t".join(s for s in line))
                 else:
                     raw_logs.append("No stack traces found - this is unusual - check output files")
-                    if file_path_out.exists():
-                        log_files.append(str(file_path_out))
-                    if file_path_stdout.exists():
-                        log_files.append(str(file_path_stdout))
+                if file_path_out.exists():
+                    log_files.append(str(file_path_out))
+                if file_path_stdout.exists():
+                    log_files.append(str(file_path_stdout))
 
         # Collect all crash, timeout and trace files
         for file in list(fuzzer_result_dir.glob("crash-*")):
