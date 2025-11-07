@@ -84,6 +84,7 @@ public:
 
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
+    JoinSettings & getJoinSettings() { return join_settings; }
     const JoinOperator & getJoinOperator() const { return join_operator; }
     JoinOperator & getJoinOperator() { return join_operator; }
 

@@ -355,7 +355,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     std::unique_lock lock(mutex);
     if (!message_queue.empty())
     {
-        auto notification = message_queue.front();
+        auto notification = std::move(message_queue.front());
         message_queue.pop_front();
         return notification;
     }
@@ -364,7 +364,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     if (message_queue.empty())
         return nullptr;
 
-    auto notification = message_queue.front();
+    auto notification = std::move(message_queue.front());
     message_queue.pop_front();
     return notification;
 }
@@ -413,14 +413,14 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        if (text_log_max_priority_loaded >= msg_priority)
-            text_log_queue.enqueueMessage(notification);
-
         for (size_t i = 0; i < queues.size(); i++)
         {
             if (channels[i]->getPriority() >= msg_priority)
                 queues[i]->enqueueMessage(notification);
         }
+
+        if (text_log_max_priority_loaded >= msg_priority)
+            text_log_queue.enqueueMessage(std::move(notification));
     }
     catch (...)
     {
@@ -558,7 +558,7 @@ void OwnAsyncSplitChannel::runTextLog()
         auto queue = text_log_queue.getCurrentQueueAndClear();
         while (!queue.empty())
         {
-            auto notif = queue.front();
+            auto notif = std::move(queue.front());
             queue.pop_front();
             if (notif)
                 log_notification(notif, text_log_locked);
