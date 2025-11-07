@@ -234,7 +234,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCmoduloOrNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCpositiveModuloOrNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCicebergBucket, 0, 0, 2, 2),
-    CHFunction(SQLFunc::FUNCicebergHash, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCicebergHash, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCicebergTruncate, 0, 0, 2, 2),
     /// String and array functions
     CHFunction(SQLFunc::FUNCempty, 0, 0, 1, 1),
