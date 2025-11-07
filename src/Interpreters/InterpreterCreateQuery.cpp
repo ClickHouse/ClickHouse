@@ -2007,11 +2007,11 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (res->storesDataOnDisk())
     {
         /// Check sub columns limit
-        unsigned max_subcolumns = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_subcolumns]);
+        size_t max_subcolumns = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_subcolumns]);
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
         NamesAndTypesList columns = properties.columns.get(get_column_options);
 
-        unsigned subcolumn_count = 0;
+        size_t subcolumn_count = 0;
         for (const auto & column : columns)
             if (column.isSubcolumn())
                 subcolumn_count++;
