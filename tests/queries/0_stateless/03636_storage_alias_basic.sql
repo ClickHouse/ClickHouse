@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS source_table;
 DROP TABLE IF EXISTS alias_1;
 DROP TABLE IF EXISTS alias_2;
