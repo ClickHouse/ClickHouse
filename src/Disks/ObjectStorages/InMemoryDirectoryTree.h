@@ -44,6 +44,9 @@ class InMemoryDirectoryTree
     /// Constructs path which can be resolved (walked) to node.
     std::filesystem::path determineNodePath(std::shared_ptr<INode> node) const TSA_REQUIRES(mutex);
 
+    /// Removes all parents of node while the parent should not exist. Node should exist if some physical node exists in it's subtree.
+    std::shared_ptr<INode> trimDanglingVirtualPath(std::shared_ptr<INode> node) TSA_REQUIRES(mutex);
+
 public:
     InMemoryDirectoryTree(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name);
     void apply(std::unordered_map<std::string, DirectoryRemoteInfo> remote_layout);

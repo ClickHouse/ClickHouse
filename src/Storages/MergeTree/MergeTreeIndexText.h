@@ -84,6 +84,7 @@ struct MergeTreeIndexTextParams
 };
 
 using PostingList = roaring::Roaring;
+using PostingListPtr = std::shared_ptr<PostingList>;
 
 /// A struct for building a posting list with optimization for infrequent tokens.
 /// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
@@ -133,7 +134,7 @@ struct PostingsSerialization
     };
 
     static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
-    static PostingList deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
+    static PostingListPtr deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
 };
 
 /// Stores information about posting list for a token.
@@ -145,29 +146,30 @@ public:
     /// Information required to read the posting list.
     struct FuturePostings
     {
+        MergeTreeIndexDeserializationState state;
         UInt64 header = 0;
-        UInt32 cardinality = 0;
         UInt64 offset_in_file = 0;
+        UInt32 cardinality = 0;
     };
 
     TokenPostingsInfo() : postings(FuturePostings{}) {}
-    explicit TokenPostingsInfo(PostingList postings_) : postings(std::move(postings_)) {}
+    explicit TokenPostingsInfo(PostingListPtr postings_) : postings(std::move(postings_)) {}
     explicit TokenPostingsInfo(FuturePostings postings_) : postings(std::move(postings_)) {}
 
     UInt32 getCardinality() const;
     bool empty() const { return getCardinality() == 0; }
 
-    bool hasEmbeddedPostings() const { return std::holds_alternative<PostingList>(postings); }
+    bool hasEmbeddedPostings() const { return std::holds_alternative<PostingListPtr>(postings); }
     bool hasFuturePostings() const { return std::holds_alternative<FuturePostings>(postings); }
 
-    PostingList & getEmbeddedPostings() { return std::get<PostingList>(postings); }
+    PostingListPtr getEmbeddedPostings() { return std::get<PostingListPtr>(postings); }
     FuturePostings & getFuturePostings() { return std::get<FuturePostings>(postings); }
 
-    const PostingList & getEmbeddedPostings() const { return std::get<PostingList>(postings); }
+    const PostingListPtr & getEmbeddedPostings() const { return std::get<PostingListPtr>(postings); }
     const FuturePostings & getFuturePostings() const { return std::get<FuturePostings>(postings); }
 
 private:
-    std::variant<PostingList, FuturePostings> postings;
+    std::variant<PostingListPtr, FuturePostings> postings;
 };
 
 struct DictionaryBlockBase
