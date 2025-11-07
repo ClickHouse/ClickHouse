@@ -151,6 +151,13 @@ template <
     typename Allocator = HashTableAllocator>
 using HashSetWithSavedHash = HashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
 
+template <
+    typename Key,
+    typename Hash = DefaultHash<Key>,
+    typename Grower = TwoLevelHashTableGrower<>,
+    typename Allocator = HashTableAllocator>
+using TwoLevelHashSetWithSavedHash = TwoLevelHashSetTable<Key, HashSetCellWithSavedHash<Key, Hash>, Hash, Grower, Allocator>;
+
 template <typename Key, typename Hash, size_t initial_size_degree>
 using HashSetWithSavedHashWithStackMemory = HashSetWithSavedHash<
     Key,
