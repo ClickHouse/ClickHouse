@@ -1391,16 +1391,9 @@ void registerInputFormatParquet(FormatFactory & factory)
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
             
-            // Initialize Parquet metadata cache following Iceberg pattern
-            ParquetMetadataCachePtr metadata_cache = nullptr;
-            if (auto context = CurrentThread::getQueryContext())
-            {
-                if (context->getSettingsRef()[Setting::use_parquet_metadata_cache])
-                    metadata_cache = context->getParquetMetadataCache();
-            }
-            
             if (settings.parquet.use_native_reader_v3)
             {
+                auto v3_cache = CurrentThread::getQueryContext()->getParquetV3MetadataCache();
                 return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
@@ -1408,10 +1401,11 @@ void registerInputFormatParquet(FormatFactory & factory)
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
                     min_bytes_for_seek,
-                    metadata_cache);
+                    v3_cache);
             }
             else
             {
+                auto v2_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
                 return std::make_shared<ParquetBlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
@@ -1419,7 +1413,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                     std::move(parser_shared_resources),
                     std::move(format_filter_info),
                     min_bytes_for_seek,
-                    metadata_cache);
+                    v2_cache);
             }
         });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
