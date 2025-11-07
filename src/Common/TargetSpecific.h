@@ -89,7 +89,7 @@ enum class TargetArch : UInt32
     AMXTILE = (1 << 10),
     AMXINT8 = (1 << 11),
     GenuineIntel = (1 << 12), /// Not an instruction set, but a CPU vendor.
-    SVE    = (1 << 13),
+    SVE = (1 << 13),
 };
 
 /// Runtime detection.
@@ -231,7 +231,7 @@ END_TARGET_SPECIFIC_CODE
         #  define USE_MULTITARGET_CODE 0
     #endif
 
-    #  define USE_ARM_MULTITARGET_CODE 1
+    #define USE_ARM_MULTITARGET_CODE 1
 
     #define SVE_FUNCTION_SPECIFIC_ATTRIBUTE __attribute__((target("sve")))
 
@@ -241,8 +241,8 @@ END_TARGET_SPECIFIC_CODE
             _Pragma("clang attribute pop")
 
     /* Clang shows warning when there aren't any objects to apply pragma.
-    * To prevent this warning we define this function inside every macros with pragmas.
-    */
+     * To prevent this warning we define this function inside every macros with pragmas.
+     */
     #   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 
     #define DECLARE_SVE_SPECIFIC_CODE(...) \
