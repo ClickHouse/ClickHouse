@@ -24,6 +24,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageValues.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -1069,7 +1070,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 };
 
                 /// query_plan can be empty if there is nothing to read
-                if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
+                if (query_plan.isInitialized() && !select_query_options.build_logical_plan
+                    && parallel_replicas_enabled_for_storage(storage, settings))
                 {
                     auto allow_parallel_replicas_for_table_expression
                         = [](const QueryTreeNodePtr current_table_expression, const QueryTreeNodePtr & join_tree_node)
@@ -1081,13 +1083,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (!join_node)
                             return true;
 
+                        const auto & left_table_expr = join_node->getLeftTableExpression();
+                        // don't allow parallel replicas with strange storages
+                        if (left_table_expr->getNodeType() == QueryTreeNodeType::TABLE)
+                        {
+                            const auto * left_table_node = left_table_expr->as<TableNode>();
+                            // Context: INSERT INTO a table with dependent materialized view (the mv with JOIN)
+                            // For some reason, the left table is wrapped up into StorageValues before execute the JOIN
+                            // see https://github.com/ClickHouse/ClickHouse/issues/89742
+                            return !left_table_node->getStorage().get()->as<StorageValues>();
+                        }
+
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
                         {
-
-                            const auto & left_table_expr = join_node->getLeftTableExpression();
                             if (current_table_expression.get() == left_table_expr.get())
                                 // here current table expression is table or table function
                                 return true;
@@ -1104,7 +1114,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (join_kind == JoinKind::Right)
                         {
                             // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
-                            const auto & left_table_expr = join_node->getLeftTableExpression();
                             if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
