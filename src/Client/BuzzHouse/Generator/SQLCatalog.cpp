@@ -5,9 +5,9 @@ namespace BuzzHouse
 
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
 {
-    if (add_params && isReplicatedOrSharedDatabase())
+    if (add_params && isReplicatedDatabase())
     {
-        chassert(de->params_size() == 0 && this->nparams == 0);
+        chassert(de->params_size() == 0);
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
