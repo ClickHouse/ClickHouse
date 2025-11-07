@@ -76,7 +76,7 @@ private:
     Mean lower_bound;
     Mean upper_bound;
 
-    //Variables to track patterns in points[]
+    // Variables to track patterns in points[]
     UInt32 sorted_prefix;
     Mean last_inserted;
 
@@ -124,7 +124,6 @@ private:
         auto cmp = [](const WeightedValue & a, const WeightedValue & b)
         { return a.mean < b.mean; };
         UInt32 prefix = sorted_prefix;
-        if (prefix > size) prefix = 0; // reset prefix, because it should be larger than size
         //if we have a fully sorted array, we can skip sorting
         if (prefix != size)
         {
