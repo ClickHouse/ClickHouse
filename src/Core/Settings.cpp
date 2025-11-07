@@ -7023,7 +7023,7 @@ Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
     )", 0) \
-    DECLARE(Bool, show_processlist_include_internal, 0, R"(
+    DECLARE(Bool, show_processlist_include_internal, 1, R"(
 Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
 
 Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
