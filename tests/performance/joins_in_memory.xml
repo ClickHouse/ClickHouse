@@ -28,14 +28,14 @@
     <query tag='RIGHT ON'>SELECT COUNT() FROM ints l RIGHT JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042</query>
     <query tag='RIGHT IN'>SELECT COUNT() FROM ints l RIGHT JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042)</query>
 
-    <query tag='FULL'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 0</query>
-    <query tag='FULL convert'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 1</query>
-    <query tag='FULL KEY'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 0</query>
-    <query tag='FULL KEY convert'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 1</query>
-    <query tag='FULL ON'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 0</query>
-    <query tag='FULL ON convert'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 1</query>
-    <query tag='FULL IN'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042) SETTINGS query_plan_convert_outer_join_to_inner_join = 0</query>
-    <query tag='FULL IN convert'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042) SETTINGS query_plan_convert_outer_join_to_inner_join = 1</query>
+    <query tag='FULL'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 0, join_algorithm='hash'</query>
+    <query tag='FULL convert'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 1, join_algorithm='hash'</query>
+    <query tag='FULL KEY'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 0, join_algorithm='hash'</query>
+    <query tag='FULL KEY convert'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64,i32,i16,i8 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 1, join_algorithm='hash'</query>
+    <query tag='FULL ON'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 0, join_algorithm='hash'</query>
+    <query tag='FULL ON convert'>SELECT COUNT() FROM ints l FULL JOIN ints r ON l.i64 = r.i64 WHERE i32 = 20042 SETTINGS query_plan_convert_outer_join_to_inner_join = 1, join_algorithm='hash'</query>
+    <query tag='FULL IN'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042) SETTINGS query_plan_convert_outer_join_to_inner_join = 0, join_algorithm='hash'</query>
+    <query tag='FULL IN convert'>SELECT COUNT() FROM ints l FULL JOIN ints r USING i64 WHERE i32 IN(42, 10042, 20042, 30042, 40042) SETTINGS query_plan_convert_outer_join_to_inner_join = 1, join_algorithm='hash'</query>
 
     <query short='1' tag='CROSS'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>
     <query short='1' tag='CROSS KEY'>SELECT COUNT() FROM ints l CROSS JOIN (SELECT number as i64 FROM numbers(4)) r WHERE i32 = 42</query>

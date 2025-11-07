@@ -304,10 +304,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 {
     if (auto [exists, remote_info] = fs_tree->existsDirectory(path); exists)
     {
-        if (!remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+        if (remote_info)
+            return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
 
-        return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
+        /// Let's return something in this case to unblock fs garbage cleanup.
+        return Poco::Timestamp::fromEpochTime(0);
     }
 
     if (auto object_metadata = getObjectMetadataEntryWithCache(path))
