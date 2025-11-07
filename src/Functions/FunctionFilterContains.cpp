@@ -81,20 +81,9 @@ public:
         if (!filter)
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
 
-        auto data_column = arguments[1].column;
+        const auto & data_column = arguments[1];
 
-        auto dst = ColumnVector<UInt8>::create();
-        auto & dst_data = dst->getData();
-        dst_data.resize(input_rows_count);
-
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            /// TODO: optimize: consider replacing hash calculation with vectorized version
-            const auto & value = data_column->getDataAt(row);
-            dst_data[row] = filter->find(value.data, value.size);
-        }
-
-        return dst;
+        return filter->find(data_column);
     }
 };
 

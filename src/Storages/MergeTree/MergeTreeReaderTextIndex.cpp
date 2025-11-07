@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 
 namespace ProfileEvents
 {
@@ -167,6 +168,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
     }
+    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
 
     if (res_columns.empty())
     {
@@ -181,7 +183,10 @@ size_t MergeTreeReaderTextIndex::readRows(
     while (read_rows < max_rows_to_read)
     {
         size_t index_mark = from_mark / granularity;
-        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+        /// When the number of rows in a part is smaller than `index_granularity`,
+        /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
+        /// contains no more data rows than actually exist in the part
+        size_t rows_to_read = std::min(data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark), data_part_info_for_read->getRowCount());
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
@@ -250,27 +255,37 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule.granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
+    auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+    auto * data_buffer = postings_stream->getDataBuffer();
+    auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
+
+    PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
     {
         if (postings.hasEmbeddedPostings())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-            granule.postings.emplace(token, &postings.getEmbeddedPostings());
-            continue;
+            posting_list = postings.getEmbeddedPostings();
+        }
+        else
+        {
+            const auto & future_postings = postings.getFuturePostings();
+            const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*future_postings.state.condition);
+            const auto load_postings = [&]() -> PostingListPtr
+            {
+                ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
+                compressed_buffer->seek(future_postings.offset_in_file, 0);
+                return PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
+            };
+
+            posting_list = condition_text.usePostingsCache()
+                ? condition_text.postingsCache()->getOrSet(
+                    TextIndexPostingsCache::hash(future_postings.state.path_to_data_part, future_postings.state.index_name, future_postings.state.index_mark, token.toView()),
+                    load_postings)
+                : load_postings();
         }
 
-        ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
-        const auto & future_postings = postings.getFuturePostings();
-
-        auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-        auto * data_buffer = postings_stream->getDataBuffer();
-        auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
-
-        compressed_buffer->seek(future_postings.offset_in_file, 0);
-        auto read_postings = PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
-
-        auto & postings_holder = granule.postings_holders.emplace_back(std::move(read_postings));
-        granule.postings.emplace(token, &postings_holder);
+        granule.postings.emplace(token, std::move(posting_list));
     }
 
     granule.need_read_postings = false;
@@ -296,8 +311,7 @@ void applyPostingsAny(
         if (it == postings_map.end())
             continue;
 
-        const PostingList & posting = *it->second;
-        union_posting |= (posting & range_posting);
+        union_posting |= (*it->second & range_posting);
     }
 
     const size_t cardinality = union_posting.cardinality();
@@ -329,7 +343,7 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    std::vector<const PostingList *> token_postings;
+    std::vector<PostingListPtr> token_postings;
 
     for (const auto & token : search_tokens)
     {
@@ -343,7 +357,7 @@ void applyPostingsAll(
     PostingList intersection_posting;
     intersection_posting.addRange(granule_offset, granule_offset + num_rows);
 
-    for (const PostingList * posting : token_postings)
+    for (const PostingListPtr & posting : token_postings)
     {
         intersection_posting &= (*posting);
 

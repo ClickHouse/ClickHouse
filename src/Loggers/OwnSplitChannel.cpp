@@ -352,7 +352,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     std::unique_lock lock(mutex);
     if (!message_queue.empty())
     {
-        auto notification = message_queue.front();
+        auto notification = std::move(message_queue.front());
         message_queue.pop_front();
         return notification;
     }
@@ -361,7 +361,7 @@ AsyncLogMessagePtr AsyncLogMessageQueue::waitDequeueMessage()
     if (message_queue.empty())
         return nullptr;
 
-    auto notification = message_queue.front();
+    auto notification = std::move(message_queue.front());
     message_queue.pop_front();
     return notification;
 }
@@ -410,14 +410,14 @@ void OwnAsyncSplitChannel::log(Poco::Message && msg)
         if (channels.empty() && !text_log_max_priority_loaded)
             return;
 
-        if (text_log_max_priority_loaded >= msg_priority)
-            text_log_queue.enqueueMessage(notification);
-
         for (size_t i = 0; i < queues.size(); i++)
         {
             if (channels[i]->getPriority() >= msg_priority)
                 queues[i]->enqueueMessage(notification);
         }
+
+        if (text_log_max_priority_loaded >= msg_priority)
+            text_log_queue.enqueueMessage(std::move(notification));
     }
     catch (...)
     {
@@ -488,20 +488,40 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     while (is_open)
     {
-        log_notification(notification);
-        notification = queues[i]->waitDequeueMessage();
+        try
+        {
+            log_notification(notification);
+            notification = queues[i]->waitDequeueMessage();
+        }
+        catch (...)
+        {
+            const std::string & exception_message = getCurrentExceptionMessage(true);
+            writeRetry(STDERR_FILENO, "Cannot log message in OwnAsyncSplitChannel channel: ");
+            writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
+            writeRetry(STDERR_FILENO, "\n");
+        }
     }
 
-    /// Flush everything before closing
-    log_notification(notification);
-
-    /// We want to process only what's currently in the queue and not block other logging
-    auto queue = queues[i]->getCurrentQueueAndClear();
-    while (!queue.empty())
+    try
     {
-        notification = queue.front();
-        queue.pop_front();
+        /// Flush everything before closing
         log_notification(notification);
+
+        /// We want to process only what's currently in the queue and not block other logging
+        auto queue = queues[i]->getCurrentQueueAndClear();
+        while (!queue.empty())
+        {
+            notification = std::move(queue.front());
+            queue.pop_front();
+            log_notification(notification);
+        }
+    }
+    catch (...)
+    {
+        const std::string & exception_message = getCurrentExceptionMessage(true);
+        writeRetry(STDERR_FILENO, "Cannot flush messages in OwnAsyncSplitChannel channel: ");
+        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
+        writeRetry(STDERR_FILENO, "\n");
     }
 }
 
@@ -521,7 +541,7 @@ void OwnAsyncSplitChannel::runTextLog()
         auto queue = text_log_queue.getCurrentQueueAndClear();
         while (!queue.empty())
         {
-            auto notif = queue.front();
+            auto notif = std::move(queue.front());
             queue.pop_front();
             if (notif)
                 log_notification(notif, text_log_locked);
@@ -531,40 +551,59 @@ void OwnAsyncSplitChannel::runTextLog()
     auto notification = text_log_queue.waitDequeueMessage();
     while (is_open)
     {
-        if (flush_text_logs)
+        try
         {
-            auto text_log_locked = text_log.lock();
-            if (!text_log_locked)
-                return;
+            if (flush_text_logs)
+            {
+                auto text_log_locked = text_log.lock();
+                if (!text_log_locked)
+                    return;
 
-            if (notification)
+                if (notification)
+                    log_notification(notification, text_log_locked);
+
+                flush_queue(text_log_locked);
+
+                flush_text_logs = false;
+                flush_text_logs.notify_all();
+            }
+            else if (notification)
+            {
+                auto text_log_locked = text_log.lock();
+                if (!text_log_locked)
+                    return;
                 log_notification(notification, text_log_locked);
+            }
 
-            flush_queue(text_log_locked);
-
-            flush_text_logs = false;
-            flush_text_logs.notify_all();
+            notification = text_log_queue.waitDequeueMessage();
         }
-        else if (notification)
+        catch (...)
         {
-            auto text_log_locked = text_log.lock();
-            if (!text_log_locked)
-                return;
-            log_notification(notification, text_log_locked);
+            const std::string & exception_message = getCurrentExceptionMessage(true);
+            writeRetry(STDERR_FILENO, "Cannot log message in OwnAsyncSplitChannel text log: ");
+            writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
+            writeRetry(STDERR_FILENO, "\n");
         }
-
-        notification = text_log_queue.waitDequeueMessage();
     }
 
-    /// We want to flush everything already in the queue before closing so all messages are logged
-    auto text_log_locked = text_log.lock();
-    if (!text_log_locked)
-        return;
+    try
+    {
+        /// We want to flush everything already in the queue before closing so all messages are logged
+        auto text_log_locked = text_log.lock();
+        if (!text_log_locked)
+            return;
 
-    if (notification)
-        log_notification(notification, text_log_locked);
-
-    flush_queue(text_log_locked);
+        if (notification)
+            log_notification(notification, text_log_locked);
+        flush_queue(text_log_locked);
+    }
+    catch (...)
+    {
+        const std::string & exception_message = getCurrentExceptionMessage(true);
+        writeRetry(STDERR_FILENO, "Cannot flush queue in OwnAsyncSplitChannel text log: ");
+        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
+        writeRetry(STDERR_FILENO, "\n");
+    }
 }
 
 void OwnAsyncSplitChannel::setChannelProperty(const std::string & channel_name, const std::string & name, const std::string & value)

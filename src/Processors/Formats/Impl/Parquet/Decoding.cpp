@@ -99,7 +99,7 @@ struct BitPackedRLEDecoder : public PageDecoder
         else
         {
             const size_t byte_width = (bit_width + 7) / 8;
-            chassert(byte_width <= sizeof(T));
+            chassert(byte_width <= sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
             const T value_mask = T((1ul << bit_width) - 1);
 
             run_length = len >> 1;
@@ -745,7 +745,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
 bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, size_t num_values, IColumn & col, std::span<char> & out) const
 {
-    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && fixed_size_converter->isTrivial())
+    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && physical_type != parq::Type::BOOLEAN && fixed_size_converter->isTrivial())
     {
         chassert(col.sizeOfValueIfFixed() == fixed_size_converter->input_size);
         out = col.insertRawUninitialized(num_values);
@@ -1096,6 +1096,8 @@ void IntConverter::convertField(std::span<const char> data, bool /*is_max*/, Fie
     UInt64 val = 0;
     switch (input_size)
     {
+        case 1: val = unalignedLoad<UInt8>(data.data()); break;
+        case 2: val = unalignedLoad<UInt16>(data.data()); break;
         case 4: val = unalignedLoad<UInt32>(data.data()); break;
         case 8: val = unalignedLoad<UInt64>(data.data()); break;
         default: chassert(false);
@@ -1257,7 +1259,7 @@ T byteswap(T x)
 template <typename T>
 BigEndianHelper<T>::BigEndianHelper(size_t input_size)
 {
-    chassert(sizeof(T) >= input_size);
+    chassert(sizeof(T) >= input_size);  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
     value_offset = sizeof(T) - input_size;
     value_mask = (~T(0)) << (8 * value_offset);
 
@@ -1295,7 +1297,7 @@ T BigEndianHelper<T>::convertPaddedValue(const char * data) const
 template <typename T>
 T BigEndianHelper<T>::convertUnpaddedValue(std::span<const char> data) const
 {
-    chassert(data.size() <= sizeof(T));
+    chassert(data.size() <= sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
     T x = 0;
     memcpy(reinterpret_cast<char *>(&x) + value_offset, data.data(), data.size());
     fixupValue(x);
@@ -1312,7 +1314,7 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
 {
     const char * from_bytes = data.data();
     auto to_bytes = col.insertRawUninitialized(num_values);
-    chassert(to_bytes.size() == num_values * sizeof(T));
+    chassert(to_bytes.size() == num_values * sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
     T * to = reinterpret_cast<T *>(to_bytes.data());
     for (size_t i = 0; i < num_values; ++i)
     {
@@ -1340,7 +1342,7 @@ template <typename T>
 void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto to_bytes = col.insertRawUninitialized(num_values);
-    chassert(to_bytes.size() == num_values * sizeof(T));
+    chassert(to_bytes.size() == num_values * sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
     T * to = reinterpret_cast<T *>(to_bytes.data());
 
     for (size_t i = 0; i < num_values; ++i)
@@ -1417,7 +1419,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
 {
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
-    for (size_t i = 0; i < num_values; ++i)
+    for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
         char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);
         size_t length = offsets[i] - offsets[i - 1] - separator_bytes;

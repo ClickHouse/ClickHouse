@@ -17,6 +17,7 @@
 #include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
@@ -30,6 +31,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Interpreters/RowRefs.h>
+#include <Common/SipHash.h>
+
+using Hash = CityHash_v1_0_2::uint128;
+using HashState = SipHash;
 
 namespace DB
 {
@@ -40,6 +45,19 @@ extern const int BAD_COLLATION;
 extern const int CANNOT_GET_SIZE_OF_FIELD;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
+}
+
+std::pair<String, DataTypePtr> IColumn::getValueNameAndType(size_t n, const Options & options) const
+{
+    WriteBufferFromOwnString name_buf;
+    const auto & type = getValueNameAndTypeImpl(name_buf, n, options);
+    if (options.notFull(name_buf))
+        return {name_buf.str(), type};
+
+    HashState h;
+    updateHashWithValue(n, h);
+    auto p = getSipHash128AsPair(h);
+    return {fmt::format("{}_{}", p.high64, p.low64), type};
 }
 
 String IColumn::dumpStructure() const
@@ -168,9 +186,24 @@ void IColumn::batchSerializeValueIntoMemoryWithNull(std::vector<char *> & /* mem
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method batchSerializeValueIntoMemoryWithNull is not supported for {}", getName());
 }
 
-void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
+void IColumn::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
+    size_t rows = size();
+    if (sizes.empty())
+        sizes.resize_fill(rows);
+    else if (sizes.size() != rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
+
+    if (is_null)
+    {
+        for (size_t i = 0; i < rows; ++i)
+            sizes[i] += 1 + !is_null[i] * byteSizeAt(i);
+    }
+    else
+    {
+        for (size_t i = 0; i < rows; ++i)
+            sizes[i] += byteSizeAt(i);
+    }
 }
 
 void IColumn::updateAt(const IColumn &, size_t, size_t)
@@ -264,7 +297,7 @@ bool isColumnLazy(const IColumn & column)
 }
 
 template <typename Derived, typename Parent>
-MutableColumns IColumnHelper<Derived, Parent>::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
+MutableColumns IColumnHelper<Derived, Parent>::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     const auto & self = static_cast<const Derived &>(*this);
     size_t num_rows = self.size();
@@ -484,12 +517,27 @@ static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, co
             if constexpr (row_refs_are_ranges)
             {
                 row_ref_list->assertIsRange();
-                col->insertRangeFrom(*(*row_ref_list->columns)[source_column_index_in_block], row_ref_list->row_num, row_ref_list->rows);
+                if (const auto * source_replicated = row_ref_list->columns_info->replicated_columns[source_column_index_in_block])
+                {
+                    const auto & source_nested_column = source_replicated->getNestedColumn();
+                    const auto & source_indexes = source_replicated->getIndexes();
+                    for (size_t i = row_ref_list->row_num; i != row_ref_list->row_num + row_ref_list->rows; ++i)
+                        col->insertFrom(*source_nested_column, source_indexes.getIndexAt(i));
+                }
+                else
+                {
+                    col->insertRangeFrom(*row_ref_list->columns_info->columns[source_column_index_in_block], row_ref_list->row_num, row_ref_list->rows);
+                }
             }
             else
             {
                 for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    col->insertFrom(*(*it->columns)[source_column_index_in_block], it->row_num);
+                {
+                    if (const auto * source_replicated = it->columns_info->replicated_columns[source_column_index_in_block])
+                        col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(it->row_num));
+                    else
+                        col->insertFrom(*it->columns_info->columns[source_column_index_in_block], it->row_num);
+                }
             }
         }
         else
@@ -520,31 +568,41 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, s
 /// Fills column values from list of blocks and row numbers
 /// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
 template <typename ColumnType>
-static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
 {
-    chassert(columns.size() == row_nums.size());
+    const auto & columns = columns_with_row_numbers.columns;
+    const auto & row_numbers = columns_with_row_numbers.row_numbers;
+    chassert(columns.size() == row_numbers.size());
+
     col->reserve(col->size() + columns.size());
     for (size_t j = 0; j < columns.size(); ++j)
     {
         if (columns[j])
-            col->insertFrom(*(*columns[j])[source_column_index_in_block], row_nums[j]);
+        {
+            if (const auto * source_replicated = columns[j]->replicated_columns[source_column_index_in_block])
+                col->insertFrom(*source_replicated->getNestedColumn(), source_replicated->getIndexes().getIndexAt(row_numbers[j]));
+            else
+                col->insertFrom(*columns[j]->columns[source_column_index_in_block], row_numbers[j]);
+        }
         else
+        {
             type->insertDefaultInto(*col);
+        }
     }
 }
 
 /// Fills column values from list of blocks and row numbers
-void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
 {
-    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns, row_nums);
+    fillColumnFromBlocksAndRowNumbers(this, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 /// Fills column values from list of blocks and row numbers
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const Columns *> & columns, const std::vector<UInt32> & row_nums)
+void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns, row_nums);
+    fillColumnFromBlocksAndRowNumbers(&self, type, source_column_index_in_block, columns_with_row_numbers);
 }
 
 template <typename Derived, typename Parent>
@@ -833,6 +891,7 @@ template class IColumnHelper<ColumnTuple, IColumn>;
 template class IColumnHelper<ColumnQBit, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
 template class IColumnHelper<ColumnSparse, IColumn>;
+template class IColumnHelper<ColumnReplicated, IColumn>;
 template class IColumnHelper<ColumnObjectDeprecated, IColumn>;
 template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
