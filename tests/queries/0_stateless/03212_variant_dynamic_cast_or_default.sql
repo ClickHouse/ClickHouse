@@ -83,105 +83,85 @@ INSERT INTO t (d) VALUES ([(1, (2, ['aa', 'bb']), [(3, 'cc'), (4, 'dd')]), (5, (
 
 optimize table t final;
 
--- 1) anomaly counts
 WITH
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))) AS bad_v4,
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS bad_v6,
+  (SELECT count()
+     FROM t
+    WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+  ) AS bad_v4,
+  (SELECT count()
+     FROM t
+    WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+  ) AS bad_v6,
   bad_v4 + bad_v6 AS bad_cnt
-SELECT 'ch_dbg_anomaly_counts' AS tag, bad_v4, bad_v6, bad_cnt
-WHERE bad_cnt > 0;
-
--- 2) small sample of offenders
-WITH
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))) +
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS bad_cnt
-SELECT 'ch_dbg_anomaly_rows' AS tag,
-       toIPv4OrDefault(d)                       AS v4,
-       toIPv6OrDefault(d)                       AS v6,
-       toTypeName(d)                            AS src_type,
-       accurateCastOrNull(d,'String')           AS s,
-       accurateCastOrNull(d,'UInt64')           AS u64,
-       accurateCastOrNull(d,'UUID')             AS uuid
-FROM t
-WHERE bad_cnt > 0
-  AND (
-        toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
-     OR toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
-  )
-LIMIT 10;
-
--- 3) typed vs inferred IPs
-WITH
+SELECT
+  'ch_dbg_summary' AS tag,
+  (SELECT count() FROM t)                                                AS total,
   (SELECT count() FROM t WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL) AS typed_v4,
   (SELECT count() FROM t WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL) AS typed_v6,
-  (SELECT count() FROM t) AS total,
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) != toIPv4('0.0.0.0')) AS non_default_v4_any,
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS non_default_v6_any
-SELECT 'ch_dbg_ip_sanity' AS tag, total, typed_v4, typed_v6,
-       (typed_v4 + typed_v6) AS typed_any, non_default_v4_any, non_default_v6_any
-WHERE (non_default_v4_any + non_default_v6_any) > 0;
-
--- 4) safe env snapshot
-WITH
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))) +
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS bad_cnt
-SELECT 'ch_dbg_env' AS tag,
-       version() AS ver,
-       getSetting('session_timezone') AS tz
-FROM system.one
+  bad_v4, bad_v6,
+  version() AS ver,
+  getSetting('session_timezone') AS tz
 WHERE bad_cnt > 0;
 
 WITH
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))) +
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS bad_cnt
-SELECT 'ch_dbg_raw_src' AS tag,
-       toString(d)                       AS raw_d,
-       toTypeName(d)                     AS src_type,
-       toIPv4OrDefault(d)                AS v4,
-       toIPv6OrDefault(d)                AS v6
+  (SELECT count()
+     FROM t
+    WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+  ) +
+  (SELECT count()
+     FROM t
+    WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+  ) AS bad_cnt
+SELECT
+  'ch_dbg_offenders' AS tag,
+  id,
+  toTypeName(d)                        AS src_type,
+  toIPv4(accurateCastOrNull(d,'IPv4')) AS v4,
+  toIPv6(accurateCastOrNull(d,'IPv6')) AS v6,
+  toString(d)                          AS raw_d
 FROM t
 WHERE bad_cnt > 0
   AND (
-        toIPv4OrDefault(d) != toIPv4('0.0.0.0')
-     OR toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
-  )
-LIMIT 10;
+        (accurateCastOrNull(d,'IPv4') IS NOT NULL
+         AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1')))
+     OR (accurateCastOrNull(d,'IPv6') IS NOT NULL
+         AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1')))
+      )
+ORDER BY id
+LIMIT 20;
 
--- 6) counts by source type for offenders
 WITH
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))) +
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS bad_cnt
-SELECT 'ch_dbg_type_mix' AS tag, src_type, count() AS cnt
-FROM
-(
-  SELECT toTypeName(d) AS src_type
-  FROM t
-  WHERE bad_cnt > 0
-    AND (
-          toIPv4OrDefault(d) != toIPv4('0.0.0.0')
-       OR toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
-    )
-)
-GROUP BY src_type
-ORDER BY cnt DESC, src_type
-LIMIT 10;
-
--- 7) v4-mapped-v6 attribution: did v6 come from a typed IPv4?
-WITH
-  (SELECT count() FROM t WHERE toIPv4OrDefault(d) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))) +
-  (SELECT count() FROM t WHERE toIPv6OrDefault(d) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))) AS bad_cnt
-SELECT 'ch_dbg_v6_is_mapped_v4' AS tag,
-       countIf(
-         startsWith(toString(toIPv6OrDefault(d)), '::ffff:')
-         AND accurateCastOrNull(d, 'IPv4') IS NOT NULL
-       ) AS mapped_from_typed_v4,
-       countIf(
-         startsWith(toString(toIPv6OrDefault(d)), '::ffff:')
-         AND accurateCastOrNull(d, 'IPv4') IS NULL
-       ) AS mapped_from_non_v4,
-       mapped_from_typed_v4 + mapped_from_non_v4 AS total_mapped
+  (SELECT count()
+     FROM t
+    WHERE accurateCastOrNull(d,'IPv4') IS NOT NULL
+      AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1'))
+  ) +
+  (SELECT count()
+     FROM t
+    WHERE accurateCastOrNull(d,'IPv6') IS NOT NULL
+      AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1'))
+  ) AS bad_cnt
+SELECT
+  'ch_dbg_offenders' AS tag,
+  id,
+  toTypeName(d)                        AS src_type,
+  toIPv4(accurateCastOrNull(d,'IPv4')) AS v4,
+  toIPv6(accurateCastOrNull(d,'IPv6')) AS v6,
+  toString(d)                          AS raw_d
 FROM t
-WHERE bad_cnt > 0;
+WHERE bad_cnt > 0
+  AND (
+        (accurateCastOrNull(d,'IPv4') IS NOT NULL
+         AND toIPv4(accurateCastOrNull(d,'IPv4')) NOT IN (toIPv4('0.0.0.0'), toIPv4('192.168.0.1')))
+     OR (accurateCastOrNull(d,'IPv6') IS NOT NULL
+         AND toIPv6(accurateCastOrNull(d,'IPv6')) NOT IN (toIPv6('::'), toIPv6('::1'), toIPv6('::ffff:192.168.0.1')))
+      )
+ORDER BY id
+LIMIT 20;
 
 select distinct toInt8OrDefault(d) as res from t order by res;
 select distinct toUInt8OrDefault(d) as res from t order by res;
