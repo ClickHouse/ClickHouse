@@ -254,7 +254,7 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "basic", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
 
@@ -267,7 +267,7 @@ namespace ErrorCodes
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "single_stream", R"(
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
@@ -329,7 +329,7 @@ namespace ErrorCodes
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
 
-    For example, column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
+    For example column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
     - `t.a` for String data of tuple element `a`
     - `t.b` for UInt32 data of tuple element `b`
     - `t.c.size0` for array sizes of tuple element `c`
@@ -340,13 +340,6 @@ namespace ErrorCodes
     the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
     substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
     we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
-    )", 0) \
-    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_wide_part, Field("auto"), R"(
-    The maximum number of dynamic subcolumns that can be created in every column in the Wide data part after merge.
-    It allows to reduce number of files created in Wide data part regardless of dynamic parameters specified in the data type.
-
-    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
-    after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
     \
     /** Merge selector settings. */ \
@@ -1397,7 +1390,7 @@ namespace ErrorCodes
     If enabled too many parts counter will rely on shared data in Keeper, not on
     local replica state. Only available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, R"(
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, R"(
     Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
     Only available in ClickHouse Cloud
     )", 0) \
@@ -2002,9 +1995,6 @@ namespace ErrorCodes
     - any - scope is not limited.
     - local - scope is limited by local disks .
     - none - empty scope, do not search
-    )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
-    The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

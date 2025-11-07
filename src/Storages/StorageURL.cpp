@@ -515,7 +515,7 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        (*pipeline).reset();
+        pipeline->reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();

@@ -38,7 +38,7 @@ private:
 
 namespace DB
 {
-struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<IcebergDataObjectInfo>
+struct IcebergDataObjectInfo : public RelativePathWithMetadata, std::enable_shared_from_this<IcebergDataObjectInfo>
 {
     using IcebergDataObjectInfoPtr = std::shared_ptr<IcebergDataObjectInfo>;
 

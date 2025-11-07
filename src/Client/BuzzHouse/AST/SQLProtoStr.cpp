@@ -986,23 +986,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += ")";
         }
         break;
-        case BottomTypeNameType::kGeo:
-            ret += GeoTypes_Name(btn.geo());
-            break;
-        case BottomTypeNameType::kAggr: {
-            const AggregateFunction & af = btn.aggr();
-
-            ret += af.simple() ? "Simple" : "";
-            ret += "AggregateFunction(";
-            ret += SQLFunc_Name(af.aggr()).substr(4);
-            for (int i = 0; i < af.types_size(); i++)
-            {
-                ret += ", ";
-                TopTypeNameToString(ret, quote, af.types(i));
-            }
-            ret += ")";
-        }
-        break;
         default: {
             if (lcard)
             {
@@ -1205,6 +1188,9 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kVariant:
             ret += "Variant";
             TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
+            break;
+        case TopTypeNameType::kGeo:
+            ret += GeoTypes_Name(ttn.geo());
             break;
         default:
             ret += "Int";
@@ -2706,17 +2692,10 @@ CONV_FN(LimitStatement, ls)
     {
         ret += " WITH TIES";
     }
-    if (ls.has_by_expr() || ls.lall())
+    if (ls.has_limit_by())
     {
         ret += " BY ";
-        if (ls.has_by_expr())
-        {
-            ExprToString(ret, ls.by_expr());
-        }
-        else
-        {
-            ret += "ALL";
-        }
+        ExprToString(ret, ls.limit_by());
     }
 }
 
@@ -5057,10 +5036,6 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kReconnectKeeper:
-            ret += "RECONNECT ZOOKEEPER";
             can_set_cluster = true;
             break;
         default:

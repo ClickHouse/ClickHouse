@@ -59,9 +59,9 @@ public:
 
     Field operator[](size_t n) const override { return getDictionary()[getIndexes().getUInt(n)]; }
     void get(size_t n, Field & res) const override { getDictionary().get(getIndexes().getUInt(n), res); }
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
-        return getDictionary().getValueNameAndTypeImpl(name_buf, getIndexes().getUInt(n), options);
+        return getDictionary().getValueNameAndType(getIndexes().getUInt(n));
     }
 
     StringRef getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }

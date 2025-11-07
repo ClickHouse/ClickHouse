@@ -42,7 +42,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     {
         const String & nkey = String(key);
 
-        if (!configEntries.contains(nkey))
+        if (configEntries.find(nkey) == configEntries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown catalog option: {}", nkey);
         }
@@ -96,9 +96,10 @@ static std::optional<ServerCredentials> loadServerCredentials(
     {
         const String & nkey = String(key);
 
-        if (!configEntries.contains(nkey))
+        if (configEntries.find(nkey) == configEntries.end())
+        {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
-
+        }
         configEntries.at(nkey)(value);
     }
 
@@ -138,9 +139,10 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     {
         const String & nkey = String(key);
 
-        if (!metricEntries.contains(nkey))
+        if (metricEntries.find(nkey) == metricEntries.end())
+        {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
-
+        }
         metricEntries.at(nkey)(value);
     }
 
@@ -161,7 +163,7 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
         {
             const std::string_view entry(word.begin(), word.end());
 
-            if (!entries.contains(entry))
+            if (entries.find(entry) == entries.end())
             {
                 throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for {}: {}", text, String(entry));
             }
@@ -263,9 +265,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
            {"fixedstring", allow_fixed_strings},
-           {"qbit", allow_qbit},
-           {"aggregate", allow_aggregate},
-           {"simpleaggregate", allow_simple_aggregate}};
+           {"qbit", allow_qbit}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
@@ -402,7 +402,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         const String & nkey = String(key);
 
-        if (!configEntries.contains(nkey))
+        if (configEntries.find(nkey) == configEntries.end())
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }

@@ -92,11 +92,7 @@ function setup_logs_replication()
             time DateTime COMMENT 'The time of test run',
             test_name String COMMENT 'The name of the test',
             coverage Array(UInt64) COMMENT 'An array of addresses of the code (a subset of addresses instrumented for coverage) that were encountered during the test run'
-        )
-        ENGINE = MergeTree
-        ORDER BY test_name
-        SETTINGS use_const_adaptive_granularity = 1
-        COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
+        ) ENGINE = MergeTree ORDER BY test_name COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster'
     "
 
     # For each system log table:
@@ -127,10 +123,7 @@ function setup_logs_replication()
             s/^ORDER BY (([^\(].+?)|\((.+?)\))$/ORDER BY ('"$EXTRA_ORDER_BY_COLUMNS"', \2\3)/;
             s/^CREATE TABLE system\.\w+_log$/CREATE TABLE IF NOT EXISTS '"$table"'_'"$hash"'/;
             /^TTL /d
-            /^SETTINGS /d
-            /^COMMENT /d
             ')
-        statement+=" SETTINGS use_const_adaptive_granularity = 1"
 
         echo -e "Creating remote destination table ${table}_${hash} with statement:" >&2
 

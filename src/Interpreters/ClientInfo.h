@@ -65,9 +65,6 @@ public:
     String current_query_id;
     std::shared_ptr<Poco::Net::SocketAddress> current_address;
 
-    /// For IMPERSONATEd session, stores the original authenticated user
-    String authenticated_user;
-
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;

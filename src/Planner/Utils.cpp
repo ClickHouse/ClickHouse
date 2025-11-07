@@ -72,7 +72,6 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
-    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -100,7 +99,7 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = *queries_headers.front();
@@ -133,7 +132,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
             columns[i] = &queries_headers[i]->getByPosition(column_number);
 
         ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
-        result_element = getLeastSuperColumn(columns, use_variant_as_common_type);
+        result_element = getLeastSuperColumn(columns);
     }
 
     return common_header;

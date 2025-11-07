@@ -104,7 +104,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 
                     res.insert(ColumnWithTypeAndName(
                         is_const
-                            ? ColumnConst::create(column_array_of_element, block.rows())
+                            ? ColumnConst::create(std::move(column_array_of_element), block.rows())
                             : column_array_of_element,
                         std::make_shared<DataTypeArray>(element_types[i]),
                         nested_name));

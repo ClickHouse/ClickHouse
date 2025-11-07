@@ -35,13 +35,11 @@ ColumnGathererStream::ColumnGathererStream(
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_,
     bool is_result_sparse_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
-    , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     , is_result_sparse(is_result_sparse_)
 {
     if (num_inputs == 0)
@@ -79,7 +77,7 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column = ColumnSparse::create(std::move(result_column));
 
     if (result_column->hasDynamicStructure())
-        result_column->takeDynamicStructureFromSourceColumns(source_columns, max_dynamic_subcolumns);
+        result_column->takeDynamicStructureFromSourceColumns(source_columns);
 }
 
 IMergingAlgorithm::Status ColumnGathererStream::merge()
@@ -197,11 +195,10 @@ ColumnGathererTransform::ColumnGathererTransform(
     std::unique_ptr<ReadBuffer> row_sources_buf_,
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
-    std::optional<size_t> max_dynamic_subcolumns_,
     bool is_result_sparse_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, max_dynamic_subcolumns_, is_result_sparse_)
+        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, is_result_sparse_)
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {

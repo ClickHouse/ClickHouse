@@ -88,28 +88,27 @@ void ColumnMap::get(size_t n, Field & res) const
         map.push_back(getNestedData()[offset + i]);
 }
 
-DataTypePtr ColumnMap::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr> ColumnMap::getValueNameAndType(size_t n) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    if (options.notFull(name_buf))
-        name_buf << "[";
+    String value_name {"["};
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        if (options.notFull(name_buf) && i > 0)
-            name_buf << ", ";
-        const auto & type = getNestedData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        const auto & [value, type] = getNestedData().getValueNameAndType(offset + i);
         element_types.push_back(type);
+        if (i > 0)
+            value_name += ", ";
+        value_name += value;
     }
-    if (options.notFull(name_buf))
-        name_buf << "]";
+    value_name += "]";
 
-    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
+    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
@@ -443,13 +442,13 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
 }
 
 void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

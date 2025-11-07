@@ -212,33 +212,6 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
         }
     }
 
-    /// Consider two quirks:
-    ///  (1) Some versions of spark didn't write dictionary_page_offset even when dictionary page is
-    ///      present. Instead, data_page_offset points to the dictionary page.
-    ///  (2) Old DuckDB versions (<= 0.10.2) wrote incorrect data_page_offset when dictionary is
-    ///      present.
-    /// We work around (1) in initializePage by allowing dictionary page in place of data page.
-    /// We work around (2) here by converting it to case (1):
-    ///   data_page_offset = dictionary_page_offset
-    ///   dictionary_page_offset.reset()
-    /// Note: newer versions of DuckDB include version number in the `created_by` string, so this
-    /// `if` only applies to relatively old versions. Newer versions don't have this bug.
-    if (file_metadata.created_by == "DuckDB")
-    {
-        for (auto & rg : file_metadata.row_groups)
-        {
-            for (auto & col : rg.columns)
-            {
-                if (!col.__isset.offset_index_offset && col.meta_data.__isset.dictionary_page_offset)
-                {
-                    col.meta_data.data_page_offset = col.meta_data.dictionary_page_offset;
-                    col.meta_data.__isset.dictionary_page_offset = false;
-                    col.meta_data.dictionary_page_offset = 0;
-                }
-            }
-        }
-    }
-
     return file_metadata;
 }
 
@@ -998,7 +971,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 const auto [start, end] = col.row_ranges_after_column_index[i];
                 chassert(start < end);
                 chassert(!i || start > prev_end);
-                prev_end = end;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                prev_end = end;
 
                 events.emplace_back(start, +1);
                 events.emplace_back(end, -1);
@@ -1551,9 +1524,9 @@ bool Reader::initializePage(const char * & data_ptr, const char * data_end, size
         if (column.dictionary.isInitialized())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Column chunk has multiple dictionary pages or inaccurate data_page_offset");
 
-        /// There's a dictionary page, but there was no dictionary_page_offset in ColumnMetaData.
-        /// This is probably not allowed, but we have to support it because some writers wrote such
-        /// files, see comment in readFileMetaData.
+        /// If we got here, this is a weird parquet file that has a dictionary page but no
+        /// dictionary_page_offset in ColumnMetaData. Not sure whether this is allowed, but spark
+        /// can output such files, so we have to support it.
         decodeDictionaryPageImpl(header, page.data, column, column_info);
         return false;
     }

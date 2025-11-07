@@ -1826,6 +1826,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
+    bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
@@ -1835,13 +1836,14 @@ void executeQuery(
     HTTPContinueCallback http_continue_callback)
 {
     executeQuery(
-        wrapReadBufferReference(istr), ostr, context, std::move(set_result_details), flags,
+        wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
         output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
 }
 
 void executeQuery(
     ReadBufferUniquePtr istr,
     WriteBuffer & ostr,
+    bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
@@ -2020,6 +2022,7 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
+    std::unique_ptr<WriteBuffer> compressed_buffer;
     try
     {
         if (pipeline.pushing())
@@ -2036,11 +2039,29 @@ void executeQuery(
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
-                throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
+            {
+                if (!allow_into_outfile)
+                    throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
+
+                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
+
+                std::string compression_method;
+                if (ast_query_with_output->compression)
+                {
+                    const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
+                    compression_method = compression_method_node.value.safeGet<std::string>();
+                }
+                const auto & settings = context->getSettingsRef();
+                compressed_buffer = wrapWriteBufferWithCompressionMethod(
+                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
+                    chooseCompressionMethod(out_file, compression_method),
+                    /* compression level = */ static_cast<int>(settings[Setting::output_format_compression_level]),
+                    /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+            }
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
-                *out_buf,
+                compressed_buffer ? *compressed_buffer : *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
@@ -2118,9 +2139,6 @@ void executeQuery(
     /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
     if (implicit_tcl_executor->transactionRunning())
         implicit_tcl_executor->commit(context);
-
-    /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    context->releaseQuerySlot();
 
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us

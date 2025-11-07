@@ -82,9 +82,9 @@ void ColumnReplicated::get(size_t n, Field & res) const
     nested_column->get(indexes.getIndexAt(n), res);
 }
 
-DataTypePtr ColumnReplicated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnReplicated::getValueNameAndType(size_t n) const
 {
-    return nested_column->getValueNameAndTypeImpl(name_buf, indexes.getIndexAt(n), options);
+    return nested_column->getValueNameAndType(indexes.getIndexAt(n));
 }
 
 bool ColumnReplicated::getBool(size_t n) const
@@ -638,7 +638,7 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
@@ -650,7 +650,7 @@ void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & sou
             source_nested_columns.emplace_back(source_column);
     }
 
-    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns, max_dynamic_subcolumns);
+    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns);
 }
 
 void ColumnReplicated::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

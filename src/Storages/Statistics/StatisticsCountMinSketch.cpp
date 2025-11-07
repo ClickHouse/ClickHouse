@@ -26,7 +26,7 @@ static constexpr auto num_buckets = 2718uz;
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
     , sketch(num_hashes, num_buckets)
-    , data_type(removeLowCardinalityAndNullable(data_type_))
+    , data_type(removeNullable(data_type_))
 {
 }
 
@@ -89,7 +89,8 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 
 bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
-    DataTypePtr inner_data_type = removeLowCardinalityAndNullable(data_type);
+    DataTypePtr inner_data_type = removeNullable(data_type);
+    inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
     return inner_data_type->isValueRepresentedByNumber() || isStringOrFixedString(inner_data_type);
 }
 

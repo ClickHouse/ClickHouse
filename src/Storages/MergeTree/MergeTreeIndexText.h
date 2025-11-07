@@ -1,5 +1,5 @@
 #pragma once
-
+#include <vector>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
@@ -11,8 +11,6 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenExtractor.h>
 #include <absl/container/flat_hash_map.h>
-
-#include <vector>
 
 #include <roaring.hh>
 
@@ -175,7 +173,18 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
+    size_t lowerBound(const StringRef & token) const;
     size_t upperBound(const StringRef & token) const;
+    std::optional<size_t> binarySearch(const StringRef & token) const;
+};
+
+struct DictionarySparseIndex : public DictionaryBlockBase
+{
+    DictionarySparseIndex() = default;
+    DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
+    UInt64 getOffsetInFile(size_t idx) const;
+
+    ColumnPtr offsets_in_file;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
@@ -185,45 +194,6 @@ struct DictionaryBlock : public DictionaryBlockBase
 
     std::vector<TokenPostingsInfo> token_infos;
 };
-
-class TextIndexHeader
-{
-public:
-    struct DictionarySparseIndex : public DictionaryBlockBase
-    {
-        DictionarySparseIndex() = default;
-        DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
-        UInt64 getOffsetInFile(size_t idx) const;
-
-        ColumnPtr offsets_in_file;
-    };
-
-    TextIndexHeader(size_t num_tokens_, BloomFilter bloom_filter_, DictionarySparseIndex sparse_index_)
-        : num_tokens(num_tokens_)
-        , bloom_filter(std::move(bloom_filter_))
-        , sparse_index(std::move(sparse_index_))
-    {
-    }
-
-    size_t numberOfTokens() const { return num_tokens; }
-    const BloomFilter & bloomFilter() const { return bloom_filter; }
-    const DictionarySparseIndex & sparseIndex() const { return sparse_index; }
-
-    size_t memoryUsageBytes() const
-    {
-        return sizeof(*this)
-            + bloom_filter.getFilterSizeBytes()
-            + sparse_index.tokens->allocatedBytes()
-            + sparse_index.offsets_in_file->allocatedBytes();
-    }
-
-private:
-    size_t num_tokens;
-    BloomFilter bloom_filter;
-    DictionarySparseIndex sparse_index;
-};
-
-using TextIndexHeaderPtr = std::shared_ptr<TextIndexHeader>;
 
 /// Text index granule created on reading of the index.
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
@@ -238,7 +208,7 @@ public:
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return header->numberOfTokens() == 0; }
+    bool empty() const override { return num_tokens == 0; }
     size_t memoryUsageBytes() const override;
 
     bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
@@ -248,14 +218,18 @@ public:
     void resetAfterAnalysis();
 
 private:
+    void deserializeBloomFilter(ReadBuffer & istr);
+    void deserializeSparseIndex(ReadBuffer & istr);
+
     /// Analyzes bloom filters. Removes tokens that are not present in the bloom filter.
     void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     MergeTreeIndexTextParams params;
-    /// Header of the text index contains the number of tokens, bloom filter and sparse index.
-    TextIndexHeaderPtr header;
+    size_t num_tokens = 0;
+    BloomFilter bloom_filter;
+    DictionarySparseIndex sparse_index;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
 };
@@ -354,11 +328,6 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
-
-    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
-    /// 1. Arguments are named, e.g.: argument = value
-    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
 
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenExtractor> token_extractor;

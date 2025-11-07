@@ -61,7 +61,6 @@ namespace Setting
 {
 
 extern const SettingsBool correlated_subqueries_substitute_equivalent_expressions;
-extern const SettingsBool use_variant_as_common_type;
 extern const SettingsDecorrelationJoinKind correlated_subqueries_default_join_kind;
 extern const SettingsBool join_use_nulls;
 extern const SettingsMaxThreads max_threads;
@@ -379,7 +378,6 @@ QueryPlan decorrelateQueryPlan(
         ///     FROM t2
         ///     WHERE t.x = t2.y
         /// )
-        const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
         auto process_isolated_subplan = [](
             DecorrelationContext & current_context,
             QueryPlan::Node * subplan_root
@@ -400,10 +398,7 @@ QueryPlan decorrelateQueryPlan(
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_lhs_plan)));
         child_plans.emplace_back(std::make_unique<QueryPlan>(std::move(decorrelated_rhs_plan)));
 
-        Block union_common_header = buildCommonHeaderForUnion(
-            query_plans_headers,
-            SelectUnionMode::UNION_ALL,
-            settings[Setting::use_variant_as_common_type]); // Union mode doesn't matter here
+        Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, SelectUnionMode::UNION_ALL); // Union mode doesn't matter here
         addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers);
 
         union_step->updateInputHeaders(std::move(query_plans_headers));
@@ -680,8 +675,8 @@ void buildQueryPlanForCorrelatedSubquery(
     const CorrelatedSubquery & correlated_subquery,
     const SelectQueryOptions & select_query_options)
 {
-    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
+    auto * union_node = correlated_subquery.query_tree->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
     switch (correlated_subquery.kind)

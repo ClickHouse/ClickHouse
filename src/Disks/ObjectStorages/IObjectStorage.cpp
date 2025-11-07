@@ -103,4 +103,11 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     return write_settings;
 }
 
+std::string RelativePathWithMetadata::getPathOrPathToArchiveIfArchive() const
+{
+    if (isArchive())
+        return getPathToArchive();
+    return getPath();
+}
+
 }
