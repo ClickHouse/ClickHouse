@@ -61,6 +61,8 @@ public:
     void setStepDescription(std::string description, size_t limit);
     void setStepDescription(const IQueryPlanStep & step);
 
+    virtual String getOperationDescription() const { return ""; }
+
     template <size_t size>
     ALWAYS_INLINE void setStepDescription(const char (&description)[size]) { step_description = std::string_view(description, size - 1); }
 

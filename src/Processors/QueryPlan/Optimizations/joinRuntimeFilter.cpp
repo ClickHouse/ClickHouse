@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include "Core/Joins.h"
 #include <DataTypes/getLeastSupertype.h>
 #include <fmt/format.h>
 
@@ -70,6 +71,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         (
             (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any)) ||
             ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
+            || (join_operator.kind == JoinKind::Right && join_operator.strictness == JoinStrictness::Anti)
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
         std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();

@@ -53,6 +53,7 @@
 #include <Storages/StorageJoin.h>
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <fmt/format.h>
 #include <algorithm>
 #include <memory>
 #include <ranges>
@@ -328,6 +329,11 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 
     auto actions_dag = expression_actions.getActionsDAG()->clone();
     map.add("Actions", ExpressionActions(std::move(actions_dag)).toTree());
+}
+
+String JoinStepLogical::getOperationDescription() const
+{
+    return fmt::format("Type: {} {}, Expression: {}", join_operator.kind, join_operator.strictness, formatJoinCondition(join_operator.expression));
 }
 
 void JoinStepLogical::updateOutputHeader()
