@@ -1298,8 +1298,8 @@ const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
     return &previous_block_missing_values;
 }
 
-ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
-    : ISchemaReader(in_), format_settings(format_settings_)
+ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ParquetMetadataCachePtr metadata_cache_)
+    : ISchemaReader(in_), format_settings(format_settings_), metadata_cache(metadata_cache_)
 {
 }
 
@@ -1310,6 +1310,17 @@ void ArrowParquetSchemaReader::initializeIfNeeded()
 
     std::atomic<int> is_stopped{0};
     arrow_file = asArrowFile(in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true);
+    if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(&in))
+    {
+        auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(in);
+        if (etag != "s3_metadata_unavailable")
+        {
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
+            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return parquet::ReadMetaData(arrow_file);
+            });
+        }
+    }
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
@@ -1390,7 +1401,6 @@ void registerInputFormatParquet(FormatFactory & factory)
             
             if (settings.parquet.use_native_reader_v3)
             {
-                // do we want to use the metadata cache here for v3?
                 return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
@@ -1426,9 +1436,15 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
             if (settings.parquet.use_native_reader_v3)
-                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            {
+                auto v3_cache = CurrentThread::getQueryContext()->getParquetV3MetadataCache();
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings, v3_cache);
+            }
             else
-                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
+            {
+                auto v2_cache = CurrentThread::getQueryContext()->getParquetMetadataCache();
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings, v2_cache);
+            }
         }
         );
 
