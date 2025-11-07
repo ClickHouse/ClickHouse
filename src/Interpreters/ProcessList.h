@@ -314,6 +314,7 @@ struct ProcessListForUser
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatusPtr>;
     QueryToElement queries;
+    size_t non_internal_queries = 0;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
@@ -337,19 +338,6 @@ struct ProcessListForUser
         user_memory_tracker.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
-    }
-
-    size_t countNonInternalProcesses() const
-    {
-        size_t result = 0;
-        for (const auto & [_, query_status] : queries)
-        {
-            if (!query_status->isInternal())
-            {
-                ++result;
-            }
-        }
-        return result;
     }
 };
 
@@ -413,6 +401,8 @@ protected:
 
     /// List of queries
     Container processes;
+    size_t non_internal_processes = 0;
+
     /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
     mutable std::condition_variable cancelled_cv;
 
@@ -548,19 +538,6 @@ public:
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
 
     void killAllQueries();
-
-    size_t countNonInternalProcesses() const
-    {
-        size_t result = 0;
-        for (const auto & query_status : processes)
-        {
-            if (!query_status->isInternal())
-            {
-                ++result;
-            }
-        }
-        return result;
-    }
 };
 
 }

@@ -138,12 +138,12 @@ ProcessList::EntryPtr ProcessList::insert(
         IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-        if (!is_unlimited_query && max_size && countNonInternalProcesses() >= max_size)
+        if (!is_unlimited_query && max_size && non_internal_processes >= max_size)
         {
             if (queue_max_wait_ms)
                 LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms),
-                    [&]{ return countNonInternalProcesses() < max_size; }))
+                    [&]{ return non_internal_processes < max_size; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous queries. Maximum: {}",
                                 max_size);
@@ -182,7 +182,6 @@ ProcessList::EntryPtr ProcessList::insert(
              * once is already processing 50+ concurrent queries (including analysts or any other users).
              */
 
-            const size_t non_internal_processes = countNonInternalProcesses();
             if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
                 && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
                 throw Exception(
@@ -208,15 +207,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (user_process_list != user_to_queries.end())
             {
-                const size_t non_internal_processes = user_process_list->second.countNonInternalProcesses();
                 if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && non_internal_processes >= settings[Setting::max_concurrent_queries_for_user])
+                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                         "Too many simultaneous queries for user {}. "
                         "Current: {}, maximum: {}",
                         client_info.current_user,
-                        non_internal_processes,
+                        user_process_list->second.non_internal_queries,
                         settings[Setting::max_concurrent_queries_for_user].toString());
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
@@ -328,13 +326,14 @@ ProcessList::EntryPtr ProcessList::insert(
             processes.end(),
             query);
 
-        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
-
         /// We should not include internal queries for limiting the number of simultaneous queries.
         if (!is_internal)
         {
+            ++non_internal_processes;
             increaseQueryKindAmount(query_kind);
         }
+
+        CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         res = std::make_shared<Entry>(*this, process_it);
 
@@ -343,6 +342,10 @@ ProcessList::EntryPtr ProcessList::insert(
 
         user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
         queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
+        if (!is_internal)
+        {
+            ++user_process_list.non_internal_queries;
+        }
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
@@ -372,9 +375,10 @@ ProcessListEntry::~ProcessListEntry()
 {
     LockAndOverCommitTrackerBlocker<std::unique_lock, ProcessList::Mutex> lock(parent.getMutex());
 
-    String user = (*it)->getClientInfo().current_user;
-    String query_id = (*it)->getClientInfo().current_query_id;
-    IAST::QueryKind query_kind = (*it)->query_kind;
+    const String user = (*it)->getClientInfo().current_user;
+    const String query_id = (*it)->getClientInfo().current_query_id;
+    const IAST::QueryKind query_kind = (*it)->query_kind;
+    const bool is_internal = (*it)->isInternal();
 
     const QueryStatusPtr process_list_element_ptr = *it;
 
@@ -394,6 +398,10 @@ ProcessListEntry::~ProcessListEntry()
         if (running_query->second == process_list_element_ptr)
         {
             user_process_list.queries.erase(running_query->first);
+            if (!is_internal)
+            {
+                --user_process_list.non_internal_queries;
+            }
             found = true;
         }
     }
@@ -406,13 +414,14 @@ ProcessListEntry::~ProcessListEntry()
 
     CancellationChecker::getInstance().appendDoneTasks(*it);
 
-    if (!(*it)->isInternal())
-    {
-        parent.decreaseQueryKindAmount(query_kind);
-    }
-
     /// This removes the memory_tracker of one request.
     parent.processes.erase(it);
+
+    if (!is_internal)
+    {
+        --parent.non_internal_processes;
+        parent.decreaseQueryKindAmount(query_kind);
+    }
 
     if (!found)
     {
