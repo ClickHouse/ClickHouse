@@ -5,8 +5,9 @@ CreatingSets
       Indexes:
         PrimaryKey
           Keys:
+            id
             value
-          Condition: (value in 5-element set)
+          Condition: ((id, value) in 5-element set)
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
@@ -18,8 +19,9 @@ CreatingSets
       Indexes:
         PrimaryKey
           Keys:
+            id
             value
-          Condition: (value in 6-element set)
+          Condition: ((id, value) in 6-element set)
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
@@ -31,8 +33,9 @@ CreatingSets
       Indexes:
         PrimaryKey
           Keys:
+            id
             value
-          Condition: (value in 5-element set)
+          Condition: ((id, value) in 5-element set)
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
@@ -44,8 +47,9 @@ CreatingSets
       Indexes:
         PrimaryKey
           Keys:
+            id
             value
-          Condition: (value in 6-element set)
+          Condition: ((id, value) in 6-element set)
           Parts: 1/1
           Granules: 1/1
           Search Algorithm: generic exclusion search
