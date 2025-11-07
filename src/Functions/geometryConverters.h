@@ -7,8 +7,6 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 
-#include <h3api.h>
-
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
@@ -59,9 +57,6 @@ using SphericalMultiLineString = MultiLineString<SphericalPoint>;
 using SphericalRing = Ring<SphericalPoint>;
 using SphericalPolygon = Polygon<SphericalPoint>;
 using SphericalMultiPolygon = MultiPolygon<SphericalPoint>;
-
-SphericalPointInRadians toRadianPoint(const SphericalPoint & degree_point);
-LatLng toH3LatLng(const SphericalPointInRadians & point);
 
 /**
  * Class which takes converts Column with type Tuple(Float64, Float64) to a vector of boost point type.

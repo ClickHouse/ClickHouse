@@ -29,6 +29,27 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace
+{
+
+SphericalPointInRadians toRadianPoint(const SphericalPoint & degree_point)
+{
+    Float64 lon = get<0>(degree_point) * M_PI / 180.0;
+    Float64 lat = get<1>(degree_point) * M_PI / 180.0;
+
+    return SphericalPointInRadians(lon, lat);
+}
+
+LatLng toH3LatLng(const SphericalPointInRadians & point)
+{
+    LatLng result;
+    result.lat = point.get<1>();
+    result.lng = point.get<0>();
+    return result;
+}
+
+}
+
 /// Takes a geometry (Ring, Polygon or MultiPolygon) and returnes an array of H3 hexagons that cover this geometry.
 /// The geometry should be in spherical coordinates as it is in GeoJSON.
 class FunctionH3PolygonToCells : public IFunction
@@ -103,9 +124,9 @@ public:
                 if constexpr (std::is_same_v<ColumnToMultiPolygonsConverter<SphericalPoint>, Converter>)
                     multi_polygon = std::move(geometry);
                 else if constexpr (std::is_same_v<ColumnToPolygonsConverter<SphericalPoint>, Converter>)
-                    multi_polygon = boost::geometry::model::multi_polygon({ std::move(geometry) });
+                    multi_polygon = SphericalMultiPolygon({ std::move(geometry) });
                 else if constexpr (std::is_same_v<ColumnToRingsConverter<SphericalPoint>, Converter>)
-                    multi_polygon = boost::geometry::model::multi_polygon({ boost::geometry::model::polygon({ std::move(geometry) }) });
+                    multi_polygon = SphericalMultiPolygon({ SphericalPolygon({ std::move(geometry) }) });
 
                 for (auto & polygon : multi_polygon)
                 {
@@ -219,7 +240,9 @@ private:
 REGISTER_FUNCTION(H3PolygonToCells)
 {
     factory.registerFunction<FunctionH3PolygonToCells>(FunctionDocumentation{
-        .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon."});
+        .description="Returns the hexagons (at specified resolution) contained by the provided geometry, either ring or (multi-)polygon.",
+        .introduced_in = {25, 11},
+        .category = FunctionDocumentation::Category::Geo});
 }
 
 }
