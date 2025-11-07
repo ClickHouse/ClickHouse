@@ -151,13 +151,13 @@ struct QueryPlanOptimizationSettings
     bool parallel_replicas_enabled;
     size_t max_parallel_replicas;
     size_t automatic_parallel_replicas_mode;
+    size_t automatic_parallel_replicas_min_bytes_per_replica;
 
     bool keep_logical_steps;
 
     bool is_explain;
 
     std::function<QueryPlan()> query_plan_builder;
-    ContextPtr context;
 };
 
 }

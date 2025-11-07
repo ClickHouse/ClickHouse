@@ -77,6 +77,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
+    extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
 }
 
 namespace ServerSetting
@@ -196,6 +197,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
     max_parallel_replicas = from[Setting::max_parallel_replicas];
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

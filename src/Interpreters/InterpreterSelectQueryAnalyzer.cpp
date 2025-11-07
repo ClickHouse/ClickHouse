@@ -309,7 +309,6 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.query_plan_builder = query_plan_builder;
-    optimization_settings.context = context;
 
     BuildQueryPipelineSettings build_pipeline_settings(context);
 

@@ -22,13 +22,12 @@
 namespace DB
 {
 
-namespace Setting
-{
-extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
-extern const SettingsMaxThreads max_threads;
-extern const SettingsNonZeroUInt64 max_parallel_replicas;
-extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-}
+// namespace Setting
+// {
+// extern const SettingsMaxThreads max_threads;
+// extern const SettingsNonZeroUInt64 max_parallel_replicas;
+// extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
+// }
 
 namespace ErrorCodes
 {
@@ -271,8 +270,6 @@ void considerEnablingParallelReplicas(
     if (!optimization_settings.query_plan_builder)
         return;
 
-    const auto & settings = optimization_settings.context->getSettingsRef();
-
     if (optimization_settings.parallel_replicas_enabled)
         return;
 
@@ -345,14 +342,14 @@ void considerEnablingParallelReplicas(
             num_replicas);
         if (stats->input_bytes / max_threads >= (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
         {
-            if (settings[Setting::automatic_parallel_replicas_min_bytes_per_replica]
-                && stats->input_bytes / num_replicas < settings[Setting::automatic_parallel_replicas_min_bytes_per_replica])
+            if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+                && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
             {
                 LOG_DEBUG(
                     &Poco::Logger::get("debug"),
                     "Not enabling parallel replicas reading because {} < automatic_parallel_replicas_min_bytes_per_replica {}",
                     stats->input_bytes / num_replicas,
-                    settings[Setting::automatic_parallel_replicas_min_bytes_per_replica].value);
+                    optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                 return;
             }
             dump(query_plan);
