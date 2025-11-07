@@ -40,7 +40,7 @@ namespace Setting
 
 namespace ServerSetting
 {
-    extern const ServerSettingsBool distributed_ddl_preserve_query_user_and_roles;
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
 }
 
 namespace ErrorCodes
@@ -299,7 +299,7 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
 
-    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_preserve_query_user_and_roles];
+    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
     if (preserve_user && !entry.initiator_user.empty())
     {
         const auto & access_control = from_context->getAccessControl();
