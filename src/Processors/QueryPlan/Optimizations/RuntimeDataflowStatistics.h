@@ -112,9 +112,9 @@ public:
 
     void addOutputBytes(const Chunk & chunk);
 
-    void addOutputBytes(const Aggregator & aggregator, AggregatedDataVariants & variant, ssize_t bucket);
+    void recordAggregateFunctionSizes(AggregatedDataVariants & variant, ssize_t bucket);
 
-    void addOutputBytes(const Aggregator & aggregator, const Block & block);
+    void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
     void addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes);
 

@@ -74,7 +74,7 @@ void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Chunk & chunk)
     elapsed[0] += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Aggregator &, AggregatedDataVariants & variant, ssize_t bucket)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregateFunctionSizes(AggregatedDataVariants & variant, ssize_t bucket)
 {
     if (!cache_key)
         return;
@@ -90,7 +90,7 @@ void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Aggregator &, A
         return;
     }
 
-    size_t res = variant.aggregator->applyToAllStates(variant, bucket);
+    size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
     std::lock_guard lock(mutex);
     statistics.output_bytes += res;
@@ -101,7 +101,7 @@ void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Aggregator &, A
     elapsed[1] += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Aggregator & aggregator, const Block & block)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
 {
     if (!cache_key)
         return;

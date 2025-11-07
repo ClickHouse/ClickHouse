@@ -175,38 +175,32 @@ public:
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
-        bool stop = false;
-        if constexpr (requires { func(this->m0.zeroValue()->getMapped(), stop); })
+        if constexpr (std::is_same_v<decltype(func(this->m0.zeroValue()->getMapped())), bool>)
         {
             if (this->m0.size())
             {
-                func(this->m0.zeroValue()->getMapped(), stop);
-                if (stop)
+                if (!func(this->m0.zeroValue()->getMapped()))
                     return;
             }
             for (auto & v : this->m1)
             {
-                func(v.getMapped(), stop);
-                if (stop)
-                    return;
+                if (!func(v.getMapped()))
+                    break;
             }
             for (auto & v : this->m2)
             {
-                func(v.getMapped(), stop);
-                if (stop)
-                    return;
+                if (!func(v.getMapped()))
+                    break;
             }
             for (auto & v : this->m3)
             {
-                func(v.getMapped(), stop);
-                if (stop)
-                    return;
+                if (!func(v.getMapped()))
+                    break;
             }
             for (auto & v : this->ms)
             {
-                func(v.getMapped(), stop);
-                if (stop)
-                    return;
+                if (!func(v.getMapped()))
+                    break;
             }
         }
         else

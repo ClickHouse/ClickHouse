@@ -287,7 +287,8 @@ public:
     /// Get data structure of the result.
     Block getHeader(bool final) const;
 
-    size_t applyToAllStates(AggregatedDataVariants & result, ssize_t bucket) const;
+    /// Part of a highly experimental functionality - automatic parallel replicas
+    size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
 
 private:
 

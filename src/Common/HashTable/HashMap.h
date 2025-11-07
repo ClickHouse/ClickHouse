@@ -264,13 +264,11 @@ public:
     template <typename Func>
     void forEachMapped(Func && func)
     {
-        bool stop = false;
         for (auto & v : *this)
         {
-            if constexpr (requires { func(v.getMapped(), stop); })
+            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
             {
-                func(v.getMapped(), stop);
-                if (stop)
+                if (!func(v.getMapped()))
                     break;
             }
             else

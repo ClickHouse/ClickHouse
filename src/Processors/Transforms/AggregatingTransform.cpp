@@ -638,11 +638,11 @@ private:
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             if (updater)
-                updater->addOutputBytes(params->aggregator, *first, /*bucket=*/-1);
+                updater->recordAggregateFunctionSizes(*first, /*bucket=*/-1);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
             if (updater)
-                updater->addOutputBytes(params->aggregator, block);
+                updater->recordAggregationKeySizes(params->aggregator, block);
 
             if (block.rows() > 0)
                 single_level_chunks.emplace_back(convertToChunk(block));

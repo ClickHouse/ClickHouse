@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <mutex>
 #include <optional>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
@@ -188,7 +187,7 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
-size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t bucket) const
+size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
     size_t res = 0;
     auto serialize_states = [&](auto & table)
@@ -200,17 +199,16 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
             size_t it = 0;
             size_t processed = 0;
             table.forEachMapped(
-                [&](AggregateDataPtr place, bool & stop)
+                [&](AggregateDataPtr place)
                 {
                     chassert(place);
-                    if (is_simple_count)
-                        writeVarUInt(getInlineCountState(place), wb);
-                    else
-                        aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
-                    ++processed;
-                    if (it % 100 != 0 || it > 10000)
-                        stop = true;
-                    ++it;
+                    if (it++ % 100 == 0)
+                    {
+                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
+                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        ++processed;
+                    }
+                    return it < 10000;
                 });
             wbuf.finalize();
             if (processed)
@@ -232,10 +230,8 @@ size_t Aggregator::applyToAllStates(AggregatedDataVariants & result, ssize_t buc
         {
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
-            if (is_simple_count)
-                writeVarUInt(getCountState(result.without_key), wb);
-            else
-                aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
+                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
             wbuf.finalize();
             res += wb.count();
         }
@@ -1949,12 +1945,12 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
         if (updater) \
-            updater->addOutputBytes(*this, merged_data, bucket); \
+            updater->recordAggregateFunctionSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
         if (updater) \
-            updater->addOutputBytes(*this, block); \
+            updater->recordAggregationKeySizes(*this, block); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
