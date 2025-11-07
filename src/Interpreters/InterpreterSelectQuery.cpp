@@ -198,6 +198,7 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool enable_producing_buckets_out_of_order_in_aggregation;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace ServerSetting
@@ -1830,7 +1831,9 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         query_plan.getCurrentHeader(),
                         *expressions.array_join,
                         settings[Setting::enable_unaligned_array_join],
-                        settings[Setting::max_block_size]);
+                        settings[Setting::max_block_size],
+                        settings[Setting::enable_lazy_columns_replication]
+                        );
 
                 array_join_step->setStepDescription("ARRAY JOIN");
                 query_plan.addStep(std::move(array_join_step));
@@ -2454,11 +2457,16 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas)
 {
     const Settings & settings = context->getSettingsRef();
+
+    bool empty_result_for_aggregation_by_empty_set = settings[Setting::empty_result_for_aggregation_by_empty_set]
+            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && query_analyzer->aggregationKeys().empty()
+                && query_analyzer->hasConstAggregationKeys());
+
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (allow_experimental_parallel_reading_from_replicas == 0)
         && !settings[Setting::allow_experimental_query_deduplication]
-        && !settings[Setting::empty_result_for_aggregation_by_empty_set]
+        && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
         && query_info.filter_asts.empty()
@@ -3210,7 +3218,7 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
-                limit->setStepDescription("preliminary LIMIT (without OFFSET)");
+                limit->setStepDescription("preliminary LIMIT");
 
             query_plan.addStep(std::move(limit));
         }

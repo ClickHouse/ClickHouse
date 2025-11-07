@@ -27,6 +27,8 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    bool supportWritingWithAppend() const override;
+
     const std::string & getPath() const override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
@@ -47,8 +49,6 @@ public:
     bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
-
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
 

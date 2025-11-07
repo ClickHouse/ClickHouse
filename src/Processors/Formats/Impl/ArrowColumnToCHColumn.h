@@ -81,7 +81,7 @@ private:
     const Block & header;
     const std::string format_name;
 
-    const FormatSettings & format_settings;
+    FormatSettings format_settings;
     /// If false, throw exception if some columns in header not exists in arrow table.
     bool allow_missing_columns;
     bool null_as_default;
