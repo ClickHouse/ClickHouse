@@ -28,6 +28,9 @@ public:
     {
         if (merge_task)
             merge_task->cancel();
+
+        if (part)
+            part->removeIfNeeded();
     }
 
 protected:

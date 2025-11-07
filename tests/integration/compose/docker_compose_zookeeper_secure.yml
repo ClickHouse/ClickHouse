@@ -1,6 +1,7 @@
 services:
     zoo1:
         image: zookeeper:3.6.2
+        stop_grace_period: 5s
         restart: always
         environment:
             ZOO_TICK_TIME: 500
@@ -25,6 +26,7 @@ services:
               target: /datalog
     zoo2:
         image: zookeeper:3.6.2
+        stop_grace_period: 5s
         restart: always
         environment:
             ZOO_TICK_TIME: 500
@@ -50,6 +52,7 @@ services:
               target: /datalog
     zoo3:
         image: zookeeper:3.6.2
+        stop_grace_period: 5s
         restart: always
         environment:
             ZOO_TICK_TIME: 500

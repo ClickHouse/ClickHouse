@@ -69,7 +69,7 @@ public:
         size_t byteSize() const;
         size_t allocatedBytes() const;
         void get(size_t n, Field & res) const;
-        std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const;
+        DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const;
 
         bool isFinalized() const;
         const DataTypePtr & getLeastCommonType() const { return least_common_type.get(); }
@@ -223,7 +223,7 @@ public:
     void popBack(size_t length) override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;

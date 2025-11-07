@@ -4,6 +4,7 @@ sidebar_label: 'COLUMN'
 sidebar_position: 37
 slug: /sql-reference/statements/alter/column
 title: 'Column Manipulations'
+doc_type: 'reference'
 ---
 
 A set of queries that allow changing the table structure.
@@ -212,6 +213,10 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
+:::note
+Please be careful when changing a Nullable column to Non-Nullable. Make sure it doesn't have any NULL values, otherwise it will cause problems when reading from it. In that case, the workaround would be to Kill the mutation and revert the column back to Nullable type.
+:::
+
 ## MODIFY COLUMN REMOVE {#modify-column-remove}
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
@@ -233,7 +238,6 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 **See Also**
 
 - [REMOVE TTL](ttl.md).
-
 
 ## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
 

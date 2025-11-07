@@ -62,7 +62,7 @@ void StorageFromMergeTreeProjection::read(
     }
     else
     {
-        Pipe pipe(std::make_shared<NullSource>(projection->sample_block));
+        Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(projection->sample_block)));
         auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
         read_from_pipe->setStepDescription("Read from NullSource (Projection)");
         query_plan.addStep(std::move(read_from_pipe));
@@ -76,6 +76,7 @@ StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & me
     const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);
 
     auto data = std::make_unique<MergeTreeData::SnapshotData>();
+    data->storage = parent_snapshot_data.storage;
     data->parts = parent_snapshot_data.parts;
     data->mutations_snapshot = parent_snapshot_data.mutations_snapshot;
 

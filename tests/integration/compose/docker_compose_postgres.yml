@@ -1,6 +1,7 @@
 services:
     postgres1:
         image: postgres
+        stop_grace_period: 5s
         command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=4", "-c", "logging_collector=on", "-c", "log_directory=/postgres/logs", "-c", "log_statement=all", "-c", "max_connections=200", "-c", "statement_timeout=180000"] # statement_timeout: avoid test timeout because of postgres getting unavailable
         restart: always
         expose:
@@ -26,6 +27,7 @@ services:
             - "autoheal=true"
     autoheal:
       image: willfarrell/autoheal:latest
+      stop_grace_period: 5s
       tty: true
       restart: always
       environment:

@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, SharedHeader header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), &in_)
     , block_missing_values(getPort().getHeader().columns())
     , format_settings(format_settings_)
@@ -114,7 +114,7 @@ static void getFileReaderAndSchema(
     if (is_stopped)
         return;
 
-    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, ArrowMemoryPool::instance());
+    auto result = arrow::adapters::orc::ORCFileReader::Open(arrow_file, arrow::default_memory_pool());
     if (!result.ok())
         throw Exception::createDeprecated(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
@@ -139,6 +139,8 @@ void ORCBlockInputFormat::prepareReader()
         getPort().getHeader(),
         "ORC",
         format_settings,
+        std::nullopt,
+        std::nullopt,
         format_settings.orc.allow_missing_columns,
         format_settings.null_as_default,
         format_settings.date_time_overflow_behavior,
@@ -165,13 +167,13 @@ void ORCSchemaReader::initializeIfNeeded()
     if (file_reader)
         return;
 
+    std::atomic<int> is_stopped = 0;
+    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
+
     if (auto status = file_reader->ReadMetadata(); status.ok())
         metadata = status.ValueUnsafe();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading incorrect metadata of ORC {}", status.status().message());
-
-    std::atomic<int> is_stopped = 0;
-    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
 }
 
 NamesAndTypesList ORCSchemaReader::readSchema()
@@ -207,8 +209,8 @@ void registerInputFormatORC(FormatFactory & factory)
            const FormatSettings & settings,
            const ReadSettings & read_settings,
            bool is_remote_fs,
-           size_t /* max_download_threads */,
-           size_t /* max_parsing_threads */)
+           FormatParserSharedResourcesPtr,
+           FormatFilterInfoPtr format_filter_info)
         {
             InputFormatPtr res;
             if (settings.orc.use_fast_decoder)
@@ -218,10 +220,11 @@ void registerInputFormatORC(FormatFactory & factory)
                 const bool use_prefetch = is_remote_fs && read_settings.remote_fs_prefetch && has_file_size && seekable_in
                     && seekable_in->checkIfActuallySeekable() && seekable_in->supportsReadAt() && settings.seekable_read;
                 const size_t min_bytes_for_seek = use_prefetch ? read_settings.remote_read_min_bytes_for_seek : 0;
-                res = std::make_shared<NativeORCBlockInputFormat>(buf, sample, settings, use_prefetch, min_bytes_for_seek);
+                res = std::make_shared<NativeORCBlockInputFormat>(
+                    buf, std::make_shared<const Block>(sample), settings, use_prefetch, min_bytes_for_seek, format_filter_info);
             }
             else
-                res = std::make_shared<ORCBlockInputFormat>(buf, sample, settings);
+                res = std::make_shared<ORCBlockInputFormat>(buf, std::make_shared<const Block>(sample), settings);
 
             return res;
         });

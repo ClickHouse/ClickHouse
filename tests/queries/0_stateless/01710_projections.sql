@@ -5,6 +5,7 @@ create table projection_test (`sum(block_count)` UInt64, domain_alias UInt64 ali
 insert into projection_test with rowNumberInAllBlocks() as id select 1, toDateTime('2020-10-24 00:00:00') + (id / 20), toString(id % 100), * from generateRandom('x_id String, y_id String, block_count Int64, retry_count Int64, duration Int64, kbytes Int64, buffer_time Int64, first_time Int64, total_bytes Nullable(UInt64), valid_bytes Nullable(UInt64), completed_bytes Nullable(UInt64), fixed_bytes Nullable(UInt64), force_bytes Nullable(UInt64)', 10, 10, 1) limit 1000 settings max_threads = 1;
 
 set optimize_use_projections = 1, force_optimize_projection = 1;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 select * from projection_test; -- { serverError PROJECTION_NOT_USED }
 select toStartOfMinute(datetime) dt_m, countIf(first_time = 0) from projection_test join (select 1) x on 1 where domain = '1' group by dt_m order by dt_m; -- { serverError PROJECTION_NOT_USED }

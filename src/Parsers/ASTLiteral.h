@@ -63,15 +63,4 @@ private:
     void appendColumnNameImplLegacy(WriteBuffer & ostr) const;
 };
 
-
-/** A special UX improvement. If it's [I]LIKE or NOT [I]LIKE expression and the right hand side is a string literal,
-  *  we will highlight unescaped metacharacters % and _ in string literal for convenience.
-  * Motivation: most people are unaware that _ is a metacharacter and forgot to properly escape it with two backslashes.
-  * With highlighting we make it clearly obvious.
-  *
-  * Another case is regexp match. Suppose the user types match(URL, 'www.clickhouse.com'). It often means that the user is unaware that . is a metacharacter.
-  */
-bool highlightStringLiteralWithMetacharacters(const ASTPtr & node, WriteBuffer & ostr, const char * metacharacters);
-void highlightStringWithMetacharacters(const String & string, WriteBuffer & ostr, const char * metacharacters);
-
 }

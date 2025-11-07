@@ -31,6 +31,7 @@
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 #include <Common/JSONBuilder.h>
 #include <Core/Settings.h>
 
@@ -98,14 +99,14 @@ class EmbeddedRocksDBSource : public ISource
 public:
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
-        const Block & header,
+        SharedHeader header,
         FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -116,12 +117,12 @@ public:
 
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
-        const Block & header,
+        SharedHeader header,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , primary_key_pos(getPrimaryKeyPos(header, storage.getPrimaryKey()))
+        , primary_key_pos(getPrimaryKeyPos(*header, storage.getPrimaryKey()))
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -210,10 +211,24 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
 {
     setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
+
     if (rocksdb_dir.empty())
     {
+        /// We create tables under the database directory by default and enforce user_files path check for explicitly declared paths
         rocksdb_dir = context_->getPath() + relative_data_path_;
     }
+    else
+    {
+        bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
+        fs::path user_files_path = is_local ? "" : fs::canonical(getContext()->getUserFilesPath());
+        if (fs::path(rocksdb_dir).is_relative())
+            rocksdb_dir = user_files_path / rocksdb_dir;
+        rocksdb_dir = fs::absolute(rocksdb_dir).lexically_normal();
+
+        if (!is_local && !fileOrSymlinkPathStartsWith(fs::path(rocksdb_dir), user_files_path))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path must be inside user-files path: {}", user_files_path.string());
+    }
+
     if (mode < LoadingStrictnessLevel::ATTACH)
     {
         fs::create_directories(rocksdb_dir);
@@ -576,7 +591,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        Block sample_block,
+        SharedHeader sample_block,
         const StorageEmbeddedRocksDB & storage_,
         size_t max_block_size_,
         size_t num_streams_)
@@ -594,7 +609,7 @@ private:
     size_t num_streams;
 
     FieldVectorPtr keys;
-    bool all_scan = false;
+    bool all_scan = true;
 };
 
 void StorageEmbeddedRocksDB::read(
@@ -611,7 +626,7 @@ void StorageEmbeddedRocksDB::read(
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
-        column_names, query_info, storage_snapshot, context_, std::move(sample_block), *this, max_block_size, num_streams);
+        column_names, query_info, storage_snapshot, context_, std::make_shared<const Block>(std::move(sample_block)), *this, max_block_size, num_streams);
 
     query_plan.addStep(std::move(reading));
 }
@@ -666,8 +681,8 @@ void ReadFromEmbeddedRocksDB::applyFilters(ActionDAGNodes added_filter_nodes)
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
 
     const auto & sample_block = getOutputHeader();
-    auto primary_key_data_type = sample_block.getByName(storage.primary_key).type;
-    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag, context);
+    auto primary_key_data_type = sample_block->getByName(storage.primary_key).type;
+    std::tie(keys, all_scan) = getFilterKeys(storage.primary_key, primary_key_data_type, filter_actions_dag.get(), context);
 }
 
 void ReadFromEmbeddedRocksDB::describeActions(FormatSettings & format_settings) const

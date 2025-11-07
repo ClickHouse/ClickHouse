@@ -38,7 +38,7 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapBuild>(documentation_bitmapBuild);
 
     /// Documentation for bitmapToArray
-    FunctionDocumentation::Description description_bitmapToArray = "Converts a bitmap to an array of unsigned integers. It is the opposite of function [`bitmapBuild`](/sql-reference/functions/bitmap-functions#bitmapbuild).";
+    FunctionDocumentation::Description description_bitmapToArray = "Converts a bitmap to an array of unsigned integers. It is the opposite of function [`bitmapBuild`](/sql-reference/functions/bitmap-functions#bitmapBuild).";
     FunctionDocumentation::Syntax syntax_bitmapToArray = "bitmapToArray(bitmap)";
     FunctionDocumentation::Arguments arguments_bitmapToArray = {
         {"bitmap", "Bitmap to convert. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
@@ -478,7 +478,7 @@ Changes up to N bits in a bitmap by swapping specific bit values in `from_array`
     factory.registerFunction<FunctionBitmapXor>(documentation_bitmapXor);
 
     /// Documentation for bitmapAndnot
-    FunctionDocumentation::Description description_bitmapAndnot = "Computes the logical conjunction of two bitmaps and negates the result (AND-NOT).";
+    FunctionDocumentation::Description description_bitmapAndnot = "Computes the set difference A AND-NOT B of two bitmaps.";
     FunctionDocumentation::Syntax syntax_bitmapAndnot = "bitmapAndnot(bitmap1, bitmap2)";
     FunctionDocumentation::Arguments arguments_bitmapAndnot = {
         {"bitmap1", "First bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
