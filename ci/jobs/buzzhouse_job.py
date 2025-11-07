@@ -94,6 +94,8 @@ def main():
                 "geo",
                 "fixedstring",
                 "qbit",
+                "aggregate",
+                "simpleaggregate",
             ]
             random.shuffle(disabled_types)
             disabled_types_str = ",".join(
@@ -232,6 +234,10 @@ def main():
                 "send_logs_level",
                 "query_plan_max_limit_for_lazy_materialization",
                 "max_download_buffer_size",
+                "data_type_default_nullable",
+                "enable_producing_buckets_out_of_order_in_aggregation",
+                "max_temporary_data_on_disk_size_for_query",
+                "max_temporary_data_on_disk_size_for_user",
             ],
             # MergeTree settings to set more often
             "hot_table_settings": [
@@ -247,13 +253,13 @@ def main():
                 "allow_vertical_merges_from_compact_to_wide_parts",
                 "enable_block_number_column",
                 "enable_block_offset_column",
+                "enable_vertical_merge_algorithm",
+                "index_granularity",
                 "min_bytes_for_full_part_storage",
                 "min_bytes_for_wide_part",
-                "min_rows_for_full_part_storage",
-                "min_rows_for_wide_part",
+                "ttl_only_drop_parts",
                 "vertical_merge_algorithm_min_bytes_to_activate",
-                "vertical_merge_algorithm_min_columns_to_activate",
-                "vertical_merge_algorithm_min_rows_to_activate",
+                "use_const_adaptive_granularity",
             ],
         }
         with open(buzz_config_file, "w") as outfile:
