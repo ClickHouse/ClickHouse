@@ -281,7 +281,10 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
+        if (!this->inside_projection || rg.nextSmallNumber() < 2)
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
+        }
     }
     return rel;
 }
