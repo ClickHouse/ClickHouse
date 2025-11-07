@@ -50,7 +50,7 @@ LatLng toH3LatLng(const SphericalPointInRadians & point)
 
 }
 
-/// Takes a geometry (Ring, Polygon or MultiPolygon) and returnes an array of H3 hexagons that cover this geometry.
+/// Takes a geometry (Ring, Polygon or MultiPolygon) and returns an array of H3 hexagons that cover this geometry.
 /// The geometry should be in spherical coordinates as it is in GeoJSON.
 class FunctionH3PolygonToCells : public IFunction
 {
