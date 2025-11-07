@@ -272,13 +272,6 @@ void executeString(
     const ITokenExtractor * token_extractor,
     const TokensWithPosition & tokens)
 {
-    if (tokens.empty())
-    {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_rows_count, UInt8(1));
-        return;
-    }
-
     col_result.resize(input_rows_count);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
@@ -299,13 +292,6 @@ void executeArray(
 {
     const auto & offsets = array->getOffsets();
     const size_t input_size = offsets.size();
-
-    if (tokens.empty())
-    {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_size, UInt8(1));
-        return;
-    }
 
     col_result.resize(input_size);
 
