@@ -55,7 +55,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (columns_without_table.find(column.name) == columns_without_table.end())
+        if (!columns_without_table.contains(column.name))
             return true;
     }
     return false;

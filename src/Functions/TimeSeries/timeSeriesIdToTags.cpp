@@ -157,7 +157,7 @@ public:
     static std::vector<IDType> extractIDs(const IColumn & column_ids)
     {
         std::string_view data = column_ids.getRawData();
-        chassert(data.size() == column_ids.size() * sizeof(IDType));
+        chassert(data.size() == column_ids.size() * sizeof(IDType));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
         const IDType * begin = reinterpret_cast<const IDType *>(data.data());
         return std::vector<IDType>(begin, begin + column_ids.size());
     }
