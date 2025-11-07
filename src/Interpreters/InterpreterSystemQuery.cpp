@@ -413,6 +413,18 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+# if USE_PARQUET
+        case Type::DROP_PARQUET_METADATA_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
+            system_context->clearParquetMetadataFilesCache();
+            break;
+        case Type::DROP_PARQUET_V3_METADATA_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PARQUET_V3_METADATA_CACHE);
+            system_context->clearParquetV3MetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet");
+# endif
         case Type::DROP_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
             system_context->clearPrimaryIndexCache();
