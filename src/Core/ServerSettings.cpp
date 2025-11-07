@@ -494,6 +494,22 @@ namespace DB
     :::)", 0) \
     DECLARE(UInt64, text_index_dictionary_block_cache_max_entries, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES, "Size of cache for text index dictionary block in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_dictionary_block_cache_size_ratio, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index dictionary block cache relative to the cache's total size.", 0) \
+    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache policy name.", 0) \
+    DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
+
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::)", 0) \
+    DECLARE(UInt64, text_index_header_cache_max_entries, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES, "Size of cache for text index header in entries. Zero means disabled.", 0) \
+    DECLARE(Double, text_index_header_cache_size_ratio, DEFAULT_TEXT_INDEX_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index header cache relative to the cache's total size.", 0) \
+    DECLARE(String, text_index_postings_cache_policy, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_POLICY, "Text index posting list cache policy name.", 0) \
+    DECLARE(UInt64, text_index_postings_cache_size, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE, R"(Size of cache for text index posting lists. Zero means disabled.
+
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::)", 0) \
+    DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
+    DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
