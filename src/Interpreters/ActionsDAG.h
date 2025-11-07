@@ -45,6 +45,13 @@ class SortDescription;
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
+struct PartialEvaluationParameters
+{
+    bool throw_on_error = false;
+    bool skip_materialize = false;
+    bool allow_unknown_function_arguments = false;
+};
+
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -309,8 +316,7 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        bool throw_on_error,
-        bool skip_materialize = false
+        PartialEvaluationParameters params = {}
     );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
