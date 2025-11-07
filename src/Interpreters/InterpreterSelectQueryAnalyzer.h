@@ -9,6 +9,8 @@
 namespace DB
 {
 
+class QueryPlan;
+
 class InterpreterSelectQueryAnalyzer : public IInterpreter
 {
 public:
@@ -85,7 +87,8 @@ private:
     SelectQueryOptions select_query_options;
     QueryTreeNodePtr query_tree;
     Planner planner;
-    std::function<QueryPlan()> query_plan_builder;
+
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_builder;
 };
 
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);

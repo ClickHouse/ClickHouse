@@ -283,7 +283,7 @@ void considerEnablingParallelReplicas(
         LOG_DEBUG(&Poco::Logger::get("debug"), "\nwb.str()={}", wb.str());
     };
 
-    auto plan_with_parallel_replicas = std::make_unique<QueryPlan>(optimization_settings.query_plan_builder());
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_builder();
 
     const auto * final_node_in_replica_plan = findReplicasTopNode(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)

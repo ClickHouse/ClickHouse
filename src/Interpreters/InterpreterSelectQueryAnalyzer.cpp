@@ -185,7 +185,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
               plan.optimize(QueryPlanOptimizationSettings(ctx));
-              return plan;
+              return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
 }
@@ -212,7 +212,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
               InterpreterSelectQueryAnalyzer interpreter(ast, ctx, storage, select_options, column_names);
               auto plan = std::move(interpreter).extractQueryPlan();
               plan.optimize(QueryPlanOptimizationSettings(ctx));
-              return plan;
+              return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
 }
@@ -231,7 +231,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
               InterpreterSelectQueryAnalyzer interpreter(tree, ctx, select_options);
               auto plan = std::move(interpreter).extractQueryPlan();
               plan.optimize(QueryPlanOptimizationSettings(ctx));
-              return plan;
+              return std::make_unique<QueryPlan>(std::move(plan));
           })
 {
 }

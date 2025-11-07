@@ -5,8 +5,6 @@
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Processors/QueryPlan/QueryPlan.h>
-
 #include <cstddef>
 
 namespace DB
@@ -16,6 +14,8 @@ struct Settings;
 
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
+class QueryPlan;
 
 struct QueryPlanOptimizationSettings
 {
@@ -157,7 +157,7 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    std::function<QueryPlan()> query_plan_builder;
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_builder;
 };
 
 }
