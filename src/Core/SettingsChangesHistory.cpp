@@ -48,7 +48,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
-            {"enable_automatic_parallel_replicas", 0, 0, "New setting"},
+            {"automatic_parallel_replicas_mode", 0, 0, "New setting"},
             {"automatic_parallel_replicas_min_bytes_per_replica", 0, 0, "New setting"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},

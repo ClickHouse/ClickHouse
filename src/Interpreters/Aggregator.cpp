@@ -190,6 +190,7 @@ namespace DB
 size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
     size_t res = 0;
+
     auto serialize_states = [&](auto & table)
     {
         for (size_t j = 0; j < params.aggregates_size; ++j)
@@ -197,7 +198,6 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
             size_t it = 0;
-            size_t processed = 0;
             table.forEachMapped(
                 [&](AggregateDataPtr place)
                 {
@@ -206,22 +206,20 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                     {
                         is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
                                         : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
-                        ++processed;
                     }
                     return it < 10000;
                 });
             wbuf.finalize();
-            if (processed)
-                res += static_cast<size_t>((static_cast<double>(table.size()) / processed) * wb.count());
+            if (it)
+                res += static_cast<size_t>((table.size() / ceil(it / 100.)) * wb.count());
         }
     };
 
-    const auto method = result.type;
-    if (method == AggregatedDataVariants::Type::EMPTY)
+    if (result.type == AggregatedDataVariants::Type::EMPTY)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty data passed to Aggregator::applyToAllStates");
     }
-    else if (method == AggregatedDataVariants::Type::without_key)
+    else if (result.type == AggregatedDataVariants::Type::without_key)
     {
         if (!result.without_key)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
@@ -237,22 +235,22 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         }
     }
 
-#define M(NAME)                                                 \
-    else if (method == AggregatedDataVariants::Type::NAME)      \
-    {                                                           \
-        serialize_states(result.NAME->data);                    \
+#define M(NAME) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        serialize_states(result.NAME->data); \
     }
 
     APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
 
-#define M(NAME)                                                 \
-    else if (method == AggregatedDataVariants::Type::NAME)      \
-    {                                                           \
-        if (bucket >= 0)                                        \
-            serialize_states(result.NAME->data.impls[bucket]);  \
-        else                                                    \
-            serialize_states(result.NAME->data);                \
+#define M(NAME) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+    { \
+        if (bucket >= 0) \
+            serialize_states(result.NAME->data.impls[bucket]); \
+        else \
+            serialize_states(result.NAME->data); \
     }
 
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

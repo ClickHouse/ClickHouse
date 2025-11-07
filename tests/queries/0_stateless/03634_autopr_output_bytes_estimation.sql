@@ -2,10 +2,10 @@
 
 SET optimize_read_in_order=0, query_plan_read_in_order=0, local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
 
-SET enable_parallel_replicas=0, enable_automatic_parallel_replicas=0, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
+SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
-SET enable_parallel_replicas=0, enable_automatic_parallel_replicas=2;
+SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2;
 
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
@@ -30,7 +30,7 @@ SELECT REGEXP_REPLACE(Referer, '^https?://(?:www\.)?([^/]+)/.*$', '\1') AS k, AV
 
 SELECT 1, URL, COUNT(*) AS c FROM test.hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_34';
 
-SET enable_parallel_replicas=0, enable_automatic_parallel_replicas=0;
+SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 

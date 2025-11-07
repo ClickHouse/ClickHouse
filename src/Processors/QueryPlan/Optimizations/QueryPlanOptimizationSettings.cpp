@@ -76,6 +76,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
+    extern const SettingsUInt64 automatic_parallel_replicas_mode;
 }
 
 namespace ServerSetting
@@ -191,6 +192,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
 
     max_threads = from[Setting::max_threads];
+
+    parallel_replicas_enabled = from[Setting::allow_experimental_parallel_reading_from_replicas];
+    max_parallel_replicas = from[Setting::max_parallel_replicas];
+    automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)

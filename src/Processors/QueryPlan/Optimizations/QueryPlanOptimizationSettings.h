@@ -148,6 +148,10 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
+    bool parallel_replicas_enabled;
+    size_t max_parallel_replicas;
+    size_t automatic_parallel_replicas_mode;
+
     bool keep_logical_steps;
 
     bool is_explain;
