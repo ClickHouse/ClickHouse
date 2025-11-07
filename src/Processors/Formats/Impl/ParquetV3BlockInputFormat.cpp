@@ -29,7 +29,7 @@ ParquetV3BlockInputFormat::ParquetV3BlockInputFormat(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek,
-    ParquetMetadataCachePtr metadata_cache_)
+    ParquetV3MetadataCachePtr metadata_cache_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , read_options(convertReadOptions(format_settings))
@@ -90,6 +90,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
     }
 }
 
+
 Chunk ParquetV3BlockInputFormat::read()
 {
     if (need_only_count)
@@ -99,8 +100,23 @@ Chunk ParquetV3BlockInputFormat::read()
 
         /// Don't init Reader and ReadManager if we only need file metadata.
         Parquet::Prefetcher temp_prefetcher;
+        parquet::format::FileMetaData file_metadata;
         temp_prefetcher.init(in, read_options, parser_shared_resources);
-        auto file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+        if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(in))
+        {
+            auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(*in);
+            if (etag != "s3_metadata_unavailable")
+            {
+                ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
+                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                    return Parquet::Reader::readFileMetaData(temp_prefetcher);
+                });
+            }
+        }
+        else
+        {
+            file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+        }
 
         auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
@@ -134,9 +150,13 @@ void ParquetV3BlockInputFormat::resetParser()
     IInputFormat::resetParser();
 }
 
-NativeParquetSchemaReader::NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings)
+NativeParquetSchemaReader::NativeParquetSchemaReader(
+    ReadBuffer & in_,
+    const FormatSettings & format_settings,
+    ParquetV3MetadataCachePtr metadata_cache_)
     : ISchemaReader(in_)
     , read_options(convertReadOptions(format_settings))
+    , metadata_cache(metadata_cache_)
 {
 }
 
@@ -146,7 +166,21 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         return;
     Parquet::Prefetcher prefetcher;
     prefetcher.init(&in, read_options, /*parser_shared_resources_=*/ nullptr);
-    file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
+    if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(&in))
+    {
+        auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(in);
+        if (etag != "s3_metadata_unavailable")
+        {
+            ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
+            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return Parquet::Reader::readFileMetaData(prefetcher);
+            });
+        }
+    }
+    else
+    {
+        file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
+    }
     initialized = true;
 }
 

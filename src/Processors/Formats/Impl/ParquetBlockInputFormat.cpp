@@ -25,9 +25,6 @@
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/ArrowFieldIndexUtil.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
-#include <IO/ReadBufferFromS3.h>
-#include <IO/WithFileName.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <base/scope_guard.h>
@@ -654,26 +651,6 @@ ParquetBlockInputFormat::~ParquetBlockInputFormat()
         io_pool->wait();
 }
 
-std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in) 
-{
-    String full_path = getFileNameFromReadBuffer(in);
-    String etag;
-    // Extract ETag from S3 metadata if available
-    if (auto * s3_buffer = dynamic_cast<ReadBufferFromS3*>(&in))
-    {
-        try 
-        {
-            ObjectMetadata metadata = s3_buffer->getObjectMetadataFromTheLastRequest();
-            etag = metadata.etag;
-        }
-        catch (...)
-        {
-            // If metadata not available, use a fallback
-            etag = "s3_metadata_unavailable";
-        }
-    }
-    return std::make_pair(full_path, etag);
-}
 
 void ParquetBlockInputFormat::initializeIfNeeded()
 {
@@ -696,10 +673,13 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     {
         // Only cache S3 files since they have reliable ETags
         auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(*in);
-        auto cache_key = ParquetMetadataCache::createKey(file_path, etag);
-        metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-            return parquet::ReadMetaData(arrow_file);
-        });
+        if (etag != "s3_metadata_unavailable")
+        {
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
+            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
+                return parquet::ReadMetaData(arrow_file);
+            });
+        }
     }
     else
     {

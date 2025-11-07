@@ -11,6 +11,13 @@
 #include <parquet/file_reader.h>
 #include <parquet/metadata.h>
 #include <boost/noncopyable.hpp>
+#include <IO/WithFileName.h>
+#include <generated/parquet_types.h>
+
+#if USE_AWS_S3
+#include <IO/ReadBufferFromS3.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -109,7 +116,7 @@ struct ParquetMetadataCacheWeightFunction
     }
 };
 
-/// Parquet metadata cache implementation
+/// Parquet metadata cache
 class ParquetMetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetMetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetMetadataCacheWeightFunction>
 {
 public:
@@ -153,7 +160,90 @@ private:
     }
 };
 
+/// Cache cell containing V3 native Parquet metadata
+struct ParquetV3MetadataCacheCell : private boost::noncopyable
+{
+    parquet::format::FileMetaData metadata;  // Native V3 metadata (not shared_ptr)
+    Int64 memory_bytes;
+
+    explicit ParquetV3MetadataCacheCell(parquet::format::FileMetaData metadata_)
+        : metadata(std::move(metadata_))
+        , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
+    {
+    }
+
+private:
+    static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 200;
+
+    size_t calculateMemorySize() const
+    {
+        // Estimate memory usage of native metadata
+        // This is simpler than Arrow metadata since it's not a shared_ptr
+        return sizeof(metadata) + metadata.schema.size() * 100; // Rough estimate
+    }
+};
+
+/// Weight function for V3 metadata cache
+struct ParquetV3MetadataCacheWeightFunction
+{
+    size_t operator()(const ParquetV3MetadataCacheCell & cell) const
+    {
+        return cell.memory_bytes;
+    }
+};
+
+/// V3 Parquet metadata cache - reuses same key and hash as V2 cache
+class ParquetV3MetadataCache : public CacheBase<ParquetMetadataCacheKey, ParquetV3MetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetV3MetadataCacheWeightFunction>
+{
+public:
+    using Base = CacheBase<ParquetMetadataCacheKey, ParquetV3MetadataCacheCell, ParquetMetadataCacheKeyHash, ParquetV3MetadataCacheWeightFunction>;
+
+    ParquetV3MetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+        : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
+    {}
+
+    // Same factory method as V2 - reuse the key creation logic
+    static ParquetMetadataCacheKey createKey(const String & file_path, const String & etag)
+    {
+        return ParquetMetadataCacheKey{file_path, etag};
+    }
+
+    /// Get or load V3 Parquet metadata with caching
+    template <typename LoadFunc>
+    parquet::format::FileMetaData getOrSetMetadata(const ParquetMetadataCacheKey & key, LoadFunc && load_fn)
+    {
+        auto load_fn_wrapper = [&]()
+        {
+            auto metadata = load_fn();  // Returns Parquet::parq::FileMetaData directly
+            return std::make_shared<ParquetV3MetadataCacheCell>(std::move(metadata));
+        };
+        
+        auto result = Base::getOrSet(key, load_fn_wrapper);
+        
+        // Reuse same ProfileEvents as V2 cache
+        if (result.second)
+            ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
+        else
+            ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
+            
+        return result.first->metadata;  // Return by value (native metadata)
+    }
+
+private:
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
+    {
+        ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheWeightLost, weight_loss);
+        UNUSED(mapped_ptr);
+    }
+};
+
 using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
+using ParquetV3MetadataCachePtr = std::shared_ptr<ParquetV3MetadataCache>;
+
+/// Utility function to extract file path and ETag from ReadBuffer for cache key creation
+/// Returns pair of (file_path, etag) - works with S3 ReadBuffers 
+std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in);
 
 }
 
