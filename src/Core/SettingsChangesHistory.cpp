@@ -49,6 +49,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
+            {"allow_experimental_alias_table_engine", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {

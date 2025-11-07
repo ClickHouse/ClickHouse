@@ -30,6 +30,9 @@ def test_alias_with_replicated(started_cluster):
     node1.query("CREATE DATABASE test_rmt ENGINE = Replicated('/clickhouse/databases/test_rmt', 'shard1', 'node1')")
     node2.query("CREATE DATABASE test_rmt ENGINE = Replicated('/clickhouse/databases/test_rmt', 'shard1', 'node2')")
 
+    node1.query("SET allow_experimental_alias_table_engine = 1;")
+    node2.query("SET allow_experimental_alias_table_engine = 1;")
+
     node1.query("CREATE TABLE test_rmt.rmt_table (id UInt32, value String) ENGINE = ReplicatedMergeTree ORDER BY id")
     node1.query("CREATE TABLE test_rmt.alias_rmt ENGINE = Alias('rmt_table')")
 
