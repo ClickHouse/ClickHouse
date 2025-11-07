@@ -164,6 +164,9 @@ def main():
             assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
+            if to in ("parallel", "sequential") and args.test:
+                # skip setting up parallel/sequential if specific tests are provided
+                continue
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
 
         if "flaky" in to:
