@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, deadlock, replica
-# TODO: exclude from fasttest
+# Tags: no-fasttest, no-flaky-check, deadlock, long, replica
+#  no-fasttest, no-flaky-check: test can run up to 10 minutes with sanitizers
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-RUNS=${RUNS:-50}
+RUNS=${RUNS:-25}
 THREADS_PER_JOB=${THREADS_PER_JOB:-4}
 PRINT_LOGS=${PRINT_LOGS:-0}
 QUERY_TIMEOUT=${QUERY_TIMEOUT:-30}
@@ -50,6 +50,7 @@ trap cleanup EXIT
 
 test_query() {
   local rc=0 output
+  start_ns=$(date +%s%N)
   output=$($CLICKHOUSE_CLIENT -q "$@" 2>&1) || rc=$?
 
   if (( rc == 0 || rc == 81 )); then
@@ -57,10 +58,12 @@ test_query() {
       return 0
   fi
 
+  end_ns=$(date +%s%N)
+  dur_ms=$(( (end_ns - start_ns) / 1000000 ))
   if (( rc == 124 )); then
-    echo "❌ Query timed out: $*"
+    echo "❌ Query timed out(${dur_ms} ms): $*"
   else
-    echo "❌ Query failed with code $rc: $* -> $output"
+    echo "❌ Query failed with code $rc(${dur_ms} ms): $* -> $output"
   fi
   exit $rc
 }
