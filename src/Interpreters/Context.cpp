@@ -526,6 +526,7 @@ struct ContextSharedPart : boost::noncopyable
 #endif
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
+    mutable ParquetV3MetadataCachePtr parquet_v3_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized V3 parquet metadata files.
 #endif
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
@@ -3923,6 +3924,44 @@ std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
 void Context::clearParquetMetadataCache() const
 {
     auto cache = getParquetMetadataCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::setParquetV3MetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->parquet_v3_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet V3 metadata cache has been already created.");
+
+    shared->parquet_v3_metadata_cache = std::make_shared<ParquetV3MetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateParquetV3MetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->parquet_v3_metadata_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet V3 metadata cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("parquet_v3_metadata_cache_size", DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("parquet_v3_metadata_cache_max_entries", DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES);
+    shared->parquet_v3_metadata_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->parquet_v3_metadata_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<ParquetV3MetadataCache> Context::getParquetV3MetadataCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->parquet_v3_metadata_cache;
+}
+
+void Context::clearParquetV3MetadataCache() const
+{
+    auto cache = getParquetV3MetadataCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
