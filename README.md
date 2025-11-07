@@ -18,7 +18,7 @@
 ```
 curl https://clickhouse.com/ | sh
 ```
-
+kk
 ## Useful Links
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
