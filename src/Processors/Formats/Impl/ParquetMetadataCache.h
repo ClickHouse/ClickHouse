@@ -29,9 +29,13 @@ namespace DB
 {
 
 /*
-Right now this only supports downloaded parquet files.
+Right now this primarily supports downloaded parquet files.
 We rely on the file path and etag (entity tag) to identify the file uniquely for caching
-Later on, we can implement support for local parquet files
+Later on, we can implement specific support for local parquet files, but this
+technically works if we pass additional unique data from the local file,
+like the modification time or size as the `etag` argument, but the caller has to
+know to do this.  There could be benefits to caching local parquet file metadata
+as we could potentially avoid IO on the local system.
 */
 struct ParquetMetadataCacheKey
 {
