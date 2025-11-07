@@ -106,10 +106,6 @@ Clears the iceberg metadata cache.
 
 Clears the parquet metadata cache.
 
-## SYSTEM DROP PARQUET V3 METADATA CACHE {#drop-parquet-v3-metadata-cache}
-
-Clears the parquet v3 metadata cache.
-
 ## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
 
 Clears the text index dictionary cache.
