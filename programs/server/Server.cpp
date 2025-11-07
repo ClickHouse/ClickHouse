@@ -249,10 +249,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
     extern const ServerSettingsDouble parquet_metadata_cache_size_ratio;
-    extern const ServerSettingsString parquet_v3_metadata_cache_policy;
-    extern const ServerSettingsUInt64 parquet_v3_metadata_cache_size;
-    extern const ServerSettingsUInt64 parquet_v3_metadata_cache_max_entries;
-    extern const ServerSettingsDouble parquet_v3_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsBool jemalloc_enable_global_profiler;
     extern const ServerSettingsBool jemalloc_collect_global_profile_samples_in_trace_log;
