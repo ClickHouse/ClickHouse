@@ -13,7 +13,7 @@ class ReadBuffer;
 class FormRowInputFormat final : public IRowInputFormat
 {
 public:
-    FormRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_);
+    FormRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "FormInputFormat"; }
     void resetParser() override;
 

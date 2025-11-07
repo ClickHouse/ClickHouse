@@ -79,6 +79,7 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS = 9;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -122,8 +123,11 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
+void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response)
 {
+    // nothing to read from body
+    body.reset();
+
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
 
     String part_name = params.get("part");
@@ -134,7 +138,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -249,6 +253,10 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION
             && name == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
+            continue;
+
+        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS
+            && name == IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME)
             continue;
 
         files_to_replicate.insert(name);
@@ -441,7 +449,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS)},
         {"compress",                "false"}
     });
 
@@ -461,14 +469,14 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
                 if (data_disk->supportZeroCopyReplication())
                 {
                     LOG_TRACE(log, "Disk {} (with type {}) supports zero-copy replication", data_disk->getName(), data_disk->getDataSourceDescription().toString());
-                    capability.push_back(data_disk->getDataSourceDescription().toString());
+                    capability.push_back(data_disk->getDataSourceDescription().name());
                 }
             }
         }
         else if (disk->supportZeroCopyReplication())
         {
             LOG_TRACE(log, "Trying to fetch with zero copy replication, provided disk {} with type {}", disk->getName(), disk->getDataSourceDescription().toString());
-            capability.push_back(disk->getDataSourceDescription().toString());
+            capability.push_back(disk->getDataSourceDescription().name());
         }
     }
 
@@ -515,7 +523,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         for (const auto & disk_candidate : data.getDisks())
         {
-            if (disk_candidate->getDataSourceDescription().toString() == remote_fs_metadata)
+            if (disk_candidate->getDataSourceDescription().name() == remote_fs_metadata)
             {
                 preffered_disk = disk_candidate;
                 break;
@@ -736,7 +744,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
 
         if (file_name != "checksums.txt" &&
             file_name != "columns.txt" &&
-            file_name != "columns_substreams.txt" &&
+            file_name != IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
             file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);

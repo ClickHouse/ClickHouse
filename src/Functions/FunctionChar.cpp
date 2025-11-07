@@ -5,8 +5,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/castColumn.h>
-#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -65,20 +64,17 @@ public:
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-        const auto size_per_row = arguments.size() + 1;
+        const auto size_per_row = arguments.size();
         out_vec.resize(size_per_row * input_rows_count);
         out_offsets.resize(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
-        {
             out_offsets[row] = size_per_row + out_offsets[row - 1];
-            out_vec[row * size_per_row + size_per_row - 1] = '\0';
-        }
 
         Columns columns_holder(arguments.size());
         for (size_t idx = 0; idx < arguments.size(); ++idx)
         {
-            //partial const column
+            // Partial const column
             columns_holder[idx] = arguments[idx].column->convertToFullColumnIfConst();
             const IColumn * column = columns_holder[idx].get();
 
@@ -119,7 +115,47 @@ private:
 
 REGISTER_FUNCTION(Char)
 {
-    factory.registerFunction<FunctionChar>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns a string with length equal to the number of arguments passed where each byte
+has the value of the corresponding argument. Accepts multiple arguments of numeric types.
+
+If the value of the argument is out of range of the `UInt8` data type, then it is converted
+to `UInt8` with potential rounding and overflow.
+        )";
+    FunctionDocumentation::Syntax syntax = "char(num1[, num2[, ...]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"num1[, num2[, num3 ...]]", "Numerical arguments interpreted as integers.", {"(U)Int8/16/32/64", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string of the given bytes.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic example",
+            "SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;",
+            R"(
+┌─hello─┐
+│ hello │
+└───────┘
+              )"
+        },
+        {
+            "Constructing arbitrary encodings",
+            R"(
+-- You can construct a string of arbitrary encoding by passing the corresponding bytes.
+-- for example UTF8
+SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
+            )",
+            R"(
+┌─hello──┐
+│ привет │
+└────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Encoding;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionChar>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

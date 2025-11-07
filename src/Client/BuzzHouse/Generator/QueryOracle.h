@@ -7,9 +7,18 @@
 namespace BuzzHouse
 {
 
+enum class DumpOracleStrategy
+{
+    DUMP_TABLE = 1,
+    OPTIMIZE = 2,
+    REATTACH = 3,
+    BACKUP_RESTORE = 4
+};
+
 class QueryOracle
 {
 private:
+    static const std::vector<std::vector<OutFormat>> oracleFormats;
     const FuzzConfig & fc;
     const std::filesystem::path qcfile, qsfile, qfile_peer;
 
@@ -18,15 +27,19 @@ private:
     PerformanceResult res1, res2;
 
     PeerQuery peer_query = PeerQuery::AllPeers;
-    bool first_success = true, other_steps_sucess = true, can_test_oracle_result, measure_performance;
+    int first_errcode = 0;
+    bool other_steps_sucess = true, can_test_oracle_result, measure_performance, compare_explain;
 
     std::unordered_set<uint32_t> found_tables;
     DB::Strings nsettings;
 
+    void swapQuery(RandomGenerator & rg, google::protobuf::Message & mes);
     bool findTablesWithPeersAndReplace(RandomGenerator & rg, google::protobuf::Message & mes, StatementGenerator & gen, bool replace);
-    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, uint32_t ncols, SelectStatementCore * ssc) const;
+    void addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const;
+    void insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool peer, TableOrFunction * tof) const;
+    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
     void
-    insertOnTableOrCluster(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool remote, TableOrFunction * tof) const;
+    generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
 
 public:
     explicit QueryOracle(const FuzzConfig & ffc)
@@ -43,24 +56,28 @@ public:
 
     void resetOracleValues();
     void setIntermediateStepSuccess(bool success);
-    void processFirstOracleQueryResult(bool success, ExternalIntegrations & ei);
-    void processSecondOracleQueryResult(bool success, ExternalIntegrations & ei, const String & oracle_name);
+    void processFirstOracleQueryResult(int errcode, ExternalIntegrations & ei);
+    void processSecondOracleQueryResult(int errcode, ExternalIntegrations & ei, const String & oracle_name);
 
     /// Correctness query oracle
     void generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq);
     void generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2);
 
     /// Dump and read table oracle
-    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
-    void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq2);
-    void dumpOracleIntermediateStep(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, bool use_optimize, SQLQuery & sq3);
-    void
-    generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4) const;
+    void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, bool test_content, const SQLTable & t, SQLQuery & sq1);
+    void dumpOracleIntermediateSteps(
+        RandomGenerator & rg,
+        StatementGenerator & gen,
+        const SQLTable & t,
+        DumpOracleStrategy strategy,
+        bool test_content,
+        std::vector<SQLQuery> & intermediate_queries);
 
     /// Run query with different settings oracle
     bool generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
     void generateOracleSelectQuery(RandomGenerator & rg, PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2);
     void generateSecondSetting(RandomGenerator & rg, StatementGenerator & gen, bool use_settings, const SQLQuery & sq1, SQLQuery & sq3);
+    void maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2);
 
     /// Replace query with peer tables
     void truncatePeerTables(const StatementGenerator & gen);

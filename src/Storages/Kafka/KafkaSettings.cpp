@@ -38,7 +38,7 @@ namespace ErrorCodes
     /* default is stream_flush_interval_ms */ \
     DECLARE(Milliseconds, kafka_flush_interval_ms, 0, "Timeout for flushing data from Kafka.", 0) \
     DECLARE(Bool, kafka_thread_per_consumer, false, "Provide independent thread for each consumer", 0) \
-    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error).", 0) \
+    DECLARE(StreamingHandleErrorMode, kafka_handle_error_mode, StreamingHandleErrorMode::DEFAULT, "How to handle errors for Kafka engine. Possible values: default (throw an exception after kafka_skip_broken_messages broken messages), stream (save broken messages and errors in virtual columns _raw_message, _error), dead_letter_queue (error related data will be saved in system.dead_letter).", 0) \
     DECLARE(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     DECLARE(UInt64, kafka_max_rows_per_message, 1, "The maximum number of rows produced in one kafka message for row-based formats.", 0) \
     DECLARE(String, kafka_keeper_path, "", "The path to the table in ClickHouse Keeper", 0) \
@@ -47,6 +47,8 @@ namespace ErrorCodes
     DECLARE(String, kafka_sasl_mechanism, "", "SASL mechanism to use for authentication. Supported: GSSAPI, PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, OAUTHBEARER.", 0) \
     DECLARE(String, kafka_sasl_username, "", "SASL username for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
     DECLARE(String, kafka_sasl_password, "", "SASL password for use with the PLAIN and SASL-SCRAM-.. mechanisms", 0) \
+    DECLARE(String, kafka_compression_codec, "", "Compression codec used for producing messages. Supported: empty string, none, gzip, snappy, lz4, zstd. In case of empty string the compression codec is not set by the table, thus values from the config files or default value from `librdkafka` will be used.", 0) \
+    DECLARE(Int64, kafka_compression_level, -1, "Compression level parameter for algorithm selected by kafka_compression_codec. Higher values will result in better compression at the cost of more CPU usage. Usable range is algorithm-dependent: [0-9] for gzip; [0-12] for lz4; only 0 for snappy; [0-12] for zstd; -1 = codec-dependent default compression level.", 0) \
 
 #define OBSOLETE_KAFKA_SETTINGS(M, ALIAS) \
     MAKE_OBSOLETE(M, Char, kafka_row_delimiter, '\0') \

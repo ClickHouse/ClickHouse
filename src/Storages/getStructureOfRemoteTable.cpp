@@ -27,6 +27,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
+    extern const SettingsBool describe_compact_output;
 }
 
 namespace ErrorCodes
@@ -77,17 +78,18 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         Settings new_settings = new_context->getSettingsCopy();
         new_settings[Setting::max_result_rows] = 0;
         new_settings[Setting::max_result_bytes] = 0;
+        new_settings[Setting::describe_compact_output] = false;
         new_context->setSettings(new_settings);
     }
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
-    Block sample_block
+    auto sample_block = std::make_shared<const Block>(Block
     {
         { ColumnString::create(), std::make_shared<DataTypeString>(), "name" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "type" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "default_type" },
         { ColumnString::create(), std::make_shared<DataTypeString>(), "default_expression" },
-    };
+    });
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
     RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
@@ -99,7 +101,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ParserExpression expr_parser;
 
-    while (Block current = executor.readBlock())
+    for (Block current = executor.readBlock(); !current.empty(); current = executor.readBlock())
     {
         current = convertBLOBColumns(current);
 
@@ -204,12 +206,12 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
     auto execute_query_on_shard = [&](const auto & shard_info)
     {
         /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-        RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+        RemoteQueryExecutor executor(shard_info.pool, query, std::make_shared<const Block>(std::move(sample_block)), new_context);
         executor.setPoolMode(PoolMode::GET_ONE);
         executor.setMainTable(remote_table_id);
 
         ColumnsDescription res;
-        while (auto block = executor.readBlock())
+        for (auto block = executor.readBlock(); !block.empty(); block = executor.readBlock())
         {
             block = convertBLOBColumns(block);
 

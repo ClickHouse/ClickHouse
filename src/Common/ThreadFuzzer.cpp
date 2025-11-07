@@ -52,15 +52,8 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
-    if (needsSetup())
-        setup();
-
-    if (!isEffective())
-    {
-        /// It has no effect - disable it
-        stop();
-        return;
-    }
+    if (isEffective())
+        started.store(true, std::memory_order_relaxed);
 }
 
 template <typename T>
@@ -280,6 +273,9 @@ void ThreadFuzzer::signalHandler(int)
 
 void ThreadFuzzer::setup() const
 {
+    if (!needsSetup())
+        return;
+
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;

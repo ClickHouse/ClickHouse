@@ -4,9 +4,12 @@
 #include <ranges>
 
 #include <Backups/BackupEntriesCollector.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -24,6 +27,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/Compaction/ConstructFuturePart.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
@@ -35,12 +39,11 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSink.h>
+#include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <Storages/MergeTree/MergeTreeSinkPatch.h>
-#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -48,8 +51,14 @@
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Names.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event PatchesAcquireLockTries;
+    extern const Event PatchesAcquireLockMicroseconds;
+    extern const Event MergesRejectedByMemoryLimit;
+}
 
 namespace DB
 {
@@ -68,7 +77,6 @@ namespace Setting
     extern const SettingsBool materialize_ttl_after_modify;
     extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_partitions_per_insert_block;
-    extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsUInt64 mutations_sync;
     extern const SettingsBool optimize_skip_merged_partitions;
     extern const SettingsBool optimize_throw_if_noop;
@@ -95,6 +103,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace ErrorCodes
@@ -138,6 +147,22 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     return {};
 }
 
+static bool supportTransaction(const Disks & disks, LoggerPtr log)
+{
+    for (const auto & disk : disks)
+    {
+        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        {
+            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+            {
+                LOG_DEBUG(log, "Disk {} does not support writing with append", object_storage->getName());
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
     const String & relative_data_path_,
@@ -148,17 +173,18 @@ StorageMergeTree::StorageMergeTree(
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_)
     : MergeTreeData(
-        table_id_,
-        metadata_,
-        context_,
-        date_column_name,
-        merging_params_,
-        std::move(storage_settings_),
-        false,      /// require_part_metadata
-        mode)
+          table_id_,
+          metadata_,
+          context_,
+          date_column_name,
+          merging_params_,
+          std::move(storage_settings_),
+          false, /// require_part_metadata
+          mode)
     , reader(*this)
     , writer(*this)
     , merger_mutator(*this)
+    , support_transaction(supportTransaction(getDisks(), log.load()))
 {
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
@@ -176,10 +202,7 @@ StorageMergeTree::StorageMergeTree(
     loadMutations();
     loadDeduplicationLog();
 
-    prewarmCaches(
-        getActivePartsLoadingThreadPool().get(),
-        getMarkCacheToPrewarm(0),
-        getPrimaryIndexCacheToPrewarm(0));
+    prewarmCaches(getActivePartsLoadingThreadPool().get(), getMarkCacheToPrewarm(0), getPrimaryIndexCacheToPrewarm(0));
 }
 
 
@@ -312,7 +335,7 @@ void StorageMergeTree::read(
         local_context,
         max_block_size,
         num_streams,
-        local_context->getPartitionIdToMaxBlock(),
+        local_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         enable_parallel_reading);
 
     if (plan)
@@ -353,24 +376,6 @@ StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & met
     return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
 }
 
-void StorageMergeTree::checkTableCanBeDropped(ContextPtr query_context) const
-{
-    if (!supportsReplication() && isStaticStorage())
-        return;
-
-    auto table_id = getStorageID();
-
-    const auto & query_settings = query_context->getSettingsRef();
-    if (query_settings[Setting::max_table_size_to_drop].changed)
-    {
-        getContext()->checkTableCanBeDropped(
-            table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes(), query_settings[Setting::max_table_size_to_drop]);
-        return;
-    }
-
-    getContext()->checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
-}
-
 void StorageMergeTree::drop()
 {
     shutdown(true);
@@ -399,7 +404,12 @@ void StorageMergeTree::alter(
         delayMutationOrThrowIfNeeded(nullptr, local_context);
 
     Int64 mutation_version = -1;
+
+    removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
+    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
     if (!query_settings[Setting::allow_suspicious_primary_key])
         MergeTreeData::verifySortingKey(new_metadata.sorting_key);
@@ -408,14 +418,18 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+
+        if (statistics_changed)
+            setInMemoryMetadata(new_metadata);
+
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else if (commands.isCommentAlter())
     {
         setInMemoryMetadata(new_metadata);
         /// It is safe to ignore exceptions here as only the comment changed, which is not validated in `alterTable`
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     }
     else
     {
@@ -442,12 +456,13 @@ void StorageMergeTree::alter(
         {
             changeSettings(new_metadata.settings_changes, table_lock_holder);
             checkTTLExpressions(new_metadata, old_metadata);
+
             /// Reinitialize primary key because primary key column types might have changed.
             setProperties(new_metadata, old_metadata, false, local_context);
 
             try
             {
-                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+                DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
             }
             catch (...)
             {
@@ -550,9 +565,11 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
 }
 
-CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
+
+void CurrentlyMergingPartsTagger::finalize()
 {
     std::lock_guard lock(storage.currently_processing_in_background_mutex);
+    finalized = true;
 
     for (const auto & part : future_part->parts)
     {
@@ -562,6 +579,31 @@ CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
     }
 
     storage.currently_processing_in_background_condition.notify_all();
+}
+
+CurrentlyMergingPartsTagger::~CurrentlyMergingPartsTagger()
+{
+    if (!finalized)
+    {
+        LOG_WARNING(getLogger("CurrentlyMergingPartsTagger"), "CurrentlyMergingPartsTagger was not finalized, the finalization will happen in the destructor");
+        finalize();
+    }
+
+}
+
+void MergeMutateSelectedEntry::finalize()
+{
+    finalized = true;
+    tagger->finalize();
+}
+
+MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
+{
+    if (!finalized)
+    {
+        LOG_WARNING(getLogger("MergeMutateSelectedEntry"), "MergeMutateSelectedEntry was not finalized, the finalization will happen in the destructor");
+        finalize();
+    }
 }
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
@@ -579,9 +621,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
     }
 
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
-    PlainCommittingBlockHolder block_holder(allocateBlockNumber(CommittingBlock::Op::Mutation), *this);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
-    Int64 version = block_holder.block.number;
+    Int64 version = block_holder->block.number;
     entry.commit(version);
     String mutation_id = entry.file_name;
     if (txn)
@@ -739,6 +781,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 
     if (parallel_mode == UpdateParallelMode::SYNC)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         update_lock->sync_lock = std::unique_lock(lightweight_updates_sync.sync_mutex, std::defer_lock);
         bool res = update_lock->sync_lock.try_lock_for(std::chrono::milliseconds(timeout_ms));
 
@@ -749,6 +794,9 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
     }
     else if (parallel_mode == UpdateParallelMode::AUTO)
     {
+        ProfileEvents::increment(ProfileEvents::PatchesAcquireLockTries);
+        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::PatchesAcquireLockMicroseconds);
+
         auto affected_columns = getUpdateAffectedColumns(commands, local_context);
         lightweight_updates_sync.lockColumns(affected_columns, timeout_ms);
 
@@ -768,7 +816,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     PlainLightweightUpdateHolder update_holder;
     update_holder.update_lock = getLockForLightweightUpdate(commands, context_copy);
-    update_holder.block_holder = std::make_unique<PlainCommittingBlockHolder>(allocateBlockNumber(CommittingBlock::Op::Update), *this);
+    update_holder.block_holder = allocateBlockNumber(CommittingBlock::Op::Update);
 
     auto all_partitions = getAllPartitionIds();
     auto partition_id_to_max_block = std::make_shared<PartitionIdToMaxBlock>();
@@ -783,8 +831,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
             partition_id_to_max_block->emplace(partition_id, block_number);
     }
 
-    context_copy->setPartitionIdToMaxBlock(std::move(partition_id_to_max_block));
-
+    context_copy->setPartitionIdToMaxBlock(getStorageID().uuid, std::move(partition_id_to_max_block));
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
@@ -1093,13 +1140,17 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         if (canEnqueueBackgroundTask())
             return {};
 
+        ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
         return std::unexpected(PreformattedMessage::create("Current background tasks memory usage ({}) is more than the limit ({})",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
-    const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        chassert(choices.size() == 1);
+        MergeSelectorChoice choice = std::move(choices[0]);
+
         auto future_part = [&]()
         {
             if (txn != nullptr)
@@ -1144,7 +1195,12 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
             merge_predicate,
-            MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
+            MergeSelectorApplier(
+                /*max_merge_sizes=*/{max_source_parts_size},
+                /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                /*aggressive=*/aggressive,
+                /*range_filter_=*/nullptr
+            ),
             /*partitions_hint=*/std::nullopt);
 
         return select_result.and_then(construct_future_part);
@@ -1216,10 +1272,20 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         if (isTTLMergeType(future_part->merge_type))
             getContext()->getMergeList().bookMergeWithTTL();
 
-        uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
-        auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+        try
+        {
+            uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
+            auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
 
-        return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+            return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
+        }
+        catch (...)
+        {
+            if (isTTLMergeType(future_part->merge_type))
+                getContext()->getMergeList().cancelMergeWithTTL();
+
+            throw;
+        }
     };
 
     if (partition_id.empty())
@@ -1733,8 +1799,8 @@ bool StorageMergeTree::optimize(
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "OPTIMIZE DEDUPLICATE query is not supported for table {} as it has projections. "
-                    "User should drop all the projections manually before running the query, "
-                    "or consider drop or rebuild option of deduplicate_merge_projection_mode",
+                    "Please drop all projections manually before running the query, "
+                    "or set setting 'deduplicate_merge_projection_mode' to 'drop' or 'rebuild'",
                     getStorageID().getTableName());
 
     if (deduplicate)
@@ -2301,8 +2367,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         LOG_INFO(log, "Finished attaching part");
     }
 
-    /// New parts with other data may appear in place of deleted parts.
-    local_context->clearCaches();
     return results;
 }
 
@@ -2402,11 +2466,14 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         return;
 
     MergeTreePartInfo drop_range;
+    std::unique_ptr<PlainCommittingBlockHolder> block_holder;
+
     if (replace)
     {
+        block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
         drop_range.setPartitionId(partition_id);
         drop_range.min_block = 0;
-        drop_range.max_block = allocateBlockNumber(CommittingBlock::Op::NewPart).number; // there will be a "hole" in block numbers
+        drop_range.max_block = block_holder->block.number; // there will be a "hole" in block numbers
         drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
     }
 
@@ -2839,28 +2906,28 @@ void StorageMergeTree::assertNotReadonly() const
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartName(MutableDataPartPtr & part, DataPartsLock &)
 {
-    auto block = allocateBlockNumber(CommittingBlock::Op::NewPart);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
 
-    part->info.min_block = block.number;
-    part->info.max_block = block.number;
+    part->info.min_block = block_holder->block.number;
+    part->info.max_block = block_holder->block.number;
     part->setName(part->getNewName(part->info));
 
-    return std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    return block_holder;
 }
 
 std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock &)
 {
-    auto block = allocateBlockNumber(CommittingBlock::Op::NewPart);
+    auto block_holder = allocateBlockNumber(CommittingBlock::Op::NewPart);
 
-    part->info.min_block = block.number;
-    part->info.max_block = block.number;
+    part->info.min_block = block_holder->block.number;
+    part->info.max_block = block_holder->block.number;
     part->info.mutation = 0;
 
     bool keep_non_zero_level = merging_params.mode != MergeTreeData::MergingParams::Ordinary;
     part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
     part->setName(part->getNewName(part->info));
 
-    return std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    return block_holder;
 }
 
 void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
@@ -2870,15 +2937,16 @@ void StorageMergeTree::removeCommittingBlock(CommittingBlock block)
     committing_blocks_cv.notify_one();
 }
 
-CommittingBlock StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
+std::unique_ptr<PlainCommittingBlockHolder> StorageMergeTree::allocateBlockNumber(CommittingBlock::Op op)
 {
     std::lock_guard lock(committing_blocks_mutex);
 
-    auto block = CommittingBlock(op, increment.get());
-    committing_blocks.insert(block);
+    CommittingBlock block(op, increment.get());
+    auto block_holder = std::make_unique<PlainCommittingBlockHolder>(std::move(block), *this);
+    committing_blocks.insert(block_holder->block);
 
-    LOG_DEBUG(log, "Allocated block number {}", block.number);
-    return block;
+    LOG_DEBUG(log, "Allocated block number {}", block_holder->block.number);
+    return block_holder;
 }
 
 void StorageMergeTree::waitForCommittingInsertsAndMutations(Int64 max_block_number, size_t timeout_ms) const
@@ -2909,5 +2977,4 @@ CommittingBlocksSet StorageMergeTree::getCommittingBlocks() const
     std::lock_guard lock(committing_blocks_mutex);
     return committing_blocks;
 }
-
 }

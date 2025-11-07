@@ -4,10 +4,11 @@ description: 'The `Dictionary` engine displays the dictionary data as a ClickHou
 sidebar_label: 'Dictionary'
 sidebar_position: 20
 slug: /engines/table-engines/special/dictionary
-title: 'Dictionary Table Engine'
+title: 'Dictionary table engine'
+doc_type: 'reference'
 ---
 
-# Dictionary Table Engine
+# Dictionary table engine
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/index.md) data as a ClickHouse table.
 

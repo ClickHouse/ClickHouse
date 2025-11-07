@@ -9,11 +9,14 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/Port.h>
+#include <QueryPipeline/printPipeline.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -143,6 +146,15 @@ void logProcessorProfile(ContextPtr context, const Processors & processors)
                 processors_profile_log->add(processor_elem);
             }
         }
+
+        auto dump_pipeline = [&]()
+        {
+            WriteBufferFromOwnString out;
+            printPipeline(processors, out, true);
+            return out.str();
+        };
+        auto logger = ::getLogger("ProcessorProfileLog");
+        LOG_TEST(logger, "Processors profile log:\n{}", dump_pipeline());
     }
 }
 }

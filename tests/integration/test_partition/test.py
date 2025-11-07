@@ -105,6 +105,8 @@ def partition_complex_assert_checksums(after_detach=False):
             "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
+            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns_substreams.txt\n"
+            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns_substreams.txt\n"
             "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
             "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
             "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
@@ -134,6 +136,8 @@ def partition_complex_assert_checksums(after_detach=False):
             "5f087cb3e7071bf9407e095821e2af8f\tshadow/1/data/test/partition_complex/19700201_1_1_0/checksums.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns.txt\n"
             "77d5af402ada101574f4da114f242e02\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns.txt\n"
+            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700102_2_2_0/columns_substreams.txt\n"
+            "7e1a7e6aeff3a879f5787bbddd6553eb\tshadow/1/data/test/partition_complex/19700201_1_1_0/columns_substreams.txt\n"
             "88cdc31ded355e7572d68d8cde525d3a\tshadow/1/data/test/partition_complex/19700201_1_1_0/p.bin\n"
             "9e688c58a5487b8eaf69c9e1005ad0bf\tshadow/1/data/test/partition_complex/19700102_2_2_0/primary.idx\n"
             "c0904274faa8f3f06f35666cc9c5bd2f\tshadow/1/data/test/partition_complex/19700102_2_2_0/default_compression_codec.txt\n"
@@ -155,7 +159,7 @@ def partition_table_complex(started_cluster):
     q("DROP TABLE IF EXISTS test.partition_complex")
     q(
         "CREATE TABLE test.partition_complex (p Date, k Int8, v1 Int8 MATERIALIZED k + 1) "
-        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, replace_long_file_name_to_hash=false"
+        "ENGINE = MergeTree PARTITION BY p ORDER BY k SETTINGS index_granularity=1, index_granularity_bytes=0, compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, serialization_info_version='basic', replace_long_file_name_to_hash=false"
     )
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(31), 1)")
     q("INSERT INTO test.partition_complex (p, k) VALUES(toDate(1), 2)")
