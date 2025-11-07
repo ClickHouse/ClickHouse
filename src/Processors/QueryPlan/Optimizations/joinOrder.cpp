@@ -267,13 +267,15 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edge = getApplicableExpressions(left->relations, right->relations);
-                if (edge.empty() && (best_plan || join_kind.value() == JoinKind::Inner))
+                if (edge.empty() && best_plan)
                     continue;
 
                 auto selectivity = computeSelectivity(edge);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
+                    if (!edge.empty() && join_kind == JoinKind::Cross)
+                        join_kind = JoinKind::Inner;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,

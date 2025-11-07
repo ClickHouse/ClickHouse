@@ -61,10 +61,7 @@ def should_skip_job(job_name):
 
     if job_name == JobNames.PR_BODY:
         # Run the job if AI assistant is explicitly enabled in the PR body
-        if (
-            "ai changelog entry and formatting assistance: false"
-            in _info_cache.pr_body.lower()
-        ):
+        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
             return True, "AI PR assistant is explicitly disabled in the PR body"
         if "Reverts ClickHouse/" in _info_cache.pr_body:
             return True, "Skipped for revert PRs"

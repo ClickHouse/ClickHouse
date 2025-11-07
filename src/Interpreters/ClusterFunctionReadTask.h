@@ -1,7 +1,8 @@
 #pragma once
 #include <Core/Types.h>
-#include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 
 namespace DB
@@ -20,6 +21,8 @@ struct ClusterFunctionReadTaskResponse
     String path;
     /// Object metadata path, in case of data lake object.
     DataLakeObjectMetadata data_lake_metadata;
+    /// Iceberg object metadata
+    std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
@@ -29,7 +32,7 @@ struct ClusterFunctionReadTaskResponse
     bool isEmpty() const { return path.empty(); }
 
     /// Serialize according to the protocol version.
-    void serialize(WriteBuffer & out, size_t protocol_version) const;
+    void serialize(WriteBuffer & out, size_t worker_protocol_version) const;
     /// Deserialize. Protocol version will be received from `in`
     /// and the result will be deserialized accordingly.
     void deserialize(ReadBuffer & in);
