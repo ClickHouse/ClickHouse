@@ -244,7 +244,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
         {
             if (nopr_hash == it->second)
             {
-                LOG_DEBUG(&Poco::Logger::get("debug"), "Found matching node in original plan: {}", nopr_node->step->getName());
+                LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", nopr_node->step->getName());
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
@@ -277,7 +277,7 @@ void considerEnablingParallelReplicas(
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
         return;
-    LOG_DEBUG(&Poco::Logger::get("debug"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
+    LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     [[maybe_unused]] const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
@@ -323,7 +323,7 @@ void considerEnablingParallelReplicas(
         const auto max_threads = optimization_settings.max_threads;
         const auto num_replicas = optimization_settings.max_parallel_replicas;
         LOG_DEBUG(
-            &Poco::Logger::get("debug"),
+            getLogger("optimizeTree"),
             "stats->input_bytes={}, stats->output_bytes={}, max_threads={}, num_replicas={}",
             stats->input_bytes,
             stats->output_bytes,
@@ -335,7 +335,7 @@ void considerEnablingParallelReplicas(
                 && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
             {
                 LOG_DEBUG(
-                    &Poco::Logger::get("debug"),
+                    getLogger("optimizeTree"),
                     "Not enabling parallel replicas reading because {} < automatic_parallel_replicas_min_bytes_per_replica {}",
                     stats->input_bytes / num_replicas,
                     optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
@@ -346,7 +346,7 @@ void considerEnablingParallelReplicas(
             {
                 WriteBufferFromOwnString wb;
                 plan.explainPlan(wb, ExplainPlanOptions{});
-                LOG_DEBUG(&Poco::Logger::get("debug"), "The plan {}:\n{}", (is_plan_before ? "before" : "after"), wb.str());
+                LOG_DEBUG(getLogger("optimizeTree"), "The plan {}:\n{}", (is_plan_before ? "before" : "after"), wb.str());
             };
 
             dump_plan(query_plan, /*is_plan_before=*/true);
@@ -356,7 +356,7 @@ void considerEnablingParallelReplicas(
     }
     else
     {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "No stats found for hash {}", single_replica_plan_node_hash);
+        LOG_DEBUG(getLogger("optimizeTree"), "No stats found for hash {}", single_replica_plan_node_hash);
     }
 }
 
