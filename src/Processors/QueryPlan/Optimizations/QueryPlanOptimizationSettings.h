@@ -157,7 +157,7 @@ struct QueryPlanOptimizationSettings
 
     bool is_explain;
 
-    std::function<std::unique_ptr<QueryPlan>()> query_plan_builder;
+    std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 };
 
 }

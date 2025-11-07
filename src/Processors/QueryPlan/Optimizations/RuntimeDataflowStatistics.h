@@ -1,40 +1,19 @@
 #pragma once
 
-#include <Columns/ColumnBLOB.h>
-#include <Columns/ColumnLazy.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Core/ColumnWithTypeAndName.h>
-#include <IO/WriteBufferFromString.h>
 #include <Processors/Chunk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/CacheBase.h>
 
-#include <Poco/Logger.h>
-#include <Common/logger_useful.h>
-
 #include <cstddef>
 #include <memory>
 #include <mutex>
-
-namespace CurrentMetrics
-{
-extern const Metric DestroyAggregatesThreads;
-}
-
-namespace ProfileEvents
-{
-extern const Event RuntimeDataflowStatisticsInputBytes;
-extern const Event RuntimeDataflowStatisticsOutputBytes;
-}
 
 namespace DB
 {
 
 class Aggregator;
 struct AggregatedDataVariants;
-using AggregatedDataVariantsPtr = std::shared_ptr<AggregatedDataVariants>;
-using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 
 struct RuntimeDataflowStatistics
 {
@@ -55,43 +34,20 @@ public:
     using CachePtr = std::shared_ptr<Cache>;
 
     RuntimeDataflowStatisticsCache()
-        : stats_cache(std::make_shared<Cache>(
-              CurrentMetrics::DestroyAggregatesThreads, CurrentMetrics::DestroyAggregatesThreads, 1024 * 1024 * 1024, 0))
+        : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
     {
     }
 
-    std::optional<Entry> getStats(size_t key) const
-    {
-        std::lock_guard lock(mutex);
-        if (const auto entry = stats_cache->get(key))
-            return *entry;
-        return std::nullopt;
-    }
+    std::optional<Entry> getStats(size_t key) const;
 
-    void update(size_t key, RuntimeDataflowStatistics stats)
-    {
-        ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
-        ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputBytes, stats.output_bytes);
-        std::lock_guard lock(mutex);
-        if (auto existing_stats = stats_cache->get(key))
-        {
-            stats.input_bytes = std::max(stats.input_bytes, existing_stats->input_bytes);
-            stats.output_bytes = std::max(stats.output_bytes, existing_stats->output_bytes);
-        }
-        stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
-        LOG_DEBUG(&Poco::Logger::get("debug"), "input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
-    }
+    void update(size_t key, RuntimeDataflowStatistics stats);
 
 private:
     mutable std::mutex mutex;
     CachePtr stats_cache TSA_GUARDED_BY(mutex);
 };
 
-inline RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
-{
-    static RuntimeDataflowStatisticsCache stats_cache;
-    return stats_cache;
-}
+RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
@@ -110,23 +66,18 @@ public:
         header = header_;
     }
 
-    void addOutputBytes(const Chunk & chunk);
+    void recordOutputChunk(const Chunk & chunk);
 
     void recordAggregateFunctionSizes(AggregatedDataVariants & variant, ssize_t bucket);
 
     void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
-    void addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes);
+    void recordInputColumns(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes);
 
-    void addInputBytes(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes);
+    void recordInputColumns(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes);
 
 private:
-    size_t compressedColumnSize(const ColumnWithTypeAndName & column)
-    {
-        ColumnBLOB::BLOB blob;
-        ColumnBLOB::toBLOB(blob, column, CompressionCodecFactory::instance().get("LZ4", {}), DBMS_TCP_PROTOCOL_VERSION, std::nullopt);
-        return blob.size();
-    }
+    size_t compressedColumnSize(const ColumnWithTypeAndName & column);
 
     const std::optional<size_t> cache_key;
     Block header;

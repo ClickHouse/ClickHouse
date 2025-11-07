@@ -225,6 +225,11 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
     return replicas_plan_top_node;
 }
 
+/// Now when we found the top node of replicas plan, we need to find the corresponding node in the single node plan.
+/// The working principle behind automatic parallel replicas is that we use statistics collected during execution of single-node plan
+/// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
+/// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
+/// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
 std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
     const QueryPlan::Node & final_node_in_replica_plan,
     QueryPlan::Node & parallel_replicas_plan_root,
@@ -233,7 +238,6 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
     auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
     if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
     {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "final_node_in_replica_plan hash={}", it->second);
         auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
 
         for (const auto & [nopr_node, nopr_hash] : nopr_node_hashes)
@@ -244,21 +248,22 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find matching hash for replicas_plan_top_node");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find step with matching hash in single-node plan");
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find hash for replicas_plan_top_node");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find replicas_plan_top_node in hash table");
     }
 }
 
+/// Heuristic-based algorithm to decide whether to enable parallel replicas for the given query
 void considerEnablingParallelReplicas(
     [[maybe_unused]] const QueryPlanOptimizationSettings & optimization_settings,
     [[maybe_unused]] QueryPlan::Node & root,
     [[maybe_unused]] QueryPlan::Nodes & nodes,
     [[maybe_unused]] QueryPlan & query_plan)
 {
-    if (!optimization_settings.query_plan_builder)
+    if (!optimization_settings.query_plan_with_parallel_replicas_builder)
         return;
 
     if (optimization_settings.parallel_replicas_enabled)
@@ -267,30 +272,23 @@ void considerEnablingParallelReplicas(
     if (!optimization_settings.automatic_parallel_replicas_mode)
         return;
 
-    auto dump = [&](const QueryPlan & plan)
-    {
-        WriteBufferFromOwnString wb;
-        plan.explainPlan(wb, ExplainPlanOptions{});
-        LOG_DEBUG(&Poco::Logger::get("debug"), "\nwb.str()={}", wb.str());
-    };
-
-    auto plan_with_parallel_replicas = optimization_settings.query_plan_builder();
+    auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder();
 
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
         return;
-    chassert(final_node_in_replica_plan);
-    LOG_DEBUG(&Poco::Logger::get("debug"), "replicas_plan_top_node->step->getName()={}", final_node_in_replica_plan->step->getName());
+    LOG_DEBUG(&Poco::Logger::get("debug"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     [[maybe_unused]] const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
     chassert(corresponding_node_in_single_replica_plan);
 
+    /// Now we need to set cache keys (i.e. enable statistics collection) for both steps: the top node and the reading step.
     {
         const auto * reading_step = corresponding_node_in_single_replica_plan;
         while (reading_step && !reading_step->children.empty())
         {
-            // TODO(nickitat): Maybe we should consider all leafs?
+            // TODO(nickitat): Support multiple reading steps (e.g. multiple tables in JOIN).
             if (reading_step->children.size() > 1)
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -300,17 +298,17 @@ void considerEnablingParallelReplicas(
             reading_step = reading_step->children.front();
         }
 
-        if (!typeid_cast<ReadFromMergeTree *>(reading_step->step.get()))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "The corresponding node in single node plan is not ReadFromMergeTree");
+        if (!reading_step->step->supportsDataflowStatisticsCollection())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Reading step ({}) doesn't support dataflow statistics collection",
+                reading_step->step->getName());
 
-        if (!reading_step->step->supportsDataflowStatisticsCollection()
-            || !corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
-        {
+        if (!corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Step ({}) doesn't support dataflow statistics collection",
                 corresponding_node_in_single_replica_plan->step->getName());
-        }
 
         reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);
         corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
@@ -343,9 +341,17 @@ void considerEnablingParallelReplicas(
                     optimization_settings.automatic_parallel_replicas_min_bytes_per_replica);
                 return;
             }
-            dump(query_plan);
+
+            auto dump_plan = [&](const QueryPlan & plan, bool is_plan_before)
+            {
+                WriteBufferFromOwnString wb;
+                plan.explainPlan(wb, ExplainPlanOptions{});
+                LOG_DEBUG(&Poco::Logger::get("debug"), "The plan {}:\n{}", (is_plan_before ? "before" : "after"), wb.str());
+            };
+
+            dump_plan(query_plan, /*is_plan_before=*/true);
             query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(plan_with_parallel_replicas));
-            dump(query_plan);
+            dump_plan(query_plan, /*is_plan_before=*/false);
         }
     }
     else

@@ -251,7 +251,7 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
         input.close();
 
     if (updater)
-        updater->addOutputBytes(data.current_chunk);
+        updater->recordOutputChunk(data.current_chunk);
     output.push(std::move(data.current_chunk));
 
     return Status::PortFull;

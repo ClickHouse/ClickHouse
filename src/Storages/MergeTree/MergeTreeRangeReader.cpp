@@ -951,12 +951,16 @@ static size_t getTotalBytesInColumns(const Columns & columns)
         {
             if (const auto * col_str = typeid_cast<const ColumnString *>(column.get()))
             {
-                const auto avg_size = std::max<double>(1, static_cast<double>(col_str->getOffsets().back()) / col_str->size());
-                const auto avg_byte_len = (static_cast<size_t>(log2(avg_size)) + 7) / 8;
-                total_bytes += col_str->getChars().size() + col_str->size() * avg_byte_len;
+                /// This function is used to estimate the number of bytes read from disk. For String column offsets might actually take
+                /// more memory than chars, so blindly assuming that each offset takes 8 bytes might overestimate the actual bytes read.
+                const auto avg_size = std::max(1.0, static_cast<double>(col_str->getOffsets().back()) / col_str->size());
+                const auto avg_byte_len = ceil(log2(avg_size) / 8);
+                total_bytes += col_str->getChars().size() + static_cast<size_t>(col_str->size() * avg_byte_len);
             }
             else
+            {
                 total_bytes += column->byteSize();
+            }
         }
     }
     return total_bytes;

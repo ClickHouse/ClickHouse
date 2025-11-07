@@ -1,10 +1,24 @@
-#include <algorithm>
-#include <Compression/CompressedWriteBuffer.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnBLOB.h>
+#include <Columns/ColumnLazy.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
+#include <algorithm>
+
+
+namespace ProfileEvents
+{
+extern const Event RuntimeDataflowStatisticsInputBytes;
+extern const Event RuntimeDataflowStatisticsOutputBytes;
+}
 
 namespace DB
 {
@@ -12,6 +26,28 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+}
+
+std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStats(size_t key) const
+{
+    std::lock_guard lock(mutex);
+    if (const auto entry = stats_cache->get(key))
+        return *entry;
+    return std::nullopt;
+}
+
+void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
+{
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
+    ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputBytes, stats.output_bytes);
+    std::lock_guard lock(mutex);
+    if (auto existing_stats = stats_cache->get(key))
+    {
+        stats.input_bytes = std::max(stats.input_bytes, existing_stats->input_bytes);
+        stats.output_bytes = std::max(stats.output_bytes, existing_stats->output_bytes);
+    }
+    stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
+    LOG_DEBUG(&Poco::Logger::get("debug"), "input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
 }
 
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
@@ -38,7 +74,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     dataflow_cache.update(*cache_key, statistics + statistics2);
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::addOutputBytes(const Chunk & chunk)
+void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk)
 {
     if (!cache_key)
         return;
@@ -137,7 +173,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
     elapsed[2] += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::addInputBytes(
+void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
 {
     if (!cache_key)
@@ -161,7 +197,7 @@ void RuntimeDataflowStatisticsCacheUpdater::addInputBytes(
     elapsed[3] += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::addInputBytes(
+void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes)
 {
     if (!cache_key)
@@ -183,5 +219,18 @@ void RuntimeDataflowStatisticsCacheUpdater::addInputBytes(
     }
 
     elapsed[4] += watch.elapsedMicroseconds();
+}
+
+size_t RuntimeDataflowStatisticsCacheUpdater::compressedColumnSize(const ColumnWithTypeAndName & column)
+{
+    ColumnBLOB::BLOB blob;
+    ColumnBLOB::toBLOB(blob, column, CompressionCodecFactory::instance().get("LZ4", {}), DBMS_TCP_PROTOCOL_VERSION, std::nullopt);
+    return blob.size();
+}
+
+RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
+{
+    static RuntimeDataflowStatisticsCache stats_cache;
+    return stats_cache;
 }
 }

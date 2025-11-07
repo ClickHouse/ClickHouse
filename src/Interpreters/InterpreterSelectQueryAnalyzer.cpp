@@ -178,7 +178,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
     , planner(query_tree, select_query_options)
-    , query_plan_builder(
+    , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           {
               ctx->setSetting("enable_parallel_replicas", true);
@@ -201,7 +201,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
     , planner(query_tree, select_query_options)
-    , query_plan_builder(
+    , query_plan_with_parallel_replicas_builder(
           [ast = query_->clone(),
            ctx = Context::createCopy(context_),
            storage = storage_,
@@ -224,7 +224,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
     , planner(query_tree_, select_query_options)
-    , query_plan_builder(
+    , query_plan_with_parallel_replicas_builder(
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           {
               ctx->setSetting("enable_parallel_replicas", true);
@@ -308,7 +308,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     auto & query_plan = planner.getQueryPlan();
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    optimization_settings.query_plan_builder = query_plan_builder;
+    optimization_settings.query_plan_with_parallel_replicas_builder = query_plan_with_parallel_replicas_builder;
 
     BuildQueryPipelineSettings build_pipeline_settings(context);
 
