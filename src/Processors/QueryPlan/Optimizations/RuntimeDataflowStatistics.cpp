@@ -47,31 +47,45 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
         stats.output_bytes = std::max(stats.output_bytes, existing_stats->output_bytes);
     }
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
-    LOG_DEBUG(&Poco::Logger::get("debug"), "input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
+    LOG_DEBUG(
+        getLogger("RuntimeDataflowStatisticsCache"), "New entry: input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
 }
 
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
     if (!cache_key)
         return;
+    RuntimeDataflowStatistics res{};
+    for (const auto & stats : input_bytes_statistics)
+    {
+        // LOG_DEBUG(
+        //     &Poco::Logger::get("debug"),
+        //     "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
+        //     stats.bytes,
+        //     stats.sample_bytes,
+        //     stats.compressed_bytes,
+        //     (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        if (stats.compressed_bytes)
+            res.input_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+    }
+    for (const auto & stats : output_bytes_statistics)
+    {
+        // LOG_DEBUG(
+        //     &Poco::Logger::get("debug"),
+        //     "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
+        //     stats.bytes,
+        //     stats.sample_bytes,
+        //     stats.compressed_bytes,
+        //     (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        if (stats.compressed_bytes)
+            res.output_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+    }
     LOG_DEBUG(
-        &Poco::Logger::get("debug"),
-        "statistics.input_bytes={}, input_bytes_sample={}, input_bytes_compressed={}, statistics.output_bytes={}, elapsed=[{}]",
-        statistics.input_bytes,
-        input_bytes_sample,
-        input_bytes_compressed,
-        statistics.output_bytes,
-        fmt::join(elapsed, ","));
-    if (input_bytes_compressed && (input_bytes_sample / input_bytes_compressed))
-        statistics.input_bytes = static_cast<size_t>(statistics.input_bytes / (input_bytes_sample / input_bytes_compressed));
-    if (output_bytes_compressed && (output_bytes_sample / output_bytes_compressed))
-        statistics.output_bytes = static_cast<size_t>(statistics.output_bytes / (output_bytes_sample / output_bytes_compressed));
-    if (output_bytes_compressed2 && (output_bytes_sample2 / output_bytes_compressed2))
-        statistics2.output_bytes = static_cast<size_t>(statistics2.output_bytes / (output_bytes_sample2 / output_bytes_compressed2));
+        getLogger("RuntimeDataflowStatisticsCacheUpdater"), "res.input_bytes={}, res.output_bytes={}", res.input_bytes, res.output_bytes);
     if (unsupported_case)
-        statistics.output_bytes = (1ULL << 60);
+        res.output_bytes = (1ULL << 60);
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
-    dataflow_cache.update(*cache_key, statistics + statistics2);
+    dataflow_cache.update(*cache_key, res);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk)
@@ -100,14 +114,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     }
 
     std::lock_guard lock(mutex);
-    statistics.output_bytes += source_bytes;
+    output_bytes_statistics[0].bytes += source_bytes;
     if (key_columns_compressed_size)
     {
-        output_bytes_sample += source_bytes;
-        output_bytes_compressed += key_columns_compressed_size;
+        output_bytes_statistics[0].sample_bytes += source_bytes;
+        output_bytes_statistics[0].compressed_bytes += key_columns_compressed_size;
     }
-
-    elapsed[0] += watch.elapsedMicroseconds();
+    output_bytes_statistics[0].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregateFunctionSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -129,12 +142,10 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregateFunctionSizes(Aggrega
     size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
     std::lock_guard lock(mutex);
-    statistics.output_bytes += res;
-    output_bytes_sample += res;
-    output_bytes_compressed += res;
-
-    // LOG_DEBUG(&Poco::Logger::get("debug"), "watch.elapsedMicroseconds());={}", watch.elapsedMicroseconds());
-    elapsed[1] += watch.elapsedMicroseconds();
+    output_bytes_statistics[1].bytes += res;
+    output_bytes_statistics[1].sample_bytes += res;
+    output_bytes_statistics[1].compressed_bytes += res;
+    output_bytes_statistics[1].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
@@ -163,14 +174,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
         key_columns_compressed_size = getKeyColumnsSize(/*compressed=*/true);
 
     std::lock_guard lock(mutex);
-    statistics2.output_bytes += source_bytes;
+    output_bytes_statistics[2].bytes += source_bytes;
     if (key_columns_compressed_size)
     {
-        output_bytes_sample2 += source_bytes;
-        output_bytes_compressed2 += key_columns_compressed_size;
+        output_bytes_statistics[2].sample_bytes += source_bytes;
+        output_bytes_statistics[2].compressed_bytes += key_columns_compressed_size;
     }
-
-    elapsed[2] += watch.elapsedMicroseconds();
+    output_bytes_statistics[2].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
@@ -182,19 +192,18 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     Stopwatch watch;
 
     std::lock_guard lock(mutex);
-    statistics.input_bytes += bytes;
+    input_bytes_statistics[0].bytes += bytes;
     if (bytes)
     {
         for (const auto & column : columns)
         {
             if (!column_sizes.contains(column.name))
                 continue;
-            input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
-            input_bytes_compressed += column_sizes.at(column.name).data_compressed;
+            input_bytes_statistics[0].sample_bytes += column_sizes.at(column.name).data_uncompressed;
+            input_bytes_statistics[0].compressed_bytes += column_sizes.at(column.name).data_compressed;
         }
     }
-
-    elapsed[3] += watch.elapsedMicroseconds();
+    input_bytes_statistics[0].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
@@ -208,17 +217,16 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     std::lock_guard lock(mutex);
     for (const auto & column : columns)
     {
-        statistics.input_bytes += column.column->byteSize();
+        input_bytes_statistics[1].bytes += column.column->byteSize();
         if (!column.column->empty())
         {
             if (!column_sizes.contains(column.name))
                 return;
-            input_bytes_sample += column_sizes.at(column.name).data_uncompressed;
-            input_bytes_compressed += column_sizes.at(column.name).data_compressed;
+            input_bytes_statistics[1].sample_bytes += column_sizes.at(column.name).data_uncompressed;
+            input_bytes_statistics[1].compressed_bytes += column_sizes.at(column.name).data_compressed;
         }
     }
-
-    elapsed[4] += watch.elapsedMicroseconds();
+    input_bytes_statistics[1].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 size_t RuntimeDataflowStatisticsCacheUpdater::compressedColumnSize(const ColumnWithTypeAndName & column)
