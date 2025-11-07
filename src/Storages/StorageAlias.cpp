@@ -44,6 +44,11 @@ StorageAlias::StorageAlias(
     StorageID target_id(target_database, target_table);
     if (table_id_ == target_id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
+
+    // Disallow target is also an alias
+    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
+    if (target_storage && target_storage->getName() == "Alias")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const

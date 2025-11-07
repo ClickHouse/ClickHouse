@@ -693,11 +693,21 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->getStoragePolicy() : nullptr;
-                    if (policy)
-                        res_columns[res_index++]->insert(policy->getName());
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    try
+                    {
+                        auto policy = table ? table->getStoragePolicy() : nullptr;
+                        if (policy)
+                            res_columns[res_index]->insert(policy->getName());
+                        else
+                            res_columns[res_index]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
+                        res_columns[res_index]->insertDefault();
+                    }
+                    ++res_index;
                 }
 
                 ContextMutablePtr context_copy = Context::createCopy(context);
@@ -811,20 +821,40 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
-                    if (lifetime_rows)
-                        res_columns[res_index++]->insert(*lifetime_rows);
-                    else
-                        res_columns[res_index++]->insertDefault();
+                    try
+                    {
+                        auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
+                        if (lifetime_rows)
+                            res_columns[res_index]->insert(*lifetime_rows);
+                        else
+                            res_columns[res_index]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
+                        res_columns[res_index]->insertDefault();
+                    }
+                    ++res_index;
                 }
 
                 if (columns_mask[src_index++])
                 {
+                    try
+                    {
                     auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
-                        res_columns[res_index++]->insert(*lifetime_bytes);
+                        res_columns[res_index]->insert(*lifetime_bytes);
                     else
-                        res_columns[res_index++]->insertDefault();
+                        res_columns[res_index]->insertDefault();
+                    }
+                    catch (const Exception &)
+                    {
+                        /// Even if the method throws, it should not prevent querying system.tables.
+                        tryLogCurrentException("StorageSystemTables");
+                        res_columns[res_index]->insertDefault();
+                    }
+                    ++res_index;
                 }
 
                 if (columns_mask[src_index++])

@@ -129,6 +129,9 @@ public:
     bool isRemote() const override { return getTargetTable()->isRemote(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
 
+    /// This is important for DatabaseReplicated, avoid not supported by distributed DDL
+    bool supportsReplication() const override { return false; }
+
     bool hasLightweightDeletedMask() const override { return getTargetTable()->hasLightweightDeletedMask(); }
     bool supportsLightweightDelete() const override { return getTargetTable()->supportsLightweightDelete(); }
     std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getTargetTable()->supportsLightweightUpdate(); }
@@ -149,10 +152,21 @@ public:
 
     Strings getDataPaths() const override { return getTargetTable()->getDataPaths(); }
 
+    /// Alias does not store data on disk
+    bool storesDataOnDisk() const override { return false; }
+
+    StoragePolicyPtr getStoragePolicy() const override { return getTargetTable()->getStoragePolicy(); }
+    SerializationInfoByName getSerializationHints() const override { return getTargetTable()->getSerializationHints(); }
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
+
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) { return getTargetTable()->lockForShare(query_id, acquire_timeout); }
+    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) {return getTargetTable()->tryLockForShare(query_id, acquire_timeout); }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getTargetTable()->totalBytes(query_context); }
+    std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override { return getTargetTable()->totalBytesUncompressed(settings); }
+    std::optional<UInt64> lifetimeRows() const override { return getTargetTable()->lifetimeRows(); }
+    std::optional<UInt64> lifetimeBytes() const override { return getTargetTable()->lifetimeBytes(); }
     ColumnSizeByName getColumnSizes() const override { return getTargetTable()->getColumnSizes(); }
     IndexSizeByName getSecondaryIndexSizes() const override { return getTargetTable()->getSecondaryIndexSizes(); }
 
