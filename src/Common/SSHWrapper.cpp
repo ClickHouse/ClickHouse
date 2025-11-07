@@ -11,6 +11,39 @@
 
 #    pragma clang diagnostic pop
 
+extern "C" {
+    struct ssh_signature_struct;
+    typedef struct ssh_signature_struct* ssh_signature;
+    
+    enum ssh_digest_e {
+        SSH_DIGEST_AUTO = 0,
+        SSH_DIGEST_SHA1 = 1,
+        SSH_DIGEST_SHA256,
+        SSH_DIGEST_SHA384,
+        SSH_DIGEST_SHA512
+    };
+    
+    enum ssh_digest_e ssh_key_type_to_hash(ssh_session session, enum ssh_keytypes_e type);
+    
+    ssh_signature pki_do_sign(const ssh_key privkey,
+                              const unsigned char *input,
+                              size_t input_len,
+                              enum ssh_digest_e hash_type);
+    
+    int pki_verify_data_signature(ssh_signature sig,
+                                   const ssh_key key,
+                                   const unsigned char *input,
+                                   size_t input_len);
+    
+    void ssh_signature_free(ssh_signature sign);
+    
+    int ssh_pki_export_signature_blob(const ssh_signature sign, ssh_string *sign_blob);
+    
+    int ssh_pki_import_signature_blob(const ssh_string sig_blob,
+                                      const ssh_key pubkey,
+                                      ssh_signature *psig);
+}
+
 namespace DB
 {
 
@@ -119,19 +152,48 @@ bool SSHKey::isEqual(const SSHKey & other) const
 
 String SSHKey::signString(std::string_view input) const
 {
-    SSHString input_str(input);
-    ssh_string output = nullptr;
-    if (int rc = pki_sign_string(key, input_str.get(), &output); rc != SSH_OK)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Error singing with ssh key");
-    SSHString output_str(output);
+    enum ssh_keytypes_e key_type = ssh_key_type(key);
+    enum ssh_digest_e hash_type = ssh_key_type_to_hash(nullptr, key_type);
+    
+    ssh_signature sig = pki_do_sign(
+        key,
+        reinterpret_cast<const unsigned char*>(input.data()),
+        input.size(),
+        hash_type
+    );
+    
+    if (sig == nullptr)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Error signing with ssh key");
+    
+    ssh_string sig_blob = nullptr;
+    int rc = ssh_pki_export_signature_blob(sig, &sig_blob);
+    ssh_signature_free(sig);
+    
+    if (rc != SSH_OK || sig_blob == nullptr)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Error exporting signature blob");
+    
+    SSHString output_str(sig_blob);
     return output_str.toString();
 }
 
 bool SSHKey::verifySignature(std::string_view signature, std::string_view original) const
 {
-    SSHString sig(signature);
-    SSHString orig(original);
-    int rc = pki_verify_string(key, sig.get(), orig.get());
+    SSHString sig_str(signature);
+    
+    ssh_signature sig = nullptr;
+    int rc = ssh_pki_import_signature_blob(sig_str.get(), key, &sig);
+    
+    if (rc != SSH_OK || sig == nullptr)
+        return false;
+    
+    rc = pki_verify_data_signature(
+        sig,
+        key,
+        reinterpret_cast<const unsigned char*>(original.data()),
+        original.size()
+    );
+    
+    ssh_signature_free(sig);
     return rc == SSH_OK;
 }
 

@@ -66,10 +66,12 @@ void SSHSession::disableDefaultConfig()
 
 void SSHSession::disableSocketOwning()
 {
+    #ifdef SSH_OPTIONS_OWNS_SOCKET
     bool owns_socket = false;
     int rc = ssh_options_set(session, SSH_OPTIONS_OWNS_SOCKET, &owns_socket);
     if (rc != SSH_OK)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed disabling socket owning for ssh session due to {}", getError());
+    #endif
 }
 
 void SSHSession::setPeerHost(const String & host)

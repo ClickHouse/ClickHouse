@@ -7,8 +7,8 @@ endif()
 
 # CMake variables needed by libssh_version.h.cmake, update them when you update libssh
 set(libssh_VERSION_MAJOR 0)
-set(libssh_VERSION_MINOR 9)
-set(libssh_VERSION_PATCH 8)
+set(libssh_VERSION_MINOR 11)
+set(libssh_VERSION_PATCH 2)
 
 set(LIB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libssh")
 set(LIB_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libssh")
@@ -79,6 +79,11 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/bind_config.c
     ${LIB_SOURCE_DIR}/src/options.c
     ${LIB_SOURCE_DIR}/src/server.c
+    ${LIB_SOURCE_DIR}/src/ttyopts.c
+    ${LIB_SOURCE_DIR}/src/getrandom_crypto.c
+    ${LIB_SOURCE_DIR}/src/md_crypto.c
+    ${LIB_SOURCE_DIR}/src/crypto_common.c
+    ${LIB_SOURCE_DIR}/src/gzip.c
 )
 
 configure_file(${LIB_SOURCE_DIR}/include/libssh/libssh_version.h.cmake ${LIB_BINARY_DIR}/include/libssh/libssh_version.h @ONLY)
