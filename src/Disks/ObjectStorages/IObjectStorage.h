@@ -195,12 +195,11 @@ public:
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
     virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
 
-    /// Get object metadata if supported. It should be possible to receive
-    /// at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+    /// Get object metadata if supported. It should be possible to receive at least size of object
+    virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

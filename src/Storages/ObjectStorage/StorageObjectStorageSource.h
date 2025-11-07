@@ -61,7 +61,8 @@ public:
         ObjectInfos * read_keys,
         std::function<void(FileProgress)> file_progress_callback = {},
         bool ignore_archive_globs = false,
-        bool skip_object_metadata = false);
+        bool skip_object_metadata = false,
+        bool with_tags = false);
 
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
@@ -235,6 +236,7 @@ public:
         ObjectInfos * read_keys_,
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
+        bool with_tags_,
         std::function<void(FileProgress)> file_progress_callback = {});
 
     ~KeysIterator() override = default;
@@ -249,8 +251,9 @@ private:
     const std::function<void(FileProgress)> file_progress_callback;
     const std::vector<String> keys;
     std::atomic<size_t> index = 0;
-    bool ignore_non_existent_files;
-    bool skip_object_metadata;
+    const bool ignore_non_existent_files;
+    const bool skip_object_metadata;
+    const bool with_tags;
 };
 
 /*

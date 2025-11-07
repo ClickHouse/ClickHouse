@@ -93,9 +93,9 @@ public:
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,

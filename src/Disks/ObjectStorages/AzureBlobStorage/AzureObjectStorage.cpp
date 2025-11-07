@@ -324,7 +324,7 @@ void AzureObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     }
 }
 
-ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
@@ -346,10 +346,10 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     return result;
 }
 
-std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path) const
+std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 try
 {
-    return getObjectMetadata(path);
+    return getObjectMetadata(path, with_tags);
 }
 catch (const Azure::Storage::StorageException & e)
 {
@@ -367,7 +367,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
 {
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
-    auto object_metadata = getObjectMetadata(object_from.remote_path);
+    auto object_metadata = getObjectMetadata(object_from.remote_path, false);
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())

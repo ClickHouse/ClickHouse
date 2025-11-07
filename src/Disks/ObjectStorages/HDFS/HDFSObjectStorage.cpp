@@ -150,16 +150,16 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
-    auto metadata = tryGetObjectMetadata(path);
+    auto metadata = tryGetObjectMetadata(path, /*with_tags=*/ false);
     if (!metadata.has_value())
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "{} does not exist. Error: {}", path, hdfsGetLastError());
     return metadata.value();
 }
 
-std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path) const
+std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     initializeHDFSFS();
     auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());

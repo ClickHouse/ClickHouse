@@ -143,7 +143,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     ObjectInfos * read_keys,
     std::function<void(FileProgress)> file_progress_callback,
     bool ignore_archive_globs,
-    bool skip_object_metadata)
+    bool skip_object_metadata,
+    bool with_tags)
 {
     const bool is_archive = configuration->isArchive();
 
@@ -180,7 +181,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             auto paths = expandSelectionGlob(reading_path.path);
             iterator = std::make_unique<KeysIterator>(
                 paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-                query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
+                query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
+                file_progress_callback);
         }
         else
             /// Iterate through disclosed globs and make a source for each file
@@ -244,7 +246,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
-            query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, file_progress_callback);
+            query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
+            file_progress_callback);
     }
 
     if (is_archive)
@@ -468,18 +471,19 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!object_info->getObjectMetadata())
         {
+            bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
 
             if (query_settings.ignore_non_existent_file)
             {
-                auto metadata = object_storage->tryGetObjectMetadata(path);
+                auto metadata = object_storage->tryGetObjectMetadata(path, with_tags);
                 if (!metadata)
                     return {};
 
                 object_info->setObjectMetadata(metadata.value());
             }
             else
-                object_info->setObjectMetadata(object_storage->getObjectMetadata(path));
+                object_info->setObjectMetadata(object_storage->getObjectMetadata(path, with_tags));
         }
     } while (query_settings.skip_empty_files && object_info->getObjectMetadata()->size_bytes == 0);
 
@@ -686,7 +690,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 1. object size suggests whether we need to use prefetch
     /// 2. object etag suggests a cache key in case we use filesystem cache
     if (!object_info.metadata)
-        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
+        object_info.metadata = object_storage->getObjectMetadata(object_info.getPath(), /*with_tags=*/ false);
 
     const auto & object_size = object_info.metadata->size_bytes;
 
@@ -983,6 +987,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     ObjectInfos * read_keys_,
     bool ignore_non_existent_files_,
     bool skip_object_metadata_,
+    bool with_tags_,
     std::function<void(FileProgress)> file_progress_callback_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
@@ -990,6 +995,7 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , keys(keys_)
     , ignore_non_existent_files(ignore_non_existent_files_)
     , skip_object_metadata(skip_object_metadata_)
+    , with_tags(with_tags_)
 {
     if (read_keys_)
     {
@@ -1017,13 +1023,13 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         {
             if (ignore_non_existent_files)
             {
-                auto metadata = object_storage->tryGetObjectMetadata(key);
+                auto metadata = object_storage->tryGetObjectMetadata(key, with_tags);
                 if (!metadata)
                     continue;
                 object_metadata = *metadata;
             }
             else
-                object_metadata = object_storage->getObjectMetadata(key);
+                object_metadata = object_storage->getObjectMetadata(key, with_tags);
         }
 
         if (file_progress_callback)
@@ -1132,7 +1138,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInAr
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::nullopt});
     if (!archive_object->getObjectMetadata())
-        archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
+        archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
 
     std::shared_ptr<IArchiveReader> archive_reader;
     {
@@ -1226,7 +1232,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 }
 
                 if (!archive_object->getObjectMetadata())
-                    archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
+                    archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
 
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
@@ -1252,7 +1258,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 return {};
 
             if (!archive_object->getObjectMetadata())
-                archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath()));
+                archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->getPath(), /*with_tags=*/ false));
 
             archive_reader = createArchiveReader(archive_object);
             if (!archive_reader->fileExists(path_in_archive))

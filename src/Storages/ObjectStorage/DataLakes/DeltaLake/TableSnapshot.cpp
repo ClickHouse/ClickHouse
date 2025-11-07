@@ -286,7 +286,7 @@ public:
                 continue;
             }
 
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath()));
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
             {
