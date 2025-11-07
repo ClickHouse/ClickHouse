@@ -1119,7 +1119,7 @@ try
         else
         {
             LOG_INFO(log, "Skip mlock for the clickhouse executable, because the total memory in the system ({}) is less than the minimum configured threshold (`mlock_executable_min_total_memory_amount_bytes` = {})",
-                physical_server_memory, min_physical_server_memory_to_mlock);
+                ReadableSize(physical_server_memory), ReadableSize(min_physical_server_memory_to_mlock));
         }
     }
 #endif
