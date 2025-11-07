@@ -24,7 +24,7 @@ Example:
     • `OFFSET 0.1` - skips the first 10% of the result.
 
 > **Note**
-> • The fraction must be a Float64 number less than 1 and greater than zero.
+> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 

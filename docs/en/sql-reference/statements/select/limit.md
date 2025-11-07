@@ -32,7 +32,7 @@ Examples:
     • `LIMIT 0.25 OFFSET 0.5` - selects 3rd quartile of the result.
 
 > **Note**
-> • The fraction must be a Float64 number less than 1 and greater than zero.
+> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
 
 > **Note**
 > • You can combine standard limit with fractional offset and vice versa.
