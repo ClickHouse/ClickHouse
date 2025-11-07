@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS alias_3;
 DROP TABLE IF EXISTS alias_4;
 DROP TABLE IF EXISTS source_other;
 
+SET allow_experimental_alias_table_engine = 1;
+
 -- Create source table
 CREATE TABLE source_table (id UInt32, value String) ENGINE = MergeTree ORDER BY id;
 
