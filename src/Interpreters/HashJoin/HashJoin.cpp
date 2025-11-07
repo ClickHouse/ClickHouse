@@ -1303,12 +1303,19 @@ void HashJoin::updateNonJoinedRowsStatus()
         // 1) There are masks for NULL-keys/ON? -> we have nonJoined rows
         if (!data->nullmaps.empty())
             found_non_joined = true;
-        // 2) One disjunct and all offset-flags are set? -> we have no nonJoined rows
-        else if (used_flags && table_join->oneDisjunct())
-            found_non_joined = !used_flags->allOffsetFlagsSet();
-        // 3) Otherwise (many disjuncts or no flags) -> we assume that we have nonJoined rows
+        // 2) Used flags present:
+        //    - If per-row flags are required (mixed ON / multiple disjuncts / RIGHT|FULL), conservatively assume non-joined rows exist
+        //    - For single disjunct with per-offset flags, check allOffsetFlagsSet
+        //    - Otherwise assume non-joined rows may exist
         else if (used_flags)
-            found_non_joined = true;
+        {
+            if (needUsedFlagsForPerRightTableRow(table_join))
+                found_non_joined = true;
+            else if (table_join->oneDisjunct())
+                found_non_joined = !used_flags->allOffsetFlagsSet();
+            else
+                found_non_joined = true;
+        }
     }
 
     has_non_joined_rows = found_non_joined;
@@ -1886,7 +1893,7 @@ void HashJoin::onBuildPhaseFinish()
         }
     }
 
-    if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind))
+    if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
     {
         strictness = JoinStrictness::RightAny;
         all_join_was_promoted_to_right_any = true;
