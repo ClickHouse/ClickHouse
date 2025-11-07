@@ -1140,6 +1140,11 @@ bool addPreliminaryLimitOptimizationStepIfNeeded(QueryPlan & query_plan,
         }
     }
 
+    /// Note: Preliminary Limits mustn't be added if there is a fractional limit/offset
+    /// because in order to correctly calculate the number of rows to be produced
+    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
+
     bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
     bool apply_prelimit = apply_limit && query_node.hasLimit() && !query_node.isLimitWithTies() && !query_node.isGroupByWithTotals()
         && !query_analysis_result.query_has_with_totals_in_any_subquery_in_join_tree
@@ -1225,6 +1230,12 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
     {
         return;
     }
+
+
+    /// Note: Preliminary Limits mustn't be added if there is a fractional limit/offset
+    /// because in order to correctly calculate the number of rows to be produced
+    /// based on the given fraction the final limit/offset processor must count the entire dataset.
+    /// For example, LIMIT 0.1 and 30 rows in the sources - we must read all 30 rows to calculate that rows_cnt * 0.1 = 3.
 
     /// WITH TIES simply not supported properly for preliminary steps, so let's disable it.
     if (query_node.hasLimit() && !query_node.hasLimitByOffset() && !query_node.isLimitWithTies()
