@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Disks/ObjectStorages/IMetadataOperation.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <filesystem>
-#include <map>
-
+#include <memory>
 
 namespace DB
 {
@@ -15,69 +14,73 @@ class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : publ
 {
 private:
     std::filesystem::path path;
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
-    const std::string object_key_prefix;
+    const bool recursive;
+
+    std::string object_key_prefix;
+    bool created_directory = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
         /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
-        InMemoryDirectoryPathMap & path_map_,
+        InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_,
-        const std::string & metadata_key_prefix_);
+        const std::string & metadata_key_prefix_,
+        bool recursive_);
 
     void execute() override;
     void undo() override;
 };
-
 
 class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public IMetadataOperation
 {
 private:
     std::filesystem::path path_from;
     std::filesystem::path path_to;
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    bool write_finalized = false;
+    std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
+    std::unordered_set<std::string> changed_paths;
+    bool moved_in_memory = false;
 
-    std::unique_ptr<WriteBufferFromFileBase>
-    createWriteBuf(const std::filesystem::path & expected_path, const std::filesystem::path & new_path, bool validate_content);
+    std::unique_ptr<WriteBufferFromFileBase> createWriteBuf(const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_content);
+    void rewriteSingleDirectory(const std::filesystem::path & from, const std::filesystem::path & to, WriteBuffer & buffer);
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
         /// Both path_from_ and path_to_ must end with a trailing '/'.
         std::filesystem::path && path_from_,
         std::filesystem::path && path_to_,
-        InMemoryDirectoryPathMap & path_map_,
+        InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
     void execute() override;
     void undo() override;
 };
-
 
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
     std::filesystem::path path;
 
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
     const std::string metadata_key_prefix;
 
-    InMemoryDirectoryPathMap::RemotePathInfo info;
+    DirectoryRemoteInfo info;
     bool remove_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
         /// path_ must end with a trailing '/'.
         std::filesystem::path && path_,
-        InMemoryDirectoryPathMap & path_map_,
+        InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_,
         const std::string & metadata_key_prefix_);
 
@@ -85,38 +88,36 @@ public:
     void undo() override;
 };
 
-
 class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
 {
 private:
     std::filesystem::path path;
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 
     bool written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
-        const std::string & path, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
+        const std::string & path, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_);
 
     void execute() override;
     void undo() override;
 };
-
 
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
 {
 private:
     std::filesystem::path path;
     std::filesystem::path remote_path;
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 
     bool unlinked = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
-        std::filesystem::path && path_, InMemoryDirectoryPathMap & path_map_, ObjectStoragePtr object_storage_);
+        std::filesystem::path && path_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_);
 
     void execute() override;
     void undo() override;
@@ -130,16 +131,16 @@ private:
     std::filesystem::path remote_path_from;
     std::filesystem::path path_to;
     std::filesystem::path remote_path_to;
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 
-    bool copied = false;
+    bool copy_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
-        InMemoryDirectoryPathMap & path_map_,
+        InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_);
 
     void execute() override;
@@ -161,12 +162,13 @@ private:
     std::filesystem::path remote_path_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
-    InMemoryDirectoryPathMap & path_map;
+    InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 
 
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
+    bool created_target_file{false};
     bool moved_file{false};
 
 public:
@@ -174,7 +176,7 @@ public:
         bool replaceable_,
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
-        InMemoryDirectoryPathMap & path_map_,
+        InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
@@ -182,7 +184,7 @@ public:
      *  2. Copy remote_path_from to tmp_remote_path_to, which is used to restore the source file in case of failure.
      *  3. Copy remote_path_from to remote_path_to.
      *  4. Remove remote_path_to.
-     *  5. Update path_map
+     *  5. Update fs_tree
      */
     void execute() override;
     /**
@@ -190,7 +192,7 @@ public:
      *  1. If remote_path_from is copied to remote_path_to, remove remote_path_to
      *  2. Restore remote_path_from from tmp_remote_path_from if it is copied.
      *  3. Restore remote_path_to from tmp_remote_path_to if it is copied.
-     *  5. Update path_map
+     *  5. Update fs_tree
      */
     void undo() override;
     /**
@@ -200,4 +202,34 @@ public:
      */
     void finalize() override;
 };
+
+class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : public IMetadataOperation
+{
+private:
+    std::filesystem::path path;
+
+    InMemoryDirectoryTree & fs_tree;
+    ObjectStoragePtr object_storage;
+    ObjectMetadataCachePtr object_metadata_cache;
+    const std::string metadata_key_prefix;
+    const LoggerPtr log;
+
+    std::filesystem::path tmp_path;
+    std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
+    bool move_tried = false;
+
+public:
+    MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
+        /// path_ must end with a trailing '/'.
+        std::filesystem::path && path_,
+        InMemoryDirectoryTree & fs_tree_,
+        ObjectStoragePtr object_storage_,
+        ObjectMetadataCachePtr object_metadata_cache_,
+        const std::string & metadata_key_prefix_);
+
+    void execute() override;
+    void undo() override;
+    void finalize() override;
+};
+
 }

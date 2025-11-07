@@ -6,13 +6,9 @@ Test ENGINE = Alias(db, table)
 1	one	10.1
 2	two	20.2
 3	three	30.3
-Test With columns
-1	one	10.1
-2	two	20.2
-3	three	30.3
 Test All aliases work identically
 4
 4
 4
-4
 5
+Test Explicit columns should fail

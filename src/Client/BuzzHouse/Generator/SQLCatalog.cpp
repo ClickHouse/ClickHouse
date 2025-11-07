@@ -1,17 +1,17 @@
-#include <string>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 
 namespace BuzzHouse
 {
 
-void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
+void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
 {
-    if (isReplicatedDatabase())
+    if (add_params && isReplicatedOrSharedDatabase())
     {
-        chassert(de->params_size() == 0);
+        chassert(de->params_size() == 0 && this->nparams == 0);
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
+        this->nparams = 3;
     }
 }
 
@@ -187,7 +187,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         cat = &sc.unity_catalog.value();
                         break;
                     default:
-                        chassert(0);
+                        UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
                     "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
@@ -322,8 +322,8 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
     {
         return fmt::format("/aflight{}", tname);
     }
-    chassert(0);
-    return "";
+
+    UNREACHABLE();
 }
 
 String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
@@ -394,4 +394,5 @@ String ColumnPathChain::columnPathRef() const
     res += "`";
     return res;
 }
+
 }

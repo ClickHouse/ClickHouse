@@ -10,6 +10,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TableOverrideUtils.h>
@@ -267,6 +268,7 @@ struct QueryPlanSettings
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
+            {"input_headers", query_plan_options.input_headers},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -484,6 +486,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
     options.setExplain();
     options.max_step_description_length = query_context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
+    /// https://github.com/ClickHouse/ClickHouse/issues/88467
+    /// EXPLAIN is to get a good picture of how the query will execute after *static* planning.
+    /// Hence disable any optimizations that stagger the planning or introduce variablility due to caches.
+    auto explain_query_context = Context::createCopy(query_context);
+    explain_query_context->setSetting("use_skip_indexes_on_data_read", false);
+    explain_query_context->setSetting("use_query_condition_cache", false);
+    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
     {

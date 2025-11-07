@@ -513,7 +513,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope.emplace(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -1388,15 +1388,54 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
             zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
         }
         Coordination::Requests ops;
+        Coordination::Responses res;
         ops.emplace_back(zkutil::makeCreateRequest(active_path, active_id, zkutil::CreateMode::Ephemeral));
         /// To bump node mtime
         ops.emplace_back(zkutil::makeSetRequest(fs::path(replicas_dir) / host_id, "", -1));
-        zookeeper->multi(ops);
+        auto code = zookeeper->tryMulti(ops, res);
+
+        /// We have this tryMulti for a very weird edge case when it's related to localhost.
+        /// Each replica may have a localhost as hostid and if we configured multiple replicas to add their
+        /// localhosts to some clusters multiple of them may think that they must mark it as active.
+        if (code != Coordination::Error::ZOK)
+        {
+            LOG_WARNING(log, "Cannot mark a replica active: active_path={}, active_id={}, code={}", active_path, active_id, Coordination::errorMessage(code));
+        }
+        else
+        {
+            LOG_DEBUG(log, "Marked a replica active: active_path={}, active_id={}", active_path, active_id);
+        }
 
         auto active_node_holder_zookeeper = zookeeper;
         auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
         active_node_holders[host_id] = {active_node_holder_zookeeper, active_node_holder};
     }
+}
+
+void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
+{
+    auto replicas = zookeeper->getChildren(replicas_dir);
+    static constexpr Int64 REPLICA_MAX_INACTIVE_SECONDS = 86400;
+    for (const auto & replica : replicas)
+    {
+        auto replica_path = fs::path(replicas_dir) / replica;
+        auto responses = zookeeper->tryGet({replica_path, fs::path(replica_path) / "active"});
+        /// Replica not active
+        if (responses[1].error == Coordination::Error::ZNONODE)
+        {
+            auto stat = responses[0].stat;
+            /// Replica was not active for too long, let's cleanup to avoid polluting Keeper with
+            /// removed replicas
+            if (stat.mtime / 1000 + REPLICA_MAX_INACTIVE_SECONDS < current_time_seconds)
+            {
+                LOG_INFO(log, "Replica {} is stale, removing it", replica);
+                auto code = zookeeper->tryRemove(replica_path, -1);
+                if (code != Coordination::Error::ZOK)
+                    LOG_WARNING(log, "Cannot remove stale replica {}, code {}", replica, Coordination::errorMessage(code));
+            }
+        }
+    }
+
 }
 
 void DDLWorker::runCleanupThread()
@@ -1426,6 +1465,7 @@ void DDLWorker::runCleanupThread()
                 continue;
 
             cleanupQueue(current_time_seconds, zookeeper);
+            cleanupStaleReplicas(current_time_seconds, zookeeper);
             last_cleanup_time_seconds = current_time_seconds;
         }
         catch (...)

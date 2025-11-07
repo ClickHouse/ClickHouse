@@ -37,7 +37,7 @@
 #include <filesystem>
 
 #include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -402,7 +402,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
@@ -575,6 +575,9 @@ Poco::JSON::Object::Ptr getPartitionField(
     for (const auto & child : partition_function->children)
     {
         const auto * expression_list = child->as<ASTExpressionList>();
+        if (!expression_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported partitioning for Iceberg table.");
+
         for (const auto & expression_list_child : expression_list->children)
         {
             const auto * identifier = expression_list_child->as<ASTIdentifier>();

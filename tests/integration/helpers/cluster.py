@@ -44,6 +44,7 @@ try:
     # Not an easy dep
     import cassandra.cluster
     from cassandra.policies import RoundRobinPolicy
+    from filelock import FileLock, Timeout
 
 except Exception as e:
     logging.warning(f"Cannot import some modules, some tests may not work: {e}")
@@ -53,7 +54,6 @@ from dict2xml import dict2xml
 from docker.models.containers import Container
 from kazoo.exceptions import KazooException
 from minio import Minio
-from filelock import FileLock, Timeout
 
 from . import pytest_xdist_logging_to_separate_files
 from .client import Client, QueryRuntimeException
@@ -5330,18 +5330,6 @@ class ClickHouseInstance:
         version_parts = self.tag.split(".")
         if version_parts[0].isdigit() and version_parts[1].isdigit():
             version = {"major": int(version_parts[0]), "minor": int(version_parts[1])}
-
-        # async replication is only supported in version 23.9+
-        # for tags that don't specify a version we assume it has a version of ClickHouse
-        # that supports async replication if a test for it is present
-        if not self.with_dolor and (
-            version == None
-            or version["major"] > 23
-            or (version["major"] == 23 and version["minor"] >= 9)
-        ):
-            write_embedded_config(
-                "0_common_enable_keeper_async_replication.xml", self.config_d_dir
-            )
 
         logging.debug("Generate and write macros file")
         macros = self.macros.copy()

@@ -402,7 +402,7 @@ private:
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
-    void generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
+    void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * ls);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
@@ -612,7 +612,7 @@ private:
                 next->set_key("structure");
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
-                    chassert(0);
+                    UNREACHABLE();
                 }
                 else
                 {
@@ -622,7 +622,7 @@ private:
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -676,6 +676,7 @@ public:
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
     void setInTransaction(const bool value) { in_transaction = value; }
+    bool getAllowNotDetermistic() const { return allow_not_deterministic; }
 
     friend class QueryOracle;
 };

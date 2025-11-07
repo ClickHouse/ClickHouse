@@ -63,6 +63,7 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsString temporary_files_codec;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace ErrorCodes
@@ -157,6 +158,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , sort_right_maximum_table_rows(settings[Setting::join_to_sort_maximum_table_rows])
     , allow_join_sorting(settings[Setting::allow_experimental_join_right_table_sorting])
     , allow_dynamic_type_in_join_keys(settings[Setting::allow_dynamic_type_in_join_keys])
+    , enable_lazy_columns_replication(settings[Setting::enable_lazy_columns_replication])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -178,11 +180,13 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
+    , temporary_files_buffer_size(settings.temporary_files_buffer_size)
     , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
     , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
     , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
     , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
     , allow_dynamic_type_in_join_keys(settings.allow_dynamic_type_in_join_keys)
+    , enable_lazy_columns_replication(settings.enable_lazy_columns_replication)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -1178,7 +1182,8 @@ bool allowParallelHashJoin(
 {
     if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
-    if (kind != JoinKind::Left && kind != JoinKind::Inner)
+    if (kind != JoinKind::Left && kind != JoinKind::Inner
+        && kind != JoinKind::Right && kind != JoinKind::Full)
         return false;
     if (strictness == JoinStrictness::Asof)
         return false;

@@ -8,7 +8,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakePartitionedSink.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/transformTypesRecursively.h>
@@ -339,7 +339,7 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
     LOG_TEST(log, "Format header: {}", info.format_header.dumpStructure());
     LOG_TEST(log, "Source header: {}", info.source_header.dumpStructure());
     LOG_TEST(log, "Requested columns: {}", info.requested_columns.toString());
-    LOG_TEST(log, "Columns description: {}", info.columns_description.toString());
+    LOG_TEST(log, "Columns description: {}", info.columns_description.toString(true));
     return info;
 }
 
@@ -388,7 +388,7 @@ void DeltaLakeMetadataDeltaKernel::logMetadataFiles(ContextPtr context) const
     auto read_settings = context->getReadSettings();
     for (const String & key : keys)
     {
-        ObjectInfo object_info(key);
+        RelativePathWithMetadata object_info(key);
         auto buf = createReadBuffer(object_info, object_storage_common, context, log);
         String json_str;
         readStringUntilEOF(json_str, *buf);
