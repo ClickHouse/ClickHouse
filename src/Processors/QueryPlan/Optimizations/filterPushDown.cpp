@@ -8,6 +8,7 @@
 
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -690,6 +691,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     }
 
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))
+        return updated_steps;
+
+    if (auto updated_steps = simplePushDownOverStep<BuildRuntimeFilterStep>(parent_node, true, nodes, child))
         return updated_steps;
 
     if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
