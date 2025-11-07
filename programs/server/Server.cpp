@@ -913,7 +913,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 {
                     CurrentThread::QueryScope query_scope(startup_context);
-                    executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                    executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
                 }
 
                 auto result = condition_write_buffer.str();
@@ -947,7 +947,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             CurrentThread::QueryScope query_scope(startup_context);
 
-            executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+            executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
         if (!skipped_startup_scripts.empty())

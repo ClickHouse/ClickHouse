@@ -97,8 +97,12 @@ void BlockIO::setAllDataSent() const
 
 void BlockIO::releaseQuerySlot() const
 {
-    if (process_list_entry)
-        process_list_entry->getQueryStatus()->releaseQuerySlot();
+    /// If the query executed an external query, we need to release all query slots
+    for (auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->releaseQuerySlot();
+    }
 }
 
 }
