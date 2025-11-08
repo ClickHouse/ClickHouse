@@ -6,11 +6,14 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/NullableUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnQBit.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
 #include <memory>
 
@@ -62,6 +65,11 @@ public:
             ++count_arrays;
         }
 
+        if (const DataTypeNullable * nullable = checkAndGetDataType<DataTypeNullable>(input_type))
+        {
+            input_type = nullable->getNestedType().get();
+        }
+
         if (const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(input_type))
         {
             std::optional<size_t> index = getTupleElementIndex(arguments[1].column, *tuple, number_of_arguments);
@@ -93,7 +101,7 @@ public:
 
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function {} must be Tuple, array of Tuple, QBit or array of QBit. Actual {}",
+            "First argument for function {} must be Tuple, Nullable(Tuple), array of Tuple, array of Nullable(Tuple), QBit or array of QBit. Actual {}",
             getName(),
             arguments[0].type->getName());
     }
