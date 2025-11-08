@@ -1,4 +1,4 @@
---- Tags: no-parallel
+--- Tags: no-parallel, no-random-settings
 --- Tag no-parallel: Messes with internal cache
 
 SYSTEM DROP QUERY CACHE;
