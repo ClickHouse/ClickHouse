@@ -2487,11 +2487,16 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas)
 {
     const Settings & settings = context->getSettingsRef();
+
+    bool empty_result_for_aggregation_by_empty_set = settings[Setting::empty_result_for_aggregation_by_empty_set]
+            || (settings[Setting::empty_result_for_aggregation_by_constant_keys_on_empty_set] && query_analyzer->aggregationKeys().empty()
+                && query_analyzer->hasConstAggregationKeys());
+
     bool optimize_trivial_count =
         syntax_analyzer_result->optimize_trivial_count
         && (allow_experimental_parallel_reading_from_replicas == 0)
         && !settings[Setting::allow_experimental_query_deduplication]
-        && !settings[Setting::empty_result_for_aggregation_by_empty_set]
+        && !empty_result_for_aggregation_by_empty_set
         && storage
         && storage->supportsTrivialCountOptimization(storage_snapshot, getContext())
         && query_info.filter_asts.empty()
