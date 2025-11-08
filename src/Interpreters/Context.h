@@ -1305,7 +1305,6 @@ public:
     void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
-    
     void setParquetV3MetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateParquetV3MetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<ParquetV3MetadataCache> getParquetV3MetadataCache() const;

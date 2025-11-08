@@ -492,11 +492,9 @@ struct DeltaLakeMetadataImpl
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        
         // Get appropriate cache instances from context
         auto v2_cache = context->getParquetMetadataCache();
         auto v3_cache = context->getParquetV3MetadataCache();
-        
         auto columns = format_settings.parquet.use_native_reader_v3
             ? NativeParquetSchemaReader(*buf, format_settings, v3_cache).readSchema()
             : ArrowParquetSchemaReader(*buf, format_settings, v2_cache).readSchema();

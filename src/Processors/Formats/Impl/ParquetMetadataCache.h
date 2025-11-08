@@ -48,7 +48,6 @@ struct ParquetMetadataCacheKey
 {
     String file_path;
     String etag;
-    
     bool operator==(const ParquetMetadataCacheKey & other) const
     {
         return file_path == other.file_path && etag == other.etag;
@@ -69,7 +68,6 @@ struct ParquetMetadataCacheCell : private boost::noncopyable
 {
     std::shared_ptr<parquet::FileMetaData> metadata;
     Int64 memory_bytes;
-
     explicit ParquetMetadataCacheCell(std::shared_ptr<parquet::FileMetaData> metadata_)
         : metadata(std::move(metadata_))
         , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
@@ -83,15 +81,12 @@ private:
     {
         if (!metadata)
             return 0;
-        
         size_t size = sizeof(parquet::FileMetaData);
-        
         // Add schema size estimation
         if (metadata->schema())
         {
             size += metadata->schema()->ToString().size();
         }
-        
         // Add row group metadata size estimation
         for (int i = 0; i < metadata->num_row_groups(); ++i)
         {
@@ -102,7 +97,6 @@ private:
                 size += sizeof(parquet::ColumnChunkMetaData);
             }
         }
-        
         return size;
     }
 };
@@ -140,14 +134,11 @@ public:
             auto metadata = load_fn();
             return std::make_shared<ParquetMetadataCacheCell>(metadata);
         };
-        
         auto result = Base::getOrSet(key, load_fn_wrapper);
-        
         if (result.second)
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
-            
         return result.first->metadata;
     }
 
@@ -165,7 +156,6 @@ struct ParquetV3MetadataCacheCell : private boost::noncopyable
 {
     parquet::format::FileMetaData metadata;  // Native V3 metadata (not shared_ptr)
     Int64 memory_bytes;
-
     explicit ParquetV3MetadataCacheCell(parquet::format::FileMetaData metadata_)
         : metadata(std::move(metadata_))
         , memory_bytes(calculateMemorySize() + SIZE_IN_MEMORY_OVERHEAD)
@@ -217,15 +207,12 @@ public:
             auto metadata = load_fn();  // Returns Parquet::parq::FileMetaData directly
             return std::make_shared<ParquetV3MetadataCacheCell>(std::move(metadata));
         };
-        
         auto result = Base::getOrSet(key, load_fn_wrapper);
-        
         // Reuse same ProfileEvents as V2 cache
         if (result.second)
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
-            
         return result.first->metadata;  // Return by value (native metadata)
     }
 
@@ -240,9 +227,8 @@ private:
 
 using ParquetMetadataCachePtr = std::shared_ptr<ParquetMetadataCache>;
 using ParquetV3MetadataCachePtr = std::shared_ptr<ParquetV3MetadataCache>;
-
 /// Utility function to extract file path and ETag from ReadBuffer for cache key creation
-/// Returns pair of (file_path, etag) - works with S3 ReadBuffers 
+/// Returns pair of (file_path, etag) - works with S3 ReadBuffers
 std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in);
 
 }

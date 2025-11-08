@@ -676,9 +676,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         if (etag != "s3_metadata_unavailable")
         {
             ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
-            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                return parquet::ReadMetaData(arrow_file);
-            });
+            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
         }
     }
     else
@@ -1316,9 +1314,7 @@ void ArrowParquetSchemaReader::initializeIfNeeded()
         if (etag != "s3_metadata_unavailable")
         {
             ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
-            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                return parquet::ReadMetaData(arrow_file);
-            });
+            metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
         }
     }
     metadata = parquet::ReadMetaData(arrow_file);
@@ -1390,7 +1386,6 @@ void registerInputFormatParquet(FormatFactory & factory)
         {
             size_t min_bytes_for_seek
                 = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-            
             if (settings.parquet.use_native_reader_v3)
             {
                 auto v3_cache = CurrentThread::getQueryContext()->getParquetV3MetadataCache();

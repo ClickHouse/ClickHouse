@@ -108,9 +108,7 @@ Chunk ParquetV3BlockInputFormat::read()
             if (etag != "s3_metadata_unavailable")
             {
                 ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
-                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                    return Parquet::Reader::readFileMetaData(temp_prefetcher);
-                });
+                file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(temp_prefetcher); });
             }
         }
         else
@@ -172,9 +170,7 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         if (etag != "s3_metadata_unavailable")
         {
             ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
-            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() {
-                return Parquet::Reader::readFileMetaData(prefetcher);
-            });
+            file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
         }
     }
     else
