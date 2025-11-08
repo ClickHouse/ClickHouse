@@ -66,7 +66,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     postgres::PoolWithFailoverPtr pool_,
     bool cache_tables_,
     UUID uuid)
-    : IDatabase(dbname_)
+    : DatabaseWithAltersOnDiskBase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
@@ -423,19 +423,14 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
-void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
-}
-
-ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
+ASTPtr DatabasePostgreSQL::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
