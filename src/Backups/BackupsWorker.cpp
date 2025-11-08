@@ -596,7 +596,8 @@ BackupMutablePtr BackupsWorker::openBackupForWriting(
     backup_create_params.is_internal_backup = backup_settings.internal;
     backup_create_params.is_lightweight_snapshot = backup_settings.experimental_lightweight_snapshot;
     backup_create_params.data_file_name_generator = backup_settings.data_file_name_generator;
-    backup_create_params.data_file_name_prefix_length = backup_settings.data_file_name_prefix_length.value();
+    chassert(backup_settings.data_file_name_prefix_length);
+    backup_create_params.data_file_name_prefix_length = *backup_settings.data_file_name_prefix_length;
     backup_create_params.backup_coordination = backup_coordination;
     backup_create_params.backup_uuid = backup_settings.backup_uuid;
     backup_create_params.deduplicate_files = backup_settings.deduplicate_files;

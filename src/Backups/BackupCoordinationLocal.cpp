@@ -16,7 +16,7 @@ BackupCoordinationLocal::BackupCoordinationLocal(
           BackupCoordinationFileInfos::Config{
               !backup_settings_.deduplicate_files,
               backup_settings_.data_file_name_generator,
-              backup_settings_.data_file_name_prefix_length.value()})
+              *backup_settings_.data_file_name_prefix_length})
 {
 }
 

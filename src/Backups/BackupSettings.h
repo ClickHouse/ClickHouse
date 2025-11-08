@@ -10,7 +10,6 @@ namespace DB
 {
 class ASTBackupQuery;
 
-
 /// Settings specified in the "SETTINGS" clause of a BACKUP query.
 struct BackupSettings
 {

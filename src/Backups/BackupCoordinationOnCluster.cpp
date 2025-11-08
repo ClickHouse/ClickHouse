@@ -172,7 +172,7 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     BackupConcurrencyCounters & concurrency_counters_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     QueryStatusPtr process_list_element_)
-    : backup_uuid(backup_settings_.backup_uuid.value())
+    : backup_uuid(*backup_settings_.backup_uuid)
     , root_zookeeper_path(root_zookeeper_path_)
     , zookeeper_path(root_zookeeper_path_ + "/backup-" + toString(backup_uuid))
     , keeper_settings(keeper_settings_)
@@ -182,7 +182,7 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , current_host_index(findCurrentHostIndex(current_host, all_hosts))
     , plain_backup(!backup_settings_.deduplicate_files)
     , data_file_name_gen(backup_settings_.data_file_name_generator)
-    , data_file_name_prefix_length(backup_settings_.data_file_name_prefix_length.value())
+    , data_file_name_prefix_length(*backup_settings_.data_file_name_prefix_length)
     , process_list_element(process_list_element_)
     , log(getLogger("BackupCoordinationOnCluster"))
     , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
