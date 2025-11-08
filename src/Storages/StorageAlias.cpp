@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -27,6 +28,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_TABLE;
 }
 
 StorageAlias::StorageAlias(
@@ -54,7 +56,17 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
             access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
     }
 
-    return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
+    auto target = DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext());
+    if (!target)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_TABLE,
+            "Alias table {} points to non-existent table {}.{}",
+            getStorageID().getNameForLogs(),
+            backQuoteIfNeed(target_database),
+            backQuoteIfNeed(target_table));
+    }
+    return target;
 }
 
 void StorageAlias::read(
@@ -199,6 +211,28 @@ CancellationCode StorageAlias::killPartMoveToShard(const UUID & task_uuid)
 void StorageAlias::updateExternalDynamicMetadataIfExists(ContextPtr local_context)
 {
     getTargetTable()->updateExternalDynamicMetadataIfExists(local_context);
+}
+
+StorageInMemoryMetadata StorageAlias::getInMemoryMetadata() const
+{
+    auto target = DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext());
+    if (!target)
+    {
+        // Return empty metadata for broken alias tables
+        return StorageInMemoryMetadata();
+    }
+    return target->getInMemoryMetadata();
+}
+
+StorageMetadataPtr StorageAlias::getInMemoryMetadataPtr(bool bypass_metadata_cache) const
+{
+    auto target = DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext());
+    if (!target)
+    {
+        // Return nullptr for broken alias tables - callers should handle this
+        return nullptr;
+    }
+    return target->getInMemoryMetadataPtr(bypass_metadata_cache);
 }
 
 std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)

@@ -1,4 +1,4 @@
--- Test: Alias tables should be automatically dropped when their target table is dropped
+-- Test: Alias tables with broken targets should not crash system.tables
 
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
@@ -8,14 +8,18 @@ CREATE TABLE t0 (c0 Int) ENGINE = MergeTree() ORDER BY tuple();
 
 CREATE TABLE t1 ENGINE = Alias(t0);
 
--- Verify all three tables exist
+-- Verify both tables exist
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ('t0', 't1') ORDER BY name;
 
--- Drop the target table - this should automatically drop both alias tables
+-- Drop the target table - the alias table should remain but be broken
 DROP TABLE t0 SYNC;
 
--- Verify that all tables (including alias tables) have been automatically dropped
+-- Verify that system.tables can still be queried even with a broken alias
+-- The alias table should still be listed
 SELECT name FROM system.tables WHERE database = currentDatabase() AND name IN ('t0', 't1') ORDER BY name;
 
--- Clean up (should be no-op since tables were already dropped)
+-- Verify we can query system.tables with all columns even with broken alias
+SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 't1';
+
+-- Clean up the broken alias table
 DROP TABLE IF EXISTS t1;

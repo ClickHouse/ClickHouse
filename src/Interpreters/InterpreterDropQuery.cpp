@@ -310,19 +310,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
-
-            /// Drop all Alias tables that depend on this table to prevent broken references
-            auto referential_dependents = DatabaseCatalog::instance().getReferentialDependents(table_id);
-            for (const auto & dependent_id : referential_dependents)
-            {
-                auto dependent_table = DatabaseCatalog::instance().tryGetTable(dependent_id, context_);
-                if (dependent_table && dependent_table->getName() == "Alias")
-                {
-                    auto alias_database = DatabaseCatalog::instance().getDatabase(dependent_id.database_name);
-                    alias_database->dropTable(context_, dependent_id.table_name, /* sync */ false);
-                }
-            }
-
             database->dropTable(context_, table_id.table_name, query.sync);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
