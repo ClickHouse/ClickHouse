@@ -1,0 +1,46 @@
+-- { echoOn }
+SELECT * FROM tab WHERE hasAnyTokens(message, ['abc']);
+SELECT * FROM tab WHERE hasAllTokens(message, ['abc']);
+SELECT * FROM tab WHERE hasAnyTokens(message, ['']);
+SELECT * FROM tab WHERE hasAllTokens(message, ['']);
+SELECT * FROM tab WHERE hasAnyTokens(message, []);
+SELECT * FROM tab WHERE hasAllTokens(message, []);
+SELECT * FROM tab WHERE hasAnyTokens(message, 'abc');
+SELECT * FROM tab WHERE hasAllTokens(message, 'abc');
+SELECT * FROM tab WHERE hasAnyTokens(message, '');
+SELECT * FROM tab WHERE hasAllTokens(message, '');
+SELECT tokens('abc', 'ngrams', 4) AS tokens;
+[]
+SELECT * from tab WHERE hasToken(message, 'abc');
+-- Arrays
+SELECT * FROM tab WHERE hasAnyTokens(arr, ['abc']);
+SELECT * FROM tab WHERE hasAllTokens(arr, ['abc']);
+SELECT * FROM tab WHERE hasAnyTokens(arr, ['']);
+SELECT * FROM tab WHERE hasAllTokens(arr, ['']);
+SELECT * FROM tab WHERE hasAnyTokens(arr, []);
+SELECT * FROM tab WHERE hasAllTokens(arr, []);
+SELECT * FROM tab WHERE hasAnyTokens(arr, 'abc');
+SELECT * FROM tab WHERE hasAllTokens(arr, 'abc');
+SELECT * FROM tab WHERE hasAnyTokens(arr, '');
+SELECT * FROM tab WHERE hasAllTokens(arr, '');
+SELECT * from tab WHERE has(arr, 'abc');
+1	abc	['abc']	{'abc':'abc'}
+2	def	['def','abc']	{'abc':'foo','def':'foo'}
+-- Maps
+SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
+SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), ['abc']);
+SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), ['']);
+SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), ['']);
+SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), []);
+SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), []);
+SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), 'abc');
+SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), 'abc');
+SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), '');
+SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), '');
+SELECT * FROM tab WHERE mapContains(map, 'abc');
+1	abc	['abc']	{'abc':'abc'}
+2	def	['def','abc']	{'abc':'foo','def':'foo'}
+SELECT * FROM tab WHERE mapContains(map, '');
+SELECT * from tab WHERE has(map, 'abc');
+1	abc	['abc']	{'abc':'abc'}
+2	def	['def','abc']	{'abc':'foo','def':'foo'}
