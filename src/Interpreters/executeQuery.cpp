@@ -1664,6 +1664,12 @@ static BlockIO executeQueryImpl(
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
+
+                            /// We will also provide the info in HTTP headers,
+                            /// but only if the cache is enabled for reading (otherwise browsers should not cache either)
+                            /// and we set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+                            if (settings[Setting::enable_reads_from_query_cache])
+                                result_details.query_cache_expires_at = expires_at;
                         }
                     }
                 }
