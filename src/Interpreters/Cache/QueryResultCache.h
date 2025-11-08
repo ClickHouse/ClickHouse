@@ -252,13 +252,13 @@ public:
     std::unique_ptr<SourceFromChunks> getSource();
     std::unique_ptr<SourceFromChunks> getSourceTotals();
     std::unique_ptr<SourceFromChunks> getSourceExtremes();
-    const Cache::Key * getKey() const;
+    const std::optional<Cache::Key> & getKey() const;
 
 private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
 
-    const Cache::Key * entry_key = nullptr;
+    std::optional<Cache::Key> entry_key;
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;

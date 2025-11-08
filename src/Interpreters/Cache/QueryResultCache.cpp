@@ -607,7 +607,7 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         return;
     }
 
-    entry_key = &entry->key;
+    entry_key.emplace(entry->key);
     const auto & entry_mapped = entry->mapped;
 
     const bool is_same_user_id = ((!entry_key->user_id.has_value() && !key.user_id.has_value()) || (entry_key->user_id.has_value() && key.user_id.has_value() && *entry_key->user_id == *key.user_id));
@@ -676,7 +676,7 @@ bool QueryResultCacheReader::hasCacheEntryForKey() const
     return has_entry;
 }
 
-const QueryResultCache::Key * QueryResultCacheReader::getKey() const
+const std::optional<QueryResultCache::Key> & QueryResultCacheReader::getKey() const
 {
     return entry_key;
 }
