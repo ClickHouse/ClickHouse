@@ -504,6 +504,12 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     src += bytes_to_skip;
     dst += bytes_to_skip;
 
+    if (bytes_size % sizeof(T) != 0)
+        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not aligned to {}", bytes_size, sizeof(T));
+
+    if (bytes_size == 0)
+        return header_size + bytes_to_skip;
+
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
     UInt32 tail = src_size % matrix_size;
@@ -563,6 +569,14 @@ void decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 unco
     bytes_size -= bytes_to_skip;
     src += bytes_to_skip;
     dst += bytes_to_skip;
+
+    if (uncompressed_size % sizeof(T) != 0)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress T64-encoded data, unexpected uncompressed size ({})"
+                        " isn't a multiple of the data type size ({})",
+                        uncompressed_size, sizeof(T));
+
+    if (uncompressed_size == 0)
+        return;
 
     UInt64 num_elements = uncompressed_size / sizeof(T);
     MinMaxType min;
