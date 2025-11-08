@@ -431,12 +431,94 @@
             background-color: var(--button-color);
             padding: 0.25rem 0.65rem;
             cursor: pointer;
+            position: relative;
         }
 
         #download
         {
             width: 1em;
             height: 1em;
+        }
+
+        #download-dropdown
+        {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 0.5rem;
+            background-color: var(--button-color);
+            border: 1px solid var(--shadow-color);
+            border-radius: 0.25rem;
+            padding: 1rem;
+            z-index: 1000;
+            min-width: 300px;
+            box-shadow: 0 4px 6px var(--shadow-color);
+        }
+
+        #download-dropdown.show
+        {
+            display: block;
+        }
+
+        .download-option
+        {
+            margin-bottom: 1rem;
+        }
+
+        .download-option:last-child
+        {
+            margin-bottom: 0;
+        }
+
+        .download-option label
+        {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: var(--text-color);
+        }
+
+        .download-option select,
+        .download-option input[type="text"]
+        {
+            width: 100%;
+            padding: 0.5rem;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            border: 1px solid var(--shadow-color);
+            border-radius: 0.25rem;
+            font-family: inherit;
+        }
+
+        #download-format-other
+        {
+            display: none;
+            margin-top: 0.5rem;
+        }
+
+        #download-format-other.show
+        {
+            display: block;
+        }
+
+        #download-button
+        {
+            width: 100%;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background-color: var(--button-active-color);
+            color: var(--button-active-text-color);
+            border: none;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 100%;
+        }
+
+        #download-button:hover
+        {
+            opacity: 0.9;
         }
 
         #progress
@@ -812,6 +894,32 @@
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
+                    <div id="download-dropdown">
+                        <div class="download-option">
+                            <label for="download-format">Format:</label>
+                            <select id="download-format">
+                                <option value="CSV">CSV</option>
+                                <option value="TSV">TSV</option>
+                                <option value="JSON">JSON</option>
+                                <option value="JSONEachRow" selected>JSONLines</option>
+                                <option value="Parquet">Parquet</option>
+                                <option value="other">Other...</option>
+                            </select>
+                            <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
+                        </div>
+                        <div class="download-option">
+                            <label for="download-compression">Compression:</label>
+                            <select id="download-compression">
+                                <option value="none">none</option>
+                                <option value="zstd" selected>zstd</option>
+                                <option value="gz">gz</option>
+                                <option value="br">br</option>
+                                <option value="xz">xz</option>
+                                <option value="bz2">bz2</option>
+                            </select>
+                        </div>
+                        <button id="download-button">Download</button>
+                    </div>
                 </div>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
@@ -1290,6 +1398,7 @@ async function postImpl(posted_request_num, query)
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
     document.getElementById('download-div').style.display = 'block';
+    last_query_for_download = query;
 
     if (is_raw) {
         elapsed_ns = 1e6 * (performance.now() - last_query_start);
@@ -2402,5 +2511,122 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+// Download functionality
+let last_query_for_download = '';
+
+// Toggle download dropdown
+document.getElementById('download').addEventListener('click', function(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('download-dropdown');
+    dropdown.classList.toggle('show');
+});
+
+// Prevent dropdown from closing when clicking inside it
+document.getElementById('download-dropdown').addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function() {
+    const dropdown = document.getElementById('download-dropdown');
+    dropdown.classList.remove('show');
+});
+
+// Handle "Other" format selection
+document.getElementById('download-format').addEventListener('change', function() {
+    const otherInput = document.getElementById('download-format-other');
+    if (this.value === 'other') {
+        otherInput.classList.add('show');
+        otherInput.focus();
+    } else {
+        otherInput.classList.remove('show');
+    }
+});
+
+// Handle download button click
+document.getElementById('download-button').addEventListener('click', async function() {
+    const formatSelect = document.getElementById('download-format');
+    const formatOther = document.getElementById('download-format-other');
+    const compression = document.getElementById('download-compression').value;
+
+    let format = formatSelect.value;
+    if (format === 'other') {
+        format = formatOther.value.trim();
+        if (!format) {
+            alert('Please enter a format name');
+            return;
+        }
+    }
+
+    // Get current values
+    const user = user_elem.value;
+    const password = password_elem.value;
+    const server_address = url_elem.value;
+    const query = last_query_for_download;
+
+    if (!query) {
+        alert('No query to download results for');
+        return;
+    }
+
+    // Build download URL
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1';
+    if (user) url += '&user=' + encodeURIComponent(user);
+    if (password) url += '&password=' + encodeURIComponent(password);
+
+    // Add format - append to query if not already specified
+    let downloadQuery = query;
+    if (!query.match(/\bFORMAT\s+\w+/i)) {
+        downloadQuery += ' FORMAT ' + format;
+    }
+
+    // Determine file extension
+    let extension = format.toLowerCase();
+    if (compression !== 'none') {
+        extension += '.' + compression;
+    }
+
+    try {
+        // Set compression header if needed
+        const headers = { 'Authorization': 'never' };
+        if (compression !== 'none') {
+            url += '&compress=1';
+            url += '&compression=' + compression;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            body: downloadQuery,
+            headers: headers
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            alert('Download failed: ' + text);
+            return;
+        }
+
+        // Get the data as blob
+        const blob = await response.blob();
+
+        // Create download link
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = 'results.' + extension;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(downloadUrl);
+        document.body.removeChild(a);
+
+        // Close dropdown
+        document.getElementById('download-dropdown').classList.remove('show');
+    } catch (error) {
+        alert('Download error: ' + error.message);
+    }
+});
 </script>
 </html>
