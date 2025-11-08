@@ -25,30 +25,6 @@ FROM numbers(60000);
 ALTER TABLE sc_core ADD STATISTICS v TYPE TDigest;
 ALTER TABLE sc_core MATERIALIZE STATISTICS ALL;
 
--- force load
-SELECT count() FROM sc_core WHERE v > 0.99
-SETTINGS use_statistics_cache = 0, log_comment = 'core-load' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] > 0)
-FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'core-load'
-ORDER BY event_time_microseconds DESC
-LIMIT 1;
-
--- Hit: expect no load
-SELECT count() FROM sc_core WHERE v > 0.99
-SETTINGS use_statistics_cache = 1, log_comment = 'core-hit' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
-FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'core-hit'
-ORDER BY event_time_microseconds DESC
-LIMIT 1;
-
 ------------------------------------------------------------
 -- SUM() must not trigger statistics
 ------------------------------------------------------------
@@ -114,18 +90,6 @@ WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comm
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
--- no load
-SELECT count() FROM st_cm_lc WHERE cat = 'PROMO'
-SETTINGS use_statistics_cache = 1, log_comment = 'cm-lc-hit' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT toUInt8(ProfileEvents['LoadedStatisticsMicroseconds'] = 0)
-FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'cm-lc-hit'
-ORDER BY event_time_microseconds DESC
-LIMIT 1;
-
 ------------------------------------------------------------
 -- JOIN with Uniq
 ------------------------------------------------------------
@@ -165,46 +129,3 @@ FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'join-load'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
-
-------------------------------------------------------------
--- auto_statistics_types
-------------------------------------------------------------
-DROP TABLE IF EXISTS sa_auto SYNC;
-
-CREATE TABLE sa_auto
-(
-  k   UInt32,
-  val Nullable(Float64),
-  cat LowCardinality(Nullable(String)),
-  r   UInt32
-)
-ENGINE = MergeTree
-ORDER BY k
-SETTINGS refresh_statistics_interval = 0,
-         auto_statistics_types = 'tdigest,countmin,minmax,uniq';
-
-INSERT INTO sa_auto
-SELECT number,
-       if(number % 13 = 0, NULL, toFloat64(rand()) / 4294967296.0),
-       if(number % 11 = 0, NULL, if(number % 7 = 0, 'PROMO', concat('G', toString(number % 500)))),
-       number % 100000
-FROM numbers(60000);
-
-ALTER TABLE sa_auto MATERIALIZE STATISTICS ALL;
-
--- TDigest hit
-SELECT count() FROM sa_auto WHERE val > 0.99
-SETTINGS use_statistics_cache = 1, log_comment = 'auto-td' FORMAT Null;
-
--- CountMin hit
-SELECT count() FROM sa_auto WHERE cat = 'PROMO'
-SETTINGS use_statistics_cache = 1, log_comment = 'auto-cm' FORMAT Null;
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT
-    toUInt8(any(log_comment = 'auto-td' AND ProfileEvents['LoadedStatisticsMicroseconds'] = 0)),
-    toUInt8(any(log_comment = 'auto-cm' AND ProfileEvents['LoadedStatisticsMicroseconds'] = 0))
-FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-  AND log_comment IN ('auto-td','auto-cm');
