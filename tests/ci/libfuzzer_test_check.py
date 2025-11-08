@@ -193,7 +193,7 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
     test_unit = ""
     trace_file = ""
     stack_trace = []
-    TEST_UNIT_LINE = r"artifact_prefix='.*\/'; Test unit written to (.*)"
+    TEST_UNIT_LINE = r"^artifact_prefix='.*\/'; Test unit written to ((?:(?!slow-unit-).)+)$"
     error_info = [] # [(error_source, error_reason, test_unit, trace_file), ...]
     is_error = False
 
