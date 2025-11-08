@@ -52,18 +52,30 @@ def test_initiator_user_in_ddl(started_cluster):
     node1.query("GRANT ALTER ON table TO test")
     node1.query("GRANT CLUSTER ON *.* TO test")
 
-    error = node1.query_and_get_error(
-        """
-        ALTER TABLE table ON CLUSTER default
+    query = """
+    ALTER TABLE table ON CLUSTER default
         ADD PROJECTION test (
             SELECT
                 x,
                 (SELECT * FROM secret LIMIT 1) as bar
             ORDER BY x
         )
-        SETTINGS distributed_ddl_entry_format_version = 8
-        """,
-        user="test",
-    )
+    SETTINGS distributed_ddl_entry_format_version = 8
+    """
+
+    error = node1.query_and_get_error(query, user="test")
     assert "super_secret" not in error
     assert "Not enough privileges" in error
+
+
+    for node in all_nodes:
+        node.replace_in_config(
+            "/etc/clickhouse-server/config.d/config.xml",
+            "<distributed_ddl_use_initial_user_and_roles>1</distributed_ddl_use_initial_user_and_roles>",
+            "<distributed_ddl_use_initial_user_and_roles>0</distributed_ddl_use_initial_user_and_roles>",
+        )
+        node.restart_clickhouse()
+
+    error = node1.query_and_get_error(query, user="test")
+    assert "super_secret" in error
+    assert "Not enough privileges" not in error
