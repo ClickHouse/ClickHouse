@@ -183,10 +183,10 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
  * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
  * To use DatabaseOverlay, it must be constructed programmatically in code
  */
-ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
 {
     auto query = std::make_shared<ASTCreateQuery>();
-    query->setDatabase(database_name);
+    query->setDatabase(getDatabaseName());
     return query;
 }
 

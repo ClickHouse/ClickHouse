@@ -45,7 +45,6 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int THERE_IS_NO_QUERY;
 }
 namespace
 {
@@ -332,33 +331,27 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command)
+void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
 {
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
-    std::lock_guard lock{mutex};
-
-    const String old_comment = comment;
-    comment = command.comment.value();
-
-    const ASTPtr create_query = getCreateDatabaseQueryImpl();
-    if (!create_query)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+    String old_database_comment = db->getDatabaseComment();
+    db->setDatabaseComment(command.comment.value());
 
     try
     {
-        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
+        DatabaseCatalog::instance().updateMetadataFile(db);
     }
     catch (...)
     {
-        comment = old_comment;
+        db->setDatabaseComment(old_database_comment);
         throw;
     }
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : DatabaseWithAltersOnDiskBase(name_)
+    : IDatabase(name_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(logger))
 {
