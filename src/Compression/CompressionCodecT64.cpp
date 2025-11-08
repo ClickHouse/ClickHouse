@@ -528,7 +528,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
 
     UInt32 num_bits = getValuableBitsNumber(min64, max64);
     if (!num_bits)
-        return header_size;
+        return header_size + bytes_to_skip;
 
     T buf[matrix_size];
     UInt32 src_shift = sizeof(T) * matrix_size;
