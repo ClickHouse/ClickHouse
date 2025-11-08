@@ -1505,7 +1505,7 @@ static BlockIO executeQueryImpl(
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
 
-                        if (const QueryResultCache::Key * used_key = reader.getKey())
+                        if (const auto & used_key = reader.getKey(); used_key)
                         {
                             result_details.query_cache_created_at = used_key->created_at;
                             result_details.query_cache_expires_at = used_key->expires_at;
