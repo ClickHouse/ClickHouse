@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
