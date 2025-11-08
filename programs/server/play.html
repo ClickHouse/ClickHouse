@@ -102,10 +102,13 @@
 
             --progress-color: #FF0;
 
-            ::selection {
-                color: #000;
-                background-color: #FF8;
-            }
+            --selection-color: #000;
+            --selection-background-color: #FF8;
+        }
+
+        :root::selection {
+            color: var(--selection-color);
+            background-color: var(--selection-background-color);
         }
 
         *
@@ -157,6 +160,9 @@
         #main
         {
             overflow: auto;
+            grid-area: main;
+            padding: 0.5rem;
+            position: relative; /* for stacking context */
         }
 
         .menu-icon
@@ -271,12 +277,6 @@
         .table:hover .table-addendum
         {
             display: inline-block;
-        }
-
-        #main
-        {
-            grid-area: main;
-            padding: 0.5rem;
         }
 
         #controls
@@ -444,15 +444,10 @@
         {
             display: none;
             position: absolute;
-            top: 100%;
-            right: 0;
-            margin-top: 0.5rem;
             background-color: var(--button-color);
-            border: 1px solid var(--shadow-color);
-            border-radius: 0.25rem;
-            padding: 1rem;
-            z-index: 1000;
-            min-width: 300px;
+            border: 1px solid var(--button-text-color);
+            padding: 0.5rem;
+            z-index: 999;
             box-shadow: 0 4px 6px var(--shadow-color);
         }
 
@@ -463,38 +458,39 @@
 
         .download-option
         {
-            margin-bottom: 1rem;
-        }
-
-        .download-option:last-child
-        {
-            margin-bottom: 0;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
         }
 
         .download-option label
         {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: bold;
-            color: var(--text-color);
+            color: var(--button-text-color);
+            white-space: nowrap;
+            margin-right: 0.5rem;
         }
 
         .download-option select,
-        .download-option input[type="text"]
+        #download-format-other
         {
-            width: 100%;
-            padding: 0.5rem;
-            background-color: var(--background-color);
+            flex: 1;
+            padding: 0.25rem;
+            background-color: var(--element-background-color);
             color: var(--text-color);
             border: 1px solid var(--shadow-color);
-            border-radius: 0.25rem;
-            font-family: inherit;
+
+            &:focus {
+                outline: none;
+            }
         }
 
         #download-format-other
         {
             display: none;
-            margin-top: 0.5rem;
+            margin-top: 0.25rem;
+            margin-bottom: 0.5rem;
+            width: 100%;
         }
 
         #download-format-other.show
@@ -505,20 +501,18 @@
         #download-button
         {
             width: 100%;
-            margin-top: 1rem;
-            padding: 0.5rem 1rem;
-            background-color: var(--button-active-color);
-            color: var(--button-active-text-color);
+            margin-top: 0rem;
+            padding: 0.5rem 0.5rem;
+            background-color: var(--element-background-color);
+            color: var(--text-color);
             border: none;
-            border-radius: 0.25rem;
             cursor: pointer;
             font-weight: bold;
-            font-size: 100%;
-        }
 
-        #download-button:hover
-        {
-            opacity: 0.9;
+            &:hover {
+                background-color: var(--button-active-color);
+                color: var(--button-active-text-color);
+            }
         }
 
         #progress
@@ -894,32 +888,6 @@
                         <polyline points="7 10 12 15 17 10"/>
                         <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
-                    <div id="download-dropdown">
-                        <div class="download-option">
-                            <label for="download-format">Format:</label>
-                            <select id="download-format">
-                                <option value="CSV">CSV</option>
-                                <option value="TSV">TSV</option>
-                                <option value="JSON">JSON</option>
-                                <option value="JSONEachRow" selected>JSONLines</option>
-                                <option value="Parquet">Parquet</option>
-                                <option value="other">Other...</option>
-                            </select>
-                            <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
-                        </div>
-                        <div class="download-option">
-                            <label for="download-compression">Compression:</label>
-                            <select id="download-compression">
-                                <option value="none">none</option>
-                                <option value="zstd" selected>zstd</option>
-                                <option value="gz">gz</option>
-                                <option value="br">br</option>
-                                <option value="xz">xz</option>
-                                <option value="bz2">bz2</option>
-                            </select>
-                        </div>
-                        <button id="download-button">Download</button>
-                    </div>
                 </div>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
@@ -939,6 +907,24 @@
             </a>
             <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
         </p>
+        <div id="download-dropdown">
+            <div>
+                <div class="download-option">
+                    <label for="download-format">Format:</label>
+                    <select id="download-format">
+                        <option value="CSV">CSV</option>
+                        <option value="TSV">TSV</option>
+                        <option value="JSON">JSON</option>
+                        <option value="NDJSON" selected>JSONLines</option>
+                        <option value="Parquet">Parquet</option>
+                        <option value="Markdown">Markdown</option>
+                        <option value="other">Other...</option>
+                    </select>
+                </div>
+                <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
+            </div>
+            <button id="download-button">Download</button>
+        </div>
     </div>
 </body>
 
@@ -1265,6 +1251,9 @@ async function postImpl(posted_request_num, query)
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&default_format=' + default_format + '&enable_http_compression=1';
+    /// We will put the result in the query cache, so it can be used when download is initiated later.
+    /// But we don't use cached results, so the results that we get here, are always fresh.
+    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
@@ -2516,10 +2505,24 @@ document.getElementById('toggle-dark').onclick = function() {
 let last_query_for_download = '';
 
 // Toggle download dropdown
-document.getElementById('download').addEventListener('click', function(e) {
+document.getElementById('download-div').addEventListener('click', function(e) {
     e.stopPropagation();
     const dropdown = document.getElementById('download-dropdown');
-    dropdown.classList.toggle('show');
+    const button = document.getElementById('download-div');
+    const context = document.getElementById('main');
+
+    if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+    } else {
+        // Position the dropdown relative to the button
+        dropdown.classList.add('show');
+        const button_rect = button.getBoundingClientRect();
+        const context_rect = context.getBoundingClientRect();
+        const dropdown_rect = dropdown.getBoundingClientRect();
+
+        dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
+        dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+    }
 });
 
 // Prevent dropdown from closing when clicking inside it
@@ -2548,7 +2551,6 @@ document.getElementById('download-format').addEventListener('change', function()
 document.getElementById('download-button').addEventListener('click', async function() {
     const formatSelect = document.getElementById('download-format');
     const formatOther = document.getElementById('download-format-other');
-    const compression = document.getElementById('download-compression').value;
 
     let format = formatSelect.value;
     if (format === 'other') {
@@ -2573,60 +2575,35 @@ document.getElementById('download-button').addEventListener('click', async funct
     // Build download URL
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1';
+        'add_http_cors_header=1' +
+        '&enable_http_compression=1' +
+        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save' +
+        '&default_format=' + encodeURIComponent(format) +
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
-    // Add format - append to query if not already specified
-    let downloadQuery = query;
-    if (!query.match(/\bFORMAT\s+\w+/i)) {
-        downloadQuery += ' FORMAT ' + format;
-    }
+    let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
 
-    // Determine file extension
-    let extension = format.toLowerCase();
-    if (compression !== 'none') {
-        extension += '.' + compression;
-    }
+    // Create a form and submit it to trigger download
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    form.enctype = 'multipart/form-data';
+    form.style.display = 'none';
 
-    try {
-        // Set compression header if needed
-        const headers = { 'Authorization': 'never' };
-        if (compression !== 'none') {
-            url += '&compress=1';
-            url += '&compression=' + compression;
-        }
+    const queryInput = document.createElement('input');
+    queryInput.type = 'hidden';
+    queryInput.name = 'query';
+    queryInput.value = downloadQuery;
+    form.appendChild(queryInput);
 
-        const response = await fetch(url, {
-            method: 'POST',
-            body: downloadQuery,
-            headers: headers
-        });
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
 
-        if (!response.ok) {
-            const text = await response.text();
-            alert('Download failed: ' + text);
-            return;
-        }
-
-        // Get the data as blob
-        const blob = await response.blob();
-
-        // Create download link
-        const downloadUrl = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = downloadUrl;
-        a.download = 'results.' + extension;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(downloadUrl);
-        document.body.removeChild(a);
-
-        // Close dropdown
-        document.getElementById('download-dropdown').classList.remove('show');
-    } catch (error) {
-        alert('Download error: ' + error.message);
-    }
+    // Close dropdown
+    document.getElementById('download-dropdown').classList.remove('show');
 });
 </script>
 </html>
