@@ -13,7 +13,7 @@ $CLICKHOUSE_CURL -v -sS "$CLICKHOUSE_URL&query_id=${CLICKHOUSE_DATABASE}_q2&use_
 $CLICKHOUSE_CLIENT --query "
 SYSTEM FLUSH LOGS query_log;
 
-SELECT query_id, ProfileEvents['QueryCacheAgeSeconds'] > 1,
+SELECT replace(query_id, currentDatabase(), ''), ProfileEvents['QueryCacheAgeSeconds'] > 1,
     ProfileEvents['QueryCacheReadRows'], ProfileEvents['QueryCacheReadBytes'] > 10,
     ProfileEvents['QueryCacheWrittenRows'], ProfileEvents['QueryCacheWrittenBytes'] > 10
 FROM system.query_log
