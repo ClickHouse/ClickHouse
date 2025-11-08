@@ -205,6 +205,9 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 if match:
                     is_error = False
                     if test_unit:
+                        trace_path = f"{fuzzer_result_dir}/{trace_file}"
+                        with open(trace_path, "w", encoding="utf-8") as tracef:
+                            tracef.write("\n".join(stack_trace))
                         error_info.append((error_source, error_reason, test_unit, trace_file))
                         # reset for next error
                         error_source = ""
@@ -229,9 +232,9 @@ def process_error(output_log: Path, fuzzer_result_dir: Path) -> list:
                 test_unit = os.path.basename(match.group(1))
                 trace_file = f"{test_unit}.trace"
                 trace_path = f"{fuzzer_result_dir}/{trace_file}"
-                with open(trace_path, "w", encoding="utf-8") as tracef:
-                    tracef.write("\n".join(stack_trace))
                 if len(stack_trace) > 0:
+                    with open(trace_path, "w", encoding="utf-8") as tracef:
+                        tracef.write("\n".join(stack_trace))
                     error_info.append((error_source, error_reason, test_unit, trace_file))
                     # reset for next error
                     error_source = ""
