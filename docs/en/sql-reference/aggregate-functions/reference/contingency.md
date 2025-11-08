@@ -31,7 +31,7 @@ contingency(column1, column2)
 
 **Example**
 
-The two columns being compared below have a small association with each other. We have included the result of `cramersV` also (as a comparison):
+The two columns being compared below have a moderate association with each other. We have included the result of `cramersV` also (as a comparison):
 
 ```sql
 SELECT
@@ -51,6 +51,6 @@ Result:
 
 ```response
 ┌─────cramersV(a, b)─┬──contingency(a, b)─┐
-│ 0.5798088336225178 │ 0.0817230766271248 │
+│ 0.5798088336225178 │ 0.708607540104077  │
 └────────────────────┴────────────────────┘
 ```
