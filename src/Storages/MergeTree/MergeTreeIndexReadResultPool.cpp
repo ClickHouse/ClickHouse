@@ -397,8 +397,33 @@ void SingleProjectionIndexReader::cancel() noexcept
     processor->cancel();
 }
 
-MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_readers_)
-    : projection_index_readers(std::move(projection_index_readers_))
+SingleProjectionIndexReaderPtr SingleProjectionIndexReaderContext::allocateReader()
+{
+    auto reader = std::make_shared<SingleProjectionIndexReader>(projection_index_read_pool, prewhere_info, actions_settings, reader_settings);
+    {
+        std::lock_guard lock(*allocated_readers_mutext);
+        allocated_readers.insert(reader);
+    }
+    return reader;
+}
+
+void SingleProjectionIndexReaderContext::releaseReader(SingleProjectionIndexReaderPtr reader)
+{
+    std::lock_guard lock(*allocated_readers_mutext);
+    if (allocated_readers.contains(reader))
+        allocated_readers.erase(reader);
+}
+
+
+void SingleProjectionIndexReaderContext::cancel()
+{
+    std::lock_guard lock(*allocated_readers_mutext);
+    for (auto reader : allocated_readers)
+        reader->cancel();
+}
+
+MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_reader_contexts_)
+    : projection_index_reader_contexts(std::move(projection_index_reader_contexts_))
 {
 }
 
@@ -408,8 +433,10 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
     for (const auto & ranges : projection_parts)
     {
         const auto & proj_name = ranges.data_part->name;
-        auto & reader = projection_index_readers.at(proj_name);
-        auto res = reader.read(ranges);
+        auto & reader_context = projection_index_reader_contexts.at(proj_name);
+        auto reader = reader_context.allocateReader();
+        auto res = reader->read(ranges);
+        reader_context.releaseReader(reader);
 
         /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
         if (!res)
@@ -431,8 +458,8 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
 
 void MergeTreeProjectionIndexReader::cancel() noexcept
 {
-    for (auto && [_, reader] : projection_index_readers)
-        reader.cancel();
+    for (auto && [_, reader_context] : projection_index_reader_contexts)
+        reader_context.cancel();
 }
 
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(
@@ -482,7 +509,7 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart &
         }
         catch (...)
         {
-            promise->set_value(nullptr);
+            promise->set_exception(std::current_exception());
             throw;
         }
     }

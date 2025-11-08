@@ -127,19 +127,44 @@ private:
     MergeTreeSelectProcessorPtr processor;
 };
 
-using ProjectionIndexReaderByName = std::unordered_map<String, SingleProjectionIndexReader>;
+using SingleProjectionIndexReaderPtr = std::shared_ptr<SingleProjectionIndexReader>;
+
+struct SingleProjectionIndexReaderContext
+{
+    std::shared_ptr<MergeTreeReadPoolProjectionIndex> projection_index_read_pool;
+    PrewhereInfoPtr prewhere_info;
+    ExpressionActionsSettings actions_settings;
+    MergeTreeReaderSettings reader_settings;
+
+    explicit SingleProjectionIndexReaderContext(
+        std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool_,
+        PrewhereInfoPtr prewhere_info_,
+        const ExpressionActionsSettings &actions_settings_,
+        const MergeTreeReaderSettings &reader_settings_)
+            : projection_index_read_pool(std::move(pool_))
+            , prewhere_info(prewhere_info_)
+            , actions_settings(actions_settings_)
+            , reader_settings(reader_settings_)
+    {
+    }
+    SingleProjectionIndexReaderPtr allocateReader();
+    void releaseReader(const SingleProjectionIndexReaderPtr reader);
+    void cancel();
+};
+
+using ProjectionIndexReaderContextByName = std::unordered_map<String, SingleProjectionIndexContextReader>;
 
 class MergeTreeProjectionIndexReader
 {
 public:
-    explicit MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_readers_);
+    explicit MergeTreeProjectionIndexReader(ProjectionIndexReaderContextByName projection_index_reader_contexts_);
 
     ProjectionIndexBitmapPtr read(const RangesInDataParts & projection_parts);
 
     void cancel() noexcept;
 
 private:
-    ProjectionIndexReaderByName projection_index_readers;
+    ProjectionIndexReaderContextByName projection_index_reader_contexts;
 };
 
 using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionIndexReader>;

@@ -2801,14 +2801,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             .total_query_nodes = 1,
         };
 
-        ProjectionIndexReaderByName readers;
+        ProjectionIndexReaderContextByName readers;
 
         /// Create a reader for each projection index based on its metadata and prewhere info.
         for (const auto & read_info : projection_index_read_desc.read_infos)
         {
             readers.emplace(
                 read_info.projection->name,
-                SingleProjectionIndexReader(
+                SingleProjectionIndexReaderContext(
                     std::make_shared<MergeTreeReadPoolProjectionIndex>(
                         empty_mutations_snapshot,
                         std::make_shared<StorageSnapshot>(storage_snapshot->storage, read_info.projection->metadata),
