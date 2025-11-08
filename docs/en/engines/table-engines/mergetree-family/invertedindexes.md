@@ -763,9 +763,9 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 ## Tuning the text index {#tuning-the-text-index}
 
-Currently, there are caches for the deserialized dictionary blocks and header of the text index to reduce I/O.
+Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
 
-They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache) and [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache) respectively. By default, they are disabled.
+They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache) and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) respectively. By default, they are disabled.
 
 Refer the following server settings to configure the cache.
 
@@ -788,6 +788,15 @@ Refer the following server settings to configure the cache.
 | [text_index_header_cache_size](/operations/server-configuration-parameters/settings#text_index_header_cache_size)                 | Maximum cache size in bytes.                                                                            | `1073741824` |
 | [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)   | Maximum number of deserialized headers in cache.                                                        | `100'000`    |
 | [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)     | The size of the protected queue in the text index header cache relative to the cache\'s total size.     | `0.5`        |
+
+#### Posting lists cache settings {#text-index-tuning-posting-lists-cache}
+
+| Setting                                                                                                                               | Description                                                                                             | Default      |
+|---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
+| [text_index_postings_cache_policy](/operations/server-configuration-parameters/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  | `SLRU`       |
+| [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            | `2147483648` |
+| [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       | `1'000'000`  |
+| [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   | `0.5`        |
 
 ## Related content {#related-content}
 
