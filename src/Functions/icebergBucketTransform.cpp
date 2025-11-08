@@ -255,7 +255,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Syntax syntax = "icebergHash(value)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"value", "Source value to take the hash of", {"Integer", "bool", "decimal", "float", "string", "fixed string", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "string", "Fixed string", "UUID", "Date", "Time", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit Murmur3 hash, x86 variant, seeded with 0", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
@@ -347,7 +347,7 @@ REGISTER_FUNCTION(IcebergBucket)
     FunctionDocumentation::Arguments arguments =
     {
         {"N", "The number of buckets, modulo.", {"const (U)Int*"}},
-        {"value", "The source value to transform.", {"(U)Int*", "bool", "decimal", "float*", "string", "fixed string", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "Fixed string", "UUID", "Date", "Time", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit hash of the source value.", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
