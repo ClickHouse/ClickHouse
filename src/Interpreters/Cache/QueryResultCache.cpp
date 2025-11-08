@@ -227,6 +227,11 @@ public:
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
         }
+        else
+        {
+            /// Output options don't affect the cached data, as we do caching on a result block level.
+            ASTQueryWithOutput::resetOutputASTIfExist(*ast);
+        }
     }
 
     /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
@@ -251,9 +256,6 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
     ASTPtr transformed_ast = ast->clone();
-
-    /// Output options don't affect the cached data, as we do caching on a result block level.
-    ASTQueryWithOutput::resetOutputASTIfExist(*transformed_ast);
 
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
     RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
