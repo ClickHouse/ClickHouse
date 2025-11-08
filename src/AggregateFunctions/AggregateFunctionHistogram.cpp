@@ -76,7 +76,7 @@ private:
     Mean lower_bound;
     Mean upper_bound;
 
-    // Variables to track patterns in points[]
+    //Variables to track patterns in points[]
     UInt32 sorted_prefix;
     Mean last_inserted;
 
@@ -124,7 +124,7 @@ private:
         auto cmp = [](const WeightedValue & a, const WeightedValue & b)
         { return a.mean < b.mean; };
         UInt32 prefix = sorted_prefix;
-        //if we have a fully sorted array, we can skip sorting
+        // If array is already sorted, we can skip sorting
         if (prefix != size)
         {
             if (prefix == 0)
@@ -132,7 +132,7 @@ private:
                 ::sort(points, points + size, cmp);
             }else if (prefix < size)
             {
-                //if we have already have sorted part of array: first prefix element we can only sort the tail and then merge
+                // If part of array is already sorted: we need only to sort the tail and then merge
                 ::sort(points + prefix, points + size, cmp);
                 std::inplace_merge(points, points + prefix, points + size, cmp);
             }
@@ -279,10 +279,10 @@ public:
 
         points[size] = {value, weight};
         ++size;
-        //check if the input sequence is monotonic increasing, which is a commonly occurring pattern
-        if (sorted_prefix == size - 1 && value < last_inserted) {
+        // check if the input sequence is monotonic increasing, which is a commonly occurring pattern
+        if (value < last_inserted)
             sorted_prefix = 0;
-        } else if (sorted_prefix == size - 1) {
+        else{
             sorted_prefix = size;
         }
         last_inserted = value;
