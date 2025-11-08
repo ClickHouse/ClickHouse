@@ -1091,7 +1091,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             // Context: INSERT INTO a table with dependent materialized view (the mv with JOIN)
                             // For some reason, the left table is wrapped up into StorageValues before execute the JOIN
                             // see https://github.com/ClickHouse/ClickHouse/issues/89742
-                            return !left_table_node->getStorage().get()->as<StorageValues>();
+                            if (left_table_node->getStorage().get()->as<StorageValues>())
+                                return false;
                         }
 
                         const auto join_kind = join_node->getKind();
