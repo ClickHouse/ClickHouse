@@ -76,7 +76,7 @@ private:
     Mean lower_bound;
     Mean upper_bound;
 
-    //Variables to track patterns in points[]
+    // Variables to track patterns in points[]
     UInt32 sorted_prefix;
     Mean last_inserted;
 
