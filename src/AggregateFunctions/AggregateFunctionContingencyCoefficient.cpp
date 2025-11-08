@@ -25,10 +25,10 @@ struct ContingencyData : CrossTabData
     * C = sqrt(χ² / (χ² + n)), where χ² is the chi-squared statistic and n is the total number of observations.
     * 
     * We have,
-    * phi_squared, φ² = χ² / n.
-    * => χ² = n · φ²
+    * phi_squared, φ² = χ² / n
+    * => χ² = n · φ².
     *
-    * Substituting χ² into the formula for C:,
+    * Substituting χ² into the formula for C,
     * C = sqrt((n · φ²) / (n · φ² + n))
     *   = sqrt(φ² / (φ² + 1)).
     **/
