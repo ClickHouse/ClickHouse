@@ -727,6 +727,7 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
 struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
+    std::string path;
     StoredObject object;
 
     CreateEmptyFileObjectStorageOperation(
@@ -734,9 +735,10 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         IMetadataStorage & metadata_storage_,
         const std::string & path_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , path(path_)
     {
-        const auto key = object_storage.generateObjectKeyForPath(path_, std::nullopt);
-        object = StoredObject(key.serialize(), path_, /* file_size */0);
+        const auto key = object_storage.generateObjectKeyForPath(path, std::nullopt);
+        object = StoredObject(key.serialize(), path, /* file_size */0);
     }
 
     std::string getInfoForLog() const override
@@ -744,10 +746,11 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object.remote_path, object.local_path);
     }
 
-    void execute(MetadataTransactionPtr /* tx */) override
+    void execute(MetadataTransactionPtr tx) override
     {
         auto buf = object_storage.writeObject(object, WriteMode::Rewrite);
         buf->finalize();
+        tx->createMetadataFile(path, /*objects=*/{object});
     }
 
     void undo() override
@@ -1026,12 +1029,14 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         operations_to_execute.emplace_back(
             std::make_shared<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
     }
-
-    operations_to_execute.emplace_back(
-        std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
-        {
-            tx->createMetadataFile(path, /*objects=*/{});
-        }));
+    else
+    {
+        operations_to_execute.emplace_back(
+            std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
+            {
+                tx->createMetadataFile(path, /*objects=*/{});
+            }));
+    }
 }
 
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
