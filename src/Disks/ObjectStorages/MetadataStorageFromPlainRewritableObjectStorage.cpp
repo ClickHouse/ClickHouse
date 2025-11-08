@@ -323,9 +323,10 @@ std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDi
 
 StoredObjects MetadataStorageFromPlainRewritableObjectStorage::getStorageObjects(const std::string & path) const
 {
-    size_t object_size = getFileSize(path);
-    auto object_key = object_storage->generateObjectKeyForPath(path, /*key_prefix=*/std::nullopt);
-    return {StoredObject(object_key.serialize(), path, object_size)};
+    if (auto objects = getStorageObjectsIfExist(path))
+        return std::move(objects.value());
+
+    throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", path);
 }
 
 std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::getStorageObjectsIfExist(const std::string & path) const
@@ -333,6 +334,7 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     if (auto object_size = getFileSizeIfExists(path))
     {
         auto object_key = object_storage->generateObjectKeyForPath(path, /*key_prefix=*/std::nullopt);
+        chassert(object_size == object_storage->getObjectMetadata(object_key.serialize()).size_bytes);
         return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
     }
 

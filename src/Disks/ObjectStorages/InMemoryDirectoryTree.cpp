@@ -178,7 +178,7 @@ std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> InMemoryDire
     const auto normalized_path = normalizePath(path);
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_info;
-    traverseSubtree(normalized_path, [&subtree_info](const std::string & node_path, const std::shared_ptr<INode> & node)
+    traverseSubtree(normalized_path, [&subtree_info](const std::string & node_path, const std::shared_ptr<const INode> & node)
     {
         subtree_info[node_path] = node->remote_info;
     });
@@ -256,7 +256,7 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
     if (inode->isRoot())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_path.string());
 
-    traverseSubtree(normalized_path, [&](const std::string &, const std::shared_ptr<INode> & node) TSA_REQUIRES(mutex)
+    traverseSubtree(normalized_path, [&](const std::string &, const std::shared_ptr<const INode> & node) TSA_REQUIRES(mutex)
     {
         if (!node->remote_info.has_value())
             return;

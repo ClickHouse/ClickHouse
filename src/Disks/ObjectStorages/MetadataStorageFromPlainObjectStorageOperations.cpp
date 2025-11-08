@@ -318,7 +318,7 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
-    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
     if (!fs_tree.existsFile(path))
     {
@@ -472,6 +472,11 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             read_settings,
             write_settings);
         moved_existing_target_file = true;
+
+        file_to_remote_info = fs_tree.getFileRemoteInfo(path_to);
+        fs_tree.removeFile(path_to);
+        fs_tree.recordFile(path_to, file_from_remote_info.value());
+
         object_storage->removeObjectIfExists(StoredObject(remote_path_to));
     }
     else
@@ -544,6 +549,9 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             /*object_to=*/StoredObject(remote_path_to),
             read_settings,
             write_settings);
+
+        fs_tree.removeFile(path_to);
+        fs_tree.recordFile(path_to, file_to_remote_info.value());
 
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
     }

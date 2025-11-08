@@ -165,6 +165,7 @@ private:
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
+    std::optional<FileRemoteInfo> file_to_remote_info;
     InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 

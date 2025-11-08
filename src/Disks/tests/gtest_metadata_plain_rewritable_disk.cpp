@@ -1623,3 +1623,84 @@ TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
     EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
     EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoAfterMove)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("FileRemoteInfoAfterMove");
+    auto object_storage = getObjectStorage("FileRemoteInfoAfterMove");
+
+    size_t written_bytes_file = 0;
+    size_t written_bytes_tmp = 0;
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->commit();
+
+        tx = metadata->createTransaction();
+        written_bytes_file = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/file", std::nullopt).serialize(), "don't stop! don't stop!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes_file)});
+        tx->commit();
+    }
+
+    EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes_file);
+
+    {
+        auto tx = metadata->createTransaction();
+        written_bytes_tmp = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/tmp", std::nullopt).serialize(), "stop!");
+        tx->createMetadataFile("/A/B/C/tmp", {StoredObject("tmp", "tmp", written_bytes_tmp)});
+        tx->replaceFile("/A/B/C/tmp", "/A/B/C/file");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_FALSE(metadata->existsFile("/A/B/C/tmp"));
+    EXPECT_NE(written_bytes_file, written_bytes_tmp);
+    EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes_tmp);
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfoMoveUndo)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("FileRemoteInfoMoveUndo");
+    auto object_storage = getObjectStorage("FileRemoteInfoMoveUndo");
+
+    size_t written_bytes_file = 0;
+    size_t written_bytes_tmp = 0;
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->commit();
+
+        tx = metadata->createTransaction();
+        written_bytes_file = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/file", std::nullopt).serialize(), "don't stop! don't stop!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes_file)});
+        tx->commit();
+    }
+
+    EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes_file);
+
+    {
+        auto tx = metadata->createTransaction();
+        written_bytes_tmp = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/tmp", std::nullopt).serialize(), "stop!");
+        tx->createMetadataFile("/A/B/C/tmp", {StoredObject("tmp", "tmp", written_bytes_tmp)});
+        tx->replaceFile("/A/B/C/tmp", "/A/B/C/file");
+        tx->moveFile("non-existing", "non-existing");
+        EXPECT_ANY_THROW(tx->commit());
+    }
+
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_FALSE(metadata->existsFile("/A/B/C/tmp"));
+    EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes_file);
+
+    auto content = readObject(object_storage, metadata->getStorageObjects("/A/B/C/file").front().remote_path);
+    EXPECT_EQ(content, "don't stop! don't stop!");
+
+    EXPECT_EQ(listAllBlobs("FileRemoteInfoMoveUndo"), std::vector<std::string>({
+        "./FileRemoteInfoMoveUndo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./FileRemoteInfoMoveUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file",
+        "./FileRemoteInfoMoveUndo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/tmp",
+    }));
+}
