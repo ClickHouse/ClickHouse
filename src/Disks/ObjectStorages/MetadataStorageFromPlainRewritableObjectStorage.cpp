@@ -118,7 +118,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
         for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0); iterator->isValid(); iterator->next())
-            remote_layout[""].files.emplace(fs::path(iterator->current()->getPath()).filename(), iterator->current()->metadata->size_bytes);
+        {
+            auto remote_file = iterator->current();
+            remote_layout[""].files.emplace(fs::path(remote_file->getPath()).filename(), FileRemoteInfo{
+                .bytes_size = remote_file->metadata->size_bytes,
+                .last_modified = remote_file->metadata->last_modified.epochTime(),
+            });
+        }
 
         for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
         {
@@ -188,7 +194,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                         /// Check that the file is a direct child.
                         chassert(full_prefix_length < remote_file_path.size());
                         if (std::string_view(remote_file_path.data() + full_prefix_length) == filename)
-                            files.emplace(std::move(filename), remote_file->metadata->size_bytes);
+                        {
+                            files.emplace(std::move(filename), FileRemoteInfo{
+                                .bytes_size = remote_file->metadata->size_bytes,
+                                .last_modified = remote_file->metadata->last_modified.epochTime(),
+                            });
+                        }
                     }
 
 #if USE_AZURE_BLOB_STORAGE

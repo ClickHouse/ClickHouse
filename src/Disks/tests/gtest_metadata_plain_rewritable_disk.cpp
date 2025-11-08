@@ -16,9 +16,12 @@
 #include <Common/thread_local_rng.h>
 
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 
+#include <chrono>
 #include <filesystem>
 #include <ranges>
+#include <thread>
 
 using namespace DB;
 
@@ -98,12 +101,15 @@ private:
     std::unordered_map<std::string, std::shared_ptr<IObjectStorage>> active_object_storages;
 };
 
-void writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path, const std::string & data)
+size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path, const std::string & data)
 {
     StoredObject object(remote_path);
     auto buffer = object_storage->writeObject(object, WriteMode::Rewrite);
     buffer->write(data.data(), data.size());
+    buffer->preFinalize();
+    size_t written_bytes = buffer->count();
     buffer->finalize();
+    return written_bytes;
 }
 
 std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path)
@@ -1573,4 +1579,47 @@ TEST_F(MetadataPlainRewritableDiskTest, VirtualSubpathTrim)
     EXPECT_EQ(listAllBlobs("VirtualSubpathTrim"), std::vector<std::string>({
         "./VirtualSubpathTrim/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
     }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, FileRemoteInfo)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("FileRemoteInfo");
+    auto object_storage = getObjectStorage("FileRemoteInfo");
+
+    size_t written_bytes = 0;
+    time_t now = std::time(nullptr);
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->commit();
+
+        tx = metadata->createTransaction();
+        written_bytes = writeObject(object_storage, object_storage->generateObjectKeyForPath("/A/B/C/file", std::nullopt).serialize(), "don't stop! don't stop!");
+        tx->createMetadataFile("/A/B/C/file", {StoredObject("file", "file", written_bytes)});
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_EQ(metadata->getFileSizeIfExists("/A/B/C/file"), written_bytes);
+    EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes);
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+
+    EXPECT_EQ(listAllBlobs("FileRemoteInfo"), std::vector<std::string>({
+        "./FileRemoteInfo/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./FileRemoteInfo/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/file",
+    }));
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    metadata = restartMetadataStorage("FileRemoteInfo");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsFile("/A/B/C/file"));
+    EXPECT_EQ(metadata->getFileSizeIfExists("/A/B/C/file"), written_bytes);
+    EXPECT_EQ(metadata->getFileSize("/A/B/C/file"), written_bytes);
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
+    EXPECT_THAT(metadata->getLastModifiedIfExists("/A/B/C/file").value(), testing::AllOf(testing::Ge(now - 1), testing::Le(now + 1)));
 }
