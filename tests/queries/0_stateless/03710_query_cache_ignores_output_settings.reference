@@ -7,9 +7,9 @@
 03710	1
 "03710",1
 03710	1
-0				miss
-1			hit	
-	{\'Content-Disposition\':\'attachment\'}		hit	
+0		100		miss
+1		100	hit	
+	{\'Content-Disposition\':\'attachment\'}	100	hit	
 		1		miss
 		1	hit	
 		1		miss
