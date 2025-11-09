@@ -151,7 +151,7 @@ struct SingleProjectionIndexReaderContext
     {
     }
     SingleProjectionIndexReaderPtr allocateReader();
-    void releaseReader(const SingleProjectionIndexReaderPtr reader);
+    void releaseReader(SingleProjectionIndexReaderPtr reader);
     void cancel();
 };
 
