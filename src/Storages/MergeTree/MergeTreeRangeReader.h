@@ -63,11 +63,26 @@ struct ReadStepPerformanceCounters
 
 using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
 
+/// Thread-safe, logically const container for read performance counters of multiple steps.
+///
+/// Design Notes:
+/// 1. All public methods are `const`, so the object can be used in const contexts.
+/// 2. Internal state is mutable and lazily initialized. This allows caching and on-demand creation of counters
+///    while still presenting a logically const interface to the caller.
+/// 3. Thread safety:
+///    - Access to the internal vector or the index counter pointer is protected by a mutex.
+///    - Individual counters themselves are atomic and can be updated concurrently without locking.
+/// 4. This class maintains state: it's not purely stateless; it stores the step counters and index counter.
+///    The const interface ensures the object can be passed around as const without preventing internal updates.
+/// 5. Use Cases:
+///    - MergeTreeSelectProcessor::readCurrentTask can safely access step counters concurrently.
+///    - Provides a clear and const-correct API for reading/updating performance counters.
 class ReadStepsPerformanceCounters final
 {
 public:
-    ReadStepPerformanceCountersPtr getCountersForStep(size_t step)
+    ReadStepPerformanceCountersPtr getCountersForStep(size_t step) const
     {
+        std::lock_guard lock{mutex};
         if (step >= performance_counters.size())
             performance_counters.resize(step + 1);
         if (!performance_counters[step])
@@ -75,19 +90,30 @@ public:
         return performance_counters[step];
     }
 
-    ReadStepPerformanceCountersPtr getCounterForIndexStep()
+    ReadStepPerformanceCountersPtr getCounterForIndexStep() const
     {
+        std::lock_guard lock{mutex};
         if (!index_performance_counter)
             index_performance_counter = std::make_shared<ReadStepPerformanceCounters>();
         return index_performance_counter;
     }
 
-    const std::vector<ReadStepPerformanceCountersPtr> & getCounters() const { return performance_counters; }
-    const ReadStepPerformanceCountersPtr & getIndexCounter() const { return index_performance_counter; }
+    std::vector<ReadStepPerformanceCountersPtr> getCounters() const
+    {
+        std::lock_guard lock{mutex};
+        return performance_counters;
+    }
+
+    ReadStepPerformanceCountersPtr getIndexCounter() const
+    {
+        std::lock_guard lock{mutex};
+        return index_performance_counter;
+    }
 
 private:
-    std::vector<ReadStepPerformanceCountersPtr> performance_counters;
-    ReadStepPerformanceCountersPtr index_performance_counter;
+    mutable std::mutex mutex;
+    mutable std::vector<ReadStepPerformanceCountersPtr> performance_counters TSA_GUARDED_BY(mutex);
+    mutable ReadStepPerformanceCountersPtr index_performance_counter TSA_GUARDED_BY(mutex);
 };
 
 class FilterWithCachedCount

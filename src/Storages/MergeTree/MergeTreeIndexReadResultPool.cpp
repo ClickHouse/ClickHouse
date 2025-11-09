@@ -340,16 +340,15 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 {
     bool can_use_32bit_part_offset = ranges.parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
 
-    /// Prepare the read processor with the current part and its read ranges.
-    /// This sets up internal state needed to read the projection data.
-    assert_cast<MergeTreeProjectionIndexSelectAlgorithm &>(*processor->algorithm).preparePartToRead(&ranges);
+    auto task = projection_index_read_pool->getTask(ranges);
+    MergeTreeProjectionIndexSelectAlgorithm algorithm;
     auto res = can_use_32bit_part_offset ? ProjectionIndexBitmap::create32() : ProjectionIndexBitmap::create64();
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (true)
+    while (!processor->is_cancelled && !task->isFinished())
     {
-        auto chunk = processor->read();
+        auto chunk = processor->readCurrentTask(*task, algorithm);
         if (chunk.chunk)
         {
             if (chunk.chunk.getNumRows() > 0)
@@ -380,9 +379,6 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                     add_offsets(UInt64{});
             }
         }
-
-        if (chunk.is_finished)
-            break;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.
@@ -397,32 +393,8 @@ void SingleProjectionIndexReader::cancel() noexcept
     processor->cancel();
 }
 
-SingleProjectionIndexReaderPtr SingleProjectionIndexReaderContext::allocateReader()
-{
-    auto reader = std::make_shared<SingleProjectionIndexReader>(projection_index_read_pool, prewhere_info, actions_settings, reader_settings);
-    {
-        std::lock_guard lock(*allocated_readers_mutex);
-        allocated_readers.insert(reader.get());
-    }
-    return reader;
-}
-
-void SingleProjectionIndexReaderContext::releaseReader(SingleProjectionIndexReaderPtr reader)
-{
-    std::lock_guard lock(*allocated_readers_mutex);
-    if (allocated_readers.contains(reader.get()))
-        allocated_readers.erase(reader.get());
-}
-
-void SingleProjectionIndexReaderContext::cancel()
-{
-    std::lock_guard lock(*allocated_readers_mutex);
-    for (auto reader : allocated_readers)
-        reader->cancel();
-}
-
-MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderContextByName projection_index_reader_contexts_)
-    : projection_index_reader_contexts(std::move(projection_index_reader_contexts_))
+MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_readers_)
+    : projection_index_readers(std::move(projection_index_readers_))
 {
 }
 
@@ -432,10 +404,8 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
     for (const auto & ranges : projection_parts)
     {
         const auto & proj_name = ranges.data_part->name;
-        auto & reader_context = projection_index_reader_contexts.at(proj_name);
-        auto reader = reader_context.allocateReader();
-        auto res = reader->read(ranges);
-        reader_context.releaseReader(reader);
+        auto & reader = projection_index_readers.at(proj_name);
+        auto res = reader.read(ranges);
 
         /// If any bitmap is incomplete (due to cancellation), the projection index becomes invalid.
         if (!res)
@@ -454,9 +424,10 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
 
     return projection_index_bitmap;
 }
+
 void MergeTreeProjectionIndexReader::cancel() noexcept
 {
-    for (auto && [_, reader] : projection_index_reader_contexts)
+    for (auto && [_, reader] : projection_index_readers)
         reader.cancel();
 }
 
@@ -507,7 +478,7 @@ MergeTreeIndexReadResultPool::getOrBuildIndexReadResult(const RangesInDataPart &
         }
         catch (...)
         {
-            promise->set_exception(std::current_exception());
+            promise->set_value(nullptr);
             throw;
         }
     }

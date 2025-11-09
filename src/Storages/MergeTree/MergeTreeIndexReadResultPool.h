@@ -127,47 +127,19 @@ private:
     MergeTreeSelectProcessorPtr processor;
 };
 
-using SingleProjectionIndexReaderPtr = std::shared_ptr<SingleProjectionIndexReader>;
-
-struct SingleProjectionIndexReaderContext
-{
-    std::shared_ptr<MergeTreeReadPoolProjectionIndex> projection_index_read_pool;
-    PrewhereInfoPtr prewhere_info;
-    ExpressionActionsSettings actions_settings;
-    MergeTreeReaderSettings reader_settings;
-    std::shared_ptr<std::mutex> allocated_readers_mutex = {};
-    std::unordered_set<SingleProjectionIndexReader*> allocated_readers;
-
-    explicit SingleProjectionIndexReaderContext(
-        std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool_,
-        PrewhereInfoPtr prewhere_info_,
-        const ExpressionActionsSettings &actions_settings_,
-        const MergeTreeReaderSettings &reader_settings_)
-            : projection_index_read_pool(std::move(pool_))
-            , prewhere_info(prewhere_info_)
-            , actions_settings(actions_settings_)
-            , reader_settings(reader_settings_)
-            , allocated_readers_mutex(std::make_shared<std::mutex>())
-    {
-    }
-    SingleProjectionIndexReaderPtr allocateReader();
-    void releaseReader(SingleProjectionIndexReaderPtr reader);
-    void cancel();
-};
-
-using ProjectionIndexReaderContextByName = std::unordered_map<String, SingleProjectionIndexReaderContext>;
+using ProjectionIndexReaderByName = std::unordered_map<String, SingleProjectionIndexReader>;
 
 class MergeTreeProjectionIndexReader
 {
 public:
-    explicit MergeTreeProjectionIndexReader(ProjectionIndexReaderContextByName projection_index_reader_contexts_);
+    explicit MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_readers_);
 
     ProjectionIndexBitmapPtr read(const RangesInDataParts & projection_parts);
 
     void cancel() noexcept;
 
 private:
-    ProjectionIndexReaderContextByName projection_index_reader_contexts;
+    ProjectionIndexReaderByName projection_index_readers;
 };
 
 using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionIndexReader>;
