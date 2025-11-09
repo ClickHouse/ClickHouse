@@ -24,6 +24,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
+#include <Storages/StorageDummy.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
 
 #include <Analyzer/ConstantNode.h>
@@ -57,8 +59,6 @@
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
-#include <Storages/StorageDummy.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -772,8 +772,17 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
     if (table_node || table_function_node)
     {
-        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
-        const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        auto storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        auto storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+        if (table_node)
+        {
+            const auto * mv = typeid_cast<const StorageMaterializedView *>(table_node->getStorage().get());
+            if (mv)
+            {
+                storage = mv->getTargetTable();
+                storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), query_context);
+            }
+        }
 
         auto table_expression_query_info = select_query_info;
         table_expression_query_info.table_expression = table_expression;
