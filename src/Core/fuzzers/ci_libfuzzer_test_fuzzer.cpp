@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <sys/types.h>
 
-bool trap_it = false;
+bool trap_it = true;
 int odd_or_even = 0;
 
 void trap_or_not(uint n)
