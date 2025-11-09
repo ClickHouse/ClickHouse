@@ -49,6 +49,38 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
+namespace
+{
+
+std::exception_ptr copyBlobsToOtherObjectStorage(
+    const StoredObjects & objects_to_copy,
+    const std::string & to_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    IObjectStorage & src_object_storage,
+    IObjectStorage & dst_object_storage,
+    StoredObjects & copied_objects) noexcept
+{
+    try
+    {
+        for (const auto & object_from : objects_to_copy)
+        {
+            const ObjectStorageKey object_key(dst_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt));
+            const StoredObject object_to(object_key.serialize(), to_path, object_from.bytes_size);
+            copied_objects.push_back(object_to);
+            src_object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, dst_object_storage);
+        }
+
+        return {};
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+}
+
+}
+
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
     IObjectStorage & object_storage_,
     IMetadataStorage & metadata_storage_)
@@ -615,30 +647,14 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// We need this call to clear to_path metadata file if it exists
-        tx->createMetadataFile(to_path, /*objects=*/{});
-        auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
+        const auto blobs_to_copy = metadata_storage.getStorageObjects(from_path);
 
-        if (source_blobs.empty())
-            return;
+        auto copy_error = copyBlobsToOtherObjectStorage(blobs_to_copy, to_path, read_settings, write_settings, object_storage, destination_object_storage, created_objects);
+        if (copy_error)
+            std::rethrow_exception(copy_error);
 
-        if (!tx->supportAddingBlobToMetadata())
-        {
-            if (source_blobs.size() > 1)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Unable to copy file '{}' with multiple blobs ({}), disk doesn't support addBlobToMetadata",
-                    from_path,
-                    source_blobs.size());
-
-            copySingleObject</*support_adding_blob_to_metadata=*/false>(tx, source_blobs.front());
-            return;
-        }
-
-        for (const auto & object_from : source_blobs)
-            copySingleObject</*support_adding_blob_to_metadata=*/true>(tx, object_from);
+        tx->createMetadataFile(to_path, created_objects);
     }
-
 
     void undo() override
     {
@@ -647,21 +663,6 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize(StoredObjects & /*to_remove*/) override
     {
-    }
-
-    template <bool support_adding_blob_to_metadata>
-    void copySingleObject(MetadataTransactionPtr tx, const StoredObject & object_from)
-    {
-        auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt);
-        auto object_to = StoredObject(object_key.serialize());
-
-        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, destination_object_storage);
-        created_objects.push_back(object_to);
-
-        if constexpr (support_adding_blob_to_metadata)
-            tx->addBlobToMetadata(to_path, StoredObject(object_key.serialize(), to_path, object_from.bytes_size));
-        else
-            tx->createMetadataFile(to_path, {StoredObject(object_key.serialize(), to_path, object_from.bytes_size)});
     }
 };
 
