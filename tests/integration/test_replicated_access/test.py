@@ -79,3 +79,11 @@ def test_initiator_user_in_ddl(started_cluster):
     error = node1.query_and_get_error(query, user="test")
     assert "super_secret" in error
     assert "Not enough privileges" not in error
+
+    for node in all_nodes:
+        node.replace_in_config(
+            "/etc/clickhouse-server/config.d/config.xml",
+            "<distributed_ddl_use_initial_user_and_roles>0</distributed_ddl_use_initial_user_and_roles>",
+            "<distributed_ddl_use_initial_user_and_roles>1</distributed_ddl_use_initial_user_and_roles>",
+        )
+        node.restart_clickhouse()
