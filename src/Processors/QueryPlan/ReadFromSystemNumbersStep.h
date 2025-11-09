@@ -30,6 +30,10 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    const StoragePtr & getStorage() const { return storage; }
+
+    std::optional<UInt64> getLimit() const;
+
 private:
     /// Fail fast if estimated number of rows to read exceeds the limit
     void checkLimits(size_t rows);

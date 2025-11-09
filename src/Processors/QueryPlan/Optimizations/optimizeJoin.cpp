@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
 
@@ -239,7 +240,11 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         if (has_filter && !is_filtered_by_index)
             return RelationStats{.estimated_rows = {}, .table_name = table_display_name};
 
-        return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
+        return RelationStats{
+            .estimated_rows = analyzed_result->selected_rows,
+            .table_name = table_display_name,
+            .is_exact_upper_bound = true
+        };
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
@@ -247,6 +252,22 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
+    }
+
+    if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
+    {
+        if (!reading->getContext() || !reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
+            return {};
+
+        // TODO(mfilitov): maybe change to storage.totalRows
+        auto limit = reading->getLimit();
+        String table_display_name = reading->getStorage()->getName();
+        
+        return RelationStats{
+            .estimated_rows = limit, 
+            .table_name = table_display_name,
+            .is_exact_upper_bound = true
+        };
     }
 
     if (node.children.size() != 1)

@@ -58,6 +58,7 @@ struct RelationStats
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
+    bool is_exact_upper_bound = false;
 };
 
 struct QueryGraph
