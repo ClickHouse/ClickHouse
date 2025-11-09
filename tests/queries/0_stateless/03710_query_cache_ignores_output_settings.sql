@@ -1,7 +1,8 @@
---- Tags: no-parallel, no-random-settings
+--- Tags: no-parallel
 --- Tag no-parallel: Messes with internal cache
 
 SYSTEM DROP QUERY CACHE;
+SET max_block_size = 100;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(c UInt64) ENGINE = Memory AS SELECT 1;
