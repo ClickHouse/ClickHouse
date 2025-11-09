@@ -401,28 +401,27 @@ SingleProjectionIndexReaderPtr SingleProjectionIndexReaderContext::allocateReade
 {
     auto reader = std::make_shared<SingleProjectionIndexReader>(projection_index_read_pool, prewhere_info, actions_settings, reader_settings);
     {
-        std::lock_guard lock(*allocated_readers_mutext);
-        allocated_readers.insert(reader);
+        std::lock_guard lock(*allocated_readers_mutex);
+        allocated_readers.insert(reader.get());
     }
     return reader;
 }
 
 void SingleProjectionIndexReaderContext::releaseReader(SingleProjectionIndexReaderPtr reader)
 {
-    std::lock_guard lock(*allocated_readers_mutext);
-    if (allocated_readers.contains(reader))
-        allocated_readers.erase(reader);
+    std::lock_guard lock(*allocated_readers_mutex);
+    if (allocated_readers.contains(reader.get()))
+        allocated_readers.erase(reader.get());
 }
-
 
 void SingleProjectionIndexReaderContext::cancel()
 {
-    std::lock_guard lock(*allocated_readers_mutext);
+    std::lock_guard lock(*allocated_readers_mutex);
     for (auto reader : allocated_readers)
         reader->cancel();
 }
 
-MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderByName projection_index_reader_contexts_)
+MergeTreeProjectionIndexReader::MergeTreeProjectionIndexReader(ProjectionIndexReaderContextByName projection_index_reader_contexts_)
     : projection_index_reader_contexts(std::move(projection_index_reader_contexts_))
 {
 }
@@ -455,11 +454,10 @@ ProjectionIndexBitmapPtr MergeTreeProjectionIndexReader::read(const RangesInData
 
     return projection_index_bitmap;
 }
-
 void MergeTreeProjectionIndexReader::cancel() noexcept
 {
-    for (auto && [_, reader_context] : projection_index_reader_contexts)
-        reader_context.cancel();
+    for (auto && [_, reader] : projection_index_reader_contexts)
+        reader.cancel();
 }
 
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(

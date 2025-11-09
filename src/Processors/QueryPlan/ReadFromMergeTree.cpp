@@ -2801,12 +2801,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             .total_query_nodes = 1,
         };
 
-        ProjectionIndexReaderContextByName readers;
+        ProjectionIndexReaderContextByName reader_contexts;
 
         /// Create a reader for each projection index based on its metadata and prewhere info.
         for (const auto & read_info : projection_index_read_desc.read_infos)
         {
-            readers.emplace(
+            reader_contexts.emplace(
                 read_info.projection->name,
                 SingleProjectionIndexReaderContext(
                     std::make_shared<MergeTreeReadPoolProjectionIndex>(
@@ -2824,7 +2824,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                     reader_settings));
         }
 
-        projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
+        projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(reader_contexts));
     }
 
     if (skip_index_reader || projection_index_reader)

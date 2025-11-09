@@ -135,6 +135,8 @@ struct SingleProjectionIndexReaderContext
     PrewhereInfoPtr prewhere_info;
     ExpressionActionsSettings actions_settings;
     MergeTreeReaderSettings reader_settings;
+    std::shared_ptr<std::mutex> allocated_readers_mutex = {};
+    std::unordered_set<SingleProjectionIndexReader*> allocated_readers;
 
     explicit SingleProjectionIndexReaderContext(
         std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool_,
@@ -145,6 +147,7 @@ struct SingleProjectionIndexReaderContext
             , prewhere_info(prewhere_info_)
             , actions_settings(actions_settings_)
             , reader_settings(reader_settings_)
+            , allocated_readers_mutex(std::make_shared<std::mutex>())
     {
     }
     SingleProjectionIndexReaderPtr allocateReader();
@@ -152,7 +155,7 @@ struct SingleProjectionIndexReaderContext
     void cancel();
 };
 
-using ProjectionIndexReaderContextByName = std::unordered_map<String, SingleProjectionIndexContextReader>;
+using ProjectionIndexReaderContextByName = std::unordered_map<String, SingleProjectionIndexReaderContext>;
 
 class MergeTreeProjectionIndexReader
 {
