@@ -48,7 +48,8 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
                          allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33),
-                         allow_qbit = (UINT64_C(1) << 34);
+                         allow_qbit = (UINT64_C(1) << 34), allow_aggregate = (UINT64_C(1) << 35),
+                         allow_simple_aggregate = (UINT64_C(1) << 36);
 
 const constexpr uint64_t allow_replacing_mergetree
     = (UINT64_C(1) << 0),
@@ -116,7 +117,7 @@ class ServerCredentials
 public:
     String client_hostname, server_hostname, container;
     uint32_t port, mysql_port;
-    String unix_socket, user, password, database, named_collection;
+    String unix_socket, user, password, secret, database, named_collection;
     std::filesystem::path user_files_dir, query_log_file;
     std::optional<Catalog> glue_catalog, hive_catalog, rest_catalog, unity_catalog;
 
@@ -138,6 +139,7 @@ public:
         const String & unix_socket_,
         const String & user_,
         const String & password_,
+        const String & secret_,
         const String & database_,
         const String & named_collection_,
         const std::filesystem::path & user_files_dir_,
@@ -154,6 +156,7 @@ public:
         , unix_socket(unix_socket_)
         , user(user_)
         , password(password_)
+        , secret(secret_)
         , database(database_)
         , named_collection(named_collection_)
         , user_files_dir(user_files_dir_)

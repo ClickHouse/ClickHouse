@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 
@@ -61,13 +62,56 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     fillPerPartInfos(context_->getSettingsRef());
 }
 
+MergeTreeReadPoolBase::MergeTreeReadPoolBase(
+    MutationsSnapshotPtr mutations_snapshot_,
+    const StorageSnapshotPtr & storage_snapshot_,
+    const PrewhereInfoPtr & prewhere_info_,
+    const ExpressionActionsSettings & actions_settings_,
+    const MergeTreeReaderSettings & reader_settings_,
+    const Names & column_names_,
+    const PoolSettings & pool_settings_,
+    const MergeTreeReadTask::BlockSizeParams & block_size_params_,
+    const ContextPtr & context_)
+    : WithContext(context_)
+    , mutations_snapshot(std::move(mutations_snapshot_))
+    , storage_snapshot(storage_snapshot_)
+    , prewhere_info(prewhere_info_)
+    , actions_settings(actions_settings_)
+    , reader_settings(reader_settings_)
+    , column_names(column_names_)
+    , pool_settings(pool_settings_)
+    , block_size_params(block_size_params_)
+    , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
+    , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
+    , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
+    , header(storage_snapshot->getSampleBlockForColumns(column_names))
+    , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
+    , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
+{
+}
+
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
 {
-    ColumnSize columns_size{};
-    for (const auto & col_name : columns_to_read)
-        columns_size.add(part.getColumnSize(col_name));
     /// For compact parts we don't know individual column sizes, let's use whole part size as approximation
-    return columns_size.data_compressed ? columns_size.data_compressed : part.getBytesOnDisk();
+    if (part.getType() == MergeTreeDataPartType::Compact)
+        return part.getBytesOnDisk();
+
+    size_t data_compressed_size = 0;
+    for (const auto & col_name : columns_to_read)
+        data_compressed_size += part.getColumnSize(col_name).data_compressed;
+
+    if (!data_compressed_size)
+    {
+        auto all_columns_sizes = part.getColumnSizes();
+
+        for (const auto & [_, size] : all_columns_sizes)
+        {
+            if (size.data_compressed && (!data_compressed_size || size.data_compressed < data_compressed_size))
+                data_compressed_size = size.data_compressed;
+        }
+    }
+
+    return data_compressed_size ? data_compressed_size : part.getBytesOnDisk();
 }
 
 /// Columns from different prewhere steps are read independently, so it makes sense to use the heaviest set of columns among them as an estimation.
@@ -114,6 +158,7 @@ calculateMinMarksPerTask(
             const auto heuristic_min_marks = std::min<size_t>(
                 pool_settings.sum_marks / (pool_settings.threads * pool_settings.total_query_nodes) / 2,
                 min_bytes_per_task / avg_mark_bytes);
+
             if (heuristic_min_marks > min_marks_per_task)
             {
                 LOG_TEST(
@@ -134,116 +179,120 @@ calculateMinMarksPerTask(
     return {min_marks_per_task, avg_mark_bytes};
 }
 
+MergeTreeReadTaskInfo
+MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const
+{
+    MergeTreeReadTaskInfo read_task_info;
+
+    read_task_info.data_part = part_with_ranges.data_part;
+    read_task_info.parent_part = part_with_ranges.parent_part;
+
+    if (read_task_info.data_part->isProjectionPart() && !read_task_info.parent_part)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Did not find parent part {} for projection part {}",
+            read_task_info.data_part->getParentPartName(),
+            read_task_info.data_part->getDataPartStorage().getFullPath());
+    }
+
+    read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
+    read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
+    read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext());
+    read_task_info.read_hints = part_with_ranges.read_hints;
+
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+        .withExtendedObjects()
+        .withVirtuals()
+        .withSubcolumns();
+
+    LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
+    bool has_lightweight_delete = read_task_info.data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
+
+    if (reader_settings.apply_deleted_mask && has_lightweight_delete)
+    {
+        bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
+        read_task_info.mutation_steps.push_back(createLightweightDeleteStep(remove_filter_column));
+    }
+
+    if (read_task_info.alter_conversions->hasMutations())
+    {
+        auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
+        auto mutation_steps
+            = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
+        std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
+    }
+
+    read_task_info.task_columns = getReadTaskColumns(
+        part_info,
+        storage_snapshot,
+        column_names,
+        row_level_filter,
+        prewhere_info,
+        read_task_info.mutation_steps,
+        index_read_tasks,
+        actions_settings,
+        reader_settings,
+        /*with_subcolumns=*/ true);
+
+    if (read_task_info.alter_conversions->hasPatches())
+    {
+        auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
+        auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
+        read_task_info.patch_parts = read_task_info.alter_conversions->getPatchesForColumns(all_read_columns_list, reader_settings.apply_deleted_mask);
+
+        addPatchPartsColumns(
+            read_task_info.task_columns,
+            storage_snapshot,
+            options,
+            read_task_info.patch_parts,
+            all_read_columns,
+            has_lightweight_delete);
+    }
+
+    read_task_info.index_read_tasks = index_read_tasks;
+    read_task_info.const_virtual_fields = shared_virtual_fields;
+    read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
+    read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
+
+    if (pool_settings.preferred_block_size_bytes > 0)
+    {
+        const auto & result_column_names = read_task_info.task_columns.columns.getNames();
+        NameSet all_column_names(result_column_names.begin(), result_column_names.end());
+
+        for (const auto & pre_columns_per_step : read_task_info.task_columns.pre_columns)
+        {
+            const auto & pre_column_names = pre_columns_per_step.getNames();
+            all_column_names.insert(pre_column_names.begin(), pre_column_names.end());
+        }
+
+        read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
+            read_task_info.data_part,
+            Names(all_column_names.begin(), all_column_names.end()),
+            storage_snapshot->metadata->getSampleBlock());
+    }
+
+    read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
+
+    std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
+        = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, settings);
+    return read_task_info;
+}
+
 void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 {
     per_part_infos.reserve(parts_ranges.size());
     is_part_on_remote_disk.reserve(parts_ranges.size());
-
-    auto sample_block = storage_snapshot->metadata->getSampleBlock();
 
     for (const auto & part_with_ranges : parts_ranges)
     {
 #ifndef NDEBUG
         assertSortedAndNonIntersecting(part_with_ranges.ranges);
 #endif
-
-        MergeTreeReadTaskInfo read_task_info;
-
-        read_task_info.data_part = part_with_ranges.data_part;
-        read_task_info.parent_part = part_with_ranges.parent_part;
-
-        if (read_task_info.data_part->isProjectionPart() && !read_task_info.parent_part)
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Did not find parent part {} for projection part {}",
-                read_task_info.data_part->getParentPartName(),
-                read_task_info.data_part->getDataPartStorage().getFullPath());
-        }
-
-        read_task_info.part_index_in_query = part_with_ranges.part_index_in_query;
-        read_task_info.part_starting_offset_in_query = part_with_ranges.part_starting_offset_in_query;
-        read_task_info.alter_conversions = MergeTreeData::getAlterConversionsForPart(read_task_info.data_part, mutations_snapshot, getContext());
-        read_task_info.read_hints = part_with_ranges.read_hints;
-
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-            .withExtendedObjects()
-            .withVirtuals()
-            .withSubcolumns();
-
-        LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
-        bool has_lightweight_delete = read_task_info.data_part->hasLightweightDelete() || read_task_info.alter_conversions->hasLightweightDelete();
-
-        if (reader_settings.apply_deleted_mask && has_lightweight_delete)
-        {
-            bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
-            read_task_info.mutation_steps.push_back(createLightweightDeleteStep(remove_filter_column));
-        }
-
-        if (read_task_info.alter_conversions->hasMutations())
-        {
-            auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            auto mutation_steps
-                = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list, storage_snapshot->metadata, getContext());
-            std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
-        }
-
-        read_task_info.task_columns = getReadTaskColumns(
-            part_info,
-            storage_snapshot,
-            column_names,
-            row_level_filter,
-            prewhere_info,
-            read_task_info.mutation_steps,
-            index_read_tasks,
-            actions_settings,
-            reader_settings,
-            /*with_subcolumns=*/ true);
-
-        if (read_task_info.alter_conversions->hasPatches())
-        {
-            auto all_read_columns = read_task_info.task_columns.getAllColumnNames();
-            auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
-            read_task_info.patch_parts = read_task_info.alter_conversions->getPatchesForColumns(all_read_columns_list, reader_settings.apply_deleted_mask);
-
-            addPatchPartsColumns(
-                read_task_info.task_columns,
-                storage_snapshot,
-                options,
-                read_task_info.patch_parts,
-                all_read_columns,
-                has_lightweight_delete);
-
+        MergeTreeReadTaskInfo read_task_info = buildReadTaskInfo(part_with_ranges, settings);
+        if (!read_task_info.patch_parts.empty())
             ranges_in_patch_parts.addPart(part_with_ranges.data_part, read_task_info.patch_parts, part_with_ranges.ranges);
-        }
-
-        read_task_info.index_read_tasks = index_read_tasks;
-        read_task_info.const_virtual_fields = shared_virtual_fields;
-        read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
-        read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
-
-        if (pool_settings.preferred_block_size_bytes > 0)
-        {
-            const auto & result_column_names = read_task_info.task_columns.columns.getNames();
-            NameSet all_column_names(result_column_names.begin(), result_column_names.end());
-
-            for (const auto & pre_columns_per_step : read_task_info.task_columns.pre_columns)
-            {
-                const auto & pre_column_names = pre_columns_per_step.getNames();
-                all_column_names.insert(pre_column_names.begin(), pre_column_names.end());
-            }
-
-            read_task_info.shared_size_predictor = std::make_unique<MergeTreeBlockSizePredictor>(
-                read_task_info.data_part,
-                Names(all_column_names.begin(), all_column_names.end()),
-                sample_block);
-        }
-
-        read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
-
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
-        std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)
-            = calculateMinMarksPerTask(part_with_ranges, column_names, read_task_info.task_columns.pre_columns, pool_settings, settings);
         per_part_infos.push_back(std::make_shared<MergeTreeReadTaskInfo>(std::move(read_task_info)));
     }
 

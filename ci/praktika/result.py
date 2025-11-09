@@ -9,7 +9,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
 from .s3 import S3
@@ -122,7 +122,10 @@ class Result(MetaClasses.Serializable):
                     Result.StatusExtended.SKIPPED,
                 ):
                     continue
-                elif result.status == Result.Status.ERROR:
+                elif result.status in (
+                    Result.Status.ERROR,
+                    Result.StatusExtended.ERROR,
+                ):
                     result_status = Result.Status.ERROR
                     break
                 elif result.status in (
@@ -182,10 +185,10 @@ class Result(MetaClasses.Serializable):
         )
 
     def is_failure(self):
-        return self.status in (Result.Status.FAILED)
+        return self.status in (Result.Status.FAILED, Result.StatusExtended.FAIL)
 
     def is_error(self):
-        return self.status in (Result.Status.ERROR,)
+        return self.status in (Result.Status.ERROR, Result.StatusExtended.ERROR)
 
     def set_status(self, status) -> "Result":
         self.status = status
@@ -307,6 +310,11 @@ class Result(MetaClasses.Serializable):
         if not self.ext.get("labels", None):
             self.ext["labels"] = []
         self.ext["labels"].append(label)
+
+    def set_clickable_label(self, label, link):
+        if not self.ext.get("hlabels", None):
+            self.ext["hlabels"] = []
+        self.ext["hlabels"].append((label, link))
 
     def set_required_label(self):
         self.set_label(self.Label.REQUIRED)
@@ -519,15 +527,14 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
-            with_log=with_log,
         )
         is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error:
+        if is_error and result.is_ok():
             # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.FAILED)
+            result.set_status(Result.Status.ERROR)
         return result
 
     @classmethod
@@ -591,16 +598,25 @@ class Result(MetaClasses.Serializable):
                     # If command is a Python function, call it with provided arguments
                     if with_info or with_info_on_failure:
                         buffer = io.StringIO()
+                    else:
+                        buffer = "stdout"
+                    try:
                         with Utils.Tee(stdout=buffer):
                             result = command_(*command_args, **command_kwargs)
-                    else:
-                        result = command_(*command_args, **command_kwargs)
+                    except Exception as e:
+                        result = False
+                        info_lines.extend(
+                            [
+                                f"Command [{command_}] failed with exception [{e}]:",
+                                *traceback.format_exc().splitlines(),
+                            ]
+                        )
                     res = result if isinstance(result, bool) else not bool(result)
                     if (with_info_on_failure and not res) or with_info:
                         if isinstance(result, bool):
-                            info_lines = buffer.getvalue().splitlines()
+                            info_lines.extend(buffer.getvalue().splitlines())
                         else:
-                            info_lines = str(result).splitlines()
+                            info_lines.extend(str(result).splitlines())
                 else:
                     # Run shell command in a specified directory with logging and verbosity
                     exit_code = Shell.run(
@@ -684,6 +700,32 @@ class Result(MetaClasses.Serializable):
         if add_frame:
             res += "+" * 80 + "\n"
         return res
+
+    def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
+        if not name:
+            return self
+        for r in self.results:
+            if r.name == name:
+                return r
+        if recursive:
+            for r in self.results:
+                res = r.get_sub_result_by_name(name, recursive=True)
+                if res:
+                    return res
+        return None
+
+    def sort(self, sub_result_name="", failed_first=True):
+        if not self.results:
+            return self
+        sub_result_to_sort = self.get_sub_result_by_name(sub_result_name)
+        if failed_first and sub_result_to_sort:
+            # Stable partition: move all not-ok results to beginning, preserve order within groups
+            not_ok_results = [r for r in sub_result_to_sort.results if not r.is_ok()]
+            ok_results = [r for r in sub_result_to_sort.results if r.is_ok()]
+            sub_result_to_sort.results = not_ok_results + ok_results
+        else:
+            raise RuntimeError("Not implemented")
+        return self
 
 
 class ResultInfo:
@@ -1101,8 +1143,108 @@ class ResultTranslator:
                             session_exitstatus = entry.get("exitstatus")
                             continue
 
+                        # NEW: Handle collection-time reports (import errors, syntax errors, etc.)
+                        if entry.get("$report_type") == "CollectReport":
+                            node_id = entry.get("nodeid") or ""
+                            outcome = entry.get("outcome")
+                            # Only surface failed collection items to avoid noise
+                            if outcome in ("failed", "error"):
+                                # Build info from longrepr and optional sections
+                                info_parts = []
+                                longrepr = entry.get("longrepr")
+                                if isinstance(longrepr, str) and longrepr:
+                                    info_parts.append(longrepr)
+                                elif isinstance(longrepr, dict) and longrepr:
+                                    # Best-effort: mirror traceback builder from TestReport for dict shape
+                                    try:
+                                        lr_txt = ""
+                                        crash = (
+                                            longrepr.get("reprcrash")
+                                            if isinstance(longrepr, dict)
+                                            else None
+                                        )
+                                        if isinstance(crash, dict):
+                                            p = crash.get("path")
+                                            ln = crash.get("lineno")
+                                            msg = crash.get("message")
+                                            seg = []
+                                            if p is not None and ln is not None:
+                                                seg.append(f"File: {p}:{ln}")
+                                            if msg:
+                                                seg.append(str(msg))
+                                            if seg:
+                                                lr_txt += "\n".join(seg)
+                                        rt = (
+                                            longrepr.get("reprtraceback")
+                                            if isinstance(longrepr, dict)
+                                            else None
+                                        )
+                                        if isinstance(rt, dict) and "reprentries" in rt:
+                                            composed = []
+                                            for re_entry in rt.get("reprentries", []):
+                                                dd = re_entry.get("data", {})
+                                                fileloc = (
+                                                    dd.get("reprfileloc", {})
+                                                    if isinstance(dd, dict)
+                                                    else {}
+                                                )
+                                                fpath = fileloc.get("path")
+                                                flineno = fileloc.get("lineno")
+                                                fmsg = fileloc.get("message")
+                                                header_parts = []
+                                                if (
+                                                    fpath is not None
+                                                    and flineno is not None
+                                                ):
+                                                    header_parts.append(
+                                                        f"File: {fpath}:{flineno}"
+                                                    )
+                                                if fmsg:
+                                                    header_parts.append(str(fmsg))
+                                                if header_parts:
+                                                    composed.append(
+                                                        " - ".join(header_parts)
+                                                    )
+                                                if isinstance(dd, dict) and dd.get(
+                                                    "lines"
+                                                ):
+                                                    composed.extend(dd["lines"])
+                                            if composed:
+                                                if lr_txt:
+                                                    lr_txt += "\n"
+                                                lr_txt += "\n".join(composed)
+                                        if lr_txt:
+                                            info_parts.append(lr_txt)
+                                    except Exception:
+                                        pass
+                                # Sections (captured output) if any
+                                sections = entry.get("sections", [])
+                                try:
+                                    sec_chunks = []
+                                    for sec in sections:
+                                        if isinstance(sec, list) and len(sec) == 2:
+                                            title, content = sec
+                                            if content:
+                                                sec_chunks.append(
+                                                    f"===== {title} =====\n{content}"
+                                                )
+                                    if sec_chunks:
+                                        info_parts.append("\n".join(sec_chunks))
+                                except Exception:
+                                    pass
+
+                                # Create a result for the module/node that failed to collect
+                                test_results[node_id or "<collection>"] = Result(
+                                    name=node_id or "<collection>",
+                                    status=Result.StatusExtended.ERROR,
+                                    duration=None,
+                                    info="\n".join([p for p in info_parts if p]),
+                                )
+                            # Skip successful collection entries
+                            continue
+
                         # Process based on event type
-                        if entry.get("$report_type") == "TestReport":
+                        if entry.get("$report_type") in ("TestReport",):
                             node_id = entry.get("nodeid")
                             outcome = entry.get("outcome")
                             duration = entry.get("duration")
@@ -1293,7 +1435,6 @@ class ResultTranslator:
                                     duration=duration,
                                     info=traceback_str,
                                 )
-                                test_result.ext["when"] = when
                                 test_results[node_id] = test_result
                             else:
                                 # Always override with a failure, or keep existing failure
@@ -1363,9 +1504,9 @@ class ResultTranslator:
             if session_exitstatus == 1:
                 if R.status == Result.Status.SUCCESS:
                     print(
-                        f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.FAILED}]"
+                        f"WARNING: Tests are all OK, but exit code is 1; timeout or other runner issue - reset overall status to [{Result.Status.ERROR}]"
                     )
-                    R.status = Result.Status.FAILED
+                    R.status = Result.Status.ERROR
             elif session_exitstatus == 0:
                 assert (
                     R.status == Result.Status.SUCCESS

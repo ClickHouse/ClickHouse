@@ -14,7 +14,18 @@ OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW
 
 The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals to 1.
 
-`OFFSET` specifies the number of rows to skip before starting to return rows from the query result set.
+`OFFSET` specifies the number of rows to skip before starting to return rows from the query result set. `OFFSET n` skips the first `n` rows from the result.  
+
+Negative OFFSET is supported: `OFFSET -n` skips the last `n` rows from the result.  
+
+Fractional OFFSET is also supported: `OFFSET n` - if 0 < n < 1, then the first n * 100% of the result is skipped.
+
+Example:
+    • `OFFSET 0.1` - skips the first 10% of the result.
+
+> **Note**
+> • The fraction must be a [Float64](../../data-types/float.md) number less than 1 and greater than zero.
+> • If a fractional number of rows results from the calculation, it is rounded up to the next whole number.
 
 The `FETCH` specifies the maximum number of rows that can be in the result of a query.
 

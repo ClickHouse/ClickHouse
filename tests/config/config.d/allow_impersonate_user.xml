@@ -1,0 +1,3 @@
+<clickhouse>
+    <allow_impersonate_user>1</allow_impersonate_user>
+</clickhouse>

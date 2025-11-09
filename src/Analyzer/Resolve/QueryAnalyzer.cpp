@@ -52,6 +52,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
+#include <base/Decimal_fwd.h>
+#include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <ranges>
 
@@ -106,6 +108,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int SYNTAX_ERROR;
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -163,7 +166,11 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
             }
 
             if (node_type == QueryTreeNodeType::LIST)
+            {
+                QueryExpressionsAliasVisitor visitor(scope.aliases);
+                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -191,7 +198,6 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
 {
     IdentifierResolveScope & scope = createIdentifierResolveScope(node, /*parent_scope=*/ nullptr);
-
     if (!scope.context)
         scope.context = context;
 
@@ -630,16 +636,56 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
             expression_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
 
-    Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
-    if (converted_value.isNull())
-        throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
-            "{} numeric constant expression is not representable as UInt64",
-            expression_description);
 
-    auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
-    result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+    // We support limit in the range [INT64_MIN, UINT64_MAX] for integral limit or (0, 1) for fractional limit
+    // Consider the nonnegative limit case first as they are more common
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeUInt64());
 
-    expression_node = std::move(result_constant_node);
+        if (!converted_value.isNull())
+        {
+            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeUInt64>());
+            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+            expression_node = std::move(result_constant_node);
+            return;
+        }
+    }
+
+    // If we are here, then the number is either negative or outside the supported range or float
+    // Consider the negative limit value case
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeInt64());
+
+        if (!converted_value.isNull())
+        {
+            auto result_constant_node = std::make_shared<ConstantNode>(std::move(converted_value), std::make_shared<DataTypeInt64>());
+            result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+            expression_node = std::move(result_constant_node);
+            return;
+        }
+    }
+
+    {
+        Field converted_value = convertFieldToType(limit_offset_constant_node->getValue(), DataTypeFloat64());
+        if (!converted_value.isNull())
+        {
+            auto value = converted_value.safeGet<Float64>();
+            if (value < 1 && value > 0)
+            {
+                auto result_constant_node = std::make_shared<ConstantNode>(Field(value), std::make_shared<DataTypeFloat64>());
+                result_constant_node->getSourceExpression() = limit_offset_constant_node->getSourceExpression();
+
+                expression_node = std::move(result_constant_node);
+                return;
+            }
+        }
+    }
+
+    throw Exception(ErrorCodes::INVALID_LIMIT_EXPRESSION,
+        "The value {} of {} expression is not representable as UInt64 or Int64 or Float64 in the range (0, 1)",
+        applyVisitor(FieldVisitorToString(), limit_offset_constant_node->getValue()) , expression_description);
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -813,6 +859,40 @@ void QueryAnalyzer::expandOrderByAll(QueryNode & query_tree_node_typed, const Se
 
     query_tree_node_typed.getOrderByNode() = list_node;
     query_tree_node_typed.setIsOrderByAll(false);
+}
+
+void QueryAnalyzer::expandLimitByAll(QueryNode & query_tree_node_typed)
+{
+    if (!query_tree_node_typed.isLimitByAll())
+        return;
+
+    if (!query_tree_node_typed.hasLimitByLimit())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires a limit expression. Use LIMIT n BY ALL");
+    }
+
+    auto & limit_by_nodes = query_tree_node_typed.getLimitBy().getNodes();
+    auto & projection_nodes = query_tree_node_typed.getProjection().getNodes();
+
+    limit_by_nodes.clear();
+    limit_by_nodes.reserve(projection_nodes.size());
+
+    for (auto & projection_node : projection_nodes)
+    {
+        if (hasAggregateFunctionNodes(projection_node))
+            continue;
+
+        limit_by_nodes.push_back(projection_node->clone());
+    }
+
+    if (limit_by_nodes.empty())
+    {
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+            "LIMIT BY ALL requires at least one non-aggregate expression in SELECT");
+    }
+
+    query_tree_node_typed.setIsLimitByAll(false);
 }
 
 std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
@@ -2187,7 +2267,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         for (size_t i = 0; i < strict_transformer_column_names_size; ++i)
         {
             const auto & column_name = (*strict_transformer_column_names)[i];
-            if (used_column_names.find(column_name) == used_column_names.end())
+            if (!used_column_names.contains(column_name))
                 non_matched_column_names.push_back(column_name);
         }
 
@@ -4086,6 +4166,10 @@ void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, Identif
         }
     }
 
+    if (array_join_column_expressions.empty())
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+            "ARRAY JOIN requires at least one expression after resolving COLUMNS");
+
     array_join_nodes = std::move(array_join_column_expressions);
 }
 
@@ -4771,6 +4855,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (query_node_typed.hasInterpolate())
         resolveInterpolateColumnsNodeList(query_node_typed.getInterpolate(), scope);
+
+    expandLimitByAll(query_node_typed);
 
     if (query_node_typed.hasLimitByLimit())
     {

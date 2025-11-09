@@ -1,10 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>praktika report</title>
-    <style>
+<!DOCTYPE html><html lang=en><head><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><title>praktika report</title><style>
 
         /* Default (Day Theme) */
         :root {
@@ -341,23 +335,7 @@
             color: grey;
             font-weight: bold;
         }
-    </style>
-</head>
-<body>
-<div id="status-container"></div>
-<div id="result-container"></div>
-<button id="toggle-status-bar" onclick="toggleStatusBar()">‖</button>
-
-<footer id="footer">
-    <div class="left"></div>
-    <div class="right"></div>
-    <div class="settings">
-        <span id="status-filter-toggle"></span>
-        <span id="theme-toggle">🔆️</span>
-    </div>
-</footer>
-
-<script>
+    </style></head><body><div id=status-container></div><div id=result-container></div><button id=toggle-status-bar onclick=toggleStatusBar()>‖</button><footer id=footer><div class=left></div><div class=right></div><div class=settings><span id=status-filter-toggle></span><span id=theme-toggle>🔆️</span></div></footer><script>
     // Track all interval timers for cleanup
     const activeTimers = {
         intervals: [],
@@ -459,9 +437,9 @@
         localStorage.setItem('filter', newFilter);
         const toggle = document.getElementById('status-filter-toggle');
         if (toggle) {
-            const greenTick = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
-            const redCross = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
-            const yellowExclamationMark = `<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
+            const greenTick = `<img alt="all" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cGF0aCBmaWxsPSJncmVlbiIgZD0iTTAgMTEgTDcgMTggTDIwIDIgTDE4IDAgTDcgMTQgTDIgOSBaIi8+Cjwvc3ZnPgoK">`;
+            const redCross = `<img alt="failures" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8bGluZSB4MT0iMiIgeTE9IjIiIHgyPSIxOCIgeTI9IjE4IiBzdHJva2U9InJlZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGxpbmUgeDE9IjIiIHkxPSIxOCIgeDI9IjE4IiB5Mj0iMiIgc3Ryb2tlPSJyZWQiIHN0cm9rZS13aWR0aD0iMiIvPgo8L3N2Zz4KCg==">`;
+            const yellowExclamationMark = `<img alt="warnings" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMiIgaGVpZ2h0PSIxMiIgdmlld0JveD0iMCAwIDIwIDIwIj4KICA8cG9seWdvbiBwb2ludHM9IjEwLDAgMCwyMCAyMCwyMCIgZmlsbD0ieWVsbG93Ii8+CiAgPHJlY3QgeD0iOSIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iNyIgZmlsbD0iYmxhY2siLz4KICA8Y2lyY2xlIGN4PSIxMCIgY3k9IjE2IiByPSIxIiBmaWxsPSJibGFjayIvPgo8L3N2Zz4KCg==">`;
             toggle.innerHTML =
                 newFilter === 'failures' ? redCross :
                     newFilter === 'warnings' ? yellowExclamationMark :
@@ -1147,7 +1125,6 @@
 
         // Widget container
         const widget = document.createElement('div');
-        const color = getComputedStyle(document.body).getPropertyValue('--table-border-color').trim();
         widget.className = 'status-widget'
 
         // Helper to create a line
@@ -1205,8 +1182,8 @@
     const columnSymbols = {
         // name: '🗂️',
         // status: '✅',
-        start_time: 'start',
-        duration: 'dur',
+        start_time: 'start time',
+        duration: 'duration',
         // info: '📝',
         files: '📎'
     };
@@ -1217,21 +1194,31 @@
             const thead = document.createElement('thead');
             const tbody = document.createElement('tbody');
 
+            let existing_columns = {};
+            columns.forEach(column => {
+                existing_columns[column] = results.some(result => result[column]);
+            });
+
+            // Build an ordered list of columns that actually exist
+            const existingColumnsList = columns.filter(column => existing_columns[column]);
+            const lastColumn = existingColumnsList[existingColumnsList.length - 1];
+
             // Create table headers based on the fixed columns
             const headerRow = document.createElement('tr');
-            columns.forEach(column => {
+            existingColumnsList.forEach(column => {
                 const th = document.createElement('th');
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer';
                 th.style.textDecoration = 'underline';
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level));
+                if (column === lastColumn) th.classList.add('time-column');
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, existingColumnsList));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, nest_level);
+            populateTableRows(tbody, results, nest_level, existingColumnsList);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -1241,20 +1228,25 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, nest_level) {
+    function populateTableRows(tbody, results, nest_level, existingColumnsList) {
         const currentUrl = new URL(window.location.href);
         // Clear existing rows
         tbody.innerHTML = '';
         const filter = localStorage.getItem('filter');
+        const lastColumn = existingColumnsList[existingColumnsList.length - 1];
 
         results.forEach((result, _index) => {
             const row = document.createElement('tr');
             const labels = result?.ext?.labels;
+            const linklabels = result?.ext?.hlabels;
 
-            columns.forEach(column => {
+            existingColumnsList.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
-                    
+
+                // Make the last column the expanding one regardless of its name
+                if (column === lastColumn) td.classList.add('time-column');
+
                 if (column === 'status') {
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
@@ -1291,6 +1283,12 @@
                         td.appendChild(link);
                     }
 
+                    // Create a container for labels and linklabels
+                    const labelsContainer = document.createElement('span');
+                    labelsContainer.className = 'labels-container';
+                    labelsContainer.style.userSelect = 'none'; // Prevent selection
+                    labelsContainer.style.marginLeft = '4px';
+
                     if (Array.isArray(labels)) {
                         labels.forEach(labelStr => {
                             const label = document.createElement('span');
@@ -1304,12 +1302,60 @@
                             label.style.fontWeight = 'bold';
                             label.style.display = 'inline-block';
                             label.style.verticalAlign = 'middle';
-                            td.appendChild(label);
+                            labelsContainer.appendChild(label);
                         });
                     }
 
+                    if (Array.isArray(linklabels)) {
+                        linklabels.forEach(item => {
+                            let text, href;
+                            if (Array.isArray(item)) {
+                                [text, href] = item;
+                            } else if (item && typeof item === 'object') {
+                                text = item.text || item.label || '';
+                                href = item.href || item.url || '';
+                            } else if (typeof item === 'string') {
+                                text = item;
+                                href = '';
+                            }
+                            if (!text) return;
+                            if (href) {
+                                const a = document.createElement('a');
+                                a.textContent = text;
+                                a.href = href;
+                                a.target = '_blank';
+                                a.rel = 'noopener noreferrer';
+                                a.style.marginLeft = '6px';
+                                a.style.padding = '2px 8px';
+                                a.style.backgroundColor = stringToColor(text, true);
+                                a.style.color = 'white';
+                                a.style.fontSize = '12px';
+                                a.style.borderRadius = '8px';
+                                a.style.fontWeight = 'bold';
+                                a.style.display = 'inline-block';
+                                labelsContainer.appendChild(a);
+                            } else {
+                                const label = document.createElement('span');
+                                label.textContent = text;
+                                label.style.marginLeft = '6px';
+                                label.style.padding = '2px 8px';
+                                label.style.backgroundColor = stringToColor(text, true);
+                                label.style.color = 'white';
+                                label.style.fontSize = '12px';
+                                label.style.borderRadius = '8px';
+                                label.style.fontWeight = 'bold';
+                                label.style.display = 'inline-block';
+                                labelsContainer.appendChild(label);
+                            }
+                        });
+                    }
+
+                    // Only append if there are labels
+                    if (labelsContainer.childNodes.length > 0) {
+                        td.appendChild(labelsContainer);
+                    }
+
                 } else if (column === 'start_time') {
-                    td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
 
                 } else if (column === 'duration') {
@@ -1399,7 +1445,7 @@
         }
     }
 
-    function sortTable(results, column, key, tbody, nest_level) {
+    function sortTable(results, column, key, tbody, nest_level, existingColumnsList) {
         // Find the table header element for the given key
         const tableHeaders = document.querySelectorAll('th');
         let th = Array.from(tableHeaders).find(header => header.textContent === key);
@@ -1422,7 +1468,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, nest_level);
+        populateTableRows(tbody, results, nest_level, existingColumnsList);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {
@@ -1897,6 +1943,4 @@
         link.href = faviconURL;
     }
     createFavicon();
-</script>
-</body>
-</html>
+</script></body></html>

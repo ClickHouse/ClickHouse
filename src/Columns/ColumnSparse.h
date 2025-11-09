@@ -65,7 +65,7 @@ public:
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override;
     bool getBool(size_t n) const override;
     Float64 getFloat64(size_t n) const override;
     Float32 getFloat32(size_t n) const override;
@@ -76,7 +76,6 @@ public:
 
     ColumnPtr convertToFullColumnIfSparse() const override;
 
-    /// Will insert null value if pos=nullptr
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
@@ -171,7 +170,7 @@ public:
     bool isCollationSupported() const override { return values->isCollationSupported(); }
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
-    void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
+    void takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     size_t getNumberOfTrailingDefaults() const
@@ -264,5 +263,8 @@ private:
 };
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
+
+/// Remove all special representations (for now Sparse and Replicated).
+ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
 }

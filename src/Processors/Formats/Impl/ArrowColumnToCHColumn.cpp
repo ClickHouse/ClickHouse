@@ -81,6 +81,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static bool emptyTimezoneAsUTC(const std::string & format_name, const FormatSettings & format_settings)
+{
+    return format_name == "Parquet" && format_settings.parquet.local_time_as_utc;
+}
+
 /// Inserts numeric data right into internal column data to reduce an overhead
 template <typename NumericType, typename VectorType = ColumnVector<NumericType>>
 static ColumnWithTypeAndName readColumnWithNumericData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
@@ -391,11 +396,14 @@ static ColumnWithTypeAndName readColumnWithDate64Data(const std::shared_ptr<arro
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
-static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, bool empty_timezone_as_utc)
 {
     const auto & arrow_type = static_cast<const arrow::TimestampType &>(*(arrow_column->type()));
     const UInt8 scale = arrow_type.unit() * 3;
-    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, arrow_type.timezone());
+    String timezone = arrow_type.timezone();
+    if (timezone.empty() && empty_timezone_as_utc)
+        timezone = "UTC";
+    auto internal_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
     auto internal_column = internal_type->createColumn();
     auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
     column_data.reserve(arrow_column->length());
@@ -853,6 +861,7 @@ struct ReadColumnFromArrowColumnSettings
     bool case_insensitive_matching;
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
+    bool empty_timezone_as_utc;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -997,7 +1006,7 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<Int32>(arrow_column, column_name);
         }
         case arrow::Type::TIMESTAMP:
-            return readColumnWithTimestampData(arrow_column, column_name);
+            return readColumnWithTimestampData(arrow_column, column_name, settings.empty_timezone_as_utc);
         case arrow::Type::DECIMAL128:
             return readColumnWithDecimalData<arrow::Decimal128Array>(arrow_column, column_name);
         case arrow::Type::DECIMAL256:
@@ -1488,7 +1497,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
         .case_insensitive_matching = case_insensitive_matching,
         .allow_geoparquet_parser = allow_geoparquet_parser,
-        .enable_json_parsing = enable_json_parsing
+        .enable_json_parsing = enable_json_parsing,
+        .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1575,7 +1585,7 @@ Chunk ArrowColumnToCHColumn::arrowTableToCHChunk(
             {
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Column '{}' is not presented in input data. Column name mapping is: {}",
+                    "Column '{}' is not present in input data. Column name mapping has {} columns",
                     column_name,
                     parquet_columns_to_clickhouse->size());
             }
@@ -1606,7 +1616,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_inferring_nullable_columns = true,
         .case_insensitive_matching = case_insensitive_matching,
         .allow_geoparquet_parser = allow_geoparquet_parser,
-        .enable_json_parsing = enable_json_parsing
+        .enable_json_parsing = enable_json_parsing,
+        .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
     };
 
     Columns columns;
