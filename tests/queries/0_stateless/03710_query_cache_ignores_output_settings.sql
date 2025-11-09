@@ -1,5 +1,5 @@
---- Tags: no-parallel
---- Tag no-parallel: Messes with internal cache
+--- Tags: no-parallel, no-parallel-replicas
+--- Tag no-parallel: Messes with internal cache, no-parallel-replicas: the query from query_log errors due to missing columns.
 
 SYSTEM DROP QUERY CACHE;
 SET max_block_size = 100;
