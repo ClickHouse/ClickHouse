@@ -253,6 +253,7 @@ add_contrib (antlr4-grammars-cmake antlr4-grammars)
 
 add_contrib (numactl-cmake numactl)
 
+option(ENABLE_LLM_FUNCTIONS "Enable LLM Functions" ON)
 # Google Cloud Cpp
 if(ENABLE_LIBRARIES AND (OS_LINUX OR OS_DARWIN OR OS_FREEBSD) AND (ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER)))
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT ON)
@@ -260,8 +261,10 @@ else()
     set(ENABLE_GOOGLE_CLOUD_CPP_DEFAULT OFF)
 endif()
 option(ENABLE_GOOGLE_CLOUD_CPP "Enable Google Cloud Cpp" ${ENABLE_GOOGLE_CLOUD_CPP_DEFAULT})
-if(ENABLE_GOOGLE_CLOUD_CPP)
+if (ENABLE_LLM_FUNCTIONS OR ENABLE_GOOGLE_CLOUD_CPP)
     add_contrib (nlohmann-json-cmake nlohmann-json)
+endif()
+if(ENABLE_GOOGLE_CLOUD_CPP)
     add_contrib (crc32c-cmake crc32c)
     add_contrib (google-cloud-cpp-cmake google-cloud-cpp) # requires grpc, protobuf, absl, nlohmann's json, crc32c
 else()

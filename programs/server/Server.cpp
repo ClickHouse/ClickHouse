@@ -162,6 +162,9 @@
 
 
 #include <incbin.h>
+
+#include "Interpreters/LLM/ModelEntityFactory.h"
+#include "Interpreters/LLM/registerModelEntity.h"
 /// A minimal file used when the server is run without installation
 INCBIN(resource_embedded_xml, SOURCE_DIR "/programs/server/embedded.xml");
 
@@ -1154,6 +1157,7 @@ try
     registerFormats();
     registerRemoteFileMetadatas();
     registerSchedulerNodes();
+    registerModelEntities();
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -2259,6 +2263,7 @@ try
 
                 global_context->reloadQueryMaskingRulesIfChanged(config);
 
+                global_context->reloadModelEntitiesConfigIfChanged(config);
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
@@ -2600,6 +2605,8 @@ try
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
+    if (config().has("llm_models"))
+        global_context->setModelsConfig(config());
     /// DNSCacheUpdater uses BackgroundSchedulePool which lives in shared context
     /// and thus this object must be created after the SCOPE_EXIT object where shared
     /// context is destroyed.

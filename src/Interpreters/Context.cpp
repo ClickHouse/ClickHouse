@@ -139,6 +139,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
+#include <Interpreters/LLM/IModelEntity.h>
+#include <Interpreters/LLM/ModelEntityFactory.h>
 
 namespace fs = std::filesystem;
 
@@ -671,6 +673,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher TSA_GUARDED_BY(keeper_dispatcher_mutex);
 #endif
 
+    mutable std::mutex llm_models_mutex;
+    mutable std::unordered_map<String, std::shared_ptr<IModelEntity>> llm_models TSA_GUARDED_BY(llm_models_mutex);
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
     {
@@ -1700,6 +1704,53 @@ ConfigurationPtr Context::getUsersConfig()
 {
     SharedLockGuard lock(shared->mutex);
     return shared->users_config;
+}
+
+void Context::setModelsConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->llm_models_mutex);
+    Poco::Util::AbstractConfiguration::Keys keys;
+    getConfigRef().keys("llm_models", keys);
+
+    for (const auto & key : keys)
+    {
+        auto model_config = buildModelConfiguration(config, key);
+        auto model = ModelEntityFactory::instance().get(model_config);
+        shared->llm_models[key] = model;
+    }
+}
+
+static void reloadModelEntityIfChangedImpl(
+    const ConfigurationPtr & config,
+    const std::string & name,
+    std::shared_ptr<IModelEntity> & model)
+{
+    if (!model || model->configChanged(*config, name))
+    {
+        auto model_config = buildModelConfiguration(*config, name);
+        model = ModelEntityFactory::instance().get(model_config);
+    }
+}
+
+void Context::reloadModelEntitiesConfigIfChanged(const ConfigurationPtr & config)
+{
+    std::lock_guard lock(shared->llm_models_mutex);
+    for (auto it = shared->llm_models.begin(); it != shared->llm_models.end();)
+    {
+        if (!config->has("llm_models." + it->first))
+            it = shared->llm_models.erase(it);
+        else
+            reloadModelEntityIfChangedImpl(config, "llm_models." + it->first, it->second);
+    }
+}
+
+std::shared_ptr<IModelEntity> Context::getModelEntity(const String & name) const
+{
+    std::lock_guard lock(shared->llm_models_mutex);
+    auto it = shared->llm_models.find(name);
+    if (it != shared->llm_models.end())
+        return it->second;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Model {} is not exists.", name);
 }
 
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)

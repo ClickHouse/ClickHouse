@@ -276,6 +276,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+class IModelEntity;
 /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
 /// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
 /// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
@@ -1218,6 +1219,10 @@ public:
     void reconnectZooKeeper(const String & reason) const;
     void setClientProtocolVersion(UInt64 version);
 
+    void setModelsConfig(const Poco::Util::AbstractConfiguration & config);
+    void reloadModelEntitiesConfigIfChanged(const ConfigurationPtr & config);
+    std::shared_ptr<IModelEntity> getModelEntity(const String & name) const;
+    std::unordered_map<String, std::shared_ptr<IModelEntity>> getModelEntities() const;
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> getKeeperDispatcher() const;
     std::shared_ptr<KeeperDispatcher> tryGetKeeperDispatcher() const;
