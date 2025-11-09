@@ -7,7 +7,7 @@
 #include <sys/types.h>
 
 bool trap_it = true;
-int odd_or_even = 0;
+int odd_or_even = 1;
 
 void trap_or_not(uint n)
 {
