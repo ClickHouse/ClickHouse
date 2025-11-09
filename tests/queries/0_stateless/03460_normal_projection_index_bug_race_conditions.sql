@@ -3,7 +3,6 @@
 SET max_threads=8;
 SET max_projection_rows_to_use_projection_index = 102400000;
 SET min_table_rows_to_use_projection_index = 0;
-SET allow_experimental_full_text_index = true;
 
 DROP TABLE IF EXISTS tab;
 
@@ -23,6 +22,6 @@ PARTITION BY i % 4
 ORDER BY a
 SETTINGS index_granularity = 8192;
 
-INSERT INTO tab SELECT number,number,toString(number) FROM numbers(8192 * 10);
+INSERT INTO tab SELECT number, number, number FROM numbers(8192 * 10);
 
-SELECT * FROM tab WHERE text='1000' SETTINGS use_skip_indexes = 0, use_query_condition_cache = 0,optimize_use_projections=1,optimize_use_projection_filtering=1;
+SELECT * FROM tab WHERE text = '1000' SETTINGS use_query_condition_cache = 0, optimize_use_projections = 1, optimize_use_projection_filtering = 1;
