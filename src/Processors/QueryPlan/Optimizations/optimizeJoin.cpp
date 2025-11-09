@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
 
@@ -1079,6 +1080,60 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     return result;
 }
 
+bool canOptimizeJoinWithEmptyInput(
+    JoinKind kind,
+    [[maybe_unused]] JoinStrictness strictness,
+    bool left_is_empty,
+    bool right_is_empty)
+{
+    // TODO(mfilitov): add more cases and use strictness
+    if (isInnerOrCross(kind) && (left_is_empty || right_is_empty))
+        return true;
+
+    return false;
+}
+
+bool tryOptimizeJoinWithEmptyInput(
+    JoinStepLogical * join_step,
+    QueryPlan::Node & node,
+    JoinKind kind,
+    JoinStrictness strictness)
+{
+    // TODO(mfilitov): check side only if required by the join and strictness type
+    auto left_stats = estimateReadRowsCount(*node.children[0]);
+    auto right_stats = estimateReadRowsCount(*node.children[1]);
+
+    bool left_is_empty = left_stats.estimated_rows 
+        && left_stats.estimated_rows.value() == 0
+        && left_stats.is_exact_upper_bound; 
+    
+    bool right_is_empty = right_stats.estimated_rows 
+        && right_stats.estimated_rows.value() == 0
+        && right_stats.is_exact_upper_bound ;
+
+    LOG_TRACE(getLogger("optimizeJoin"), 
+        "Empty input optimization for {} {}: left rows = {} (exact={}), right rows = {} (exact={})",
+        toString(kind), toString(strictness),
+        left_stats.estimated_rows ? toString(left_stats.estimated_rows.value()) : "unknown",
+        left_stats.is_exact_upper_bound,
+        right_stats.estimated_rows ? toString(right_stats.estimated_rows.value()) : "unknown",
+        right_stats.is_exact_upper_bound);
+
+    if (canOptimizeJoinWithEmptyInput(kind, strictness, left_is_empty, right_is_empty))
+    {
+        LOG_DEBUG(getLogger("optimizeJoin"), 
+            "Replacing {} {} with ReadNothingStep because one side is empty",
+            toString(kind), toString(strictness));
+        
+        auto read_nothing_step = std::make_unique<ReadNothingStep>(join_step->getOutputHeader());
+        node.step = std::move(read_nothing_step);
+        node.children.clear();
+        join_step->setOptimized();
+        return true;
+    }
+    return false;
+}
+
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
@@ -1114,6 +1169,9 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         join_step->setOptimized();
         return;
     }
+
+    if (tryOptimizeJoinWithEmptyInput(join_step, node, kind, strictness))
+        return;
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->dummy_stats = join_step->getDummyStats();
