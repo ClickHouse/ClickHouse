@@ -575,7 +575,7 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
 
     /// Report same memory_usage in X-ClickHouse-Summary as in query_log
     if (process_list_elem)
-        res.memory_usage = process_list_elem->getInfo().peak_memory_usage > 0 ? process_list_elem->getInfo().peak_memory_usage : 0;
+        res.memory_usage = std::max<Int64>(process_list_elem->getInfo().peak_memory_usage, 0);
 
     if (progress_callback)
     {

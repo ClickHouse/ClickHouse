@@ -62,7 +62,7 @@ struct ResultProgress
     UInt64 result_bytes = 0;
     Int64 memory_usage = 0;
 
-    ResultProgress(UInt64 result_rows_, UInt64 result_bytes_, Int64 memory_usage_ = 0)
+    ResultProgress(UInt64 result_rows_, UInt64 result_bytes_, Int64 memory_usage_)
         : result_rows(result_rows_), result_bytes(result_bytes_), memory_usage(memory_usage_) {}
 };
 
