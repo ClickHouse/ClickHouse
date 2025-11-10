@@ -205,7 +205,7 @@ void registerInterpreterDeleteQuery(InterpreterFactory & factory)
         return std::make_unique<InterpreterDeleteQuery>(args.query, args.context);
     };
 
-    factory.registerInterpreter("InterpreterDeleteQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::DeleteQuery, create_fn);
 }
 
 }

@@ -2394,6 +2394,18 @@ void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_proje
         "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
 }
 
+void Context::addQueryAccessInfo(InterpreterOperation type)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    if (type == InterpreterOperation::None)
+        return;
+
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->operations.emplace(type);
+}
+
 Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
 {
     return query_factories_info;

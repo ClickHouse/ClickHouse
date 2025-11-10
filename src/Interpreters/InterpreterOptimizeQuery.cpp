@@ -101,6 +101,6 @@ void registerInterpreterOptimizeQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterOptimizeQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterOptimizeQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::OptimizeQuery, create_fn);
 }
 }

@@ -174,7 +174,7 @@ void registerInterpreterParallelWithQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterParallelWithQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterParallelWithQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::ParallelWithQuery, create_fn);
 }
 
 }

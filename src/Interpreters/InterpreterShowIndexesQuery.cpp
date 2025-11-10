@@ -131,7 +131,7 @@ void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowIndexesQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowIndexesQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::ShowIndexesQuery, create_fn);
 }
 
 }

@@ -112,7 +112,7 @@ void registerInterpreterExecuteAsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterExecuteAsQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterExecuteAsQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::ExecuteAsQuery, create_fn);
 }
 
 }

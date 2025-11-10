@@ -54,7 +54,7 @@ void registerInterpreterDropWorkloadQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDropWorkloadQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterDropWorkloadQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::DropWorkloadQuery, create_fn);
 }
 
 }

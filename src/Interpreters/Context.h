@@ -18,6 +18,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
@@ -410,6 +411,7 @@ public:
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
+            operations = rhs.operations;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -430,6 +432,7 @@ public:
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
+            std::swap(operations, rhs.operations);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -440,6 +443,7 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
+        std::set<InterpreterOperation> operations TSA_GUARDED_BY(mutex){}; /// TODO: It should be map: opeartion -> access objects
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -935,6 +939,7 @@ public:
     };
 
     void addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name);
+    void addQueryAccessInfo(const InterpreterOperation operation);
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories : uint8_t

@@ -56,7 +56,7 @@ void registerInterpreterDropFunctionQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDropFunctionQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterDropFunctionQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::DropFunctionQuery, create_fn);
 }
 
 }

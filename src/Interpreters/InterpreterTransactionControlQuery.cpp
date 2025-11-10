@@ -154,7 +154,7 @@ void registerInterpreterTransactionControlQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterTransactionControlQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterTransactionControlQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::TransactionControlQuery, create_fn);
 }
 
 }

@@ -82,6 +82,6 @@ void registerInterpreterUndropQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterUndropQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterUndropQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::UndropQuery, create_fn);
 }
 }

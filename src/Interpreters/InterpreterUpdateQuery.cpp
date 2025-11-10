@@ -128,7 +128,7 @@ void registerInterpreterUpdateQuery(InterpreterFactory & factory)
         return std::make_unique<InterpreterUpdateQuery>(args.query, args.context);
     };
 
-    factory.registerInterpreter("InterpreterUpdateQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::UpdateQuery, create_fn);
 }
 
 }

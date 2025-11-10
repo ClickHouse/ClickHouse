@@ -37,7 +37,7 @@ void registerInterpreterCheckGrantQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterCheckGrantQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterCheckGrantQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::CheckGrantQuery, create_fn);
 }
 
 }

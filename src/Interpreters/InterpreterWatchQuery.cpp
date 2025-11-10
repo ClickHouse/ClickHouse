@@ -120,7 +120,7 @@ void registerInterpreterWatchQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterWatchQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterWatchQuery", create_fn);
+    factory.registerInterpreter(InterpreterOperation::WatchQuery, create_fn);
 }
 
 }
