@@ -267,13 +267,15 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     continue;
 
                 auto edge = getApplicableExpressions(left->relations, right->relations);
-                if (edge.empty() && (best_plan || join_kind.value() == JoinKind::Inner))
+                if (edge.empty() && best_plan)
                     continue;
 
                 auto selectivity = computeSelectivity(edge);
                 auto current_cost = computeJoinCost(left, right, selectivity);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
+                    if (!edge.empty() && join_kind == JoinKind::Cross)
+                        join_kind = JoinKind::Inner;
                     auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
                     JoinOperator join_operator(
                         join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
@@ -318,7 +320,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
             auto cost = computeJoinCost(components[best_i], components[best_j], 1.0);
             auto cardinality = estimateJoinCardinality(components[best_i], components[best_j], 1.0);
             JoinOperator join_operator(JoinKind::Cross, JoinStrictness::All, JoinLocality::Unspecified);
-            best_plan = std::make_shared<DPJoinEntry>(components[best_i], components[best_j], cost, cardinality, join_operator);
+            /// Use left: min idx, right: max idx to keep original order order of joins
+            /// We will swap tables later if needed
+            best_plan = std::make_shared<DPJoinEntry>(components[std::min(best_i, best_j)], components[std::max(best_i, best_j)], cost, cardinality, join_operator);
             applied_edge.clear();
         }
 

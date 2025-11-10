@@ -30,7 +30,6 @@ namespace DB
 struct Settings;
 struct TimeoutSetter;
 
-class JWTProvider;
 class Connection;
 struct ConnectionParameters;
 struct ClusterFunctionReadTaskResponse;
@@ -65,11 +64,7 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        const String & bind_host_
-#if USE_JWT_CPP && USE_SSL
-        , std::shared_ptr<JWTProvider> jwt_provider_ = nullptr
-#endif
-    );
+        const String & bind_host_);
 
     ~Connection() override;
 
@@ -200,7 +195,6 @@ private:
     String quota_key;
 #if USE_JWT_CPP && USE_SSL
     String jwt;
-    std::shared_ptr<JWTProvider> jwt_provider;
 #endif
 
     /// For inter-server authorization
@@ -233,7 +227,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
-    UInt64 server_cluster_function_protocol_version = 0;
+    UInt64 worker_cluster_function_protocol_version = 0;
     UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
@@ -324,7 +318,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
+    String receiveTableColumns();
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -332,6 +326,7 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
+    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();

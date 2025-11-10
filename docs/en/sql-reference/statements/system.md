@@ -102,6 +102,18 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
+## SYSTEM DROP TEXT INDEX DICTIONARY CACHE {#drop-text-index-dictionary-cache}
+
+Clears the text index dictionary cache.
+
+## SYSTEM DROP TEXT INDEX HEADER CACHE {#drop-text-index-header-cache}
+
+Clears the text index header cache.
+
+## SYSTEM DROP TEXT INDEX POSTINGS CACHE {#drop-text-index-postings-cache}
+
+Clears the text index postings cache.
+
 ## SYSTEM DROP REPLICA {#drop-replica}
 
 Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:

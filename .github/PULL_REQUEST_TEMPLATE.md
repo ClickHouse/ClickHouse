@@ -1,9 +1,5 @@
-<!---
-A technical comment, you are free to remove or leave it as it is when PR is created
-The following categories are used in the next scripts, update them accordingly
-utils/changelog/changelog.py
-tests/ci/cancel_and_rerun_workflow_lambda/app.py
--->
+<!--- Disable AI PR formatting assistant: false -->
+
 ### Changelog category (leave one):
 - New Feature
 - Experimental Feature
