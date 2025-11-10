@@ -46,7 +46,7 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
 }
 
-Pipe getSourcePipe(QueryPipeline & pipeline, const bool use_async_executor);
+Pipe getSourcePipe(QueryPipeline & pipeline, bool use_async_executor);
 
 template <DictionaryKeyType dictionary_key_type>
 Columns DirectDictionary<dictionary_key_type>::getColumns(
