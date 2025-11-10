@@ -851,14 +851,23 @@ BlockIO InterpreterInsertQuery::execute()
     const Settings & settings = context->getSettingsRef();
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
+    StoragePtr table = getTable(query);
+
     if (context->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
-    }
+        /// Allow inserts into external table engines (object storage, message queues, external databases)
+        /// as they don't create merge tasks on the server replica
+        bool is_external_storage =
+            table->isObjectStorage() ||     /// S3, Azure, GCS, HDFS, etc.
+            table->isDataLake() ||           /// Iceberg, DeltaLake, Hudi
+            table->isMessageQueue() ||       /// Kafka, RabbitMQ, NATS
+            table->isExternalDatabase();     /// MySQL, PostgreSQL, MongoDB, Hive, YTsaurus
 
-    StoragePtr table = getTable(query);
+        if (!is_external_storage)
+            throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
+    }
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
