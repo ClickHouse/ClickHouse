@@ -440,9 +440,11 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     auto metadata_object = getMetadataJSONObject(
         metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
 
+    auto dump_metadata = [&]()->String { return dumpMetadataObjectToString(metadata_object); };
+
     insertRowToLogTable(
         local_context,
-        dumpMetadataObjectToString(metadata_object),
+        dump_metadata,
         DB::IcebergMetadataLogLevel::Metadata,
         persistent_components.table_path,
         metadata_path,
