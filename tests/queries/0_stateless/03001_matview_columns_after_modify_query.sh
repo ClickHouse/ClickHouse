@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-catalog, no-remote-database-disk
+# Tags: no-replicated-database, no-shared-catalog, no-asan
 # Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
 # Tag no-shared-catalog -- same
-# Tag no-remote-database-disk -- plain rewritable disk can not handle out or server disk change
+# Tag no-asan -- plain rewritable disk can not handle out or server disk change. remote db disk will be enabled only for asan builds.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
