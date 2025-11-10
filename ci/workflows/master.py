@@ -20,7 +20,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
-        JobConfigs.docker_sever,
+        JobConfigs.docker_server,
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_master_jobs,
         *JobConfigs.compatibility_test_jobs,

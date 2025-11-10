@@ -109,11 +109,6 @@ std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorage
     return std::nullopt;
 }
 
-bool MetadataStorageFromStaticFilesWebServer::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
-}
-
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
 {
     std::vector<std::string> result;

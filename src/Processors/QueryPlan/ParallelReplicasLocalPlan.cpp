@@ -114,7 +114,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
-    addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
+    addConvertingActions(*query_plan, header, context, /*has_missing_objects=*/false);
 
     return {std::move(query_plan), true};
 }

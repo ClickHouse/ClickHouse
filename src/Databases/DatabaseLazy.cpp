@@ -134,7 +134,7 @@ bool DatabaseLazy::isTableExist(const String & table_name) const
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
-    return tables_cache.find(table_name) != tables_cache.end();
+    return tables_cache.contains(table_name);
 }
 
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const

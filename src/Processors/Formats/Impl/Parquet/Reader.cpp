@@ -998,7 +998,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 const auto [start, end] = col.row_ranges_after_column_index[i];
                 chassert(start < end);
                 chassert(!i || start > prev_end);
-                prev_end = end;
+                prev_end = end;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
 
                 events.emplace_back(start, +1);
                 events.emplace_back(end, -1);

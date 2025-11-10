@@ -2198,7 +2198,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
 
-                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())

@@ -665,6 +665,7 @@ ASTPtr DatabaseDataLake::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_definition);
+    create_query->uuid = db_uuid;
     return create_query;
 }
 

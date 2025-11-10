@@ -40,7 +40,6 @@ using HTTPContinueCallback = std::function<void()>;
 void executeQuery(
     ReadBufferUniquePtr istr,                  /// Where to read query from (and data for INSERT, if present).
     WriteBuffer & ostr,                 /// Where to write query output to.
-    bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone, as well as additional headers.
     QueryFlags flags = {},
@@ -54,7 +53,6 @@ void executeQuery(
 void executeQuery(
     ReadBuffer & istr,                  /// Where to read query from (and data for INSERT, if present).
     WriteBuffer & ostr,                 /// Where to write query output to.
-    bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     ContextMutablePtr context,          /// DB, tables, data types, storage engines, functions, aggregate functions...
     SetResultDetailsFunc set_result_details, /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone, as well as additional headers.
     QueryFlags flags = {},

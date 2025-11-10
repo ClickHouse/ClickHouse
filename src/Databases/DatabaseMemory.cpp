@@ -219,9 +219,9 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
+void DatabaseMemory::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

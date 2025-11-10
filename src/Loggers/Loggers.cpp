@@ -114,7 +114,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     /// Use extended interface of Channel for more comprehensive logging.
     if (config.getBool("logger.async", true))
     {
-        auto async_queue_size = config.getUInt("logger.async_queue_max_size", 10000);
+        auto async_queue_size = config.getUInt("logger.async_queue_max_size", 65536);
         split = new DB::OwnAsyncSplitChannel(static_cast<size_t>(async_queue_size));
     }
     else

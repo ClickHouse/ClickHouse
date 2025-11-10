@@ -5,8 +5,45 @@
 namespace DB
 {
 
-using ObjectInfo = RelativePathWithMetadata;
-using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
+struct ObjectInfo
+{
+    RelativePathWithMetadata relative_path_with_metadata;
+    std::optional<DataLakeObjectMetadata> data_lake_metadata;
+
+    ObjectInfo() = default;
+
+    explicit ObjectInfo(const String & relative_path_)
+        : relative_path_with_metadata(RelativePathWithMetadata(relative_path_))
+    {
+    }
+    explicit ObjectInfo(RelativePathWithMetadata relative_path_with_metadata_)
+        : relative_path_with_metadata(relative_path_with_metadata_)
+    {
+    }
+
+    ObjectInfo(const ObjectInfo & other) = default;
+
+    virtual ~ObjectInfo() = default;
+
+    virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
+    virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
+    virtual bool isArchive() const { return false; }
+    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
+    virtual std::string getPathOrPathToArchiveIfArchive() const;
+    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
+
+    std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
+    void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
+};
+
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
+using ObjectInfos = std::vector<ObjectInfoPtr>;
 class ExpressionActions;
 
 struct IObjectIterator

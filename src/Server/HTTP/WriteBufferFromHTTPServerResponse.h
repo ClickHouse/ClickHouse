@@ -26,6 +26,8 @@ class WriteBufferFromHTTPServerResponse final : public HTTPWriteBuffer
 {
 public:
     static constexpr std::string_view EXCEPTION_MARKER = "__exception__";
+    static constexpr size_t EXCEPTION_TAG_LENGTH = 16;
+    static constexpr size_t MAX_EXCEPTION_SIZE= 16 * 1024; // 16K
 
     WriteBufferFromHTTPServerResponse(
         HTTPServerResponse & response_,
@@ -109,6 +111,8 @@ private:
     CompressionMethod compression_method = CompressionMethod::None;
 
     int exception_code = 0;
+
+    std::string exception_tag;
 
     std::mutex mutex;    /// progress callback could be called from different threads.
 };

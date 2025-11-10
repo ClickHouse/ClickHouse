@@ -595,6 +595,7 @@ class Runner:
                                     test_case_result.name,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
+                                    job_name=job.name,
                                 ),
                             )
                     result.dump()

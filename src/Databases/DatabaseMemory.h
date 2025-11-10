@@ -52,7 +52,7 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
-    void alterDatabaseComment(const AlterCommand & alter_command) override;
+    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
 
 private:
     void removeDataPath(ContextPtr local_context);

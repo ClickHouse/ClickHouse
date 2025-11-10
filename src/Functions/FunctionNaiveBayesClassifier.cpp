@@ -352,7 +352,7 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 
           Result 0 might represent English, while 1 could indicate French - class meanings depend on your training data.
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::MachineLearning;
 
     FunctionDocumentation function_documentation

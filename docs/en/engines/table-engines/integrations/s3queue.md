@@ -5,7 +5,7 @@ description: 'This engine provides integration with the Amazon S3 ecosystem and 
 sidebar_label: 'S3Queue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/s3queue
-title: 'S3Queue Table Engine'
+title: 'S3Queue table engine'
 doc_type: 'reference'
 ---
 

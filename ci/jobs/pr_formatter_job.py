@@ -94,7 +94,7 @@ Header: "### Details"
                 command=[
                     f"cat {output_file}",
                     f"test -f {output_file} && test $(wc -l < {output_file}) -gt 1 && test $(wc -c < {output_file}) -gt 50",
-                    f"sed -i.bak '1s/^/<!---AI changelog entry and formatting assistance: false-->\\n/' {output_file} && rm -f {output_file}.bak",
+                    f"sed -i.bak '1s/^/<!--- Disable AI PR formatting assistant: true -->\\n/' {output_file} && rm -f {output_file}.bak",
                 ],
             )
         )

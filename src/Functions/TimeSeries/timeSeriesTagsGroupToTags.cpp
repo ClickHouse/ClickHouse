@@ -131,7 +131,7 @@ public:
     static std::vector<size_t> extractGroups(const IColumn & column_groups)
     {
         std::string_view data = column_groups.getRawData();
-        chassert(data.size() == column_groups.size() * sizeof(UInt64));
+        chassert(data.size() == column_groups.size() * sizeof(UInt64));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
         const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
         return std::vector<size_t>(begin, begin + column_groups.size());
     }

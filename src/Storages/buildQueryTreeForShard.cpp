@@ -406,7 +406,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context_copy);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }

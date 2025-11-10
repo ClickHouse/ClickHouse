@@ -331,6 +331,7 @@
             max-width: 100%;
             margin-top: -1px; /* To compensate the border. */
             contain: strict; /* Less input lag even if the table is large. */
+            resize: none; /* Disable default browser resizer */
         }
 
         #inputs
@@ -557,6 +558,26 @@
         {
             border-radius: 0.25rem;
             background-color: var(--border-color-selected);
+        }
+
+        .textarea-resizer {
+            position: absolute;
+            bottom: -0.3rem;
+            left: 0;
+            width: 100%;
+            height: 0.5rem;
+            cursor: row-resize;
+            user-select: none;
+        }
+
+        .textarea-resizer:hover, .textarea-resizer-dragging
+        {
+            border-radius: 0.25rem;
+            background-color: var(--border-color);
+        }
+
+        #query_div {
+            position: relative;
         }
 
         /* The row under mouse pointer is highlight for better legibility. */
@@ -1354,6 +1375,8 @@ async function restoreFromHistory(state) {
 
 let query_area = document.getElementById('query');
 
+appendTextareaResizer();
+
 window.onpopstate = function(event) {
     if (!event.state) return;
     restoreFromHistory(event.state);
@@ -1793,6 +1816,58 @@ function appendHeaderResizer(header) {
     resizer.addEventListener('touchstart', (e) => e.preventDefault());
 
     header.appendChild(resizer);
+}
+
+
+function appendTextareaResizer() {
+    const queryDiv = document.getElementById('query_div');
+    const textarea = document.getElementById('query');
+
+    let drag_state = {
+        elem: null,
+        is_dragging: false,
+        offset_y: null,
+        offset_height: null
+    };
+
+    const start = (e) => {
+        if (e.button !== 0) { return; }
+
+        drag_state.offset_y = e.clientY;
+        drag_state.offset_height = textarea.offsetHeight;
+        drag_state.is_dragging = true;
+        drag_state.elem = e.target;
+        drag_state.elem.classList.add('textarea-resizer-dragging');
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', stop);
+        document.addEventListener('pointercancel', stop);
+    }
+
+    const move = (e) => {
+        if (!drag_state.is_dragging) { return; }
+
+        const dy = e.clientY - drag_state.offset_y;
+        const newHeight = drag_state.offset_height + dy;
+
+        textarea.style.height = `${newHeight}px`;
+    }
+
+    const stop = (e) => {
+        drag_state.is_dragging = false;
+        drag_state.elem.classList.remove('textarea-resizer-dragging');
+
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', stop);
+        document.removeEventListener('pointercancel', stop);
+    }
+
+    const resizer = document.createElement('div');
+    resizer.className = 'textarea-resizer';
+    resizer.addEventListener('pointerdown', start);
+    resizer.addEventListener('touchstart', (e) => e.preventDefault());
+
+    queryDiv.appendChild(resizer);
 }
 
 function appendHeader(meta) {

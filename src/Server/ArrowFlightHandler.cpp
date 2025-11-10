@@ -409,11 +409,11 @@ public:
         info->block = block;
         info->ch_to_arrow_converter = ch_to_arrow_converter;
         std::lock_guard lock{mutex};
-        bool inserted = tickets.try_emplace(ticket, info).second;
+        bool inserted = tickets.try_emplace(ticket, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Flight tickets are unique.
         if (expiration_time)
         {
-            inserted = tickets_by_expiration_time.emplace(*expiration_time, ticket).second;
+            inserted = tickets_by_expiration_time.emplace(*expiration_time, ticket).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(inserted); /// Flight tickets are unique.
             updateNextExpirationTime();
         }
@@ -509,13 +509,13 @@ public:
         info->expiration_time = expiration_time;
         info->ch_to_arrow_converter = poll_session->getCHToArrowConverter();
         std::lock_guard lock{mutex};
-        bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;
+        bool inserted = poll_descriptors.try_emplace(poll_descriptor, info).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Poll descriptors are unique.
-        inserted = poll_sessions.try_emplace(poll_descriptor, std::move(poll_session)).second;
+        inserted = poll_sessions.try_emplace(poll_descriptor, std::move(poll_session)).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
         chassert(inserted); /// Poll descriptors are unique.
         if (expiration_time)
         {
-            inserted = poll_descriptors_by_expiration_time.emplace(*expiration_time, poll_descriptor).second;
+            inserted = poll_descriptors_by_expiration_time.emplace(*expiration_time, poll_descriptor).second;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(inserted); /// Poll descriptors are unique.
             updateNextExpirationTime();
         }

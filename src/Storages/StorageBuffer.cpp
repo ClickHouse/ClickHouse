@@ -354,7 +354,8 @@ void StorageBuffer::read(
                     converting_dag = ActionsDAG::makeConvertingActions(
                         header_after_adding_defaults.getColumnsWithTypeAndName(),
                         header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name);
+                        ActionsDAG::MatchColumnsMode::Name,
+                        local_context);
                 }
 
                 if (src_table_query_info.row_level_filter)
@@ -410,7 +411,8 @@ void StorageBuffer::read(
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                             header.getColumnsWithTypeAndName(),
-                            ActionsDAG::MatchColumnsMode::Name);
+                            ActionsDAG::MatchColumnsMode::Name,
+                            local_context);
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
@@ -531,7 +533,8 @@ void StorageBuffer::read(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 result_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
         query_plan.addStep(std::move(converting));

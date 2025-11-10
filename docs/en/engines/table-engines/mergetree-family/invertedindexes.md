@@ -38,6 +38,8 @@ CREATE TABLE tab
                                 -- Mandatory parameters:
                                 tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
                                 -- Optional parameters:
+                                [, preprocessor = expression(str)]
+                                -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, max_cardinality_for_embedded_postings = M]
@@ -48,7 +50,7 @@ ENGINE = MergeTree
 ORDER BY key
 ```
 
-The `tokenizer` argument specifies the tokenizer:
+**Tokenizer argument**. The `tokenizer` argument specifies the tokenizer:
 
 - `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)).
@@ -92,14 +94,63 @@ returns
 +---------------------------------+
 ```
 
-Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
+**Preprocessor argument**. The optional argument `preprocessor` is an expression which transforms the input string before tokenization.
+
+Typical use cases for the preprocessor argument include
+1. Lower-casing (or upper-casing) the input strings to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8), see the first example below.
+2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
+3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode).
+
+The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
+
+Examples:
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+- `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
+
+Also, the preprocessor expression must only reference the column on top of which the text index is defined.
+Using non-deterministic functions is not allowed.
+
+Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
+
+For example:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, 'Foo');
+```
+
+is equivalent to:
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
+```
+
+**Other arguments**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
 Advanced users can specify a different index granularity (we do not recommend this).
 
 <details markdown="1">
 
-<summary>Advanced parameters</summary>
+<summary>Optional advanced parameters</summary>
 
 The default values of the following advanced parameters will work well in virtually all situations.
 We do not recommend changing them.
@@ -712,20 +763,40 @@ For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` wo
 
 ## Tuning the text index {#tuning-the-text-index}
 
-Currently, there is a cache for the deserialized dictionary blocks of the text index to reduce I/O.
+Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
 
-It can be enabled via the setting [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache). By default, it is disabled.
+They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache) and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) respectively. By default, they are disabled.
 
 Refer the following server settings to configure the cache.
 
 ### Server Settings {#text-index-tuning-server-settings}
 
-| Setting                                                                                                                                                  | Description                                                                                                          | Default      |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                       | `SLRU`       |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                         | `1073741824` |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                           | `1'000'000`  |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.        | `0.5`        |
+#### Dictionary blocks cache settings {#text-index-tuning-dictionary-blocks-cache}
+
+| Setting                                                                                                                                                  | Description                                                                                                       | Default      |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------|
+| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                    | `SLRU`       |
+| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                      | `1073741824` |
+| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                        | `1'000'000`  |
+| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.     | `0.5`        |
+
+#### Header cache settings {#text-index-tuning-header-cache}
+
+| Setting                                                                                                                              | Description                                                                                             | Default      |
+|--------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
+| [text_index_header_cache_policy](/operations/server-configuration-parameters/settings#text_index_header_cache_policy)             | Text index header cache policy name.                                                                    | `SLRU`       |
+| [text_index_header_cache_size](/operations/server-configuration-parameters/settings#text_index_header_cache_size)                 | Maximum cache size in bytes.                                                                            | `1073741824` |
+| [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)   | Maximum number of deserialized headers in cache.                                                        | `100'000`    |
+| [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)     | The size of the protected queue in the text index header cache relative to the cache\'s total size.     | `0.5`        |
+
+#### Posting lists cache settings {#text-index-tuning-posting-lists-cache}
+
+| Setting                                                                                                                               | Description                                                                                             | Default      |
+|---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
+| [text_index_postings_cache_policy](/operations/server-configuration-parameters/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  | `SLRU`       |
+| [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            | `2147483648` |
+| [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       | `1'000'000`  |
+| [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   | `0.5`        |
 
 ## Related content {#related-content}
 

@@ -698,7 +698,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
             executor.execute();
 
             timeout_write_buffer->finalize();
-            timeout_write_buffer->reset();
+            (*timeout_write_buffer).reset();
 
             if (!is_executable_pool)
             {

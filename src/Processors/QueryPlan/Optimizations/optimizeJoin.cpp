@@ -196,7 +196,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 const ActionsDAG::Node * prewhere_node = prewhere_info
                     ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                     : nullptr;
-                auto relation_profile = estimator_->estimateRelationProfile(filter, prewhere_node);
+                auto relation_profile = estimator_->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node);
                 RelationStats stats {.estimated_rows = relation_profile.rows, .column_stats = relation_profile.column_stats, .table_name = table_display_name};
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return stats;
@@ -566,6 +566,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         join_expression_sources.set(total_inputs - 1, false);
         query_graph.join_kinds[total_inputs - 1] = std::make_pair(std::move(join_expression_sources), join_kind);
     }
+    if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
+        query_graph.join_kinds[0] = std::make_pair(BitSet{}, JoinKind::Cross);
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 

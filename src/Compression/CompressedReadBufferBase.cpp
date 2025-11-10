@@ -223,7 +223,6 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
             external_data);
     }
 
-
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     // Is whole compressed block available in 'compressed_in->' buffer?

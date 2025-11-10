@@ -196,7 +196,7 @@ class AggregateFunctionGroupArrayIntersectGeneric final
     : public IAggregateFunctionDataHelper<AggregateFunctionGroupArrayIntersectGenericData,
         AggregateFunctionGroupArrayIntersectGeneric<is_plain_column>>
 {
-    const DataTypePtr & input_data_type;
+    const DataTypePtr input_data_type;
 
     using State = AggregateFunctionGroupArrayIntersectGenericData;
 
