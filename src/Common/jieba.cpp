@@ -255,15 +255,6 @@
 // class HMMModel
 // {
 // public:
-//     enum State
-//     {
-//         B = 0,
-//         E = 1,
-//         M = 2,
-//         S = 3,
-//         STATE_COUNT = 4
-//     };
-
 //     explicit HMMModel(std::string_view model_data) { loadModel(model_data); }
 
 //     void viterbi(const std::vector<RuneInfo> & runes, std::vector<State> & states) const
@@ -393,13 +384,6 @@
 //             }
 //         };
 
-//         // 读取起始概率
-//         parse_probs(read_line(), start_prob, STATE_COUNT);
-
-//         // 读取转移概率
-//         for (size_t i = 0; i < STATE_COUNT; i++)
-//             parse_probs(read_line(), trans_prob[i], STATE_COUNT);
-
 //         // 读取发射概率
 //         parse_emit_prob(read_line(), emit_prob_b);
 //         parse_emit_prob(read_line(), emit_prob_e);
@@ -435,8 +419,30 @@
 //         return it->getMapped();
 //     }
 
-//     double start_prob[STATE_COUNT] = {};
-//     double trans_prob[STATE_COUNT][STATE_COUNT] = {};
+//     enum State
+//     {
+//         B = 0,
+//         E = 1,
+//         M = 2,
+//         S = 3
+//     };
+
+//     constexpr int STATE_COUNT = 4;
+
+//     std::array<double, STATE_COUNT> start_prob = {
+//         -0.26268660809250016, // B
+//         -3.14e+100, // E
+//         -3.14e+100, // M
+//         -1.4652633398537678 // S
+//     };
+
+//     std::array<std::array<double, STATE_COUNT>, STATE_COUNT> trans_prob = {{
+//         {-3.14e+100, -0.510825623765990, -0.916290731874155, -3.14e+100}, // B -> *
+//         {-0.5897149736854513, -3.14e+100, -3.14e+100, -0.8085250474669937}, // E -> *
+//         {-3.14e+100, -0.33344856811948514, -1.2603623820268226, -3.14e+100}, // M -> *
+//         {-0.7211965654669841, -3.14e+100, -3.14e+100, -0.6658631448798212} // S -> *
+//     }};
+
 //     HashMap<Rune, double> emit_prob_b;
 //     HashMap<Rune, double> emit_prob_e;
 //     HashMap<Rune, double> emit_prob_m;
