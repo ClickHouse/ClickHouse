@@ -300,7 +300,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 while (identifiers_char_pos < range.end)
                 {
-                    colors[identifiers_code_point_pos] = replxx::color::bold(colors[identifiers_code_point_pos]);
+                    colors[identifiers_code_point_pos] = replxx::color::underline(colors[identifiers_code_point_pos]);
                     ++identifiers_code_point_pos;
                     identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
                 }

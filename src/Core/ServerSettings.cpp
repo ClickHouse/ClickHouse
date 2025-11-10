@@ -1067,7 +1067,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-    Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
+    Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
     )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
     Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud

@@ -38,6 +38,12 @@ def parse_args():
         nargs="+",
         action="extend",
     )
+    parser.add_argument(
+        "--count",
+        help="Optional. Number of times to repeat each test",
+        default=None,
+        type=int,
+    )
     return parser.parse_args()
 
 
@@ -164,6 +170,9 @@ def main():
             assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
+            if to in ("parallel", "sequential") and args.test:
+                # skip setting up parallel/sequential if specific tests are provided
+                continue
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
 
         if "flaky" in to:
@@ -369,9 +378,12 @@ def main():
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(
-                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
-            )
+            runs = 1
+            if args.count:
+                runs = args.count
+            elif is_flaky_check:
+                runs = 50
+            run_specific_tests(tests=tests, runs=runs, extra_args=runner_options)
 
         if not info.is_local_run:
             CH.stop_log_exports()
