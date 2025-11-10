@@ -42,11 +42,6 @@
 #include <mutex>
 
 
-namespace ProfileEvents
-{
-    extern const Event ACMECertificateOrders;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
