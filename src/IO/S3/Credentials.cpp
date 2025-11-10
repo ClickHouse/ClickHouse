@@ -1,3 +1,4 @@
+#include <atomic>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
@@ -52,6 +53,7 @@ namespace S3
 #    include <Common/logger_useful.h>
 #    include <Common/Concepts.h>
 #    include <Common/SipHash.h>
+#    include <Common/ProfileEvents.h>
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3/Client.h>
 
@@ -66,6 +68,16 @@ namespace S3
 #    include <Poco/Net/HTTPResponse.h>
 #    include <Poco/StreamCopier.h>
 
+namespace ProfileEvents
+{
+    extern const Event S3CachedCredentialsProvidersReused;
+    extern const Event S3CachedCredentialsProvidersAdded;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric S3CachedCredentialsProviders;
+}
 
 namespace DB
 {
@@ -125,49 +137,52 @@ public:
         return ret;
     }
 
+    void setSize(size_t max_credentials_) { max_credentials.store(max_credentials_, std::memory_order::relaxed); }
+
     template <typename T>
     CredentialsProviderPtr getOrSet(T && cache_key, std::function<CredentialsProviderPtr()> creator)
     {
         static_assert(InVariant<T, CredentialsProviderKey>, "Cache key must be part of variant CredentialsKey");
 
-        std::lock_guard lock(mutex);
+        auto current_max_credentials = max_credentials.load(std::memory_order::relaxed);
+
+        if (current_max_credentials == 0)
+            return creator();
 
         CredentialsProviderKey key = std::forward<T>(cache_key);
+        std::lock_guard lock(mutex);
         if (auto it = cached_credentials.find(key);
             it == cached_credentials.end() || it->second == credentials_lru.end())
         {
             LOG_TEST(
-                getLogger("CredentialsCache"),
-                "Total cached credentials size: {}, adding new credential to cache",
+                getLogger("CredentialsProviderCache"),
+                "Total cached credentials size: {}, adding new credentials provider to cache",
                 cached_credentials.size());
 
             if (it != cached_credentials.end())
-            {
                 cached_credentials.erase(it);
-            }
 
-            if (credentials_lru.size() == max_credentials)
+            while (credentials_lru.size() >= current_max_credentials)
             {
                 auto & credentials_value = credentials_lru.front();
                 cached_credentials.erase(*credentials_value.key);
                 credentials_lru.pop_front();
-                chassert(credentials_lru.size() < max_credentials);
             }
-            /// TODO: add metric for currently cached clients
 
-            /// TODO: add profile event for new credentials
+            ProfileEvents::increment(ProfileEvents::S3CachedCredentialsProvidersAdded);
             auto credentials = creator();
             auto [credentials_it, inserted] = cached_credentials.emplace(std::move(key), credentials_lru.end());
             chassert(inserted);
             credentials_lru.emplace_back(CacheValue{&credentials_it->first, credentials});
             credentials_it->second = std::prev(credentials_lru.end());
+            CurrentMetrics::set(CurrentMetrics::S3CachedCredentialsProviders,credentials_lru.size());
             return credentials;
         }
         else
         {
-            LOG_TEST(getLogger("CredentialsCache"), "Total credentials size: {}, reusing credentials", cached_credentials.size());
+            LOG_TEST(getLogger("CredentialsProviderCache"), "Total credentials size: {}, reusing credentials provider", cached_credentials.size());
 
-            /// TODO: add profile event for reused credentials
+            ProfileEvents::increment(ProfileEvents::S3CachedCredentialsProvidersReused);
             credentials_lru.splice(credentials_lru.end(), credentials_lru, it->second);
             return it->second->credentials;
         }
@@ -182,12 +197,17 @@ private:
 
     using CredentialsLRUQueue = std::list<CacheValue>;
 
-    const size_t max_credentials;
+    std::atomic<size_t> max_credentials;
     std::mutex mutex;
     std::unordered_map<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 
+}
+
+void setCredentialsProviderCacheMaxSize(size_t cache_size)
+{
+    CredentialsProviderCache::instance().setSize(cache_size);
 }
 
 AWSEC2MetadataClient::AWSEC2MetadataClient(const Aws::Client::ClientConfiguration & client_configuration, const char * endpoint_)
@@ -1076,7 +1096,6 @@ void AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey::updateHash(SipHash & has
     hash.update(credentials.GetAWSAccessKeyId());
     hash.update(credentials.GetAWSSecretKey());
     hash.update(credentials.GetSessionToken());
-
 }
 
 std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentialsProvider::create(

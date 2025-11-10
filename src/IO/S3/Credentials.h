@@ -36,6 +36,8 @@ static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.
 std::string getRunningAvailabilityZone();
 std::string tryGetRunningAvailabilityZone();
 
+void setCredentialsProviderCacheMaxSize(size_t cache_size);
+
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
     static constexpr char EC2_SECURITY_CREDENTIALS_RESOURCE[] = "/latest/meta-data/iam/security-credentials";
