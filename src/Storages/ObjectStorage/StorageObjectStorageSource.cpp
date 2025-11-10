@@ -189,7 +189,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             iterator = std::make_unique<GlobIterator>(
                 object_storage, configuration, predicate, virtual_columns, hive_columns,
                 local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match, file_progress_callback);
+                query_settings.throw_on_zero_files_match, with_tags,
+                file_progress_callback);
     }
     else if (configuration->supportsFileIterator())
     {
@@ -838,6 +839,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
     ObjectInfos * read_keys_,
     size_t list_object_keys_size,
     bool throw_on_zero_files_match_,
+    bool with_tags,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
     , object_storage(object_storage_)
@@ -856,7 +858,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         const auto & key_with_globs = reading_path;
         const auto key_prefix = reading_path.cutGlobs(configuration->supportsPartialPathPrefix());
 
-        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size);
+        object_storage_iterator = object_storage->iterate(key_prefix, list_object_keys_size, with_tags);
 
         matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(key_with_globs.path));
         if (!matcher->ok())

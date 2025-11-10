@@ -2942,8 +2942,10 @@ def test_object_tags(started_cluster):
 
     assert read_tags == tags
 
-    res = instance.query(
-        f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64')"
-    )
+    expected = f"{{'Database':'ClickHouse','Ping':'Pong','Team':'Core'}}\t{table_name}.tsv\troot/{table_name}.tsv\t1\n"
 
-    assert res == f"{{'Database':'ClickHouse','Ping':'Pong','Team':'Core'}}\t{table_name}.tsv\troot/{table_name}.tsv\t1\n"
+    res = instance.query(f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.tsv', auto, 'x UInt64')")
+    assert res == expected
+
+    res = instance.query(f"select _tags, _file, _path, x from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.*', auto, 'x UInt64')")
+    assert res == expected

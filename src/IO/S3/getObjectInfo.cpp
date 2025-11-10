@@ -88,21 +88,35 @@ namespace
             object_info.metadata = result.GetMetadata();
 
         if (with_tags)
-        {
-            auto tag_outcome = getObjectTagging(client, bucket, key, version_id);
-            if (!tag_outcome.IsSuccess())
-                return {std::nullopt, tag_outcome.GetError()};
-
-            for (const auto & tag : tag_outcome.GetResult().GetTagSet())
-            {
-                object_info.tags[tag.GetKey()] = tag.GetValue();
-            }
-        }
+            object_info.tags = getObjectTags(client, bucket, key, version_id);
 
         return {object_info, {}};
     }
 }
 
+ObjectAttributes getObjectTags(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const String & version_id)
+{
+    ObjectAttributes tags;
+    auto tag_outcome = getObjectTagging(client, bucket, key, version_id);
+    if (!tag_outcome.IsSuccess())
+    {
+        const auto & error = tag_outcome.GetError();
+        throw S3Exception(
+            error.GetErrorType(),
+            "Failed to get object tags: {}. HTTP response code: {}",
+            error.GetMessage(),
+            static_cast<size_t>(error.GetResponseCode()));
+    }
+
+    for (const auto & tag : tag_outcome.GetResult().GetTagSet())
+        tags[tag.GetKey()] = tag.GetValue();
+
+    return tags;
+}
 
 bool isNotFoundError(Aws::S3::S3Errors error)
 {
