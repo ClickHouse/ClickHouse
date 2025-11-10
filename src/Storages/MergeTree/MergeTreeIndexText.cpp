@@ -376,7 +376,7 @@ void MergeTreeIndexGranuleText::analyzeBloomFilter(const IMergeTreeIndexConditio
 
 namespace
 {
-DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, const MergeTreeIndexDeserializationState & state)
+DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr)
 {
     ProfileEvents::increment(ProfileEvents::TextIndexReadDictionaryBlocks);
 
@@ -421,7 +421,6 @@ DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, const MergeTreeInd
             readVarUInt(offset_in_file, istr);
             token_infos.emplace_back(
                 TokenPostingsInfo::FuturePostings{
-                    .state = state,
                     .header = header,
                     .offset_in_file = offset_in_file,
                     .cardinality = cardinality,
@@ -462,7 +461,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
         {
             UInt64 offset_in_file = header->sparseIndex().getOffsetInFile(block_id);
             compressed_buffer->seek(offset_in_file, 0);
-            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer, state));
+            return std::make_shared<TextIndexDictionaryBlockCacheEntry>(deserializeDictionaryBlock(*data_buffer));
         };
 
         if (condition_text.useDictionaryBlockCache())

@@ -49,7 +49,7 @@ private:
 
     void updateAllIndexRanges();
     void createEmptyColumns(Columns & columns) const;
-    void readPostingsIfNeeded(Granule & granule);
+    void readPostingsIfNeeded(Granule & granule, size_t index_mark);
     void fillSkippedColumn(IColumn & column, size_t num_rows);
     void fillColumn(IColumn & column, Granule & granule, const String & column_name, size_t granule_offset, size_t num_rows);
 
