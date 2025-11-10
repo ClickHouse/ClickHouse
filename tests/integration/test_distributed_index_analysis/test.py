@@ -88,6 +88,7 @@ def test_primary_key():
     # Note, correctness (and ProfileEvents) checked in stateless tests
     master.query("select * from test.pk_test where k2 = repeat('a', 100)", settings={
         "distributed_index_analysis": 1,
+        "use_query_condition_cache": 0,
         "cluster_for_parallel_replicas": "default",
     })
 
@@ -97,7 +98,7 @@ def test_primary_key():
         where table = 'pk_test'
         group by host
     """, parse=True)
-    assert loaded_pk_df["size"].max() < primary_key_size
-    assert loaded_pk_df["size"].mean() < primary_key_size/3*1.2 and loaded_pk_df["size"].mean() > primary_key_size/3*0.8
+    assert loaded_pk_df["size"].max() < primary_key_size, loaded_pk_df
+    assert loaded_pk_df["size"].mean() < primary_key_size/3*1.2 and loaded_pk_df["size"].mean() > primary_key_size/3*0.8, loaded_pk_df
     # CV
-    assert loaded_pk_df["size"].std()/loaded_pk_df["size"].mean() < 0.2
+    assert loaded_pk_df["size"].std()/loaded_pk_df["size"].mean() < 0.2, loaded_pk_df
