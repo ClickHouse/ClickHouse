@@ -979,7 +979,8 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 {
                     interpolate_expression = &interpolate_actions_dag.addCast(*interpolate_expression,
                         expression_to_interpolate->result_type,
-                        interpolate_expression->result_name);
+                        interpolate_expression->result_name,
+                        planner_context->getQueryContext());
                 }
 
                 const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, expression_to_interpolate_name);
@@ -1709,9 +1710,8 @@ void Planner::buildPlanForUnionNode()
 
     Block union_common_header = buildCommonHeaderForUnion(
         query_plans_headers, union_mode, union_node.getContext()->getSettingsRef()[Setting::use_variant_as_common_type]);
-    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers);
-
     const auto & query_context = planner_context->getQueryContext();
+    addConvertingToCommonHeaderActionsIfNeeded(query_plans, union_common_header, query_plans_headers, query_context);
     const auto & settings = query_context->getSettingsRef();
     auto max_threads = settings[Setting::max_threads];
 

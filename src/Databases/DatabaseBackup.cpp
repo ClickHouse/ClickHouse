@@ -407,12 +407,12 @@ ASTPtr DatabaseBackup::getCreateQueryFromMetadata(const String & table_name, boo
     return create_query;
 }
 
-ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(getDatabaseName()), quoteString(config.database_name), quoteString(config.backup_info.toString()));
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,

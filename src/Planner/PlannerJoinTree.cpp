@@ -1449,7 +1449,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 expected_block.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position,
-                true /*ignore_constant_values*/);
+                planner_context->getQueryContext(),
+                true /*ignore_constant_values*/,
+                false /*add_cast_columns*/,
+                nullptr /*new_names*/);
             auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_actions_dag));
             if (table_expression_data.isRemote())
                 rename_step->setStepDescription("Change remote column names to local column names");
@@ -2066,7 +2069,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                 continue;
 
             const auto & cast_type = it->second;
-            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name);
+            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name, planner_context->getQueryContext());
         }
 
         cast_actions_dag.appendInputsForUnusedColumns(*plan_to_add_cast.getCurrentHeader());

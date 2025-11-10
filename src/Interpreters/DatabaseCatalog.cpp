@@ -737,13 +737,15 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     }
 }
 
-void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
+void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
 {
     std::lock_guard lock{databases_mutex};
-    if (!create_query)
-        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+    ASTPtr ast = database->getCreateDatabaseQuery();
+    if (!ast)
+        throw Exception(
+            ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database->getDatabaseName()));
 
-    auto * ast_create_query = create_query->as<ASTCreateQuery>();
+    auto * ast_create_query = ast->as<ASTCreateQuery>();
     ast_create_query->attach = true;
 
     WriteBufferFromOwnString statement_buf;
@@ -752,8 +754,8 @@ void DatabaseCatalog::updateMetadataFile(const String & database_name, const AST
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql.tmp");
-    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     writeMetadataFile(

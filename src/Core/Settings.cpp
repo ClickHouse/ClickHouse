@@ -5330,6 +5330,9 @@ Allow to create only Replicated tables in database with engine Replicated
     DECLARE(Bool, database_replicated_allow_heavy_create, false, R"(
 Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated database engine. Note that it can block DDL queue for a long time.
 )", 0) \
+    DECLARE(UInt64, database_shared_drop_table_delay_seconds, 8 * 60 * 60, R"(
+The delay in seconds before a dropped table is actually removed from a Shared database. This allows to recover the table within this time using `UNDROP TABLE` statement.
+)", 0) \
     DECLARE(Bool, cloud_mode, false, R"(
 Cloud mode
 )", 0) \
@@ -6951,7 +6954,7 @@ When the query prioritization mechanism is employed (see setting `priority`), lo
 Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
-Max rows of iceberg parquet data file on insert operation.
+Max bytes of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
@@ -7248,6 +7251,9 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", EXPERIMENTAL, evaluation_time) \
+    DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
+Allow to create table with the Alias engine.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
