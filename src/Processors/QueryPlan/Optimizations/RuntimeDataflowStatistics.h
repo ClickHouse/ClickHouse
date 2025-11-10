@@ -86,7 +86,21 @@ private:
     std::atomic_size_t cnt{0};
     std::atomic_bool unsupported_case{false};
 
+    enum InputStatisticsType
+    {
+        WithByteHint = 0,
+        WithoutByteHint = 1,
+        MaxInputType = 2,
+    };
     std::array<Statistics, 2> input_bytes_statistics;
+
+    enum OutputStatisticsType
+    {
+        AggregationState = 0,
+        AggregationKeys = 1,
+        OutputChunk = 2,
+        MaxOutputType = 3,
+    };
     std::array<Statistics, 3> output_bytes_statistics;
 };
 

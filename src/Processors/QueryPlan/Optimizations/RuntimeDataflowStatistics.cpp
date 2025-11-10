@@ -1,8 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnBLOB.h>
-#include <Columns/ColumnLazy.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/NullWriteBuffer.h>
@@ -55,33 +53,44 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         return;
     }
 
-    RuntimeDataflowStatistics res{};
-    for (const auto & stats : input_bytes_statistics)
+    auto log_stats = [](const auto & stats, auto type) TSA_REQUIRES(stats.mutex)
     {
         LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
+            getLogger("RuntimeDataflowStatisticsCacheUpdater"),
+            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}",
+            type,
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
             (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+    };
+
+    RuntimeDataflowStatistics res;
+    for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
+    {
+        const auto & stats = input_bytes_statistics[i];
         if (stats.compressed_bytes)
+        {
+            log_stats(stats, toString(static_cast<InputStatisticsType>(i)));
             res.input_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        }
     }
-    for (const auto & stats : output_bytes_statistics)
+    for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
     {
-        LOG_DEBUG(
-            &Poco::Logger::get("debug"),
-            "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
-            stats.bytes,
-            stats.sample_bytes,
-            stats.compressed_bytes,
-            (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        const auto & stats = output_bytes_statistics[i];
         if (stats.compressed_bytes)
+        {
+            log_stats(stats, toString(static_cast<OutputStatisticsType>(i)));
             res.output_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        }
     }
+
     LOG_DEBUG(
-        getLogger("RuntimeDataflowStatisticsCacheUpdater"), "res.input_bytes={}, res.output_bytes={}", res.input_bytes, res.output_bytes);
+        getLogger("RuntimeDataflowStatisticsCacheUpdater"),
+        "Collected statistics: input_bytes={}, output_bytes={}",
+        res.input_bytes,
+        res.output_bytes);
+
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(*cache_key, res);
 }
@@ -98,20 +107,12 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
     if (curr % 50 == 0 && curr < 150 && chunk.hasRows())
     {
-        if (chunk.getNumColumns() != header.columns())
-        {
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Chunk columns number {} doesn't match header columns number {}",
-                chunk.getNumColumns(),
-                header.columns());
-        }
-
+        chassert(chunk.getNumColumns() != header.columns());
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
             key_columns_compressed_size += getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
 
-    auto & statistics = output_bytes_statistics[0];
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += source_bytes;
     if (key_columns_compressed_size)
@@ -139,7 +140,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
     size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
-    auto & statistics = output_bytes_statistics[1];
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += res;
     statistics.sample_bytes += res;
@@ -172,7 +173,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
     if (curr % 50 == 0 && curr < 150 && block.rows())
         key_columns_compressed_size = getKeyColumnsSize(/*compressed=*/true);
 
-    auto & statistics = output_bytes_statistics[2];
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += source_bytes;
     if (key_columns_compressed_size)
@@ -191,13 +192,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 
     Stopwatch watch;
 
-    if (read_bytes == 0)
+    const auto type = read_bytes ? InputStatisticsType::WithByteHint : InputStatisticsType::WithoutByteHint;
+    if (type == InputStatisticsType::WithoutByteHint)
     {
         for (const auto & column : columns)
             read_bytes += column.column->byteSize();
     }
 
-    auto & statistics = input_bytes_statistics[0];
+    auto & statistics = input_bytes_statistics[type];
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += read_bytes;
     if (read_bytes)
