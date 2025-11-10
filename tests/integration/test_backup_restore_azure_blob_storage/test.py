@@ -337,7 +337,7 @@ def test_backup_restore_correct_block_ids(cluster):
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'default'""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(
@@ -409,3 +409,62 @@ def test_backup_restore_correct_block_ids(cluster):
             node,
             f"SELECT * from test_simple_merge_tree_restored_{max_blocks} ORDER BY key",
         ) == node.query(data_query)
+
+
+def test_backup_restore_with_checksum_data_file_name(cluster):
+    node = cluster.instances["node"]
+    port = cluster.env_variables["AZURITE_PORT"]
+    azure_query(node, "DROP TABLE IF EXISTS test")
+    azure_query(
+        node,
+        f"CREATE TABLE test (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c.csv', 'CSV')",
+    )
+    azure_query(
+        node, f"INSERT INTO test SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
+    )
+
+    backup_name = new_backup_name()
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test TO {backup_destination} SETTINGS data_file_name_generator='checksum'",
+    )
+    print(get_azure_file_content(f"{backup_name}/.backup", port))
+    azure_query(node, "DROP TABLE IF EXISTS test_restored")
+    azure_query(
+        node,
+        f"RESTORE TABLE test AS test_restored FROM {backup_destination};",
+    )
+    assert (
+        azure_query(node, f"SELECT * from test_restored")
+        == "1\ta\n"
+    )
+
+
+def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
+    node = cluster.instances["node"]
+    azure_query(
+        node,
+        f"""
+        DROP TABLE IF EXISTS test;
+        CREATE TABLE test(key UInt64, data String) Engine = MergeTree() ORDER BY tuple() SETTINGS storage_policy='blob_storage_policy'
+        """,
+    )
+    azure_query(node, f"INSERT INTO test VALUES (1, 'a')")
+
+    backup_name = new_backup_name()
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{backup_name}')"
+    azure_query(
+        node,
+        f"BACKUP TABLE test TO {backup_destination} SETTINGS data_file_name_generator='checksum'",
+    )
+    azure_query(node, f"DROP TABLE IF EXISTS test_restored")
+    azure_query(
+        node,
+        f"RESTORE TABLE test AS test_restored FROM {backup_destination};",
+    )
+    assert (
+        azure_query(node, f"SELECT * from test_restored") == "1\ta\n"
+    )
+    azure_query(node, f"DROP TABLE test")
+    azure_query(node, f"DROP TABLE test_restored")
