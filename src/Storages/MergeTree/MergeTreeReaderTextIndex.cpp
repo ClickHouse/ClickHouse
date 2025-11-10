@@ -260,8 +260,24 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
     auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 
     const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index.condition);
-    const auto & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
-    const auto & index_name = index.index->getFileName();
+    const String & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
+    const String & index_name = index.index->getFileName();
+    const auto get_postings = [&](const TokenPostingsInfo::FuturePostings future_postings, std::string_view token)
+    {
+        const auto load_postings = [&]() -> PostingListPtr
+        {
+            ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
+            compressed_buffer->seek(future_postings.offset_in_file, 0);
+            return PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
+        };
+
+        if (condition_text.usePostingsCache())
+            condition_text.postingsCache()->getOrSet(
+                TextIndexPostingsCache::hash(data_path, index_name, index_mark, future_postings.cardinality, future_postings.offset_in_file, token),
+                load_postings);
+
+        return load_postings();
+    };
 
     PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
@@ -274,25 +290,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
         else
         {
             const auto & future_postings = postings.getFuturePostings();
-            const auto load_postings = [&]() -> PostingListPtr
-            {
-                ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
-                compressed_buffer->seek(future_postings.offset_in_file, 0);
-                return PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
-            };
-
-            posting_list = condition_text.usePostingsCache()
-                ? condition_text.postingsCache()->getOrSet(
-                    TextIndexPostingsCache::hash(
-                        data_path,
-                        index_name,
-                        index_mark,
-                        future_postings.cardinality,
-                        future_postings.offset_in_file,
-                        token.toView()
-                    ),
-                    load_postings)
-                : load_postings();
+            posting_list = get_postings(future_postings, token.toView());
         }
 
         granule.postings.emplace(token, std::move(posting_list));
