@@ -3,7 +3,6 @@
 #if USE_PARQUET
 namespace DB
 {
-    
 std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in)
 {
     String full_path = getFileNameFromReadBuffer(in);
@@ -24,6 +23,5 @@ std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in)
     }
     return std::make_pair(full_path, etag);
 }
-
 }
 #endif
