@@ -80,9 +80,7 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
     node1.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
     node2.query(f"DROP DATABASE IF EXISTS {db_name}  SYNC")
     # Make sure that the MV is refreshed on node1
-    node2.query(
-        "SYSTEM ENABLE FAILPOINT refresh_task_delay_update_coordination_state_running"
-    )
+    node2.query("SYSTEM ENABLE FAILPOINT refresh_task_stop_racing_for_running_refresh")
     node2.query("SYSTEM ENABLE FAILPOINT database_replicated_delay_entry_execution")
 
     node1.query(
@@ -98,11 +96,11 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
             f"CREATE TABLE {db_name}.target (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x"
         )
         node1.query(
-            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 SECOND {append_clause} TO {db_name}.target AS SELECT now() AS x"
+            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 HOUR {append_clause} TO {db_name}.target AS SELECT now() AS x"
         )
     else:
         node1.query(
-            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 SECOND {append_clause} (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT now() AS x"
+            f"CREATE MATERIALIZED VIEW {db_name}.mv REFRESH EVERY 1 HOUR {append_clause} (x DateTime) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT now() AS x"
         )
 
     node2.query(
@@ -122,10 +120,16 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
 
     last_log_ts = get_last_ddl_worker_log_ts(node2, db_name)
 
-    # Wait for node1 to refresh the view several times
-    time.sleep(5)
-
-    node1.query(f"ALTER TABLE {db_name}.mv MODIFY REFRESH EVERY 1 HOUR {append_clause}")
+    last_refresh_time = node1.query(
+        "SELECT last_refresh_time FROM system.view_refreshes WHERE view='mv'"
+    )
+    for i in range(2):
+        node1.query(f"SYSTEM REFRESH VIEW {db_name}.mv")
+    # Ensure that the mv is refresh
+    node1.query_with_retry(
+        "SELECT last_refresh_time FROM system.view_refreshes WHERE view='mv'",
+        check_callback=lambda x: x != last_refresh_time,
+    )
 
     # Make sure that the view is not refreshing, and it is scheduled to be refreshed in at least 10 minutes
     node1.query_with_retry(
@@ -135,9 +139,7 @@ def test_refreshable_mv_skip_old_temp_tables_ddls(
         > datetime.timedelta(minutes=10),
     )
 
-    node2.query(
-        "SYSTEM DISABLE FAILPOINT refresh_task_delay_update_coordination_state_running"
-    )
+    node2.query("SYSTEM DISABLE FAILPOINT refresh_task_stop_racing_for_running_refresh")
     node2.query("SYSTEM DISABLE FAILPOINT database_replicated_delay_entry_execution")
 
     table_info1 = node1.query(f"SELECT uuid, name FROM system.tables WHERE database='{db_name}'")
