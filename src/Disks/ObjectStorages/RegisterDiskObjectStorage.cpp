@@ -63,9 +63,6 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             disk = std::make_shared<ReadOnlyDiskWrapper>(disk);
         }
 
-        if (disk->isReadOnly())
-            skip_access_check = true;
-
         disk->startup(skip_access_check);
         return disk;
     };
