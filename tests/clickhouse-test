@@ -1170,6 +1170,8 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
+        "enable_lazy_columns_replication": lambda: random.randint(0, 1),
+        "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
