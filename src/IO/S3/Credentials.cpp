@@ -94,14 +94,14 @@ bool areCredentialsEmptyOrExpired(const Aws::Auth::AWSCredentials & credentials,
 const char SSO_CREDENTIALS_PROVIDER_LOG_TAG[] = "SSOCredentialsProvider";
 constexpr int AVAILABILITY_ZONE_REQUEST_TIMEOUT_SECONDS = 3;
 
-class CredentialsCache : boost::noncopyable
+class CredentialsProviderCache : boost::noncopyable
 {
-    using CredentialsKey
+    using CredentialsProviderKey
         = std::variant<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey, AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey>;
 
     struct CredentialsKeyHash
     {
-        size_t operator()(const CredentialsKey & key) const
+        size_t operator()(const CredentialsProviderKey & key) const
         {
             SipHash hash;
             hash.update(key.index());
@@ -112,27 +112,27 @@ class CredentialsCache : boost::noncopyable
 
 public:
 
-    using CredentialsPtr = std::shared_ptr<Aws::Auth::AWSCredentialsProvider>;
+    using CredentialsProviderPtr = std::shared_ptr<Aws::Auth::AWSCredentialsProvider>;
 
-    explicit CredentialsCache(size_t max_credentials_)
+    explicit CredentialsProviderCache(size_t max_credentials_)
         : max_credentials(max_credentials_)
     {
     }
 
-    static CredentialsCache & instance()
+    static CredentialsProviderCache & instance()
     {
-        static CredentialsCache ret(/*max_credentials*/ 100);
+        static CredentialsProviderCache ret(/*max_credentials*/ 100);
         return ret;
     }
 
     template <typename T>
-    CredentialsPtr getOrSet(T && cache_key, std::function<CredentialsPtr()> creator)
+    CredentialsProviderPtr getOrSet(T && cache_key, std::function<CredentialsProviderPtr()> creator)
     {
-        static_assert(InVariant<T, CredentialsKey>, "Cache key must be part of variant CredentialsKey");
+        static_assert(InVariant<T, CredentialsProviderKey>, "Cache key must be part of variant CredentialsKey");
 
         std::lock_guard lock(mutex);
 
-        CredentialsKey key = std::forward<T>(cache_key);
+        CredentialsProviderKey key = std::forward<T>(cache_key);
         if (auto it = cached_credentials.find(key);
             it == cached_credentials.end() || it->second == credentials_lru.end())
         {
@@ -143,7 +143,6 @@ public:
 
             if (it != cached_credentials.end())
             {
-                chassert(it->second == credentials_lru.end());
                 cached_credentials.erase(it);
             }
 
@@ -166,7 +165,7 @@ public:
         }
         else
         {
-            LOG_TEST(getLogger("ObjectStorageClientsCache"), "Total credentials size: {}, reusing credentials", cached_credentials.size());
+            LOG_TEST(getLogger("CredentialsCache"), "Total credentials size: {}, reusing credentials", cached_credentials.size());
 
             /// TODO: add profile event for reused credentials
             credentials_lru.splice(credentials_lru.end(), credentials_lru, it->second);
@@ -177,15 +176,15 @@ public:
 private:
     struct CacheValue
     {
-        const CredentialsKey * key;
-        CredentialsPtr credentials;
+        const CredentialsProviderKey * key;
+        CredentialsProviderPtr credentials;
     };
 
     using CredentialsLRUQueue = std::list<CacheValue>;
 
     const size_t max_credentials;
     std::mutex mutex;
-    std::unordered_map<CredentialsKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
+    std::unordered_map<CredentialsProviderKey, typename CredentialsLRUQueue::iterator, CredentialsKeyHash> cached_credentials;
     CredentialsLRUQueue credentials_lru;
 };
 
@@ -607,7 +606,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleWebIdenti
         LOG_DEBUG(logger, "Resolved session_name from profile_config or environment variable to be {}", session_name);
     }
 
-    return CredentialsCache::instance().getOrSet(
+    return CredentialsProviderCache::instance().getOrSet(
         AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider::CacheKey{role_arn, token_file, cache_on_session_name ? session_name : ""},
         [&]
         {
@@ -751,7 +750,8 @@ void SSOCredentialsProvider::Reload()
     Aws::Vector<Aws::String> retryable_errors;
     retryable_errors.push_back("TooManyRequestsException");
 
-    aws_client_configuration.retryStrategy = Aws::MakeShared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, retryable_errors, /*maxRetries=*/3);
+    aws_client_configuration.retryStrategy = Aws::MakeShared<Aws::Client::SpecifiedRetryableErrorsRetryStrategy>(
+        SSO_CREDENTIALS_PROVIDER_LOG_TAG, retryable_errors, /*maxRetries=*/3);
     client = Aws::MakeUnique<Aws::Internal::SSOCredentialsClient>(SSO_CREDENTIALS_PROVIDER_LOG_TAG, aws_client_configuration);
 
     LOG_TRACE(logger, "Requesting credentials with AWS_ACCESS_KEY: {}", sso_account_id);
@@ -1089,15 +1089,13 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> AwsAuthSTSAssumeRoleCredentia
 {
     auto client = std::make_shared<AWSAssumeRoleClient>(credentials_provider, client_configuration, sts_endpoint_override);
     auto session_name = session_name_.empty() ? "ClickHouseSession" : std::move(session_name_);
-    return CredentialsCache::instance().getOrSet(
-        AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{role_arn_, session_name, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
+    return CredentialsProviderCache::instance().getOrSet(
+        AwsAuthSTSAssumeRoleCredentialsProvider::CacheKey{
+            role_arn_, session_name, client->getEndpoint().GetURL(), credentials_provider->GetAWSCredentials()},
         [&]
         {
             return std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(
-                std::move(role_arn_),
-                std::move(session_name),
-                expiration_window_seconds_,
-                std::move(client));
+                std::move(role_arn_), std::move(session_name), expiration_window_seconds_, std::move(client));
         });
 }
 
