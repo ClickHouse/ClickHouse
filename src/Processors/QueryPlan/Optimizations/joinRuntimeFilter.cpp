@@ -14,7 +14,6 @@
 #include <Core/Settings.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
-#include "Core/Joins.h"
 #include <DataTypes/getLeastSupertype.h>
 #include <fmt/format.h>
 
@@ -25,7 +24,12 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, const String & filter_name, const ColumnWithTypeAndName & key_column, const DataTypePtr & filter_element_type)
+const ActionsDAG::Node & createRuntimeFilterCondition(
+    ActionsDAG & actions_dag,
+    const String & filter_name,
+    const ColumnWithTypeAndName & key_column,
+    const DataTypePtr & filter_element_type,
+    bool need_negate)
 {
     const auto & filter_name_node = actions_dag.addColumn(
         ColumnWithTypeAndName(
@@ -33,7 +37,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
             std::make_shared<DataTypeString>(),
             filter_name));
 
-    const auto & key_column_node = actions_dag. findInOutputs(key_column.name);
+    const auto & key_column_node = actions_dag.findInOutputs(key_column.name);
     const auto * filter_argument = &key_column_node;
 
     /// Cast to the type of filter element if needed
@@ -42,6 +46,12 @@ const ActionsDAG::Node & createRuntimeFilterCondition(ActionsDAG & actions_dag, 
 
     auto filter_function = FunctionFactory::instance().get("__filterContains", /*query_context*/nullptr);
     const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
+
+    if (need_negate)
+    {
+        auto function_not = FunctionFactory::instance().get("not", /*query_context*/nullptr);
+        return actions_dag.addFunction(function_not, {&condition}, {});
+    }
     return condition;
 }
 
@@ -69,15 +79,19 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
     const bool can_use_runtime_filter =
         (
-            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any)) ||
-            ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
-            || (join_operator.kind == JoinKind::Right && join_operator.strictness == JoinStrictness::Anti)
+            (join_operator.kind == JoinKind::Inner && (join_operator.strictness == JoinStrictness::All || join_operator.strictness == JoinStrictness::Any))
+            || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Semi)
+            || ((join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Right) && join_operator.strictness == JoinStrictness::Anti)
         ) &&
         (join_operator.locality == JoinLocality::Unspecified || join_operator.locality == JoinLocality::Local) &&
         std::find_if(join_algorithms.begin(), join_algorithms.end(), supportsRuntimeFilter) != join_algorithms.end();
 
     if (!can_use_runtime_filter)
         return false;
+
+    /// In the case of LEFT ANTI JOIN we need to add a filter that filters out rows
+    /// that would have matches in the right table. This means we need to add something like NOT IN filter.
+    const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
@@ -150,7 +164,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             }
 
             /// Add filter lookup to the probe subtree
-            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
+            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type, check_left_does_not_contain));
 
             /// Add building filter to the build subtree of join
             {
@@ -163,7 +177,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     filter_name,
                     optimization_settings.join_runtime_filter_exact_values_limit,
                     optimization_settings.join_runtime_bloom_filter_bytes,
-                    optimization_settings.join_runtime_bloom_filter_hash_functions);
+                    optimization_settings.join_runtime_bloom_filter_hash_functions,
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {} ({})", join_key_build_side.name, filter_name), 200);
                 new_build_filter_node->children = {build_filter_node};
 

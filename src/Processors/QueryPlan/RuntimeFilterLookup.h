@@ -19,7 +19,8 @@ public:
         const DataTypePtr & filter_column_target_type,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_);
+        UInt64 bloom_filter_hash_functions_,
+        bool allow_to_use_not_exact_filter_);
 
     void insert(ColumnPtr values);
 
@@ -44,6 +45,10 @@ private:
     const DataTypePtr result_type;
     BloomFilterPtr bloom_filter;
     SetPtr exact_values;
+
+    /// If true then when the exact_values set exceeds limits it is allowed to switch to bloom filter
+    bool allow_to_use_not_exact_filter;
+    bool is_full = false;
 
     std::mutex finish_mutex;
     std::atomic<bool> inserts_are_finished = false;

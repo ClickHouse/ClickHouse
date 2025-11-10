@@ -35,7 +35,8 @@ RuntimeFilter::RuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_)
+    UInt64 bloom_filter_hash_functions_,
+    bool allow_to_use_not_exact_filter_)
     : exact_values_limit(exact_values_limit_)
     , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
@@ -43,6 +44,7 @@ RuntimeFilter::RuntimeFilter(
     , result_type(std::make_shared<DataTypeUInt8>())
     , bloom_filter(nullptr)
     , exact_values(std::make_shared<Set>(SizeLimits{}, -1, false))
+    , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
 {
     ColumnsWithTypeAndName set_header;
     set_header.emplace_back(ColumnWithTypeAndName(filter_column_target_type, String()));
@@ -57,9 +59,17 @@ void RuntimeFilter::insert(ColumnPtr values)
 
     if (exact_values)
     {
+        if (is_full)
+            return;
+
         exact_values->insertFromColumns({values});
         if (exact_values->getTotalRowCount() > exact_values_limit || exact_values->getTotalByteCount() > bloom_filter_bytes)
-            switchToBloomFilter();
+        {
+            if (allow_to_use_not_exact_filter)
+                switchToBloomFilter();
+            else
+                is_full = true;
+        }
     }
     else
         insertIntoBloomFilter(values);

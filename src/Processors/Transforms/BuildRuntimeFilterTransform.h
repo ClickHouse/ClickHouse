@@ -22,7 +22,8 @@ public:
         String filter_name_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_);
+        UInt64 bloom_filter_hash_functions_,
+        bool allow_to_use_not_exact_filter_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }
 

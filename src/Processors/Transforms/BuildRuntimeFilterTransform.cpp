@@ -17,14 +17,15 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_name_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_)
+    UInt64 bloom_filter_hash_functions_,
+    bool allow_to_use_not_exact_filter_)
     : ISimpleTransform(header_, header_, true)
     , filter_column_name(filter_column_name_)
     , filter_column_position(header_->getPositionByName(filter_column_name))
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , built_filter(std::make_unique<RuntimeFilter>(filter_column_target_type, exact_values_limit_, bloom_filter_bytes_, bloom_filter_hash_functions_))
+    , built_filter(std::make_unique<RuntimeFilter>(filter_column_target_type, exact_values_limit_, bloom_filter_bytes_, bloom_filter_hash_functions_, allow_to_use_not_exact_filter_))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
