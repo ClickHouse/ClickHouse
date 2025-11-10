@@ -13,6 +13,8 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
@@ -25,9 +27,17 @@ namespace Setting
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
-    getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    SettingsChanges evaluated_changes = ast.changes;
+    for (const auto & [name, expr] : ast.changes_expressions)
+    {
+        if (!expr)
+            continue;
+        auto literal = evaluateConstantExpressionAsLiteral(expr, getContext());
+        evaluated_changes.emplace_back(name, literal->as<ASTLiteral &>().value);
+    }
+    getContext()->checkSettingsConstraints(evaluated_changes, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
-    session_context->applySettingsChanges(ast.changes);
+    session_context->applySettingsChanges(evaluated_changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
@@ -37,9 +47,17 @@ BlockIO InterpreterSetQuery::execute()
 void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constraints)
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
+    SettingsChanges evaluated_changes = ast.changes;
+    for (const auto & [name, expr] : ast.changes_expressions)
+    {
+        if (!expr)
+            continue;
+        auto literal = evaluateConstantExpressionAsLiteral(expr, getContext());
+        evaluated_changes.emplace_back(name, literal->as<ASTLiteral &>().value);
+    }
     if (!ignore_setting_constraints)
-        getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
-    getContext()->applySettingsChanges(ast.changes);
+        getContext()->checkSettingsConstraints(evaluated_changes, SettingSource::QUERY);
+    getContext()->applySettingsChanges(evaluated_changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }
 
