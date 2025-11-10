@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
