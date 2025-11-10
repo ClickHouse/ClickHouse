@@ -155,6 +155,13 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
             key = uri.getPath().substr(1);
     }
 
+    /// If there is a '?' in the original string, but no actual query, it means
+    /// the user intended to use '?' as a wildcard in the path
+    if (original_uri.getRawQuery().empty() && uri_str.find('?') != std::string::npos && !has_version_id && !looks_like_presigned)
+    {
+        key += "?";
+    }
+
     /// Merge non-presigned, non-versionId query into key as required.
     const std::string original_query = original_uri.getQuery();
     if (!original_query.empty() && !has_version_id && !looks_like_presigned)
