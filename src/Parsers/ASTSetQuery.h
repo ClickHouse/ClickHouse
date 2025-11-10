@@ -17,6 +17,8 @@ public:
     bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
 
     SettingsChanges changes;
+    /// settings expressed as expressions (evaluated at execution time)
+    std::vector<std::pair<String, ASTPtr>> changes_expressions;
     /// settings that will be reset to default value
     std::vector<String> default_settings;
     NameToNameVector query_parameters;
