@@ -264,7 +264,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
-            if (rg.nextMediumNumber() < 91)
+            if (!fc.measure_performance && !fc.compare_explains && rg.nextMediumNumber() < 91)
             {
                 this->swapTableDefinitions(rg, newt);
             }

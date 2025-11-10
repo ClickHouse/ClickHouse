@@ -1119,6 +1119,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         {
             /// Use numbers function
             bool first = true;
+            bool has_aggr = false;
             SelectStatementCore * ssc = sel->mutable_select_core();
             GenerateSeriesFunc * gsf = ssc->mutable_from()
                                            ->mutable_tos()
@@ -1142,10 +1143,25 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                     nval,
                     entry.path.size() > 1 ? ("], " + std::to_string(nested_nrows) + ", " + nval + ")") : "");
                 first = false;
+                has_aggr |= entry.getBottomType()->getTypeClass() == SQLTypeClass::AGGREGATEFUNCTION;
             }
             ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::move(buf));
             gsf->set_fname(GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers);
             gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+            if (has_aggr || rg.nextMediumNumber() < 21)
+            {
+                /// Add GROUP BY for AggregateFunction type
+                ssc->mutable_groupby()
+                    ->mutable_glist()
+                    ->mutable_exprs()
+                    ->mutable_expr()
+                    ->mutable_comp_expr()
+                    ->mutable_expr_stc()
+                    ->mutable_col()
+                    ->mutable_path()
+                    ->mutable_col()
+                    ->set_column("number");
+            }
         }
         else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + number_func + insert_select + 1))
         {
@@ -1605,7 +1621,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t ncname = t.col_counter++;
                 AddColumn * add_col = ati->mutable_add_column();
                 ColumnDef * def = add_col->mutable_new_col();
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)
@@ -1709,7 +1725,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_modify_column();
                 ColumnDef * def = add_col->mutable_new_col();
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)

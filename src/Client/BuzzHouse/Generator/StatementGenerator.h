@@ -402,7 +402,7 @@ private:
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
-    void generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
+    void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * ls);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,

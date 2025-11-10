@@ -516,6 +516,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
     mutable TextIndexDictionaryBlockCachePtr text_index_dictionary_block_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index dictionary blocks.
+    mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
+    mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
@@ -2032,6 +2034,12 @@ ClassifierPtr Context::getWorkloadClassifier() const
     if (!classifier)
         classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload], settings);
     return classifier;
+}
+
+void Context::releaseQuerySlot() const
+{
+    if (auto elem = getProcessListElementSafe())
+        elem->releaseQuerySlot();
 }
 
 String Context::getMergeWorkload() const
@@ -3808,6 +3816,82 @@ void Context::clearTextIndexDictionaryBlockCache() const
 
     if (shared->text_index_dictionary_block_cache)
         shared->text_index_dictionary_block_cache->clear();
+}
+
+void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->text_index_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache has been already created.");
+
+    shared->text_index_header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->text_index_header_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("text_index_header_cache_size", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_header_cache_max_entries", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES);
+    shared->text_index_header_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->text_index_header_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<TextIndexHeaderCache> Context::getTextIndexHeaderCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->text_index_header_cache;
+}
+
+void Context::clearTextIndexHeaderCache() const
+{
+    auto cache = getTextIndexHeaderCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::setTextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->text_index_postings_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index posting list cache has been already created.");
+
+    shared->text_index_postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->text_index_postings_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index posting list cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("text_index_postings_cache_size", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("text_index_postings_cache_max_entries", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES);
+    shared->text_index_postings_cache->setMaxSizeInBytes(max_size_in_bytes);
+    shared->text_index_postings_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<TextIndexPostingsCache> Context::getTextIndexPostingsCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->text_index_postings_cache;
+}
+
+void Context::clearTextIndexPostingsCache() const
+{
+    auto cache = getTextIndexPostingsCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
 }
 
 void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)

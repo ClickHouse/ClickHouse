@@ -25,6 +25,7 @@ struct FormatSettings
     bool with_names_use_header = false;
     bool with_types_use_header = false;
     bool write_statistics = true;
+    bool into_outfile_create_parent_directories = false;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
