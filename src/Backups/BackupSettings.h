@@ -94,6 +94,8 @@ struct BackupSettings
     /// Defines how backup data file names are generated.
     /// - `None`: use the original file name from BackupFileInfo.
     /// - `Checksum`: derive the name from the file checksum.
+    /// Example: for a 128-bit checksum = `abcd1234ef567890abcd1234ef567890`
+    /// and `data_file_name_prefix_length = 3`, the resulting path will be: `abc/d1234ef567890abcd1234ef567890`.
     BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::None;
 
     /// Optional length of the checksum prefix used as a directory path segment
