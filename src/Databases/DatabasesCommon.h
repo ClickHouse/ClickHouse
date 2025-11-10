@@ -30,7 +30,7 @@ class DatabaseWithAltersOnDiskBase : public IDatabase
     using IDatabase::IDatabase;
 
 public:
-    void alterDatabaseComment(const AlterCommand & command) override;
+    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
 };
 
 /// A base class for databases that manage their own list of tables.

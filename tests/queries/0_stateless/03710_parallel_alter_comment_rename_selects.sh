@@ -15,7 +15,7 @@ QUERY_TIMEOUT=${QUERY_TIMEOUT:-30}
 
 # clickhouse-client sometimes hangs forever along with the server despite of timeout settings, so we use the timeout util here.
 CLICKHOUSE_CLIENT="timeout $QUERY_TIMEOUT $CLICKHOUSE_CLIENT"
-CLICKHOUSE_DATABASE_TEST="${CLICKHOUSE_DATABASE}_03703_parallel_alter_comment_rename_selects"
+CLICKHOUSE_DATABASE_TEST="${CLICKHOUSE_DATABASE}_03710_parallel_alter_comment_rename_selects"
 
 
 log() {
