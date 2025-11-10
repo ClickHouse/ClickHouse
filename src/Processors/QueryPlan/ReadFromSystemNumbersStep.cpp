@@ -11,6 +11,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
+#include <base/types.h>
 #include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -407,7 +408,7 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
 
     const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
 
-    if (lim_info.is_limit_length_negative)
+    if (lim_info.is_limit_length_negative || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
         return {};
 
     if (!shouldPushdownLimit(query_info, lim_info.limit_length))

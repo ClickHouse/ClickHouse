@@ -3,7 +3,8 @@ import pytest
 from helpers.iceberg_utils import (
     default_upload_directory,
     get_uuid_str,
-    create_iceberg_table
+    create_iceberg_table,
+    get_creation_expression
 )
 
 
@@ -12,9 +13,12 @@ def get_array(query_result: str):
     print(arr)
     return arr
 
+@pytest.mark.parametrize("run_on_cluster", [False, True])
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
-def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmaps,  storage_type):
+def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmaps,  storage_type, run_on_cluster):
+    if storage_type == "local" and run_on_cluster:
+        pytest.skip("Local storage with cluster execution is not supported")
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
@@ -34,10 +38,12 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    expression = get_creation_expression(storage_type, TABLE_NAME, started_cluster_iceberg_with_spark, run_on_cluster=run_on_cluster, table_function=True)
+
+    print(expression)
 
     settings = {"use_roaring_bitmap_iceberg_positional_deletes": use_roaring_bitmaps}
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings=settings)) == 90
+    assert int(instance.query(f"SELECT count() FROM {expression}", settings=settings)) == 90
 
     spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
     default_upload_directory(
@@ -47,14 +53,14 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 100))
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(20, 100))
 
     # Check that filters are applied after deletes
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} where id >= 15", settings=settings)) == 80
+    assert int(instance.query(f"SELECT count() FROM {expression} where id >= 15", settings=settings)) == 80
     assert (
         int(
             instance.query(
-                f"SELECT count() FROM {TABLE_NAME} where id >= 15 SETTINGS optimize_trivial_count_query=1",
+                f"SELECT count() FROM {expression} where id >= 15 SETTINGS optimize_trivial_count_query=1",
                 settings=settings,
             )
         )
@@ -69,7 +75,7 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 90))
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(20, 90))
 
     spark.sql(f"ALTER TABLE {TABLE_NAME} ADD PARTITION FIELD truncate(1, data)")
 
@@ -83,7 +89,7 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 90)) + list(
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(20, 90)) + list(
         range(100, 200)
     )
 
@@ -95,13 +101,13 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
         f"/iceberg_data/default/{TABLE_NAME}/",
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
-    assert get_array(instance.query(f"SELECT id FROM {TABLE_NAME}", settings=settings)) == list(range(20, 90)) + list(
+    assert get_array(instance.query(f"SELECT id FROM {expression}", settings=settings)) == list(range(20, 90)) + list(
         range(100, 150)
     )
 
     assert get_array(
         instance.query(
-            f"SELECT id FROM {TABLE_NAME} WHERE id = 70 SETTINGS use_iceberg_partition_pruning = 1",
+            f"SELECT id FROM {expression} WHERE id = 70 SETTINGS use_iceberg_partition_pruning = 1",
             settings=settings,
         )
     ) == [70]
@@ -110,10 +116,7 @@ def test_position_deletes(started_cluster_iceberg_with_spark, use_roaring_bitmap
     # input_format_parquet_use_native_reader_v3 = 0)
     assert get_array(
         instance.query(
-            f"SELECT id FROM {TABLE_NAME} WHERE id % 3 = 0", settings=settings)) == list(range(21, 90, 3)) + list(range(102, 150, 3))
-
-    # Clean up
-    instance.query(f"DROP TABLE {TABLE_NAME}")
+            f"SELECT id FROM {expression} WHERE id % 3 = 0", settings=settings)) == list(range(21, 90, 3)) + list(range(102, 150, 3))
 
 @pytest.mark.parametrize("use_roaring_bitmaps", [0, 1])
 def test_position_deletes_out_of_order(started_cluster_iceberg_with_spark, use_roaring_bitmaps):
