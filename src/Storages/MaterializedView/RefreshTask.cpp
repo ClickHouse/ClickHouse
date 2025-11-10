@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-extern const char refresh_task_delay_update_coordination_state_running[];
+extern const char refresh_task_stop_racing_for_running_refresh[];
 }
 
 RefreshTask::RefreshTask(
@@ -995,10 +995,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
         {
-            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
-                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
-                std::this_thread::sleep_for(sleep_time);
-            });
+            bool stop_racing_for_running_refresh = false;
+            fiu_do_on(FailPoints::refresh_task_stop_racing_for_running_refresh, { stop_racing_for_running_refresh = true; });
+            if (stop_racing_for_running_refresh)
+                return false;
+
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         }

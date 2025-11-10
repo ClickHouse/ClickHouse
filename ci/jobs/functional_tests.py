@@ -31,7 +31,19 @@ def parse_args():
         default="",
     )
     parser.add_argument("--param", help="Optional job start stage", default=None)
-    parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument(
+        "--test",
+        help="Optional. Test name patterns (space-separated)",
+        default=[],
+        nargs="+",
+        action="extend",
+    )
+    parser.add_argument(
+        "--count",
+        help="Optional. Number of times to repeat each test",
+        default=None,
+        type=int,
+    )
     return parser.parse_args()
 
 
@@ -158,6 +170,9 @@ def main():
             assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
+            if to in ("parallel", "sequential") and args.test:
+                # skip setting up parallel/sequential if specific tests are provided
+                continue
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
 
         if "flaky" in to:
@@ -209,13 +224,13 @@ def main():
 
     stages = list(JobStages)
 
-    tests = []
+    tests = args.test
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
             assert (
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
-            tests = [args.test]
+            tests = args.test
         else:
             tests = get_changed_tests(info)
         if tests:
@@ -355,17 +370,20 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        if not is_flaky_check and not is_bugfix_validation:
+        if not tests:
             run_tests(
                 batch_num=batch_num,
                 batch_total=total_batches,
-                test=args.test,
+                test="",
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(
-                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
-            )
+            runs = 1
+            if args.count:
+                runs = args.count
+            elif is_flaky_check:
+                runs = 50
+            run_specific_tests(tests=tests, runs=runs, extra_args=runner_options)
 
         if not info.is_local_run:
             CH.stop_log_exports()
