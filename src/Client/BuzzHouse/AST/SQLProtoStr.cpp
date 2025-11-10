@@ -3494,7 +3494,7 @@ CONV_FN(CreateTable, create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
+    if (create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4006,7 +4006,7 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
+    if (create_view.is_temp())
     {
         ret += "TEMPORARY ";
     }

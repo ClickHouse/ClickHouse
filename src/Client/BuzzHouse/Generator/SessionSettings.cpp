@@ -1088,6 +1088,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {},
          false)},
+    {"send_profile_events", trueOrFalseSettingNoOracle},
     {"send_progress_in_http_headers", trueOrFalseSettingNoOracle},
     {"serialize_query_plan", trueOrFalseSetting},
     {"shared_merge_tree_sync_parts_on_partition_operations", trueOrFalseSettingNoOracle},
