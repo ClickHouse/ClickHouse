@@ -144,7 +144,10 @@ def test_logs_with_disks(started_cluster):
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
 
-        node_logs.wait_for_log_line("Removed changelog changelog_25_27.bin because of compaction")
+        node_logs.wait_for_log_line(
+            "Removed changelog changelog_25_27.bin because of compaction",
+            look_behind_lines=1000,
+        )
 
         stop_zk(node_zk)
 
@@ -159,7 +162,10 @@ def test_logs_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        node_logs.wait_for_log_line("KeeperLogStore: Continue to write into changelog_34_36.bin")
+        node_logs.wait_for_log_line(
+            "KeeperLogStore: Continue to write into changelog_34_36.bin",
+            look_behind_lines=2000,
+        )
 
         def get_single_local_log_file():
             local_log_files = get_local_logs(node_logs)
@@ -229,7 +235,9 @@ def test_snapshots_with_disks(started_cluster):
         stop_zk(node_zk)
 
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
-        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
+        node_snapshot.wait_for_log_line(
+            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
+        )
 
         previous_snapshot_files = get_local_snapshots(node_snapshot)
 
@@ -259,7 +267,9 @@ def test_snapshots_with_disks(started_cluster):
         stop_zk(node_zk)
 
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
-        node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
+        node_snapshot.wait_for_log_line(
+            f"Created persistent snapshot {snapshot_idx}", look_behind_lines=1000
+        )
 
         snapshot_files = list_s3_objects(started_cluster, "snapshots/")
         local_snapshot_files = get_local_snapshots(node_snapshot)

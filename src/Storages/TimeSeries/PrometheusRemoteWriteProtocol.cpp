@@ -4,6 +4,7 @@
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <algorithm>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
@@ -53,7 +54,7 @@ namespace ErrorCodes
 namespace
 {
     /// Checks that a specified set of labels is sorted and has no duplications, and there is one label named "__name__".
-    void checkLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> & labels)
+    void checkLabels(const ::google::protobuf::RepeatedPtrField<::prometheus::Label> & labels)
     {
         bool metric_name_found = false;
         for (size_t i = 0; i != static_cast<size_t>(labels.size()); ++i)

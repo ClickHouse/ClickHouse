@@ -4,13 +4,12 @@ description: 'The engine allows to import and export data to SQLite and supports
 sidebar_label: 'SQLite'
 sidebar_position: 185
 slug: /engines/table-engines/integrations/sqlite
-title: 'SQLite table engine'
-doc_type: 'reference'
+title: 'SQLite'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# SQLite table engine
+# SQLite
 
 <CloudNotSupportedBadge/>
 

@@ -2,6 +2,8 @@
 #include <Poco/String.h>
 #include <Common/Exception.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -49,7 +51,7 @@ bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
         == std::tie(other.type, other.object_storage_type, other_description);
 }
 
-String DataSourceDescription::name() const
+std::string DataSourceDescription::toString() const
 {
     switch (type)
     {
@@ -79,11 +81,4 @@ String DataSourceDescription::name() const
         }
     }
 }
-
-String DataSourceDescription::toString() const
-{
-    return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
-                       name(), description, is_encrypted, is_cached, zookeeper_name);
-}
-
 }

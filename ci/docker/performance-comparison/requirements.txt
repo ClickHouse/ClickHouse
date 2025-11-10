@@ -1,6 +1,5 @@
 blinker==1.4
 clickhouse-driver==0.2.7
-clickhouse-connect==0.8.18
 cryptography==44.0.1
 dbus-python==1.2.18
 distro==1.7.0
@@ -15,7 +14,7 @@ more-itertools==8.10.0
 numpy==1.26.3
 oauthlib==3.2.2
 packaging==24.1
-pip==25.3
+pip==25.0.1
 pipdeptree==2.23.0
 Pygments==2.19.1
 PyJWT==2.10.1
