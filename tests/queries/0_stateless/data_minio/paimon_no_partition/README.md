@@ -186,7 +186,10 @@ import org.apache.paimon.fs.Path;
 import org.apache.paimon.options.Options;
 import org.apache.paimon.schema.Schema;
 import org.apache.paimon.table.Table;
-import org.apache.paimon.table.sink.*;
+import org.apache.paimon.table.sink.BatchTableCommit;
+import org.apache.paimon.table.sink.BatchWriteBuilder;
+import org.apache.paimon.table.sink.CommitMessage;
+import org.apache.paimon.table.sink.TableWriteImpl;
 import org.apache.paimon.types.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -209,7 +212,8 @@ public class DataGenerator {
 
     private static Catalog getCatalog(String rootPath) {
         try {
-            return org.apache.paimon.catalog.CatalogFactory.createCatalog(CatalogContext.create(new Path(rootPath)));
+            CatalogContext context = CatalogContext.create(new Path(rootPath));
+            return CatalogFactory.createCatalog(context);
         } catch (Exception e) {
             throw new RuntimeException("Create Catalog failed", e);
         }
@@ -389,27 +393,6 @@ public class DataGenerator {
             schemaBuilder.column("f_array", DataTypes.ARRAY(DataTypes.INT().notNull()).notNull());
             schemaBuilder.column("f_map", DataTypes.MAP(DataTypes.STRING().notNull(), DataTypes.STRING().notNull()).notNull());
 
-            schemaBuilder.partitionKeys(
-                    "f_boolean",
-                    "f_string",
-                    "f_date",
-                    "f_boolean_nn",
-                    "f_char_nn",
-                    "f_varchar_nn",
-                    "f_string_nn",
-                    "f_decimal_nn",
-                    "f_decimal2_nn",
-                    "f_decimal3_nn",
-                    "f_tinyint_nn",
-                    "f_smallint_nn",
-                    "f_int_nn",
-                    "f_bigint_nn",
-                    "f_float_nn",
-                    "f_double_nn",
-                    "f_date_nn",
-                    "f_time_nn",
-                    "f_timestamp_nn",
-                    "f_timestamp2_nn");
             Schema schema = schemaBuilder.build();
 
             Identifier identifier = Identifier.create("tests", "cases2");
@@ -444,6 +427,7 @@ public class DataGenerator {
 
     public static void main(String[] args) throws Exception {
         generateTestCase1("/tmp/warehouse");
+
     }
 }
 ```
