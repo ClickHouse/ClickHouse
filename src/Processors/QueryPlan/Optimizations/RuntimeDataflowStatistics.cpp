@@ -32,7 +32,6 @@ extern const int LOGICAL_ERROR;
 
 std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStats(size_t key) const
 {
-    std::lock_guard lock(mutex);
     if (const auto entry = stats_cache->get(key))
         return *entry;
     return std::nullopt;
@@ -42,21 +41,20 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsOutputBytes, stats.output_bytes);
-    std::lock_guard lock(mutex);
-    if (auto existing_stats = stats_cache->get(key))
-    {
-        stats.input_bytes = std::max(stats.input_bytes, existing_stats->input_bytes);
-        stats.output_bytes = std::max(stats.output_bytes, existing_stats->output_bytes);
-    }
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
-    LOG_DEBUG(
-        getLogger("RuntimeDataflowStatisticsCache"), "New entry: input_bytes={}, output_bytes={}", stats.input_bytes, stats.output_bytes);
 }
 
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
     if (!cache_key)
         return;
+
+    if (unsupported_case)
+    {
+        LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "Unsupported case encountered, skipping statistics update.");
+        return;
+    }
+
     RuntimeDataflowStatistics res{};
     for (const auto & stats : input_bytes_statistics)
     {
@@ -84,8 +82,6 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     }
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"), "res.input_bytes={}, res.output_bytes={}", res.input_bytes, res.output_bytes);
-    if (unsupported_case)
-        res.output_bytes = (1ULL << 60);
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(*cache_key, res);
 }
@@ -115,14 +111,15 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
             key_columns_compressed_size += getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
 
-    std::lock_guard lock(mutex);
-    output_bytes_statistics[0].bytes += source_bytes;
+    auto & statistics = output_bytes_statistics[0];
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += source_bytes;
     if (key_columns_compressed_size)
     {
-        output_bytes_statistics[0].sample_bytes += source_bytes;
-        output_bytes_statistics[0].compressed_bytes += key_columns_compressed_size;
+        statistics.sample_bytes += source_bytes;
+        statistics.compressed_bytes += key_columns_compressed_size;
     }
-    output_bytes_statistics[0].elapsed_microseconds += watch.elapsedMicroseconds();
+    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
@@ -136,18 +133,18 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
         && std::ranges::any_of(
             variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
     {
-        std::lock_guard lock(mutex);
-        unsupported_case = true;
+        unsupported_case.store(true, std::memory_order_relaxed);
         return;
     }
 
     size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
-    std::lock_guard lock(mutex);
-    output_bytes_statistics[1].bytes += res;
-    output_bytes_statistics[1].sample_bytes += res;
-    output_bytes_statistics[1].compressed_bytes += res;
-    output_bytes_statistics[1].elapsed_microseconds += watch.elapsedMicroseconds();
+    auto & statistics = output_bytes_statistics[1];
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += res;
+    statistics.sample_bytes += res;
+    statistics.compressed_bytes += res;
+    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggregator & aggregator, const Block & block)
@@ -175,60 +172,45 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
     if (curr % 50 == 0 && curr < 150 && block.rows())
         key_columns_compressed_size = getKeyColumnsSize(/*compressed=*/true);
 
-    std::lock_guard lock(mutex);
-    output_bytes_statistics[2].bytes += source_bytes;
+    auto & statistics = output_bytes_statistics[2];
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += source_bytes;
     if (key_columns_compressed_size)
     {
-        output_bytes_statistics[2].sample_bytes += source_bytes;
-        output_bytes_statistics[2].compressed_bytes += key_columns_compressed_size;
+        statistics.sample_bytes += source_bytes;
+        statistics.compressed_bytes += key_columns_compressed_size;
     }
-    output_bytes_statistics[2].elapsed_microseconds += watch.elapsedMicroseconds();
+    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t bytes)
+    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes)
 {
     if (!cache_key)
         return;
 
     Stopwatch watch;
 
-    std::lock_guard lock(mutex);
-    input_bytes_statistics[0].bytes += bytes;
-    if (bytes)
+    if (read_bytes == 0)
+    {
+        for (const auto & column : columns)
+            read_bytes += column.column->byteSize();
+    }
+
+    auto & statistics = input_bytes_statistics[0];
+    std::lock_guard lock(statistics.mutex);
+    statistics.bytes += read_bytes;
+    if (read_bytes)
     {
         for (const auto & column : columns)
         {
             if (!column_sizes.contains(column.name))
                 continue;
-            input_bytes_statistics[0].sample_bytes += column_sizes.at(column.name).data_uncompressed;
-            input_bytes_statistics[0].compressed_bytes += column_sizes.at(column.name).data_compressed;
+            statistics.sample_bytes += column_sizes.at(column.name).data_uncompressed;
+            statistics.compressed_bytes += column_sizes.at(column.name).data_compressed;
         }
     }
-    input_bytes_statistics[0].elapsed_microseconds += watch.elapsedMicroseconds();
-}
-
-void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes)
-{
-    if (!cache_key)
-        return;
-
-    Stopwatch watch;
-
-    std::lock_guard lock(mutex);
-    for (const auto & column : columns)
-    {
-        input_bytes_statistics[1].bytes += column.column->byteSize();
-        if (!column.column->empty())
-        {
-            if (!column_sizes.contains(column.name))
-                return;
-            input_bytes_statistics[1].sample_bytes += column_sizes.at(column.name).data_uncompressed;
-            input_bytes_statistics[1].compressed_bytes += column_sizes.at(column.name).data_compressed;
-        }
-    }
-    input_bytes_statistics[1].elapsed_microseconds += watch.elapsedMicroseconds();
+    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 size_t RuntimeDataflowStatisticsCacheUpdater::getCompressedColumnSize(const ColumnWithTypeAndName & column)

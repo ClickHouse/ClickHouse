@@ -45,8 +45,7 @@ public:
     void update(size_t key, RuntimeDataflowStatistics stats);
 
 private:
-    mutable std::mutex mutex;
-    CachePtr stats_cache TSA_GUARDED_BY(mutex);
+    CachePtr stats_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -57,10 +56,11 @@ class RuntimeDataflowStatisticsCacheUpdater
 
     struct Statistics
     {
-        size_t bytes = 0;
-        size_t sample_bytes = 0;
-        size_t compressed_bytes = 0;
-        size_t elapsed_microseconds = 0;
+        std::mutex mutex;
+        size_t bytes TSA_GUARDED_BY(mutex) = 0;
+        size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
+        size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
+        size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
     };
 
 public:
@@ -76,9 +76,7 @@ public:
 
     void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
-    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t bytes);
-
-    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes);
+    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t read_bytes = 0);
 
 private:
     size_t getCompressedColumnSize(const ColumnWithTypeAndName & column);
@@ -86,13 +84,10 @@ private:
     std::optional<size_t> cache_key;
 
     std::atomic_size_t cnt{0};
+    std::atomic_bool unsupported_case{false};
 
-    std::mutex mutex;
-
-    std::array<Statistics, 2> input_bytes_statistics TSA_GUARDED_BY(mutex){};
-    std::array<Statistics, 3> output_bytes_statistics TSA_GUARDED_BY(mutex){};
-
-    bool unsupported_case TSA_GUARDED_BY(mutex) = false;
+    std::array<Statistics, 2> input_bytes_statistics;
+    std::array<Statistics, 3> output_bytes_statistics;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
