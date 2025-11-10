@@ -35,7 +35,7 @@ from s3_helper import S3Helper
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
 
-TIMEOUT = 10 * 60 # TESTING - return this after ->  60 * 60 # 60 minutes
+TIMEOUT = 60 * 60 # 60 minutes
 NO_CHANGES_MSG = "Nothing to run"
 s3 = S3Helper()
 RUNNER_OUTPUT = "/test_output"
