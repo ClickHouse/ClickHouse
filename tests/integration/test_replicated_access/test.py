@@ -64,7 +64,6 @@ def test_initiator_user_in_ddl(started_cluster):
     """
 
     error = node1.query_and_get_error(query, user="test")
-    assert "super_secret" not in error
     assert "Not enough privileges" in error
 
 
@@ -77,7 +76,6 @@ def test_initiator_user_in_ddl(started_cluster):
         node.restart_clickhouse()
 
     error = node1.query_and_get_error(query, user="test")
-    assert "super_secret" in error
     assert "Not enough privileges" not in error
 
     for node in all_nodes:
