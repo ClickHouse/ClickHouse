@@ -586,6 +586,8 @@ String encodeDataType(const DataTypePtr & type)
 
 DataTypePtr decodeDataType(ReadBuffer & buf)
 {
+    checkStackSize();
+
     UInt8 type;
     readBinary(type, buf);
     switch (BinaryTypeIndex(type))
