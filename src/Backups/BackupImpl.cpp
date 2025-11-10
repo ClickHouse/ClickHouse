@@ -605,12 +605,9 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
     if (!lock_file_name.empty() && uuid)
     {
-        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
         ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-        String actual_file_contents;
-        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
             return true;
-        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
     }
 
     if (throw_if_failed)

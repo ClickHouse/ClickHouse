@@ -16,7 +16,6 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
-#include <Interpreters/DeltaMetadataLog.h>
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -130,7 +129,7 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        waitFlush(getLastLogIndex(),  /* should_prepare_tables_anyway */ true);
+        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
     }
 }
 
@@ -314,6 +313,8 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
+    /// This allocation should not be take into account in the query scope (since it will be freed outside of it)
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
     queue->push(std::move(element));
 }
 

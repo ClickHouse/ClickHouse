@@ -4,6 +4,7 @@ from typing import List
 from . import Artifact, Job, Workflow
 from .mangle import _get_workflows
 from .parser import WorkflowConfigParser
+from .runtime import RunConfig
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -147,8 +148,8 @@ jobs:
 {JOB_ADDONS}
       - name: Prepare env script
         run: |
-          rm -rf {UNIQUE_WORK_DIRS}
-          mkdir -p {UNIQUE_WORK_DIRS}
+          rm -rf {INPUT_DIR} {OUTPUT_DIR} {TEMP_DIR}
+          mkdir -p {TEMP_DIR} {INPUT_DIR} {OUTPUT_DIR}
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
@@ -161,7 +162,7 @@ jobs:
         id: run
         run: |
           echo "pipeline_status=undefined" >> $GITHUB_OUTPUT
-          . {ENV_SETUP_SCRIPT}
+          . {TEMP_DIR}/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
             python3 -m praktika run '{JOB_NAME}' --workflow "{WORKFLOW_NAME}" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee {TEMP_DIR}/job.log
@@ -352,9 +353,8 @@ class PullRequestPushYamlGen:
                 PYTHON=Settings.PYTHON_INTERPRETER,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
-                UNIQUE_WORK_DIRS=" ".join(
-                    {Settings.TEMP_DIR, Settings.INPUT_DIR, Settings.OUTPUT_DIR}
-                ),
+                INPUT_DIR=Settings.INPUT_DIR,
+                OUTPUT_DIR=Settings.OUTPUT_DIR,
                 PYTHONPATH_EXTRA=Settings.PYTHONPATHS,
             )
             job_items.append(job_item)

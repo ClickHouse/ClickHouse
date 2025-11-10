@@ -136,7 +136,7 @@ static NameSet getAllPossibleStreamNames(
     for (const auto & part : data_parts)
     {
         serialization = part->tryGetSerialization(column.name);
-        if (serialization && ISerialization::hasKind(serialization->getKindStack(), ISerialization::Kind::SPARSE))
+        if (serialization && serialization->getKind() == ISerialization::Kind::SPARSE)
         {
             serialization->enumerateStreams(callback);
             break;

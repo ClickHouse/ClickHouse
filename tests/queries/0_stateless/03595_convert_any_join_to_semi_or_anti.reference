@@ -56,19 +56,19 @@ Positions: 0
                   Strictness: ALL
                   Algorithm: HashJoin
                     Expression (Left Pre Join Actions)
-                    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
-                    Positions: 0
-                      Expression (Change column names to column identifiers)
-                      Actions: INPUT : 0 -> uid Int16 : 0
-                               ALIAS uid :: 0 -> __table1.uid Int16 : 1
-                      Positions: 1
-                        ReadFromMemoryStorage
-                    Expression (Right Pre Join Actions)
                     Actions: INPUT :: 0 -> __table4.uid Int16 : 0
                     Positions: 0
                       Expression (Change column names to column identifiers)
                       Actions: INPUT : 0 -> uid Int16 : 0
                                ALIAS uid :: 0 -> __table4.uid Int16 : 1
+                      Positions: 1
+                        ReadFromMemoryStorage
+                    Expression (Right Pre Join Actions)
+                    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+                    Positions: 0
+                      Expression (( + Change column names to column identifiers))
+                      Actions: INPUT : 0 -> uid Int16 : 0
+                               ALIAS uid :: 0 -> __table1.uid Int16 : 1
                       Positions: 1
                         ReadFromMemoryStorage
 Expression ((Project names + Projection))
@@ -129,18 +129,18 @@ Positions: 0
                   Strictness: ALL
                   Algorithm: HashJoin
                     Expression (Left Pre Join Actions)
-                    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
-                    Positions: 0
-                      Expression (Change column names to column identifiers)
-                      Actions: INPUT : 0 -> uid Int16 : 0
-                               ALIAS uid :: 0 -> __table1.uid Int16 : 1
-                      Positions: 1
-                        ReadFromMemoryStorage
-                    Expression (Right Pre Join Actions)
                     Actions: INPUT :: 0 -> __table4.uid Int16 : 0
                     Positions: 0
                       Expression (Change column names to column identifiers)
                       Actions: INPUT : 0 -> uid Int16 : 0
                                ALIAS uid :: 0 -> __table4.uid Int16 : 1
+                      Positions: 1
+                        ReadFromMemoryStorage
+                    Expression (Right Pre Join Actions)
+                    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+                    Positions: 0
+                      Expression (( + Change column names to column identifiers))
+                      Actions: INPUT : 0 -> uid Int16 : 0
+                               ALIAS uid :: 0 -> __table1.uid Int16 : 1
                       Positions: 1
                         ReadFromMemoryStorage

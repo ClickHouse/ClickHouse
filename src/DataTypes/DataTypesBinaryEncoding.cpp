@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -115,9 +114,8 @@ enum class BinaryTypeIndex : uint8_t
     But we need to make the indexing consistent to ensure backwards compatibility.
 
     Please don't use 0x33 and 0x35, because older client might try to serialise data as TimeWithTimezone/Time64WithTimezone, and newer server would deserialise them as incorrect types. */
-    Time64 = 0x34,
-    /// reserved = 0x35
-    QBit = 0x36
+    Time64 = 0x34
+    // reserved = 0x35
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -222,8 +220,6 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
                 return BinaryTypeIndex::NamedTuple;
             return BinaryTypeIndex::UnnamedTuple;
         }
-        case TypeIndex::QBit:
-            return BinaryTypeIndex::QBit;
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -455,13 +451,6 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(element_types.size(), buf);
             for (const auto & element_type : element_types)
                 encodeDataType(element_type, buf);
-            break;
-        }
-        case BinaryTypeIndex::QBit:
-        {
-            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            encodeDataType(qbit_type.getElementType(), buf);
-            writeVarUInt(qbit_type.getDimension(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -714,13 +703,6 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             for (size_t i = 0; i != size; ++i)
                 elements.push_back(decodeDataType(buf));
             return std::make_shared<DataTypeTuple>(elements);
-        }
-        case BinaryTypeIndex::QBit:
-        {
-            auto element_type = decodeDataType(buf);
-            size_t dimension;
-            readVarUInt(dimension, buf);
-            return std::make_shared<DataTypeQBit>(element_type, dimension);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();

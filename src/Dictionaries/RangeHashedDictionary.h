@@ -708,7 +708,7 @@ void RangeHashedDictionary<dictionary_key_type>::updateData()
             if (!block.rows())
                 continue;
 
-            removeSpecialColumnRepresentations(block);
+            convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)

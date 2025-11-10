@@ -5,12 +5,12 @@
 #include <Processors/Chunk.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
-#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
 #include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
 
 #include <future>
+#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -223,7 +223,7 @@ private:
         void updateWithCurrentTime();
 
     private:
-        mutable SharedMutex mutex;
+        mutable std::shared_mutex mutex;
         TimePoints time_points;
     };
 
@@ -284,7 +284,6 @@ private:
     static Chunk processPreprocessedEntries(
         const InsertDataPtr & data,
         const Block & header,
-        const ContextPtr & context_,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

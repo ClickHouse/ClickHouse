@@ -783,13 +783,12 @@ catch (...)
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
 }
 
-void convertBlockToHeader(Block & block, const Block & header, const ContextPtr & context)
+void convertBlockToHeader(Block & block, const Block & header)
 {
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name,
-        context);
+        ActionsDAG::MatchColumnsMode::Name);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(block);
@@ -1012,7 +1011,7 @@ try
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
             chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, *header, insert_context, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(data, *header, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1153,7 +1152,6 @@ template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     const InsertDataPtr & data,
     const Block & header,
-    const ContextPtr & context_,
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
@@ -1176,7 +1174,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         }
 
         if (!isCompatibleHeader(block_to_insert, header))
-            convertBlockToHeader(block_to_insert, header, context_);
+            convertBlockToHeader(block_to_insert, header);
 
         auto columns = block_to_insert.getColumns();
         for (size_t i = 0, s = columns.size(); i < s; ++i)

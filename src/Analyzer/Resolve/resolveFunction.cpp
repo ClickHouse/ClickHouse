@@ -17,8 +17,6 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
-
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -53,7 +51,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_METHOD;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -66,8 +63,6 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
-    extern const SettingsBool rewrite_in_to_join;
 }
 
 namespace
@@ -163,47 +158,19 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
 
-        /** Special handling for count and countState functions (including with combinators like countIf, countIfState, etc.).
+        auto function_name_lowercase = Poco::toLower(function_name);
+
+        /** Special handling for count and countState functions.
           *
           * Example: SELECT count(*) FROM test_table
           * Example: SELECT countState(*) FROM test_table;
-          *
-          * To determine if it's safe to remove the asterisk, we check the transformsArgumentTypes() method
-          * of each combinator. If any combinator transforms argument types (returns true), it's not safe to remove the asterisk.
           */
-        String base_function_name = function_name;
-        bool safe_to_remove_asterisk = true;
-
-        while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
+        if (function_node_ptr->getArguments().getNodes().size() == 1 &&
+            (function_name_lowercase == "count" || function_name_lowercase == "countstate"))
         {
-            if (combinator->transformsArgumentTypes())
-            {
-                safe_to_remove_asterisk = false;
-                break;
-            }
-
-            base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
-        }
-
-        auto base_function_name_lowercase = Poco::toLower(base_function_name);
-        auto function_name_lowercase = Poco::toLower(function_name);
-
-        /// Only remove asterisks for exactly "count" or "countstate" (possibly with combinators),
-        /// not for other functions like "countDistinct" which is a separate function
-        /// countDistinct gets transformed to uniqExact and requires arguments
-        bool is_count_function = (base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate");
-        bool is_count_variant = is_count_function && function_name_lowercase.starts_with(base_function_name_lowercase);
-        bool is_not_count_distinct = function_name_lowercase != "countdistinct";
-
-        if (safe_to_remove_asterisk && is_count_variant && is_not_count_distinct)
-        {
-            auto & arguments = function_node_ptr->getArguments().getNodes();
-
-            std::erase_if(arguments, [](const QueryTreeNodePtr & argument)
-            {
-                auto * matcher_node = argument->as<MatcherNode>();
-                return matcher_node && matcher_node->isUnqualified();
-            });
+            auto * matcher_node = function_node_ptr->getArguments().getNodes().front()->as<MatcherNode>();
+            if (matcher_node && matcher_node->isUnqualified())
+                function_node_ptr->getArguments().getNodes().clear();
         }
     }
 
@@ -319,143 +286,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     false /*allow_table_expression*/);
                 node = std::move(constant_if_result_node);
                 return result_projection_names;
-            }
-        }
-    }
-
-    /// Replace IN (subquery)
-    /// NOTE: the resulting subquery in the argument of EXISTS will have correlated column x, that's why this rewriting has to be before handling
-    /// EXISTS which is done below in 'if (is_special_function_exists)' case.
-    if (is_special_function_in &&
-        (function_name == "in" || function_name == "notIn") &&
-        scope.context->getSettingsRef()[Setting::rewrite_in_to_join])
-    {
-        if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
-
-        const bool is_function_not_in = function_name == "notIn";
-
-        auto & function_in_arguments_nodes = function_node_ptr->getArguments().getNodes();
-        if (function_in_arguments_nodes.size() != 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
-
-        QueryTreeNodePtr in_first_argument = function_in_arguments_nodes[0]->clone();
-
-        /// Resolve first argument of IN to determine if it is constant or not. In case of constant we will not do any rewriting
-        resolveExpressionNode(
-            in_first_argument,
-            scope,
-            true /*allow_lambda_expression*/,
-            true /*allow_table_expression*/
-        );
-
-        if (!in_first_argument->as<ConstantNode>())
-        {
-            auto in_second_argument = function_in_arguments_nodes[1]->clone();
-
-            /// Resolve second argument of IN to determine if it is a subquery.
-            resolveExpressionNode(
-                in_second_argument,
-                scope,
-                true /*allow_lambda_expression*/,
-                true /*allow_table_expression*/
-            );
-
-            if (in_second_argument->as<QueryNode>())
-            {
-                /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
-
-                /// Rename subquery projection to a unique name to avoid collisions with names from outer scope
-                /// E.g. when rewriting "SELECT number IN (SELECT * FROM numbers(3)) FROM numbers(5)" the inner
-                /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
-                auto subquery_node = std::move(in_second_argument);
-
-                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
-
-                /// Re-resolve subquery columns setting the unique alias
-                auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
-                subquery_node->as<QueryNode>()->clearProjectionColumns();
-                if (subquery_projection_columns.size() == 1)
-                {
-                    subquery_node->as<QueryNode>()->setProjectionAliasesToOverride({unique_column_name});
-                    subquery_node->as<QueryNode>()->resolveProjectionColumns(subquery_projection_columns);
-                }
-                else
-                {
-                    /// It there are multiple columns, wrap them in a Tuple()
-                    auto projection = subquery_node->as<QueryNode>()->getProjection().clone();
-
-                    QueryTreeNodePtr wrapper_tuple_node = std::make_shared<FunctionNode>("tuple");
-                    wrapper_tuple_node->as<FunctionNode>()->getArguments().getNodes() = std::move(projection->as<ListNode>()->getNodes());
-                    resolveFunction(wrapper_tuple_node, scope);
-
-                    /// Replace the original projection columns with one Tuple column
-                    subquery_node->as<QueryNode>()->getProjection().getNodes() = { std::move(wrapper_tuple_node) };
-                    DataTypes wrapper_tuple_element_types;
-                    for (const auto & c : subquery_projection_columns)
-                        wrapper_tuple_element_types.push_back(c.type);
-                    auto wrapper_tuple_data_type = std::make_shared<DataTypeTuple>(wrapper_tuple_element_types);
-                    /// Return the Tuple under unique name
-                    subquery_node->as<QueryNode>()->resolveProjectionColumns(NamesAndTypes{{unique_column_name, wrapper_tuple_data_type}});
-                }
-
-                /// SELECT * AS _unique_name_ FROM subquery
-                auto internal_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-                internal_exists_subquery->setIsSubquery(true);
-                internal_exists_subquery->getProjection().getNodes().push_back(std::make_shared<IdentifierNode>(Identifier{unique_column_name}));
-                internal_exists_subquery->getJoinTree() = std::move(subquery_node);
-
-                /// SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE a = _unique_name_ LIMIT 1
-                auto new_exists_subquery = std::make_shared<QueryNode>(Context::createCopy(scope.context));
-                {
-                    auto constant_data_type = std::make_shared<DataTypeUInt64>();
-                    new_exists_subquery->setIsSubquery(true);
-                    new_exists_subquery->getProjection().getNodes().push_back(std::make_shared<ConstantNode>(1UL, constant_data_type));
-                    new_exists_subquery->getJoinTree() = std::move(internal_exists_subquery);
-
-                    auto equals_function_node_ptr = std::make_shared<FunctionNode>("equals");
-
-                    auto copy_of_in_first_parameter = function_in_arguments_nodes[0];
-
-                    auto subquery_projection = std::make_shared<IdentifierNode>(Identifier{unique_column_name});
-
-                    equals_function_node_ptr->getArguments().getNodes() = {
-                        std::move(copy_of_in_first_parameter), /// x
-                        std::move(subquery_projection) /// `_unique_name_` from subquery
-                    };
-
-                    new_exists_subquery->getWhere() = std::move(equals_function_node_ptr);
-                    new_exists_subquery->getLimit() = std::make_shared<ConstantNode>(1UL, constant_data_type);
-                }
-
-                auto exists_function_node_ptr = std::make_shared<FunctionNode>("exists");
-                exists_function_node_ptr->getArguments().getNodes() = {
-                    std::move(new_exists_subquery)
-                };
-
-                if (is_function_not_in)
-                {
-                    /// NOT IN is rewritten to NOT EXISTS
-                    function_node_ptr = std::make_shared<FunctionNode>("not");
-                    function_node_ptr->getArguments().getNodes() = {
-                        std::move(exists_function_node_ptr)
-                    };
-
-                    node = function_node_ptr;
-                    function_name = "not";
-                    is_special_function_in = false;
-                    is_special_function_exists = false;
-                }
-                else
-                {
-                    function_node_ptr = exists_function_node_ptr;
-                    node = function_node_ptr;
-                    function_name = "exists";
-                    is_special_function_in = false;
-                    is_special_function_exists = true;
-                }
             }
         }
     }
