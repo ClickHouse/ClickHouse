@@ -1,4 +1,5 @@
 #include <Interpreters/InstrumentationManager.h>
+#include "base/scope_guard.h"
 
 #if USE_XRAY
 
@@ -219,6 +220,13 @@ const InstrumentationManager::FunctionsContainer & InstrumentationManager::getFu
 
 void InstrumentationManager::dispatchHandler(Int32 func_id, XRayEntryType entry_type)
 {
+    static thread_local bool dispatching = false;
+    /// Prevent reentrancy.
+    if (dispatching)
+        return;
+
+    dispatching = true;
+    SCOPE_EXIT(dispatching = false);
     InstrumentationManager::instance().dispatchHandlerImpl(func_id, entry_type);
 }
 
