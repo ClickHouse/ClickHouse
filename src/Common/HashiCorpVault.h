@@ -2,16 +2,17 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
+#include <Poco/Net/Context.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Logger.h>
-
 namespace DB
 {
 
 enum class HashiCorpVaultAuthMethod
 {
     Token,
-    Userpass
+    Userpass,
+    Cert
 };
 
 class HashiCorpVault
@@ -40,8 +41,12 @@ private:
         username = "";
         password = "";
         client_token = "";
+        cert_name = "";
+        request_context = nullptr;
         loaded = false;
     }
+    void initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+    String makeRequest(const String & method, const String & path, const String & request_token, const String & body);
     String login();
     LoggerPtr log;
     bool loaded = false;
@@ -50,8 +55,13 @@ private:
     String username;
     String password;
     String client_token;
+    String cert_name;
+    String scheme;
+    String host;
+    int port;
     HashiCorpVaultAuthMethod auth_method;
     ContextPtr context;
+    Poco::Net::Context::Ptr request_context;
 };
 
 }
