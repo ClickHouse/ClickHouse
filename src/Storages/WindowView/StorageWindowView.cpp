@@ -609,7 +609,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         builder.getHeader().getColumnsWithTypeAndName(),
         new_header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        getContext());
     auto actions = std::make_shared<ExpressionActions>(
         std::move(convert_actions_dag), ExpressionActionsSettings(getContext(), CompileExpressions::yes));
     builder.addSimpleTransform([&](const SharedHeader & stream_header)
@@ -706,9 +707,10 @@ inline void StorageWindowView::fire(UInt32 watermark)
         StoragePtr target_table = getTargetTable();
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = target_table->getStorageID();
+        auto context = getContext();
         InterpreterInsertQuery interpreter(
             insert,
-            getContext(),
+            context,
             /* allow_materialized */ false,
             /* no_squash */ false,
             /* no_destination */ false,
@@ -721,8 +723,8 @@ inline void StorageWindowView::fire(UInt32 watermark)
             pipe.getHeader(),
             block_io.pipeline.getHeader().getNamesAndTypesList(),
             getTargetTable()->getInMemoryMetadataPtr()->getColumns(),
-            getContext(),
-            getContext()->getSettingsRef()[Setting::insert_null_as_default]);
+            context,
+            context->getSettingsRef()[Setting::insert_null_as_default]);
         auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
         pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
@@ -732,10 +734,11 @@ inline void StorageWindowView::fire(UInt32 watermark)
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             block_io.pipeline.getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings(getContext(), CompileExpressions::yes));
+            ExpressionActionsSettings(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const SharedHeader & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -1172,7 +1175,10 @@ void StorageWindowView::read(
         if (!blocksHaveEqualStructure(*wv_header, *target_header))
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(
-                target_header->getColumnsWithTypeAndName(), wv_header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+                target_header->getColumnsWithTypeAndName(),
+                wv_header->getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
             auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting_actions));
             converting_step->setStepDescription("Convert Target table structure to WindowView structure");
             query_plan.addStep(std::move(converting_step));
@@ -1671,7 +1677,8 @@ void StorageWindowView::writeIntoWindowView(
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             builder.getHeader().getColumnsWithTypeAndName(),
             output->getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
         auto convert_actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 

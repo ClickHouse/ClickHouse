@@ -181,9 +181,9 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command)
+void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const

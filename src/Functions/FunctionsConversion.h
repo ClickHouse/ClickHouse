@@ -2910,7 +2910,8 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createWithOverflow
+        if (context && datetime_overflow_behavior == default_date_time_overflow_behavior)
             context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         if (isDynamic(from_type))
@@ -4187,7 +4188,8 @@ private:
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = function_date_time_overflow_behavior;
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createFunctionBaseCast
+        if (context && function_date_time_overflow_behavior == default_date_time_overflow_behavior)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))

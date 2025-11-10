@@ -76,6 +76,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
     , log(getLogger("DatabasePostgreSQL(" + dbname_ + ")"))
     , db_uuid(uuid)
 {
+    persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
         auto db_disk = getDisk();
@@ -423,9 +424,9 @@ void DatabasePostgreSQL::shutdown()
     cleaner_task->deactivate();
 }
 
-void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command)
+void DatabasePostgreSQL::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
@@ -433,6 +434,7 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
+    create_query->uuid = db_uuid;
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
         create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
