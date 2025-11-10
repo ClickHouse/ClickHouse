@@ -16,6 +16,7 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
+    releaseQuerySlot();
     pipeline.reset();
     process_list_entry.reset();
 
@@ -48,6 +49,7 @@ BlockIO::~BlockIO()
 
 void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
+    releaseQuerySlot();
     if (finish_callback)
         finish_callback(std::move(pipeline), finish_time);
     else
@@ -56,6 +58,7 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 
 void BlockIO::onException(bool log_as_error)
 {
+    releaseQuerySlot();
     setAllDataSent();
 
     if (exception_callback)
@@ -67,6 +70,7 @@ void BlockIO::onException(bool log_as_error)
 
 void BlockIO::onCancelOrConnectionLoss()
 {
+    releaseQuerySlot();
     pipeline.cancel();
     pipeline.reset();
 }
@@ -80,5 +84,10 @@ void BlockIO::setAllDataSent() const
         process_list_entry->getQueryStatus()->setAllDataSent();
 }
 
+void BlockIO::releaseQuerySlot() const
+{
+    if (process_list_entry)
+        process_list_entry->getQueryStatus()->releaseQuerySlot();
+}
 
 }

@@ -7,7 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ghdata"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data Object('json')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'" --allow_experimental_object_type 1 --serialization_info_version default
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data Object('json')) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi'" --allow_experimental_object_type 1 --serialization_info_version basic
 
 cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} --max_execution_time 300 -q "INSERT INTO ghdata FORMAT JSONAsObject"
 

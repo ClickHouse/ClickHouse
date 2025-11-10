@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-extern const char refresh_task_delay_update_coordination_state_running[];
+extern const char refresh_task_stop_racing_for_running_refresh[];
 }
 
 RefreshTask::RefreshTask(
@@ -736,30 +736,34 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
-            PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-            executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-
             {
-                std::unique_lock exec_lock(execution.executor_mutex);
+                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+
+                {
+                    std::unique_lock exec_lock(execution.executor_mutex);
+                    if (execution.interrupt_execution.load())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                    execution.executor = &executor;
+                }
+                SCOPE_EXIT({
+                    std::unique_lock exec_lock(execution.executor_mutex);
+                    execution.executor = nullptr;
+                });
+
+                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+
+                /// A cancelled PipelineExecutor may return without exception but with incomplete results.
+                /// In this case make sure to:
+                ///  * report exception rather than success,
+                ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
+                ///    being unexpectedly destroyed before completion and without uncaught exception
+                ///    (specifically, the assert in ~WriteBuffer()).
                 if (execution.interrupt_execution.load())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-                execution.executor = &executor;
+
+                /// `executor` must be destroyed before `pipeline`!
             }
-            SCOPE_EXIT({
-                std::unique_lock exec_lock(execution.executor_mutex);
-                execution.executor = nullptr;
-            });
-
-            executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
-
-            /// A cancelled PipelineExecutor may return without exception but with incomplete results.
-            /// In this case make sure to:
-            ///  * report exception rather than success,
-            ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
-            ///    being unexpectedly destroyed before completion and without uncaught exception
-            ///    (specifically, the assert in ~WriteBuffer()).
-            if (execution.interrupt_execution.load())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
 
             logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
             query_log_elem = std::nullopt;
@@ -991,10 +995,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
         {
-            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
-                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
-                std::this_thread::sleep_for(sleep_time);
-            });
+            bool stop_racing_for_running_refresh = false;
+            fiu_do_on(FailPoints::refresh_task_stop_racing_for_running_refresh, { stop_racing_for_running_refresh = true; });
+            if (stop_racing_for_running_refresh)
+                return false;
+
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         }

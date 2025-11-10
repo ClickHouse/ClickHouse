@@ -379,7 +379,10 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info)
         serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name, SubstreamType::TupleElement);
     }
 
-    return IDataType::getSerialization(info.getKindStack(), std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
+    auto kinds = info.getKindStack();
+    /// Compatibility with older version that may propagate Sparse serialization for Tuple itself (in serialization.json)
+    std::erase(kinds, ISerialization::Kind::SPARSE);
+    return IDataType::getSerialization(kinds, std::make_shared<SerializationTuple>(std::move(serializations), has_explicit_names));
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfoSettings & settings) const

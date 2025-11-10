@@ -781,4 +781,27 @@ ExecutionStatus ExecutionStatus::fromText(const std::string & data)
     return status;
 }
 
+std::exception_ptr copyMutableException(std::exception_ptr ptr)
+{
+    try
+    {
+        std::rethrow_exception(ptr);
+    }
+    catch (Poco::Exception & e)
+    {
+        try
+        {
+            e.rethrow();
+        }
+        catch (...)
+        {
+            return std::current_exception();
+        }
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+}
+
 }
