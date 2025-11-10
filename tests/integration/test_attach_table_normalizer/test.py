@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.database_disk import replace_text_in_metadata
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance("node", stay_alive=True, with_remote_database_disk=False)
 
 
 @pytest.fixture(scope="module")
