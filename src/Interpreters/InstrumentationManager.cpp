@@ -1,5 +1,4 @@
 #include <Interpreters/InstrumentationManager.h>
-#include "base/scope_guard.h"
 
 #if USE_XRAY
 
@@ -10,6 +9,7 @@
 #include <variant>
 
 #include <base/getThreadId.h>
+#include <base/scope_guard.h>
 #include <Interpreters/InstrumentationTraceLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
