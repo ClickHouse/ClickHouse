@@ -74,12 +74,10 @@ public:
     {
         Int32 function_id;
         String function_name;
-        String stripped_function_name;
 
-        FunctionInfo(Int32 function_id_, const String & function_name_, const String & stripped_function_name_) :
+        FunctionInfo(Int32 function_id_, const String & function_name_) :
             function_id(function_id_),
-            function_name(function_name_),
-            stripped_function_name(stripped_function_name_)
+            function_name(function_name_)
         {}
 
         bool operator<(const FunctionInfo & other) const { return function_id < other.function_id; }
@@ -87,14 +85,12 @@ public:
 
     struct FunctionId {};
     struct FunctionName {};
-    struct StrippedFunctionName {};
 
     using FunctionsContainer = boost::multi_index_container<
         FunctionInfo,
         boost::multi_index::indexed_by<
             boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<FunctionInfo, Int32, &FunctionInfo::function_id>>,
-            boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::function_name>>,
-            boost::multi_index::hashed_non_unique<boost::multi_index::tag<StrippedFunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::stripped_function_name>>
+            boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::function_name>>
         >>;
 
     using XRayHandlerFunction = std::function<void(XRayEntryType, const InstrumentedPointInfo &)>;

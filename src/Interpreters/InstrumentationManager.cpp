@@ -120,9 +120,11 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     /// Lazy load the XRay instrumentation map only once we need to set up a handler
     ensureInitialization();
 
-    Int32 function_id;
+    Int32 function_id = -1;
     String symbol;
     auto fn_it = functions_container.get<FunctionName>().find(function_name);
+
+    /// First, assume the name provided is the full qualified name.
     if (fn_it != functions_container.get<FunctionName>().end())
     {
         function_id = fn_it->function_id;
@@ -130,17 +132,22 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     }
     else
     {
-        auto stripped_it = functions_container.get<StrippedFunctionName>().find(function_name);
-        if (stripped_it != functions_container.get<StrippedFunctionName>().end())
+        /// Otherwise, search if the provided function_name can be found as a substr of every member.
+        for (const auto & [id, function] : functions_container)
         {
-            function_id = stripped_it->function_id;
-            symbol = stripped_it->function_name;
+            if (function.find(function_name) != std::string::npos)
+            {
+                function_id = id;
+                symbol = function;
+                break;
+            }
         }
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: '{}'. XRay instruments by default only functions of at least 200 instructions. "
-                "You can change that threshold with '-fxray-instruction-threshold=1'. You can also force the instrumentation of specific functions decorating them with '[[clang::xray_always_instrument]]' "
-                "and making sure they are not decorated with '[[clang::xray_never_instrument]]'", function_name);
     }
+
+    if (function_id < 0 || symbol.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: '{}'. XRay instruments by default only functions of at least 200 instructions. "
+            "You can change that threshold with '-fxray-instruction-threshold=1'. You can also force the instrumentation of specific functions decorating them with '[[clang::xray_always_instrument]]' "
+            "and making sure they are not decorated with '[[clang::xray_never_instrument]]'", function_name);
 
     std::lock_guard lock(shared_mutex);
     auto it = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{function_id, entry_type, handler_name_lower});
@@ -274,8 +281,7 @@ void InstrumentationManager::parseInstrumentationMap()
         if (symbol)
         {
             const auto symbol_demangled = demangle(symbol->name);
-            auto stripped_function_name = extractNearestNamespaceAndFunction(symbol_demangled);
-            functions_container.emplace(func_id, symbol_demangled, stripped_function_name);
+            functions_container.emplace(func_id, symbol_demangled);
         }
         else
         {
@@ -376,7 +382,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
     {
         InstrumentationTraceLogElement element;
         element.instrumented_point_id = instrumented_point.id;
-        element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->stripped_function_name;
+        element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->function_name;
         element.tid = getThreadId();
         element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
         element.function_id = instrumented_point.function_id;
@@ -437,74 +443,6 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
             active_elements.erase(it);
         }
     }
-}
-
-std::string_view InstrumentationManager::removeTemplateArgs(std::string_view input)
-{
-    std::string_view result = input;
-    size_t pos = result.find('<');
-    if (pos == std::string_view::npos)
-        return result;
-
-    return result.substr(0, pos);
-}
-
-String InstrumentationManager::extractNearestNamespaceAndFunction(std::string_view signature)
-{
-    size_t paren_pos = signature.find('(');
-    if (paren_pos == std::string_view::npos)
-        return {};
-
-    std::string_view before_args = signature.substr(0, paren_pos);
-
-    size_t last_colon = before_args.rfind("::");
-
-    std::string_view function_name;
-    std::string_view class_or_namespace_name;
-
-    if (last_colon != std::string_view::npos)
-    {
-        function_name = before_args.substr(last_colon + 2);
-
-        size_t second_last_colon = before_args.rfind("::", last_colon - 2);
-        size_t last_space = before_args.rfind(' ');
-        size_t method_name = second_last_colon;
-
-        if (last_space != std::string_view::npos && second_last_colon != std::string_view::npos && last_space > second_last_colon)
-            method_name = last_space - 1;
-
-        if (method_name != std::string_view::npos)
-            class_or_namespace_name = before_args.substr(method_name + 2, last_colon - (method_name + 2));
-        else
-        {
-            size_t first_space = before_args.find_last_of(' ', last_colon);
-            if (first_space != std::string_view::npos)
-                class_or_namespace_name = before_args.substr(first_space + 1, last_colon - (first_space + 1));
-            else
-                class_or_namespace_name = before_args.substr(0, last_colon);
-        }
-    }
-    else
-    {
-        function_name = before_args;
-
-        size_t last_space = function_name.rfind(' ');
-        if (last_space != std::string_view::npos)
-            function_name = function_name.substr(last_space + 1);
-    }
-
-    function_name = removeTemplateArgs(function_name);
-    class_or_namespace_name = removeTemplateArgs(class_or_namespace_name);
-
-    String result;
-    if (!class_or_namespace_name.empty())
-    {
-        result += class_or_namespace_name;
-        result += "::";
-    }
-    result += function_name;
-
-    return result;
 }
 
 }

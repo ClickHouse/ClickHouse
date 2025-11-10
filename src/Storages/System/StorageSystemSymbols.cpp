@@ -28,7 +28,6 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
         {"symbol", std::make_shared<DataTypeString>(), "Symbol name in the binary. It is mangled. You can apply demangle(symbol) to obtain a readable name."},
 #if USE_XRAY
         {"demangled_symbol", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Demangled symbol used for XRay instrumentation."},
-        {"demangled_stripped_symbol", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Stripped (with no arguments or return type) demangled symbol used for XRay instrumentation."},
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "Function ID in the XRay instrumentation map."},
 #endif
         {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
@@ -93,8 +92,6 @@ protected:
             {
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(instrumentation_function->function_name);
-                if (columns_mask[src_index++])
-                    res_columns[res_index++]->insert(instrumentation_function->stripped_function_name.empty() ? Field() : instrumentation_function->stripped_function_name);
                 if (columns_mask[src_index++])
                     res_columns[res_index++]->insert(instrumentation_function->function_id);
             }

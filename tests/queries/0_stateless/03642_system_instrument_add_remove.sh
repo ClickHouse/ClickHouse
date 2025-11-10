@@ -21,11 +21,11 @@ $CLICKHOUSE_CLIENT -q """
     SELECT count() FROM system.instrumentation;
 
     SELECT '-- Add one entry';
-    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG ENTRY 'my log in executeQuery';
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'my log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Adding the same entry produces an error';
-    SYSTEM INSTRUMENT ADD \`DB::executeQuery\` LOG ENTRY 'another log in executeQuery'; -- { serverError BAD_ARGUMENTS }
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'another log in finishQuery'; -- { serverError BAD_ARGUMENTS }
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Add another entry';
