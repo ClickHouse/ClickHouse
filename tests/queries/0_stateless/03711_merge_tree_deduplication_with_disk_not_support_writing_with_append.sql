@@ -1,5 +1,11 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-fasttest
 -- Tag no-replicated-database: Unsupported type of ALTER query
+
+-- Suppress error logs because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day).
+-- And when a part is duplicated, it will be removed. However, because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day), 
+-- it might be removed by `MergeTreeData::clearOldTemporaryDirectories` thread.
+-- `IMergeTreeDataPart::removeIfNeeded` will fail to remove the part, causing it to have some error logs.
+SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS merge_tree_deduplication;
 
