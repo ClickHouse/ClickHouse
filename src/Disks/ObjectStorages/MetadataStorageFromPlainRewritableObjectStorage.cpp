@@ -1,11 +1,12 @@
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 
 #include <cstddef>
 #include <optional>
-#include <unordered_set>
 #include <vector>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
@@ -23,10 +24,11 @@
 #    include <azure/storage/common/storage_exception.hpp>
 #endif
 
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
+    extern const Event DiskPlainRewritableLegacyLayoutDiskCount;
 }
 
 namespace DB
@@ -50,8 +52,12 @@ constexpr auto PREFIX_PATH_FILE_NAME = "prefix.path";
 constexpr auto METADATA_PATH_TOKEN = "__meta/";
 constexpr auto ROOT_FOLDER_TOKEN = "__root";
 
+std::filesystem::path normalizeDirectoryPath(const std::filesystem::path & path)
+{
+    return path / "";
 }
 
+}
 
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 {
@@ -264,25 +270,23 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
         load(/*is_initial_load*/ false);
 }
 
-MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
-    ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
-    : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
+MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
+    : object_storage(object_storage_)
+    , storage_path_prefix(std::move(storage_path_prefix_))
+    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , metadata_key_prefix(std::filesystem::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
-    , fs_tree(std::make_shared<InMemoryDirectoryTree>(
-        object_storage->getMetadataStorageMetrics().directory_map_size,
-        object_storage->getMetadataStorageMetrics().file_count))
+    , fs_tree(std::make_shared<InMemoryDirectoryTree>(object_storage->getMetadataStorageMetrics().directory_map_size, object_storage->getMetadataStorageMetrics().file_count))
 {
-    if (object_storage->isWriteOnce())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
-            object_storage->getName());
-
     load(/*is_initial_load*/ true);
 
     /// Use flat directory structure if the metadata is stored separately from the table data.
     auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), fs_tree);
     object_storage->setKeysGenerator(keys_gen);
+}
+
+MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTransaction()
+{
+    return std::make_shared<MetadataStorageFromPlainRewritableObjectStorageTransaction>(*this, object_storage);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
@@ -319,6 +323,16 @@ std::optional<uint64_t> MetadataStorageFromPlainRewritableObjectStorage::getFile
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
     return fs_tree->listDirectory(path);
+}
+
+DirectoryIteratorPtr MetadataStorageFromPlainRewritableObjectStorage::iterateDirectory(const std::string & path) const
+{
+    auto paths = listDirectory(path);
+
+    /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
+    std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
+    std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());
+    return std::make_unique<StaticDirectoryIterator>(std::move(fs_paths));
 }
 
 StoredObjects MetadataStorageFromPlainRewritableObjectStorage::getStorageObjects(const std::string & path) const
@@ -364,6 +378,141 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
         return remote_info->last_modified;
 
     return std::nullopt;
+}
+
+MetadataStorageFromPlainRewritableObjectStorageTransaction::MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_)
+    : metadata_storage(metadata_storage_)
+    , object_storage(object_storage_)
+{
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const TransactionCommitOptionsVariant & options)
+{
+    if (!std::holds_alternative<NoCommitOptions>(options))
+        throwNotImplemented();
+
+    {
+        std::unique_lock lock(metadata_storage.metadata_mutex);
+        operations.commit();
+    }
+
+    operations.finalize();
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, objects.front(), *metadata_storage.fs_tree, object_storage));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory(const std::string & path)
+{
+    auto normalized_path = normalizeDirectoryPath(path);
+    if (normalized_path.empty())
+    {
+        LOG_TRACE(getLogger("MetadataStorageFromPlainRewritableObjectStorageTransaction"), "Skipping creation of a directory '{}' with an empty normalized path", path);
+        return;
+    }
+
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
+        std::move(normalized_path),
+        *metadata_storage.fs_tree,
+        object_storage,
+        metadata_storage.metadata_key_prefix,
+        /*recursive=*/false));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
+{
+    auto normalized_path = normalizeDirectoryPath(path);
+    if (normalized_path.empty())
+    {
+        LOG_TRACE(getLogger("MetadataStorageFromPlainRewritableObjectStorageTransaction"), "Skipping creation of a directory '{}' with an empty normalized path", path);
+        return;
+    }
+
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
+        std::move(normalized_path),
+        *metadata_storage.fs_tree,
+        object_storage,
+        metadata_storage.metadata_key_prefix,
+        /*recursive=*/true));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
+        normalizeDirectoryPath(path_from),
+        normalizeDirectoryPath(path_to),
+        *metadata_storage.fs_tree,
+        object_storage,
+        metadata_storage.metadata_key_prefix));
+}
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkMetadata(const std::string & path)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
+        path,
+        *metadata_storage.fs_tree,
+        object_storage));
+
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
+        normalizeDirectoryPath(path),
+        *metadata_storage.fs_tree,
+        object_storage,
+        metadata_storage.metadata_key_prefix));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation>(
+        path,
+        *metadata_storage.fs_tree,
+        object_storage,
+        metadata_storage.metadata_key_prefix));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
+        path_from,
+        path_to,
+        *metadata_storage.fs_tree,
+        object_storage));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+        /*replaceable=*/false,
+        path_from,
+        path_to,
+        *metadata_storage.fs_tree,
+        object_storage));
+}
+
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
+        /*replaceable=*/true,
+        path_from,
+        path_to,
+        *metadata_storage.fs_tree,
+        object_storage));
+}
+
+const IMetadataStorage & MetadataStorageFromPlainRewritableObjectStorageTransaction::getStorageForNonTransactionalReads() const
+{
+    return metadata_storage;
+}
+
+std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    return metadata_storage.getStorageObjectsIfExist(path);
 }
 
 }
