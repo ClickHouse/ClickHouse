@@ -145,8 +145,7 @@ public:
 struct SQLDatabase
 {
 public:
-    bool random_engine = false;
-    uint32_t dname = 0, nparams = 0;
+    uint32_t dname = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
@@ -155,8 +154,6 @@ public:
     LakeCatalog catalog = LakeCatalog::None;
     LakeStorage storage = LakeStorage::All;
     LakeFormat format = LakeFormat::All;
-
-    static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d) { d.random_engine = rg.nextMediumNumber() < 4; }
 
     static void setName(Database * db, const uint32_t name) { db->set_database("d" + std::to_string(name)); }
 
@@ -190,17 +187,16 @@ public:
 
     void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
-    void finishDatabaseSpecification(DatabaseEngine * de, bool add_params);
+    void finishDatabaseSpecification(DatabaseEngine * de) const;
 };
 
 struct SQLBase
 {
 public:
-    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, random_engine = false;
+    bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
-    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, storage_class_name, host_params,
-        bucket_path;
+    std::optional<String> cluster, file_comp, partition_strategy, partition_columns_in_data_file, host_params, bucket_path;
     DetachStatus attached = DetachStatus::ATTACHED;
     std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null, sub = TableEngineValues::Null;
@@ -215,11 +211,7 @@ public:
     SQLBase(SQLBase &&) = default;
     SQLBase & operator=(SQLBase &&) = default;
 
-    static void setDeterministic(RandomGenerator & rg, SQLBase & b)
-    {
-        b.is_deterministic = rg.nextSmallNumber() < 8;
-        b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 16;
-    }
+    static void setDeterministic(RandomGenerator & rg, SQLBase & b) { b.is_deterministic = rg.nextSmallNumber() < 8; }
 
     static bool supportsFinal(const TableEngineValues teng)
     {
@@ -241,8 +233,6 @@ public:
     }
 
     bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
-
-    bool isShared() const { return toption.has_value() && toption.value() == TableEngineOption::TShared; }
 
     bool isFileEngine() const { return teng == TableEngineValues::File; }
 
@@ -285,8 +275,6 @@ public:
     bool isAzureQueueEngine() const { return teng == TableEngineValues::AzureQueue; }
 
     bool isAnyAzureEngine() const { return isAzureEngine() || isAzureQueueEngine(); }
-
-    bool isAnyQueueEngine() const { return isS3QueueEngine() || isAzureQueueEngine(); }
 
     bool isHudiEngine() const { return teng == TableEngineValues::Hudi; }
 
@@ -361,8 +349,6 @@ public:
     String getSparkCatalogName() const;
 
     void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
-
-    String getTablePath(const FuzzConfig & fc) const;
 
     String getTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool allow_not_deterministic) const;
 

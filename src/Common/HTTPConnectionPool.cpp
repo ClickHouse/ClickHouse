@@ -438,38 +438,45 @@ private:
 
         ~PooledConnection() override
         {
-            if (bool(response_stream))
+            try
             {
-                if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
+                if (bool(response_stream))
                 {
-                    response_stream_completed = fixed_steam->isComplete();
+                    if (auto * fixed_steam = dynamic_cast<Poco::Net::HTTPFixedLengthInputStream *>(response_stream))
+                    {
+                        response_stream_completed = fixed_steam->isComplete();
+                    }
+                    else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
+                    {
+                        response_stream_completed = chunked_steam->isComplete();
+                    }
+                    else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
+                    {
+                        response_stream_completed = http_stream->isComplete();
+                    }
+                    else
+                    {
+                        response_stream_completed = false;
+                    }
                 }
-                else if (auto * chunked_steam = dynamic_cast<Poco::Net::HTTPChunkedInputStream *>(response_stream))
-                {
-                    response_stream_completed = chunked_steam->isComplete();
-                }
-                else if (auto * http_stream = dynamic_cast<Poco::Net::HTTPInputStream *>(response_stream))
-                {
-                    response_stream_completed = http_stream->isComplete();
-                }
-                else
-                {
-                    response_stream_completed = false;
-                }
+                response_stream = nullptr;
+                Session::setSendDataHooks();
+                Session::setReceiveDataHooks();
+                Session::setSendThrottler();
+                Session::setReceiveThrottler();
+
+                group->atConnectionDestroy();
+
+                if (!isExpired)
+                    if (auto lock = pool.lock())
+                        lock->atConnectionDestroy(*this);
+
+                CurrentMetrics::sub(metrics.active_count);
             }
-            response_stream = nullptr;
-            Session::setSendDataHooks();
-            Session::setReceiveDataHooks();
-            Session::setSendThrottler();
-            Session::setReceiveThrottler();
-
-            group->atConnectionDestroy();
-
-            if (!isExpired)
-                if (auto lock = pool.lock())
-                    lock->atConnectionDestroy(*this);
-
-            CurrentMetrics::sub(metrics.active_count);
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
         }
 
     private:
@@ -686,7 +693,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            (*connection).reset();
+            connection->reset();
             throw;
         }
 

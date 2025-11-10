@@ -18,8 +18,9 @@ class SchemaCache;
 class StorageObjectStorageSource : public ISource
 {
     friend class ObjectStorageQueueSource;
-
 public:
+    using ObjectInfos = StorageObjectStorage::ObjectInfos;
+
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
@@ -29,7 +30,6 @@ public:
         String name_,
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration,
-        StorageSnapshotPtr storage_snapshot_,
         const ReadFromFormatInfo & info,
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
@@ -51,7 +51,6 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const StorageObjectStorageQuerySettings & query_settings,
         ObjectStoragePtr object_storage,
-        StorageMetadataPtr storage_metadata,
         bool distributed_processing,
         const ContextPtr & local_context,
         const ActionsDAG::Node * predicate,
@@ -64,13 +63,14 @@ public:
         bool skip_object_metadata = false);
 
     static std::string getUniqueStoragePathIdentifier(
-        const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
+        const StorageObjectStorageConfiguration & configuration,
+        const ObjectInfo & object_info,
+        bool include_connection_info = true);
 
 protected:
     const String name;
     ObjectStoragePtr object_storage;
     const StorageObjectStorageConfigurationPtr configuration;
-    StorageSnapshotPtr storage_snapshot;
     const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;

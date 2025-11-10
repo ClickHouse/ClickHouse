@@ -3,15 +3,11 @@ description: 'Documentation for Log'
 slug: /engines/table-engines/log-family/log
 toc_priority: 33
 toc_title: 'Log'
-title: 'Log table engine'
+title: 'Log'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# Log table engine
-
-<CloudNotSupportedBadge/>
+# Log
 
 The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 

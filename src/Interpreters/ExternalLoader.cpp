@@ -473,7 +473,7 @@ public:
         /// Insert to the map those objects which added to the new configuration.
         for (const auto & [name, config] : new_configs->configs_by_name)
         {
-            if (!infos.contains(name))
+            if (infos.find(name) == infos.end())
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)

@@ -1,6 +1,5 @@
 import logging
 import os
-import signal
 import subprocess as sp
 import tempfile
 from threading import Timer
@@ -304,9 +303,3 @@ class CommandRequest:
             raise QueryTimeoutExceedException("Client timed out!")
 
         return (stdout, stderr)
-
-    def pause_process(self):
-        self.process.send_signal(signal.SIGSTOP)
-
-    def resume_process(self):
-        self.process.send_signal(signal.SIGCONT)

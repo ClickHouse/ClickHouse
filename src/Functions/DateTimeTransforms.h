@@ -93,20 +93,19 @@ struct ToDateImpl
 
     static UInt16 execute(Int64 t, const DateLUTImpl & time_zone)
     {
-        auto day_num = time_zone.toDayNum(t);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
         {
-            if (day_num < 0)
-                day_num = 0;
-            else if (day_num > DATE_LUT_MAX_DAY_NUM)
-                day_num = DATE_LUT_MAX_DAY_NUM;
+            if (t < 0)
+                t = 0;
+            else if (t > MAX_DATE_TIMESTAMP)
+                t = MAX_DATE_TIMESTAMP;
         }
         else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (day_num < 0 || day_num > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
+            if (t < 0 || t > MAX_DATE_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", t);
         }
-        return static_cast<UInt16>(day_num);
+        return static_cast<UInt16>(time_zone.toDayNum(t));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
@@ -2448,7 +2447,7 @@ struct Transformer
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                static_cast<double>(vec_from[i]), TypeName<ValueType>);
+                                vec_from[i], TypeName<ValueType>);
                         }
                     }
                 }

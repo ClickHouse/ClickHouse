@@ -30,8 +30,8 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
@@ -68,8 +68,8 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
@@ -106,8 +106,8 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
@@ -129,7 +129,7 @@ jobs:
           fi
 
   build_amd_binary:
-    runs-on: [self-hosted, amd-large]
+    runs-on: [self-hosted, builder]
     needs: [config_workflow, dockers_build_amd, dockers_build_arm]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
     name: "Build (amd_binary)"
@@ -144,8 +144,8 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
@@ -182,8 +182,8 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 
@@ -220,8 +220,8 @@ jobs:
 
       - name: Prepare env script
         run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
+          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
+          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
 

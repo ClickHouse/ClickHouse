@@ -43,7 +43,7 @@ public:
 
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
+    bool supportZeroCopyReplication() const override { return true; }
 
     bool supportParallelWrite() const override { return object_storage->supportParallelWrite(); }
 
@@ -117,6 +117,8 @@ public:
     void createDirectory(const String & path) override;
 
     void createDirectories(const String & path) override;
+
+    void clearDirectory(const String & path) override;
 
     void moveDirectory(const String & from_path, const String & to_path) override;
 
@@ -202,6 +204,8 @@ public:
 
     bool supportsHardLinks() const override;
 
+    bool supportsPartitionCommand(const PartitionCommand & command) const override;
+
     /// Get structure of object storage this disk works with. Examples:
     /// DiskObjectStorage(S3ObjectStorage)
     /// DiskObjectStorage(CachedObjectStorage(S3ObjectStorage))
@@ -269,7 +273,7 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
-    const bool use_fake_transaction;
+    bool use_fake_transaction;
     UInt64 remove_shared_recursive_file_limit;
 };
 

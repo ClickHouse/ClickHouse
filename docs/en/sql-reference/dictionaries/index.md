@@ -4,7 +4,7 @@ sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
 slug: /sql-reference/dictionaries
 title: 'Dictionaries'
-doc_type: 'reference'
+doc_type: 'Reference'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

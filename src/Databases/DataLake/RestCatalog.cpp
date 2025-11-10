@@ -272,8 +272,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 {
     const auto & context = getContext();
 
-    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
-    Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
+    Poco::URI url(base_url / endpoint);
     if (!params.empty())
         url.setQueryParameters(params);
 
@@ -512,12 +511,7 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
         for (size_t i = 0; i < identifiers_object->size(); ++i)
         {
             const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-            /// If table has encoded sequence (like 'foo%2Fbar')
-            /// catalog returns decoded character instead of sequence ('foo/bar')
-            /// Here name encoded back to 'foo%2Fbar' format
-            const auto table_name_raw = current_table_json->get("name").extract<String>();
-            std::string table_name;
-            Poco::URI::encode(table_name_raw, "/", table_name);
+            const auto table_name = current_table_json->get("name").extract<String>();
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)
@@ -706,8 +700,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
         };
     }
 
-    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
-    Poco::URI url(endpoint, /* enable_url_encoding */ false);
+    Poco::URI url(endpoint);
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)

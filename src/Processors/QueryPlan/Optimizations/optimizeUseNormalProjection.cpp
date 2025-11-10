@@ -224,18 +224,11 @@ std::optional<String> optimizeUseNormalProjections(
     {
         if (!has_all_required_columns(projection))
         {
-            /// Check if projection can be used to filter parts or building projection index filters
+            /// Check if projection can be used to filter parts
             if (query.filter_node && optimize_use_projection_filtering)
             {
-                filterPartsAndCollectProjectionCandidates(
-                    *reading,
-                    *projection,
-                    reader,
-                    empty_mutations_snapshot,
-                    *parent_reading_select_result,
-                    projection_query_info,
-                    query.filter_node,
-                    context);
+                filterPartsUsingProjection(
+                    *projection, reader, empty_mutations_snapshot, *parent_reading_select_result, projection_query_info, context);
             }
 
             continue;

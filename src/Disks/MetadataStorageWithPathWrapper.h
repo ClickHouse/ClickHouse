@@ -55,14 +55,19 @@ public:
         delegate->writeInlineDataToFile(wrappedPath(path), data);
     }
 
-    void createMetadataFile(const std::string & path, const StoredObjects & objects) override
+    void createEmptyMetadataFile(const std::string & path) override
     {
-        delegate->createMetadataFile(wrappedPath(path), objects);
+        delegate->createEmptyMetadataFile(wrappedPath(path));
     }
 
-    void addBlobToMetadata(const std::string & path, const StoredObject & object) override
+    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
     {
-        delegate->addBlobToMetadata(wrappedPath(path), object);
+        delegate->createMetadataFile(wrappedPath(path), object_key, size_in_bytes);
+    }
+
+    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
+    {
+        delegate->addBlobToMetadata(wrappedPath(path), object_key, size_in_bytes);
     }
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override
@@ -132,9 +137,9 @@ public:
         return delegate->unlinkMetadata(wrappedPath(path));
     }
 
-    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t size) override
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override
     {
-        return delegate->truncateFile(wrappedPath(src_path), size);
+        return delegate->truncateFile(wrappedPath(src_path), target_size);
     }
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override
@@ -208,6 +213,11 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
 
     bool supportsStat() const override { return delegate->supportsStat(); }
+
+    bool supportsPartitionCommand(const PartitionCommand & command) const override
+    {
+        return delegate->supportsPartitionCommand(command);
+    }
 
     struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
 

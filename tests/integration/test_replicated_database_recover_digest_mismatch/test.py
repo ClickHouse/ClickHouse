@@ -12,7 +12,6 @@ main_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,
     macros={"shard": 1, "replica": 1},
 )
 dummy_node = cluster.add_instance(
@@ -21,7 +20,6 @@ dummy_node = cluster.add_instance(
     user_configs=["configs/settings2.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,
     macros={"shard": 1, "replica": 2},
 )
 

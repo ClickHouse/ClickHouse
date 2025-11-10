@@ -109,7 +109,6 @@ struct FunctionDocumentation
         Null,
         NumericIndexedVector,
         Other,
-        QBit,
         RandomNumber,
         Rounding,
         StringReplacement,
