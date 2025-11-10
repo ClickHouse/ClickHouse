@@ -341,6 +341,8 @@ class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 public:
     String getName() const override { return "Map"; }
 
+    bool transformsArgumentTypes() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())

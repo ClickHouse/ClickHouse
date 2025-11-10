@@ -1182,8 +1182,7 @@ bool allowParallelHashJoin(
 {
     if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
-    if (kind != JoinKind::Left && kind != JoinKind::Inner
-        && kind != JoinKind::Right && kind != JoinKind::Full)
+    if (kind != JoinKind::Left && kind != JoinKind::Inner)
         return false;
     if (strictness == JoinStrictness::Asof)
         return false;

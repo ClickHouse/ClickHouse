@@ -10,6 +10,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -185,7 +186,25 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
-    return ((setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag") || setting_name == "log_comment";
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+}
+
+bool settingDoesNotAffectQueryResultCache(const String & setting_name)
+{
+    return setting_name == "log_comment"
+        /// As of today, the output format settings only affect the final output.
+        /// However, it should be taken with caution - we should not use these settings in deterministic SQL functions.
+        || setting_name.starts_with("output_format_")
+        /// This setting is used to tune the server response, but does not affect the query behavior.
+        /// An example why it should not affect query caching:
+        /// - if you run a query as usual, and then run the same query with asking the server
+        /// for Content-Disposition: attachment to download the result.
+        || setting_name == "http_response_headers";
+}
+
+bool isSettingIgnoredInQueryResultCache(const String & setting_name)
+{
+    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name);
 }
 
 class RemoveQueryResultCacheSettingsMatcher
@@ -203,10 +222,15 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return isQueryResultCacheRelatedSetting(change.name);
+                return isSettingIgnoredInQueryResultCache(change.name);
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
+        }
+        else
+        {
+            /// Output options don't affect the cached data, as we do caching on a result block level.
+            ASTQueryWithOutput::resetOutputASTIfExist(*ast);
         }
     }
 
@@ -239,7 +263,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
     return transformed_ast;
 }
 
-IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
+IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
     ast = removeQueryResultCacheSettings(ast);
 
@@ -259,7 +283,7 @@ IASTHash calculateAstHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
@@ -290,7 +314,7 @@ QueryResultCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
     bool is_compressed_)
-    : ast_hash(calculateAstHash(ast_, current_database, settings))
+    : ast_hash(calculateASTHash(ast_, current_database, settings))
     , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
