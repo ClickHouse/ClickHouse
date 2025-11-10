@@ -8,7 +8,6 @@ import os
 import random
 import threading
 import time
-import xml.etree.ElementTree as ET
 
 import pytest
 from azure.storage.blob import BlobServiceClient
@@ -20,7 +19,7 @@ from helpers.network import PartitionManager
 from helpers.test_tools import exec_query_with_retry
 
 
-def generate_cluster_def(port, data_file_name_generator):
+def generate_cluster_def(port):
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
         "./_gen/named_collections.xml",
@@ -75,26 +74,18 @@ def generate_cluster_def(port, data_file_name_generator):
             </blob_storage_policy>
         </policies>
     </storage_configuration>
-    <backups>
-        <data_file_name_generator>{data_file_name_generator}</data_file_name_generator>
-    </backups>
 </clickhouse>
 """
         )
     return path
 
 
-@pytest.fixture(
-    params=["first_file_name", "checksum"],
-    ids=["data_file_name_from_first_file_name", "data_file_name_from_checksum"],
-    scope="module",
-)
-def cluster(request):
+@pytest.fixture(scope="module")
+def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         port = cluster.azurite_port
-        data_file_name_generator = request.param
-        path = generate_cluster_def(port, data_file_name_generator)
+        path = generate_cluster_def(port)
         cluster.add_instance(
             "node",
             main_configs=[path],
@@ -193,8 +184,7 @@ def test_backup_restore(cluster):
         f"CREATE TABLE test_simple_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c.csv', 'CSV')",
     )
     azure_query(
-        node,
-        f"INSERT INTO test_simple_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        node, f"INSERT INTO test_simple_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
     )
     print(get_azure_file_content("test_simple_write_c.csv", port))
     assert get_azure_file_content("test_simple_write_c.csv", port) == '1,"a"\n'
@@ -206,9 +196,7 @@ def test_backup_restore(cluster):
         f"BACKUP TABLE test_simple_write_connection_string TO {backup_destination}",
     )
     print(get_azure_file_content(f"{backup_name}/.backup", port))
-    azure_query(
-        node, "DROP TABLE IF EXISTS test_simple_write_connection_string_restored"
-    )
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_restored")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_write_connection_string AS test_simple_write_connection_string_restored FROM {backup_destination};",
@@ -228,8 +216,7 @@ def test_backup_restore_diff_container(cluster):
         f"CREATE TABLE test_simple_write_connection_string_cont1 (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_c_cont1.csv', 'CSV')",
     )
     azure_query(
-        node,
-        f"INSERT INTO test_simple_write_connection_string_cont1 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
+        node, f"INSERT INTO test_simple_write_connection_string_cont1 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')"
     )
     backup_name = new_backup_name()
     backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont1', '{backup_name}')"
@@ -237,9 +224,7 @@ def test_backup_restore_diff_container(cluster):
         node,
         f"BACKUP TABLE test_simple_write_connection_string_cont1 TO {backup_destination}",
     )
-    azure_query(
-        node, "DROP TABLE IF EXISTS test_simple_write_connection_string_restored_cont1"
-    )
+    azure_query(node, "DROP TABLE IF EXISTS test_simple_write_connection_string_restored_cont1")
     azure_query(
         node,
         f"RESTORE TABLE test_simple_write_connection_string_cont1 AS test_simple_write_connection_string_restored_cont1 FROM {backup_destination};",
@@ -260,10 +245,7 @@ def test_backup_restore_with_named_collection_azure_conf1(cluster):
         node,
         f"CREATE TABLE test_write_connection_string (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write.csv', 'CSV')",
     )
-    azure_query(
-        node,
-        f"INSERT INTO test_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
-    )
+    azure_query(node, f"INSERT INTO test_write_connection_string SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write.csv", port))
     assert get_azure_file_content("test_simple_write.csv", port) == '1,"a"\n'
 
@@ -293,15 +275,14 @@ def test_backup_restore_with_named_collection_azure_conf2(cluster):
         node,
         f"CREATE TABLE test_write_connection_string_2 (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_simple_write_2.csv', 'CSV')",
     )
-    azure_query(
-        node,
-        f"INSERT INTO test_write_connection_string_2 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')",
-    )
+    azure_query(node, f"INSERT INTO test_write_connection_string_2 SETTINGS azure_truncate_on_insert = 1 VALUES (1, 'a')")
     print(get_azure_file_content("test_simple_write_2.csv", port))
     assert get_azure_file_content("test_simple_write_2.csv", port) == '1,"a"\n'
 
     backup_name = new_backup_name()
-    backup_destination = f"AzureBlobStorage(azure_conf2, '{backup_name}')"
+    backup_destination = (
+        f"AzureBlobStorage(azure_conf2, '{backup_name}')"
+    )
     azure_query(
         node,
         f"BACKUP TABLE test_write_connection_string_2 TO {backup_destination}",
@@ -347,30 +328,6 @@ def test_backup_restore_on_merge_tree(cluster):
     azure_query(node, f"DROP TABLE test_simple_merge_tree_restored")
 
 
-def get_file_map_from_metadata(cluster, metadata_path):
-    port = cluster.env_variables["AZURITE_PORT"]
-    content = get_azure_file_content(metadata_path, port)
-    xml_root = ET.fromstring(content)
-
-    data_file_name_generator_elem = xml_root.find("data_file_name_generator")
-    data_file_name_generator = (
-        data_file_name_generator_elem.text
-        if data_file_name_generator_elem is not None
-        else "first_file_name"
-    )
-
-    contents = xml_root.find("contents")
-    file_map = {}
-    if contents is not None:
-        for file_elem in contents.findall("file"):
-            name_elem = file_elem.find("name")
-            data_elem = file_elem.find("data_file")
-            if name_elem is not None and data_elem is not None:
-                file_map[name_elem.text] = data_elem.text
-
-    return file_map
-
-
 def test_backup_restore_correct_block_ids(cluster):
     node = cluster.instances["node"]
     azure_query(
@@ -380,7 +337,7 @@ def test_backup_restore_correct_block_ids(cluster):
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic'""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'default'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(
@@ -418,9 +375,9 @@ def test_backup_restore_correct_block_ids(cluster):
         container_client = blob_service_client.get_container_client(container_name)
         blobs = container_client.list_blobs()
 
-        file_map = get_file_map_from_metadata(cluster, f"{data_path}/.backup")
-        file_name = "data/default/test_simple_merge_tree/all_1_1_0/data.bin"
-        data_blob = f"{data_path}/" + (file_map[file_name] if file_map else file_name)
+        data_blob = (
+            f"{data_path}/data/default/test_simple_merge_tree/all_1_1_0/data.bin"
+        )
         found = False
         for blob in blobs:
             if data_blob == blob.get("name"):
@@ -443,9 +400,7 @@ def test_backup_restore_correct_block_ids(cluster):
             else:
                 assert block.get("size") < expected_block_size
 
-        azure_query(
-            node, f"DROP TABLE IF EXISTS test_simple_merge_tree_restored_{max_blocks}"
-        )
+        azure_query(node, f"DROP TABLE IF EXISTS test_simple_merge_tree_restored_{max_blocks}")
         azure_query(
             node,
             f"RESTORE TABLE test_simple_merge_tree AS test_simple_merge_tree_restored_{max_blocks} FROM {backup_destination};",
