@@ -194,7 +194,7 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
         io = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second;
 
-        io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
+        io.pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName(), context_copy);
         io.query_scope_holder = std::move(query_scope);
     }
     else
