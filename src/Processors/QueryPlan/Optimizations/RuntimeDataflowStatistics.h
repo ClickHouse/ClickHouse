@@ -1,9 +1,11 @@
 #pragma once
 
-#include <Core/ColumnWithTypeAndName.h>
-#include <Processors/Chunk.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/CacheBase.h>
+#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
+#include <Core/ColumnsWithTypeAndName.h>
+#include <Processors/Chunk.h>
+#include <Storages/ColumnSize.h>
 
 #include <cstddef>
 #include <memory>
@@ -51,6 +53,16 @@ RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
 
 class RuntimeDataflowStatisticsCacheUpdater
 {
+    using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
+
+    struct Statistics
+    {
+        size_t bytes = 0;
+        size_t sample_bytes = 0;
+        size_t compressed_bytes = 0;
+        size_t elapsed_microseconds = 0;
+    };
+
 public:
     explicit RuntimeDataflowStatisticsCacheUpdater(std::optional<size_t> cache_key_)
         : cache_key(cache_key_)
@@ -68,50 +80,28 @@ public:
 
     void recordOutputChunk(const Chunk & chunk);
 
-    void recordAggregateFunctionSizes(AggregatedDataVariants & variant, ssize_t bucket);
+    void recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket);
 
     void recordAggregationKeySizes(const Aggregator & aggregator, const Block & block);
 
-    void recordInputColumns(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes);
+    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t bytes);
 
-    void recordInputColumns(const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes);
+    void recordInputColumns(const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes);
 
 private:
-    struct Statistics
-    {
-        size_t bytes = 0;
-        size_t sample_bytes = 0;
-        size_t compressed_bytes = 0;
-        size_t elapsed_microseconds = 0;
-    };
-
-    size_t compressedColumnSize(const ColumnWithTypeAndName & column);
+    size_t getCompressedColumnSize(const ColumnWithTypeAndName & column);
 
     const std::optional<size_t> cache_key;
     Block header;
 
-    std::mutex mutex;
-
-    std::array<Statistics, 2> input_bytes_statistics{};
-    std::array<Statistics, 3> output_bytes_statistics{};
-
-    // size_t input_bytes_sample = 0;
-    // size_t input_bytes_compressed = 0;
-    //
-    // size_t output_bytes_sample = 0;
-    // size_t output_bytes_compressed = 0;
-    // RuntimeDataflowStatistics statistics{};
-    //
-    // size_t output_bytes_sample2 = 0;
-    // size_t output_bytes_compressed2 = 0;
-    // RuntimeDataflowStatistics statistics2{};
-
-    bool unsupported_case = false;
-
     std::atomic_size_t cnt{0};
 
-    // Todo: move to Statistics
-    std::array<size_t, 5> elapsed{};
+    std::mutex mutex;
+
+    std::array<Statistics, 2> input_bytes_statistics TSA_GUARDED_BY(mutex){};
+    std::array<Statistics, 3> output_bytes_statistics TSA_GUARDED_BY(mutex){};
+
+    bool unsupported_case TSA_GUARDED_BY(mutex) = false;
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;

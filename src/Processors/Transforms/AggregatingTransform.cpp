@@ -638,7 +638,7 @@ private:
         {
             params->aggregator.mergeWithoutKeyDataImpl(*data, shared_data->is_cancelled);
             if (updater)
-                updater->recordAggregateFunctionSizes(*first, /*bucket=*/-1);
+                updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
             auto block = params->aggregator.prepareBlockAndFillWithoutKey(
                 *first, params->final, first->type != AggregatedDataVariants::Type::without_key);
             if (updater)

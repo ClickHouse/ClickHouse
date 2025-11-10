@@ -5,6 +5,7 @@
 #include <Columns/ColumnLazy.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Aggregator.h>
 
@@ -12,6 +13,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
+#include <optional>
 
 
 namespace ProfileEvents
@@ -110,7 +112,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
         }
 
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-            key_columns_compressed_size += compressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            key_columns_compressed_size += getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
 
     std::lock_guard lock(mutex);
@@ -123,7 +125,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     output_bytes_statistics[0].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordAggregateFunctionSizes(AggregatedDataVariants & variant, ssize_t bucket)
+void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket)
 {
     if (!cache_key)
         return;
@@ -162,7 +164,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
         {
             const auto & key_column_name = aggregator.getParams().keys[i];
             const auto & column = block.getByName(key_column_name);
-            total_size += compressed ? compressedColumnSize(column) : column.column->byteSize();
+            total_size += compressed ? getCompressedColumnSize(column) : column.column->byteSize();
         }
         return total_size;
     };
@@ -184,7 +186,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes, size_t bytes)
+    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes, size_t bytes)
 {
     if (!cache_key)
         return;
@@ -207,7 +209,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
-    const ColumnsWithTypeAndName & columns, const IMergeTreeDataPart::ColumnSizeByName & column_sizes)
+    const ColumnsWithTypeAndName & columns, const ColumnSizeByName & column_sizes)
 {
     if (!cache_key)
         return;
@@ -229,11 +231,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     input_bytes_statistics[1].elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
-size_t RuntimeDataflowStatisticsCacheUpdater::compressedColumnSize(const ColumnWithTypeAndName & column)
+size_t RuntimeDataflowStatisticsCacheUpdater::getCompressedColumnSize(const ColumnWithTypeAndName & column)
 {
-    ColumnBLOB::BLOB blob;
-    ColumnBLOB::toBLOB(blob, column, CompressionCodecFactory::instance().get("LZ4", {}), DBMS_TCP_PROTOCOL_VERSION, std::nullopt);
-    return blob.size();
+    NullWriteBuffer wb;
+    CompressedWriteBuffer wbuf(wb);
+    auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
+    NativeWriter::writeData(*serialization, column_to_write, wbuf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
+    wbuf.finalize();
+    return wb.count();
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()

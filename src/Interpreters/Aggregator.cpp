@@ -1943,7 +1943,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     { \
         mergeBucketImpl<decltype(merged_data.NAME)::element_type>(variants, bucket, arena, is_cancelled); \
         if (updater) \
-            updater->recordAggregateFunctionSizes(merged_data, bucket); \
+            updater->recordAggregationStateSizes(merged_data, bucket); \
         if (is_cancelled.load(std::memory_order_seq_cst)) \
             return {}; \
         block = convertOneBucketToBlock(merged_data, *merged_data.NAME, arena, final, bucket); \
