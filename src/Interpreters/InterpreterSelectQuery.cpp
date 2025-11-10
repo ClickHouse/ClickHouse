@@ -1128,6 +1128,7 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             result_header->getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
+            context,
             true);
 
         auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
@@ -1455,7 +1456,7 @@ static InterpolateDescriptionPtr getInterpolateDescription(
         ExpressionAnalyzer analyzer(exprs, syntax_result, context);
         ActionsDAG actions = analyzer.getActionsDAG(true);
         ActionsDAG conv_dag = ActionsDAG::makeConvertingActions(actions.getResultColumns(),
-            result_columns, ActionsDAG::MatchColumnsMode::Position, true);
+            result_columns, ActionsDAG::MatchColumnsMode::Position, context, true);
         ActionsDAG merge_dag = ActionsDAG::merge(std::move(actions), std::move(conv_dag));
 
         interpolate_descr = std::make_shared<InterpolateDescription>(std::move(merge_dag), aliases);
