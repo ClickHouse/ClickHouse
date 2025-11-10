@@ -2102,3 +2102,41 @@ def test_backupview():
     if instance.is_built_with_sanitizer():
         return  # This test is actually for clickhouse_backupview, not for ClickHouse itself.
     test_backupview_module.test_backupview_1()
+
+
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_table_with_checksum_data_file_name(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine)
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'")
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_incremental_backup_with_checksum_data_file_name():
+    backup_name = new_backup_name()
+    incremental_backup_name = new_backup_name()
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'")
+
+    instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}, data_file_name_generator='checksum'"
+    )
+
+    instance.query(
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+    )
+    assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"
