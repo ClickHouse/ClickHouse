@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-catalog, no-asan
+# Tags: no-replicated-database, no-shared-catalog, no-asan, no-flaky-check
 # Tag no-replicated-database -- modify on-disk metadata that may lead to "Digest does not match" in case Replicated database
 # Tag no-shared-catalog -- same
 # Tag no-asan -- plain rewritable disk can not handle out or server disk change. remote db disk will be enabled only for asan builds.
+# Tag no-flaky-check -- flaky check always runs under asan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
