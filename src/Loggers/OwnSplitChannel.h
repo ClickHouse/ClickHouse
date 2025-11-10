@@ -14,6 +14,7 @@
 #include <Poco/Channel.h>
 #include <Poco/Runnable.h>
 #include <Poco/Thread.h>
+#include "Common/ThreadStatus.h"
 
 namespace ProfileEvents
 {
@@ -84,7 +85,7 @@ public:
     void setLevel(const std::string & name, int level) override;
 
     void logSplit(
-        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name);
+        const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadNames msg_thread_name);
 
     std::map<std::string, ChannelPtr> channels;
     std::weak_ptr<DB::TextLogQueue> text_log;

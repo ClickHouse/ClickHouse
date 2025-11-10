@@ -107,8 +107,7 @@ struct ManyAggregatedData
                     pool->scheduleOrThrowOnError(
                         [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
                         {
-                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
-
+                            ThreadGroupSwitcher switcher(thread_group, ThreadNames::AGGREGATOR_DESTRUCTION);
                             my_variant.reset();
                         });
                 }

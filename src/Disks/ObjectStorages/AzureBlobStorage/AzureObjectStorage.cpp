@@ -1,5 +1,6 @@
 #include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include "Common/setThreadName.h"
 #include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -61,7 +62,7 @@ public:
             CurrentMetrics::ObjectStorageAzureThreads,
             CurrentMetrics::ObjectStorageAzureThreadsActive,
             CurrentMetrics::ObjectStorageAzureThreadsScheduled,
-            "ListObjectAzure")
+            ThreadNames::AZYRE_LIST_POOL)
         , client(client_)
     {
         options.Prefix = path_prefix;
@@ -263,7 +264,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.azure_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadNames::REMORE_FS_WRITE_THREAD_POOL);
 
     return std::make_unique<WriteBufferFromAzureBlobStorage>(
         client.get(),
@@ -372,7 +373,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
         ProfileEvents::increment(ProfileEvents::DiskAzureCopyObject);
     LOG_TRACE(log, "AzureObjectStorage::copyObject of size {}", object_metadata.size_bytes);
 
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "AzureObjCopy");
+    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadNames::AZURE_COPY_POOL);
 
     copyAzureBlobStorageFile(
         client_ptr,

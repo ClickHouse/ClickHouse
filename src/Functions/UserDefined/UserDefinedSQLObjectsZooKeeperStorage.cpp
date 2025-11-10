@@ -154,7 +154,7 @@ void UserDefinedSQLObjectsZooKeeperStorage::loadObjects()
 void UserDefinedSQLObjectsZooKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
-    setThreadName("UserDefObjWatch");
+    DB::setThreadName(ThreadNames::USER_DEFINED_WATCH);
 
     while (watching_flag)
     {

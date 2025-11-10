@@ -541,7 +541,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
     try
     {
         auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
-        String thread_name = starter->is_internal_backup ? "BackupAsyncInt" : "BackupAsync";
+        ThreadNames thread_name = starter->is_internal_backup ? ThreadNames::BACKUP_ASYNC_INTERNAL : ThreadNames::BACKUP_ASYNC;
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -740,7 +740,7 @@ void BackupsWorker::writeBackupEntries(
         std::shuffle(writing_order.begin(), writing_order.end(), thread_local_rng);
     }
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadNames::BACKUP_WORKER);
     for (size_t i = 0; i != backup_entries.size(); ++i)
     {
         if (failed)
@@ -944,7 +944,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
     try
     {
         auto thread_pool_id = starter->is_internal_restore ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE : ThreadPoolId::ASYNC_BACKGROUND_RESTORE;
-        String thread_name = starter->is_internal_restore ? "RestoreAsyncInt" : "RestoreAsync";
+        ThreadNames thread_name = starter->is_internal_restore ? ThreadNames::BACKUP_ASYNC_INTERNAL : ThreadNames::BACKUP_ASYNC;
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -1109,7 +1109,7 @@ BackupsWorker::makeBackupCoordination(bool on_cluster, const BackupSettings & ba
     String current_host = is_internal_backup ? backup_settings.host_id : String{BackupCoordinationOnCluster::kInitiator};
 
     auto thread_pool_id = is_internal_backup ? ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP : ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP;
-    String thread_name = is_internal_backup ? "BackupCoordInt" : "BackupCoord";
+    auto thread_name = is_internal_backup ? ThreadNames::BACKUP_COORDINATION_INERNAL : ThreadNames::BACKUP_COORDINATION;
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
     return std::make_shared<BackupCoordinationOnCluster>(
@@ -1147,7 +1147,7 @@ BackupsWorker::makeRestoreCoordination(bool on_cluster, const RestoreSettings & 
     String current_host = is_internal_restore ? restore_settings.host_id : String{RestoreCoordinationOnCluster::kInitiator};
 
     auto thread_pool_id = is_internal_restore ? ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_RESTORE : ThreadPoolId::ON_CLUSTER_COORDINATION_RESTORE;
-    String thread_name = is_internal_restore ? "RestoreCoordInt" : "RestoreCoord";
+    auto thread_name = is_internal_restore ? ThreadNames::RESTORE_COORDIANTION_INTERNAL : ThreadNames::RESTORE_COORDINATION;
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
     return std::make_shared<RestoreCoordinationOnCluster>(

@@ -85,7 +85,7 @@ ConfigReloader::~ConfigReloader()
 
 void ConfigReloader::run()
 {
-    setThreadName("ConfigReloader");
+    DB::setThreadName(ThreadNames::CONFIG_REALOADER);
 
     while (true)
     {

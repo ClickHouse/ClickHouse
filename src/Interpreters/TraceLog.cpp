@@ -185,7 +185,8 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_id);
-    columns[i++]->insert(thread_name);
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(Array(trace.begin(), trace.end()));
     columns[i++]->insert(size);

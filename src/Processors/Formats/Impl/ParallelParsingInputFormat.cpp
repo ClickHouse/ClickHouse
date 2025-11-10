@@ -10,7 +10,7 @@ namespace DB
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
-    ThreadGroupSwitcher switcher(thread_group, "Segmentator");
+    ThreadGroupSwitcher switcher(thread_group, ThreadNames::PARALLEL_PARSING_SEGMENTATOR);
 
     try
     {

@@ -64,7 +64,7 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(const String & name)
+    void start(ThreadNames name)
     {
         if (!scheduler.joinable())
             scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
@@ -232,9 +232,10 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(const String & name)
+    void schedulerThread(ThreadNames name)
     {
-        setThreadName(name.c_str(), true);
+        DB::setThreadName(name);
+
         while (!stop_flag.load())
         {
             // Dequeue and execute single request

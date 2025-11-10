@@ -219,9 +219,7 @@ StorageKafka::StorageKafka(
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
     {
-        const auto & table = getStorageID().getTableName();
-        const auto & thread_name = std::string("KfkCln:") + table;
-        setThreadName(thread_name.c_str(), /*truncate=*/ true);
+        DB::setThreadName(ThreadNames::KAFKA_CLEANUP);
         cleanConsumersByTTL();
     });
 }

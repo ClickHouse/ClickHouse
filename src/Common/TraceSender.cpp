@@ -48,7 +48,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
         + sizeof(TraceType)                  /// trace type
         + sizeof(UInt64)                     /// thread_id
-        + MAX_THREAD_NAME_SIZE               /// Maximum thread name length
+        + sizeof(ThreadNames)                /// thread name enum
         + sizeof(Int64)                      /// size
         + sizeof(void *)                     /// ptr
         + sizeof(UInt8)                      /// memory_context
@@ -80,14 +80,6 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         thread_id = main_thread->thread_id;
     }
 
-    char thread_name[MAX_THREAD_NAME_SIZE];
-    memset(thread_name, 0, sizeof(thread_name));
-    {
-        std::string_view thread_name_val = getThreadName();
-        chassert(thread_name_val.size() <= MAX_THREAD_NAME_SIZE);
-        memcpy(thread_name, thread_name_val.data(), thread_name_val.size());
-    }
-
     writeChar(false, out);  /// true if requested to stop the collecting thread.
 
     writeBinary(static_cast<uint8_t>(query_id.size()), out);
@@ -101,7 +93,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
 
     writePODBinary(trace_type, out);
     writePODBinary(thread_id, out);
-    out.write(thread_name, MAX_THREAD_NAME_SIZE);
+    writePODBinary(UInt8(getThreadName()), out);
 
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);

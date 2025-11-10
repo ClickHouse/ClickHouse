@@ -7833,7 +7833,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         missing_parts.clear();
 
-        ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), "FETCH PARTITION");
+        ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), ThreadNames::MERGETREE_FETCH_PARTITION);
         std::mutex missing_parts_mutex;
         for (const String & part : parts_to_fetch)
         {

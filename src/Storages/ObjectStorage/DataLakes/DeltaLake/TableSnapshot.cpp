@@ -140,7 +140,7 @@ public:
             {
                 /// Attach to current query thread group, to be able to
                 /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadNames::DATALAKE_TABLE_SNAPSHOT);
                 scanDataFunc();
             });
     }

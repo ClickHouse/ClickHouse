@@ -2,6 +2,8 @@
 #include <base/getFQDNOrHostName.h>
 
 #include <Common/DateLUTImpl.h>
+#include "Interpreters/ClientInfo.h"
+#include "Parsers/CommonParsers.h"
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -42,7 +44,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
-        {"thread_name", std::make_shared<DataTypeString>(), "Name of the thread performing the operation."},
+        {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the thread performing the operation."},
 
         {"disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the associated disk."},
         {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},
@@ -66,7 +68,7 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(static_cast<Int8>(event_type));
     columns[i++]->insert(query_id);
     columns[i++]->insert(thread_id);
-    columns[i++]->insert(thread_name);
+    columns[i++]->insert(toString(thread_name));
     columns[i++]->insert(disk_name);
     columns[i++]->insert(bucket);
     columns[i++]->insert(remote_path);

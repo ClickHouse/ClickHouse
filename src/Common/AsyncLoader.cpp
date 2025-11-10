@@ -924,7 +924,7 @@ void AsyncLoader::worker(Pool & pool)
     while (true)
     {
         // This is inside the loop to also reset previous thread names set inside the jobs
-        setThreadName(pool.name.c_str());
+        DB::setThreadName(ThreadNames::ASYNC_TABLE_LOADER);
 
         {
             std::unique_lock lock{mutex};
