@@ -126,7 +126,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     recursive = globbed_key == "/**";
-    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
+    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -1064,7 +1064,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
-        file_status.reset();
+        file_status = nullptr;
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit

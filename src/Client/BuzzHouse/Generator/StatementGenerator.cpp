@@ -387,7 +387,7 @@ void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, Refre
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -646,7 +646,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (cluster.has_value())
     {
@@ -844,7 +844,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
                                              : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-        const InFormat iinf = (outIn.find(outf) != outIn.end()) && rg.nextBool()
+        const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
             ? outIn.at(outf)
             : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
@@ -882,7 +882,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     this->entries.clear();
     return is_url;
@@ -950,7 +950,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -1119,6 +1119,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         {
             /// Use numbers function
             bool first = true;
+            bool has_aggr = false;
             SelectStatementCore * ssc = sel->mutable_select_core();
             GenerateSeriesFunc * gsf = ssc->mutable_from()
                                            ->mutable_tos()
@@ -1142,10 +1143,25 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                     nval,
                     entry.path.size() > 1 ? ("], " + std::to_string(nested_nrows) + ", " + nval + ")") : "");
                 first = false;
+                has_aggr |= entry.getBottomType()->getTypeClass() == SQLTypeClass::AGGREGATEFUNCTION;
             }
             ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_lit_val()->set_no_quote_str(std::move(buf));
             gsf->set_fname(GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers);
             gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
+            if (has_aggr || rg.nextMediumNumber() < 21)
+            {
+                /// Add GROUP BY for AggregateFunction type
+                ssc->mutable_groupby()
+                    ->mutable_glist()
+                    ->mutable_exprs()
+                    ->mutable_expr()
+                    ->mutable_comp_expr()
+                    ->mutable_expr_stc()
+                    ->mutable_col()
+                    ->mutable_path()
+                    ->mutable_col()
+                    ->set_column("number");
+            }
         }
         else if (insert_select && nopt < (hardcoded_insert + random_values + generate_random + number_func + insert_select + 1))
         {
@@ -1162,7 +1178,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
     }
     this->entries.clear();
@@ -1331,7 +1347,7 @@ void StatementGenerator::generateNextTruncate(RandomGenerator & rg, Truncate * t
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (cluster.has_value())
     {
@@ -1419,7 +1435,7 @@ void StatementGenerator::generateNextExchange(RandomGenerator & rg, Exchange * e
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     this->ids.clear();
     if (cluster1.has_value() && cluster2.has_value() && cluster1 == cluster2)
@@ -1503,7 +1519,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -1605,7 +1621,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t ncname = t.col_counter++;
                 AddColumn * add_col = ati->mutable_add_column();
                 ColumnDef * def = add_col->mutable_new_col();
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)
@@ -1709,7 +1725,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const uint32_t next_option = rg.nextSmallNumber();
                 AddColumn * add_col = ati->mutable_modify_column();
                 ColumnDef * def = add_col->mutable_new_col();
-                const uint32_t type_mask_backup = this->next_type_mask;
+                const uint64_t type_mask_backup = this->next_type_mask;
                 std::vector<uint32_t> nested_ids;
 
                 if (next_option < 4)
@@ -2421,7 +2437,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -2442,7 +2458,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (cluster.has_value())
     {
@@ -2502,7 +2518,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (rg.nextSmallNumber() < 4)
     {
@@ -2568,7 +2584,7 @@ void StatementGenerator::generateDetach(RandomGenerator & rg, Detach * det)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (cluster.has_value())
     {
@@ -3573,7 +3589,7 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 
     /// Set cluster option when that's the case
@@ -3915,7 +3931,7 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (rg.nextSmallNumber() < 3)
     {
@@ -4010,7 +4026,7 @@ void StatementGenerator::setBackupDestination(RandomGenerator & rg, BackupRestor
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     br->set_out(outf);
 }
@@ -4078,7 +4094,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (cluster.has_value())
     {
@@ -4157,7 +4173,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
     }
 
@@ -4170,7 +4186,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     if (backup.out_format.has_value())
     {
         br->set_informat(
-            (outIn.find(backup.out_format.value()) != outIn.end()) && rg.nextBool()
+            outIn.contains(backup.out_format.value()) && rg.nextBool()
                 ? outIn.at(backup.out_format.value())
                 : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1));
     }
@@ -4271,7 +4287,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     if (newn->has_est() && rg.nextBool())
     {
@@ -4543,7 +4559,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -4690,7 +4706,7 @@ void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & 
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
     }
 }
@@ -4699,7 +4715,7 @@ void StatementGenerator::dropTable(const bool staged, bool drop_peer, const uint
 {
     auto & map_to_delete = staged ? this->staged_tables : this->tables;
 
-    if (map_to_delete.find(tname) != map_to_delete.end())
+    if (map_to_delete.contains(tname))
     {
         if (drop_peer)
         {
@@ -5348,21 +5364,21 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 }
                 for (const auto & [key, val] : backup.tables)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->tables[key] = val;
                     }
                 }
                 for (const auto & [key, val] : backup.views)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->views[key] = val;
                     }
                 }
                 for (const auto & [key, val] : backup.dictionaries)
                 {
-                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    if (!val.db || this->databases.contains(val.db->dname))
                     {
                         this->dictionaries[key] = val;
                     }

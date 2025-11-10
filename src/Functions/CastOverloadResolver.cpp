@@ -84,7 +84,8 @@ public:
         ColumnWithTypeAndName from,
         DataTypePtr to,
         CastType cast_type,
-        std::optional<CastDiagnostic> diagnostic)
+        std::optional<CastDiagnostic> diagnostic,
+        ContextPtr context)
     {
         if (cast_type == CastType::accurateOrNull && !isVariant(to))
             to = makeNullable(to);
@@ -93,10 +94,8 @@ public:
         arguments.emplace_back(std::move(from));
         arguments.emplace_back().type = std::make_unique<DataTypeString>();
 
-        /// We consistently use Saturate for internal toDateTime conversion to ensure monotonic so that index analysis is correct.
-        /// Reference: https://github.com/ClickHouse/ClickHouse/issues/73307
         return createFunctionBaseCast(
-            nullptr, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
+            context, getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type, FormatSettings::DateTimeOverflowBehavior::Saturate);
     }
 
 protected:
@@ -157,9 +156,9 @@ private:
 };
 
 
-FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context)
 {
-    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic));
+    return CastOverloadResolverImpl::createInternalCast(std::move(from), std::move(to), cast_type, std::move(diagnostic), context);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)
