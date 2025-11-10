@@ -6,6 +6,8 @@
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 
+#include <sched.h>
+
 namespace
 {
     /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
@@ -61,6 +63,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
     std::string_view query_id;
+    UInt64 cpu_id = sched_getcpu();
     UInt64 thread_id;
 
     if (CurrentThread::isInitialized())
@@ -88,6 +91,7 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
         writePODBinary(stack_trace.getFramePointers()[i], out);
 
     writePODBinary(trace_type, out);
+    writePODBinary(cpu_id, out);
     writePODBinary(thread_id, out);
     writePODBinary(extras.size, out);
     writePODBinary(UInt64(extras.ptr), out);

@@ -30,6 +30,7 @@ struct TraceLogElement
     Decimal64 event_time_microseconds{};
     UInt64 timestamp_ns{};
     TraceType trace_type{};
+    UInt64 cpu_id{};
     UInt64 thread_id{};
     String query_id{};
     std::vector<UInt64> trace{};

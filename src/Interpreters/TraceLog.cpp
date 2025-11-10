@@ -77,6 +77,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`JemallocSample` represents collecting of jemalloc samples. "
             "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
         },
+        {"cpu_id", std::make_shared<DataTypeUInt64>(), "CPU identifier."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process."},
@@ -183,6 +184,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(timestamp_ns);
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
+    columns[i++]->insert(cpu_id);
     columns[i++]->insert(thread_id);
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(Array(trace.begin(), trace.end()));

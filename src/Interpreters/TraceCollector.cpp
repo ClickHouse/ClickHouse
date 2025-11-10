@@ -151,6 +151,9 @@ void TraceCollector::run()
             TraceType trace_type;
             readPODBinary(trace_type, in);
 
+            UInt64 cpu_id;
+            readPODBinary(cpu_id, in);
+
             UInt64 thread_id;
             readPODBinary(thread_id, in);
 
@@ -187,6 +190,7 @@ void TraceCollector::run()
                     .event_time_microseconds = time_in_microseconds,
                     .timestamp_ns = timestamp_ns,
                     .trace_type = trace_type,
+                    .cpu_id = cpu_id,
                     .thread_id = thread_id,
                     .query_id = query_id,
                     .trace = std::move(trace),
