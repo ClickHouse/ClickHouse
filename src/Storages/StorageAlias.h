@@ -159,8 +159,8 @@ public:
     SerializationInfoByName getSerializationHints() const override { return getTargetTable()->getSerializationHints(); }
     ActionLock getActionLock(StorageActionBlockType type) override { return getTargetTable()->getActionLock(type); }
 
-    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) { return getTargetTable()->lockForShare(query_id, acquire_timeout); }
-    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) {return getTargetTable()->tryLockForShare(query_id, acquire_timeout); }
+    TableLockHolder lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const { return getTargetTable()->lockForShare(query_id, acquire_timeout); }
+    TableLockHolder tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout) const {return getTargetTable()->tryLockForShare(query_id, acquire_timeout); }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getTargetTable()->totalRows(query_context); }
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getTargetTable()->totalBytes(query_context); }
