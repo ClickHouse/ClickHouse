@@ -207,13 +207,16 @@ IcebergMetadata::IcebergMetadata(
 }
 
 Int32 IcebergMetadata::parseTableSchema(
-    const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger)
+    const Poco::JSON::Object::Ptr & metadata_object,
+    IcebergSchemaProcessor & schema_processor,
+    ContextPtr context_,
+    LoggerPtr metadata_logger)
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-        schema_processor.addIcebergTableSchema(schema);
+        schema_processor.addIcebergTableSchema(schema, context_);
         return current_schema_id;
     }
     else
@@ -221,7 +224,7 @@ Int32 IcebergMetadata::parseTableSchema(
         try
         {
             auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
-            schema_processor.addIcebergTableSchema(schema);
+            schema_processor.addIcebergTableSchema(schema, context_);
             return current_schema_id;
         }
         catch (const Exception & first_error)
@@ -231,7 +234,7 @@ Int32 IcebergMetadata::parseTableSchema(
             try
             {
                 auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-                schema_processor.addIcebergTableSchema(schema);
+                schema_processor.addIcebergTableSchema(schema, context_);
                 LOG_WARNING(
                     metadata_logger,
                     "Iceberg table schema was parsed using v2 specification, but it was impossible to parse it using v1 "
@@ -255,7 +258,10 @@ Int32 IcebergMetadata::parseTableSchema(
 }
 
 Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
-    Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, IcebergSchemaProcessorPtr schema_processor)
+    Poco::JSON::Object::Ptr metadata_object,
+    Int64 snapshot_id,
+    IcebergSchemaProcessorPtr schema_processor,
+    ContextPtr local_context)
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
@@ -263,7 +269,7 @@ Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
+        schema_processor->addIcebergTableSchema(schema, local_context);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();
@@ -332,7 +338,11 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 IcebergDataSnapshotPtr
 IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const
 {
-    auto object = traverseMetadataAndFindNecessarySnapshotObject(metadata_object, snapshot_id, persistent_components.schema_processor);
+    auto object = traverseMetadataAndFindNecessarySnapshotObject(
+        metadata_object,
+        snapshot_id,
+        persistent_components.schema_processor,
+        local_context);
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
@@ -470,7 +480,7 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
         : nullptr;
 }
 
-std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr, ObjectInfoPtr object_info) const
+std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextPtr context_, ObjectInfoPtr object_info) const
 {
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
@@ -624,7 +634,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
-        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
+        metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor, local_context);
 
     return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
