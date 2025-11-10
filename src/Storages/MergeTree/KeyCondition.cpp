@@ -2278,7 +2278,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
         {
             out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
             out.range = Range(Field(static_cast<UInt64>(0)));
-            out.key_column = key_column_num;
+            out.key_columns.push_back(key_column_num);
             out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
             return true;
         }
