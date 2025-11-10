@@ -10,6 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <bit>
+
 namespace DB
 {
 
@@ -508,7 +509,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not aligned to {}", bytes_size, sizeof(T));
 
     if (bytes_size == 0)
-        return header_size + bytes_to_skip;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compressing a buffer of size 0 is not expected.");
 
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
