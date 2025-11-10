@@ -136,8 +136,11 @@ public:
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
-        datasketches::compact_theta_sketch::vector_bytes bytes;
-        readVectorBinary(bytes, in);
+        size_t size = 0;
+        readVarUInt(size, in);
+        datasketches::compact_theta_sketch::vector_bytes bytes(size, 0);
+        in.readStrict(reinterpret_cast<char*>(bytes.data()), size);
+
         if (!bytes.empty())
         {
             auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
@@ -150,17 +153,20 @@ public:
         if (sk_update)
         {
             auto bytes = sk_update->compact().serialize();
-            writeVectorBinary(bytes, out);
+            writeVarUInt(bytes.size(), out);
+            out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
         }
         else if (sk_union)
         {
             auto bytes = sk_union->get_result().serialize();
-            writeVectorBinary(bytes, out);
+            writeVarUInt(bytes.size(), out);
+            out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
         }
         else
         {
             datasketches::compact_theta_sketch::vector_bytes bytes;
-            writeVectorBinary(bytes, out);
+            writeVarUInt(bytes.size(), out);
+            out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
         }
     }
 };
