@@ -59,6 +59,6 @@ void ColumnLazyTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), rows_size);
 
     if (updater)
-        updater->recordOutputChunk(chunk);
+        updater->recordOutputChunk(chunk, block);
 }
 }

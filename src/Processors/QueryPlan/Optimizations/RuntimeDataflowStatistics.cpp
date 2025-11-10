@@ -60,25 +60,25 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     RuntimeDataflowStatistics res{};
     for (const auto & stats : input_bytes_statistics)
     {
-        // LOG_DEBUG(
-        //     &Poco::Logger::get("debug"),
-        //     "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
-        //     stats.bytes,
-        //     stats.sample_bytes,
-        //     stats.compressed_bytes,
-        //     (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
+            stats.bytes,
+            stats.sample_bytes,
+            stats.compressed_bytes,
+            (stats.sample_bytes / 1.0 / stats.compressed_bytes));
         if (stats.compressed_bytes)
             res.input_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
     }
     for (const auto & stats : output_bytes_statistics)
     {
-        // LOG_DEBUG(
-        //     &Poco::Logger::get("debug"),
-        //     "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
-        //     stats.bytes,
-        //     stats.sample_bytes,
-        //     stats.compressed_bytes,
-        //     (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+        LOG_DEBUG(
+            &Poco::Logger::get("debug"),
+            "stats.bytes={}, stats.sample_bytes={}, stats.compressed_bytes={}, (stats.sample_bytes / 1.0 / stats.compressed_bytes)={}",
+            stats.bytes,
+            stats.sample_bytes,
+            stats.compressed_bytes,
+            (stats.sample_bytes / 1.0 / stats.compressed_bytes));
         if (stats.compressed_bytes)
             res.output_bytes += static_cast<size_t>(stats.bytes / (stats.sample_bytes / 1.0 / stats.compressed_bytes));
     }
@@ -90,7 +90,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
     dataflow_cache.update(*cache_key, res);
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk)
+void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chunk, const Block & header)
 {
     if (!cache_key)
         return;

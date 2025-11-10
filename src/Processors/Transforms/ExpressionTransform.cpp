@@ -32,7 +32,7 @@ void ExpressionTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), num_rows);
 
     if (updater)
-        updater->recordOutputChunk(chunk);
+        updater->recordOutputChunk(chunk, block);
 }
 
 ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActionsPtr expression_)

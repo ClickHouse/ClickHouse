@@ -71,14 +71,7 @@ public:
 
     ~RuntimeDataflowStatisticsCacheUpdater();
 
-    void setHeader(const Block & header_)
-    {
-        if (!cache_key)
-            return;
-        header = header_;
-    }
-
-    void recordOutputChunk(const Chunk & chunk);
+    void recordOutputChunk(const Chunk & chunk, const Block & header);
 
     void recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket);
 
@@ -92,7 +85,6 @@ private:
     size_t getCompressedColumnSize(const ColumnWithTypeAndName & column);
 
     const std::optional<size_t> cache_key;
-    Block header;
 
     std::atomic_size_t cnt{0};
 
