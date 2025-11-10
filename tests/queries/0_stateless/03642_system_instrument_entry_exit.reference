@@ -1,4 +1,6 @@
 log	entry
+profile	entry
+profile	exit
 sleep	entry
 log	exit
 1

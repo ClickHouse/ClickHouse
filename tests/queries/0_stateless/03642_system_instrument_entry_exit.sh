@@ -18,6 +18,7 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'this is an entry log';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'this is an exit log';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 3;
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` PROFILE;
 """
 
 query_id="${CLICKHOUSE_DATABASE}_log"

@@ -1,7 +1,6 @@
 #include <chrono>
 #include <Interpreters/InstrumentationManager.h>
 #include <xray/xray_interface.h>
-#include "Common/TraceSender.h"
 
 #if USE_XRAY
 
