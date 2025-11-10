@@ -65,9 +65,12 @@ public:
             ++count_arrays;
         }
 
-        if (const DataTypeNullable * nullable = checkAndGetDataType<DataTypeNullable>(input_type))
+        /// Need later to decide whether to wrap result_type with Nullable
+        bool is_input_type_nullable = false;
+        if (const DataTypeNullable * nullable_type = checkAndGetDataType<DataTypeNullable>(input_type))
         {
-            input_type = nullable->getNestedType().get();
+            is_input_type_nullable = true;
+            input_type = nullable_type->getNestedType().get();
         }
 
         if (const DataTypeTuple * tuple = checkAndGetDataType<DataTypeTuple>(input_type))
@@ -76,6 +79,9 @@ public:
             if (index.has_value())
             {
                 DataTypePtr return_type = tuple->getElements()[index.value()];
+
+                if (is_input_type_nullable && return_type->canBeInsideNullable())
+                    return_type = std::make_shared<DataTypeNullable>(return_type);
 
                 for (; count_arrays; --count_arrays)
                     return_type = std::make_shared<DataTypeArray>(return_type);
@@ -86,6 +92,15 @@ public:
         }
         else if (const DataTypeQBit * qbit = checkAndGetDataType<DataTypeQBit>(input_type))
         {
+            if (is_input_type_nullable)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument for function {} cannot be Nullable(QBit). Actual {}",
+                    getName(),
+                    arguments[0].type->getName());
+            }
+
             std::optional<size_t> index = getQBitElementIndex(arguments[1].column, *qbit, number_of_arguments);
             if (index.has_value())
             {
@@ -129,6 +144,19 @@ public:
             array_offsets.push_back(array_col->getOffsetsPtr());
         }
 
+        /// Handle Nullable(Tuple)
+        ColumnPtr null_map_column = nullptr;
+        if (const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(input_col))
+        {
+            null_map_column = nullable_col->getNullMapColumnPtr();
+            input_col = &nullable_col->getNestedColumn();
+
+            if (const DataTypeNullable * nullable_type = checkAndGetDataType<DataTypeNullable>(input_type))
+            {
+                input_type = nullable_type->getNestedType().get();
+            }
+        }
+
 
         const DataTypeTuple * input_type_as_tuple = checkAndGetDataType<DataTypeTuple>(input_type);
         const ColumnTuple * input_col_as_tuple = checkAndGetColumn<ColumnTuple>(input_col);
@@ -141,6 +169,39 @@ public:
                 return arguments[2].column;
 
             ColumnPtr res = input_col_as_tuple->getColumnPtr(index.value());
+
+            DataTypePtr element_type = input_type_as_tuple->getElements()[index.value()];
+
+            /// If both Nullable(Tuple) and Nullable(Tuple[index]) possible
+            bool should_wrap_nullable = null_map_column && element_type->canBeInsideNullable();
+
+            if (should_wrap_nullable)
+            {
+                res = ColumnNullable::create(res, null_map_column);
+            }
+            else if (null_map_column)
+            {
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+                auto result_column = element_type->createColumn();
+                result_column->reserve(res->size());
+
+                Field default_field = element_type->getDefault();
+
+                for (size_t i = 0; i < res->size(); ++i)
+                {
+                    if (null_map[i])
+                    {
+                        result_column->insert(default_field);
+                    }
+                    else
+                    {
+                        result_column->insertFrom(*res, i);
+                    }
+                }
+
+                res = std::move(result_column);
+            }
 
             /// Wrap into Arrays
             for (auto it = array_offsets.rbegin(); it != array_offsets.rend(); ++it)
