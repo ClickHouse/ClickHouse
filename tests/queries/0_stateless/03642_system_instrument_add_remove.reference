@@ -1,19 +1,19 @@
 -- Empty table
 0
 -- Add one entry
-DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	DB::executeQuery(std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>, DB::WriteBuffer&, std::__1::shared_ptr<DB::Context>, std::__1::function<void (DB::QueryResultDetails const&)>, DB::QueryFlags, std::__1::optional<DB::FormatSettings> const&, std::__1::function<void (DB::IOutputFormat&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context const> const&, std::__1::optional<DB::FormatSettings> const&)>, std::__1::function<void ()>, std::__1::function<void ()>)::$_1::operator()() const	my log in executeQuery
 -- Adding the same entry produces an error
-DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	DB::executeQuery(std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>, DB::WriteBuffer&, std::__1::shared_ptr<DB::Context>, std::__1::function<void (DB::QueryResultDetails const&)>, DB::QueryFlags, std::__1::optional<DB::FormatSettings> const&, std::__1::function<void (DB::IOutputFormat&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context const> const&, std::__1::optional<DB::FormatSettings> const&)>, std::__1::function<void ()>, std::__1::function<void ()>)::$_1::operator()() const	my log in executeQuery
 -- Add another entry
-DB::executeQuery	log	entry	my log in executeQuery
-QueryMetricLog::startQuery	log	entry	my log in startQuery
+DB::executeQuery	log	entry	DB::executeQuery(std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>, DB::WriteBuffer&, std::__1::shared_ptr<DB::Context>, std::__1::function<void (DB::QueryResultDetails const&)>, DB::QueryFlags, std::__1::optional<DB::FormatSettings> const&, std::__1::function<void (DB::IOutputFormat&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context const> const&, std::__1::optional<DB::FormatSettings> const&)>, std::__1::function<void ()>, std::__1::function<void ()>)::$_1::operator()() const	my log in executeQuery
+QueryMetricLog::startQuery	log	entry	DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)	my log in startQuery
 -- Remove one specific id
-DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	DB::executeQuery(std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>, DB::WriteBuffer&, std::__1::shared_ptr<DB::Context>, std::__1::function<void (DB::QueryResultDetails const&)>, DB::QueryFlags, std::__1::optional<DB::FormatSettings> const&, std::__1::function<void (DB::IOutputFormat&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context const> const&, std::__1::optional<DB::FormatSettings> const&)>, std::__1::function<void ()>, std::__1::function<void ()>)::$_1::operator()() const	my log in executeQuery
 -- Add 2 more entries
-DB::executeQuery	log	entry	my log in executeQuery
-QueryMetricLog::startQuery	log	exit	my other in startQuery
-QueryMetricLog::finishQuery	log	exit	my other in finishQuery
+DB::executeQuery	log	entry	DB::executeQuery(std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>, DB::WriteBuffer&, std::__1::shared_ptr<DB::Context>, std::__1::function<void (DB::QueryResultDetails const&)>, DB::QueryFlags, std::__1::optional<DB::FormatSettings> const&, std::__1::function<void (DB::IOutputFormat&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context const> const&, std::__1::optional<DB::FormatSettings> const&)>, std::__1::function<void ()>, std::__1::function<void ()>)::$_1::operator()() const	my log in executeQuery
+QueryMetricLog::startQuery	log	exit	DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)	my other in startQuery
+QueryMetricLog::finishQuery	log	exit	DB::QueryMetricLog::finishQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, std::__1::shared_ptr<DB::QueryStatusInfo const>)	my other in finishQuery
 -- Remove the entries with entry_type = exit
-DB::executeQuery	log	entry	my log in executeQuery
+DB::executeQuery	log	entry	DB::executeQuery(std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>, DB::WriteBuffer&, std::__1::shared_ptr<DB::Context>, std::__1::function<void (DB::QueryResultDetails const&)>, DB::QueryFlags, std::__1::optional<DB::FormatSettings> const&, std::__1::function<void (DB::IOutputFormat&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context const> const&, std::__1::optional<DB::FormatSettings> const&)>, std::__1::function<void ()>, std::__1::function<void ()>)::$_1::operator()() const	my log in executeQuery
 -- Remove everything
 0

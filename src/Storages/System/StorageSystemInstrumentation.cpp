@@ -24,9 +24,10 @@ ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
     {
         {"id", std::make_shared<DataTypeUInt32>(), "ID of the instrumentation point"},
         {"function_id", std::make_shared<DataTypeInt32>(), "ID assigned to the function in xray_instr_map section of elf-binary."},
-        {"function_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the instrumented function."},
+        {"function_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name used to instrument the function."},
         {"handler", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Handler that was patched into instrumentation points of the function."},
         {"entry_type", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())), "Entry type for the patch."},
+        {"symbol", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Complete and demangled symbol name."},
         {"parameters", std::make_shared<DataTypeDynamic>(), "Parameters for the handler call."},
     };
 }
@@ -42,9 +43,10 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
     auto & column_function_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_handler_name = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_entry_type = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
+    auto & column_symbol = assert_cast<ColumnLowCardinality &>(*res_columns[column_index++]);
     auto & column_parameters = assert_cast<ColumnDynamic&>(*res_columns[column_index++]);
 
-    auto add_row = [&](UInt32 id, Int32 function_id, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentationManager::InstrumentedParameter>> parameters)
+    auto add_row = [&](UInt32 id, Int32 function_id, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, const String & symbol, std::optional<std::vector<InstrumentationManager::InstrumentedParameter>> parameters)
     {
         column_id.push_back(id);
         column_function_id.insert(function_id);
@@ -55,6 +57,8 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
             column_entry_type.insert(entry_type == XRayEntryType::ENTRY ? "entry" : "exit");
         else
             column_entry_type.insert(Field());
+
+        column_symbol.insert(symbol);
 
         if (parameters.has_value() && !parameters->empty())
         {
@@ -75,7 +79,7 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
     };
 
     for (const auto & ip : instrumented_points)
-        add_row(ip.id, ip.function_id, ip.function_name, ip.handler_name, ip.entry_type, ip.parameters);
+        add_row(ip.id, ip.function_id, ip.function_name, ip.handler_name, ip.entry_type, ip.symbol, ip.parameters);
 }
 
 }

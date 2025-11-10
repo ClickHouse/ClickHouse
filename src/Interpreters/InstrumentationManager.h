@@ -43,6 +43,7 @@ public:
         String function_name;
         String handler_name;
         std::optional<XRayEntryType> entry_type;
+        String symbol;
         std::optional<std::vector<InstrumentedParameter>> parameters;
 
         String toString() const
@@ -64,8 +65,8 @@ public:
                 parameters_str = ")";
             }
 
-            return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}{}",
-                id, function_id, function_name, handler_name, entry_type_str, parameters_str);
+            return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
+                id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
         }
     };
 

@@ -121,14 +121,21 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     ensureInitialization();
 
     Int32 function_id;
+    String symbol;
     auto fn_it = functions_container.get<FunctionName>().find(function_name);
     if (fn_it != functions_container.get<FunctionName>().end())
+    {
         function_id = fn_it->function_id;
+        symbol = fn_it->function_name;
+    }
     else
     {
         auto stripped_it = functions_container.get<StrippedFunctionName>().find(function_name);
         if (stripped_it != functions_container.get<StrippedFunctionName>().end())
+        {
             function_id = stripped_it->function_id;
+            symbol = stripped_it->function_name;
+        }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown function to instrument: '{}'. XRay instruments by default only functions of at least 200 instructions. "
                 "You can change that threshold with '-fxray-instruction-threshold=1'. You can also force the instrumentation of specific functions decorating them with '[[clang::xray_always_instrument]]' "
@@ -145,7 +152,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
 
     patchFunctionIfNeeded(function_id);
 
-    InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, parameters};
+    InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
     LOG_DEBUG(logger, "Adding instrumentation point for {}", info.toString());
     instrumented_points.emplace(std::move(info));
     instrumented_point_ids++;

@@ -17,9 +17,10 @@ Contains the instrumentation points using LLVM's XRay feature.
 Columns:
 - `id` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ID of the instrumentation point.
 - `function_id` ([Int32](../../sql-reference/data-types/int-uint.md)) — ID assigned to the function in the `xray_instr_map` section of the ELF binary.
-- `function_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Name of the instrumented function.
+- `function_name` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Name used to instrument the function.
 - `handler` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Handler type.
 - `entry_type` ([LowCardinality(Nullable(String))](../../sql-reference/data-types/string.md)) — Entry type: Null, `ENTRY` or `EXIT`.
+- `symbol` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Complete and demangled symbol.
 - `parameters` ([Dynamic](../../sql-reference/data-types/dynamic.md)) — Parameters for the handler call.
 
 **Example**
@@ -29,11 +30,37 @@ SELECT * FROM system.instrumentation;
 ```
 
 ```text
-   ┌─id─┬─function_id─┬─function_name──────────────┬─handler─┬─entry_type─┬─parameters─────┐
-1. │  2 │      231414 │ QueryMetricLog::startQuery │ log     │ exit       │ this is a test │
-2. │  1 │      231414 │ QueryMetricLog::startQuery │ profile │ ᴺᵁᴸᴸ       │ ᴺᵁᴸᴸ           │
-3. │  0 │      231414 │ QueryMetricLog::startQuery │ sleep   │ entry      │ 0.5            │
-   └────┴─────────────┴────────────────────────────┴─────────┴────────────┴────────────────┘
+Row 1:
+──────
+id:            0
+function_id:   231280
+function_name: QueryMetricLog::startQuery
+handler:       log
+entry_type:    entry
+symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
+parameters:    test
+
+Row 2:
+──────
+id:            1
+function_id:   231280
+function_name: QueryMetricLog::startQuery
+handler:       profile
+entry_type:    ᴺᵁᴸᴸ
+symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
+parameters:    ᴺᵁᴸᴸ
+
+Row 3:
+──────
+id:            2
+function_id:   231280
+function_name: QueryMetricLog::startQuery
+handler:       sleep
+entry_type:    exit
+symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
+parameters:    0.3
+
+3 rows in set. Elapsed: 0.302 sec.
 ```
 
 **See also**
