@@ -19,7 +19,7 @@ query_id_prefix="${CLICKHOUSE_DATABASE}"
 
 statements=(
     "SELECT * FROM system.instrumentation FORMAT NULL"
-    "SELECT * FROM system.instrumentation_trace_log FORMAT NULL"
+    "SELECT * FROM system.trace_log WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 1 MINUTE AND trace_type = 'Instrumentation' FORMAT NULL"
     "SYSTEM INSTRUMENT REMOVE ALL"
     "SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation LIMIT 2)"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'entry log'"
@@ -51,7 +51,7 @@ wait
 
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
-    SYSTEM FLUSH LOGS system.text_log, instrumentation_trace_log;
+    SYSTEM FLUSH LOGS system.text_log, system.trace_log;
     SELECT count() >= 1 FROM system.text_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%';
-    SELECT count() >= 1 FROM system.instrumentation_trace_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE '%QueryMetricLog%';
+    SELECT count() >= 1 FROM system.trace_log WHERE event_date >= yesterday() AND query_id ILIKE '$query_id_prefix%' AND function_name ILIKE '%QueryMetricLog%';
 """

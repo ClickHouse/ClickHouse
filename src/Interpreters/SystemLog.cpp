@@ -25,7 +25,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InstrumentationTraceLog.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>

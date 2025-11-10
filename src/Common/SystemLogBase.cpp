@@ -13,7 +13,6 @@
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/InstrumentationTraceLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>

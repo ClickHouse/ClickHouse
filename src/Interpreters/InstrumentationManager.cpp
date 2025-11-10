@@ -1,16 +1,20 @@
+#include <chrono>
 #include <Interpreters/InstrumentationManager.h>
+#include <xray/xray_interface.h>
+#include "Common/TraceSender.h"
 
 #if USE_XRAY
 
 #include <filesystem>
 #include <print>
 #include <thread>
+#include <sched.h>
 #include <unistd.h>
 #include <variant>
 
 #include <base/getThreadId.h>
 #include <base/scope_guard.h>
-#include <Interpreters/InstrumentationTraceLog.h>
+#include <Interpreters/TraceLog.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
@@ -39,12 +43,13 @@ static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
 
-/// The offset of 4 is to remove all the frames added by the instrumentation itself:
-/// StackTrace::StackTrace()
-/// DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)
-/// DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)
+/// The offset of 5 is to remove all the frames added by the instrumentation itself:
+/// ./build/../src/Common/StackTrace.cpp:395: StackTrace::StackTrace() @ 0x0000000014e5c964
+/// ./build/./src/Interpreters/InstrumentationManager.cpp:419: DB::InstrumentationManager::log(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&) @ 0x000000001ab046cc
+/// ./contrib/llvm-project/libcxx/include/__functional/function.h:716: ? @ 0x000000001ab0155c
+/// ./build/./src/Interpreters/InstrumentationManager.cpp:235: DB::InstrumentationManager::dispatchHandler(int, XRayEntryType)
 /// __xray_FunctionEntry
-static const auto STACK_OFFSET = 4;
+static const auto STACK_OFFSET = 5;
 
 auto logger = getLogger("InstrumentationManager");
 
@@ -300,46 +305,93 @@ void InstrumentationManager::parseInstrumentationMap()
     LOG_DEBUG(logger, "Finished parsing the XRay instrumentation map: {} symbols parsed successfully, {} with errors", functions_container.size(), errors);
 }
 
+TraceLogElement InstrumentationManager::createTraceLogElement(const InstrumentedPointInfo & instrumented_point, XRayEntryType entry_type, std::chrono::system_clock::time_point event_time) const
+{
+    using namespace std::chrono;
+
+    TraceLogElement element;
+
+    auto event_time_us = duration_cast<microseconds>(event_time.time_since_epoch()).count();
+    element.event_time = time_t(duration_cast<seconds>(event_time.time_since_epoch()).count());
+    element.event_time_microseconds = Decimal64(event_time_us);
+    element.timestamp_ns = duration_cast<nanoseconds>(event_time.time_since_epoch()).count();
+    element.instrumented_point_id = instrumented_point.id;
+    element.trace_type = TraceType::Instrumentation;
+    element.cpu_id = sched_getcpu();
+    element.thread_id = getThreadId();
+    element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
+    element.function_id = instrumented_point.function_id;
+    element.function_name = instrumented_point.symbol;
+    element.handler = instrumented_point.handler_name;
+    element.entry_type = (entry_type == XRayEntryType::ENTRY) ? "entry" : "exit";
+    element.symbolize = true;
+
+    const auto stack_trace = StackTrace();
+    const auto frame_pointers = stack_trace.getFramePointers();
+
+    element.trace.reserve(stack_trace.getSize() - STACK_OFFSET - 1); /// -1 because of this createTraceLogElement
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const auto * object = SymbolIndex::instance().thisObject();
+#endif
+
+    for (size_t i = stack_trace.getOffset() + STACK_OFFSET + 1; i < stack_trace.getSize(); ++i)
+    {
+        /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
+        uintptr_t offset = 0;
+        const uintptr_t addr = reinterpret_cast<uintptr_t>(frame_pointers[i]);
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
+            offset = uintptr_t(object->address_begin);
+#endif
+        element.trace.emplace_back(addr - offset);
+    }
+
+    return element;
+}
+
 void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
+    using namespace std::chrono;
+
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
-    }
     const auto & params = params_opt.value();
 
     if (params.size() != 1)
-    {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
-    }
 
     const auto & param = params[0];
+    std::optional<Float64> duration_ms;
 
     if (std::holds_alternative<Int64>(param))
     {
         Int64 seconds = std::get<Int64>(param);
-        if (seconds < 0)
-        {
-            throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
-        }
-        LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {}s", instrumented_point.function_name, instrumented_point.function_id, seconds);
-        std::this_thread::sleep_for(std::chrono::seconds(seconds));
+        duration_ms = seconds * 1000;
     }
     else if (std::holds_alternative<Float64>(param))
     {
         Float64 seconds = std::get<Float64>(param);
-        if (seconds < 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
-        }
-        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<double>(seconds));
-        LOG_TRACE(logger, "Sleeping for {}ms", duration.count());
-        std::this_thread::sleep_for(duration);
+        duration_ms = seconds * 1000;
     }
     else
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
+    }
+
+    if (duration_ms < 0)
+    {
+        throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
+    }
+
+    LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms.value());
+    std::this_thread::sleep_for(duration<Float64, std::milli>(duration_ms.value()));
+    auto element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now());
+    if (instrumented_point.context)
+    {
+        if (auto log = instrumented_point.context->getTraceLog())
+            log->add(std::move(element));
     }
 }
 
@@ -365,6 +417,13 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
         LOG_INFO(logger, "Log ({}, function_id {}, {}): {}\nStack trace:\n{}",
             instrumented_point.function_name, instrumented_point.function_id,
             entry_type == XRayEntryType::ENTRY ? "entry" : "exit", logger_info, stack_trace_str);
+
+        auto element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now());
+        if (instrumented_point.context)
+        {
+            if (auto log = instrumented_point.context->getTraceLog())
+                log->add(std::move(element));
+        }
     }
     else
     {
@@ -379,47 +438,20 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
     /// point ID to know for sure whether this execution is tight to the stored element or not.
     /// We also remove the element once we realize it's from a different generation, but it's not cleared until then.
-    static thread_local std::unordered_map<Int32, InstrumentationTraceLogElement> active_elements;
+    static thread_local std::unordered_map<Int32, TraceLogElement> active_elements;
 
-    using namespace std::chrono;
-    auto now = system_clock::now();
+    auto now = std::chrono::system_clock::now();
 
     LOG_TRACE(logger, "Profile ({}, function_id {})", instrumented_point.function_name, instrumented_point.function_id);
 
     if (entry_type == XRayEntryType::ENTRY)
     {
-        InstrumentationTraceLogElement element;
-        element.instrumented_point_id = instrumented_point.id;
-        element.function_name = functions_container.get<FunctionId>().find(instrumented_point.function_id)->function_name;
-        element.tid = getThreadId();
-        element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
-        element.function_id = instrumented_point.function_id;
-        const auto stack_trace = StackTrace();
-        const auto frame_pointers = stack_trace.getFramePointers();
-
-        element.trace.reserve(stack_trace.getSize() - STACK_OFFSET);
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-        const auto * object = SymbolIndex::instance().thisObject();
-#endif
-
-        for (size_t i = stack_trace.getOffset() + STACK_OFFSET; i < stack_trace.getSize(); ++i)
+        auto element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now());
+        if (instrumented_point.context)
         {
-            /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
-            uintptr_t offset = 0;
-            const uintptr_t addr = reinterpret_cast<uintptr_t>(frame_pointers[i]);
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
-                offset = uintptr_t(object->address_begin);
-#endif
-            element.trace.emplace_back(addr - offset);
+            if (auto log = instrumented_point.context->getTraceLog())
+                log->add(element);
         }
-
-        now = system_clock::now();
-        auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
-        element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
-        element.event_time_microseconds = Decimal64(now_us);
-
         active_elements[instrumented_point.function_id] = std::move(element);
     }
     else if (entry_type == XRayEntryType::EXIT)
@@ -442,10 +474,11 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
 
             auto start_us = Int64(element.event_time_microseconds);
             element.duration_microseconds = Decimal64(now_us - start_us);
+            element.entry_type = "exit";
 
             if (instrumented_point.context)
             {
-                if (auto log = instrumented_point.context->getInstrumentationTraceLog())
+                if (auto log = instrumented_point.context->getTraceLog())
                     log->add(std::move(element));
             }
             active_elements.erase(it);

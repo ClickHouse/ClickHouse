@@ -23,6 +23,8 @@ class InstrumentationManagerTest;
 namespace DB
 {
 
+struct TraceLogElement;
+
 class InstrumentationManager
 {
 public:
@@ -160,6 +162,7 @@ private:
 
     [[clang::xray_never_instrument]] static void dispatchHandler(Int32 func_id, XRayEntryType entry_type);
     [[clang::xray_never_instrument]] void dispatchHandlerImpl(Int32 func_id, XRayEntryType entry_type);
+    [[clang::xray_never_instrument]] TraceLogElement createTraceLogElement(const InstrumentedPointInfo & instrumented_point, XRayEntryType entry_type, std::chrono::system_clock::time_point event_time) const;
     [[clang::xray_never_instrument]] void sleep(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
     [[clang::xray_never_instrument]] void log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
     [[clang::xray_never_instrument]] void profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point);
