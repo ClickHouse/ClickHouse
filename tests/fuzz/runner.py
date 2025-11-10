@@ -17,8 +17,9 @@ DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
 RUNNERS = int(os.getenv("RUNNERS", "16"))
+DEFAULT_INPUT_TIMEOUT = 1200 # libFuzzer default value for '-timeout' option
 
-INPUT_TIMEOUT = 20 # for debugging
+INPUT_TIMEOUT = 0 # for debugging, set 0 when not debugging
 
 # Run merge fuzzer process with timeout. On timeout send SIGUSR1 graceful termination signal.
 # If process does not exit, SIGKILL is issued after additional kill_timeout time.
@@ -133,7 +134,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                                 # same limit as rss_limit_mb is applied.
     ]
 
-    input_timeout = 1200 # libFuzzer default value for '-timeout' option
+    input_timeout = 0
 
     if INPUT_TIMEOUT:
         allowed_libfuzzer_options.remove("timeout")
@@ -243,7 +244,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
                     shell=False,
                     errors="replace",
                     timeout=timeout,
-                    kill_timeout= input_timeout * 2,
+                    kill_timeout= input_timeout * 2 if input_timeout > 0 else DEFAULT_INPUT_TIMEOUT,
                     env=env,
                 )
         except subprocess.CalledProcessError as e:
