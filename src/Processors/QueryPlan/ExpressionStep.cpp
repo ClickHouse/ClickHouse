@@ -9,8 +9,6 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Common/JSONBuilder.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 

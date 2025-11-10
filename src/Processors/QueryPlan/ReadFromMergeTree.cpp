@@ -57,8 +57,6 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 #include <algorithm>
 #include <iterator>
 #include <memory>
@@ -469,7 +467,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), /*updater=*/nullptr);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
     }
 
@@ -579,7 +577,7 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), dataflow_cache_updater);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -698,7 +696,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), dataflow_cache_updater);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);

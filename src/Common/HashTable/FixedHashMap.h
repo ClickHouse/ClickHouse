@@ -1,6 +1,5 @@
 #pragma once
 
-#include <type_traits>
 #include <Common/HashTable/FixedHashTable.h>
 #include <Common/HashTable/HashMap.h>
 

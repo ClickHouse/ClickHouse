@@ -23,11 +23,6 @@ extern const Event RuntimeDataflowStatisticsOutputBytes;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCache::getStats(size_t key) const
 {
     if (const auto entry = stats_cache->get(key))
