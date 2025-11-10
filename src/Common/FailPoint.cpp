@@ -116,7 +116,7 @@ static struct InitFiu
     ONCE(iceberg_writes_cleanup) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(backup_add_empty_memory_table) \
-    REGULAR(refresh_task_delay_update_coordination_state_running)
+    REGULAR(refresh_task_stop_racing_for_running_refresh)
 
 
 namespace FailPoints
