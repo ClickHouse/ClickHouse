@@ -1,3 +1,4 @@
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
@@ -310,8 +311,15 @@ void considerEnablingParallelReplicas(
                 "Step ({}) doesn't support dataflow statistics collection",
                 corresponding_node_in_single_replica_plan->step->getName());
 
-        reading_step->step->setDataflowCacheKey(single_replica_plan_node_hash);
-        corresponding_node_in_single_replica_plan->step->setDataflowCacheKey(single_replica_plan_node_hash);
+        auto * source_reading_step = dynamic_cast<SourceStepWithFilter *>(reading_step->step.get());
+        if (!source_reading_step)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Expected SourceStepWithFilter at reading step, got {}", reading_step->step->getName());
+
+        auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
+        updater->setCacheKey(single_replica_plan_node_hash);
+        source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
+        corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
 
     if (optimization_settings.automatic_parallel_replicas_mode == 2)

@@ -64,12 +64,11 @@ class RuntimeDataflowStatisticsCacheUpdater
     };
 
 public:
-    explicit RuntimeDataflowStatisticsCacheUpdater(std::optional<size_t> cache_key_)
-        : cache_key(cache_key_)
-    {
-    }
+    RuntimeDataflowStatisticsCacheUpdater() = default;
 
     ~RuntimeDataflowStatisticsCacheUpdater();
+
+    void setCacheKey(size_t key) { cache_key = key; }
 
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
@@ -84,7 +83,7 @@ public:
 private:
     size_t getCompressedColumnSize(const ColumnWithTypeAndName & column);
 
-    const std::optional<size_t> cache_key;
+    std::optional<size_t> cache_key;
 
     std::atomic_size_t cnt{0};
 

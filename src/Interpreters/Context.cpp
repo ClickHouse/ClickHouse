@@ -140,6 +140,8 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <base/defines.h>
 
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -6564,6 +6566,13 @@ BlockMarshallingCallback Context::getBlockMarshallingCallback() const
 void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
 {
     block_marshalling_callback = std::move(callback);
+}
+
+RuntimeDataflowStatisticsCacheUpdaterPtr Context::getRuntimeDataflowStatisticsCacheUpdater() const
+{
+    if (!dataflow_cache_updater)
+        dataflow_cache_updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>();
+    return dataflow_cache_updater;
 }
 
 void Context::setParallelReplicasGroupUUID(UUID uuid)

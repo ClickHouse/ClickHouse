@@ -524,8 +524,6 @@ Pipe ReadFromMergeTree::readFromPool(
       */
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
 
-    auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(dataflow_cache_key);
-
     if (use_prefetched_read_pool)
     {
         pool = std::make_shared<MergeTreePrefetchedReadPool>(
@@ -542,7 +540,7 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            updater);
+            dataflow_cache_updater);
     }
     else
     {
@@ -560,7 +558,7 @@ Pipe ReadFromMergeTree::readFromPool(
             pool_settings,
             block_size,
             context,
-            updater);
+            dataflow_cache_updater);
     }
 
     LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
@@ -581,7 +579,7 @@ Pipe ReadFromMergeTree::readFromPool(
             reader_settings,
             index_build_context);
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), updater);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), dataflow_cache_updater);
 
         if (i == 0)
             source->addTotalRowsApprox(total_rows);
@@ -664,8 +662,6 @@ Pipe ReadFromMergeTree::readInOrder(
     const UInt64 in_order_limit = query_info.input_order_info ? query_info.input_order_info->limit : 0;
     const bool set_total_rows_approx = !is_parallel_reading_from_replicas || isParallelReplicasLocalPlanForInitiator();
 
-    auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(dataflow_cache_key);
-
     Pipes pipes;
     for (size_t i = 0; i < parts_with_ranges.size(); ++i)
     {
@@ -702,7 +698,7 @@ Pipe ReadFromMergeTree::readInOrder(
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), updater);
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName(), dataflow_cache_updater);
 
         if (set_total_rows_approx)
             source->addTotalRowsApprox(total_rows);

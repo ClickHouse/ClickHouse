@@ -17,6 +17,9 @@ class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 using Processors = std::vector<ProcessorPtr>;
 
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
 namespace JSONBuilder { class JSONMap; }
 
 class QueryPlan;
@@ -119,7 +122,10 @@ public:
     virtual bool hasCorrelatedExpressions() const;
 
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
-    void setDataflowCacheKey(size_t key) { dataflow_cache_key = key; }
+    void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater)
+    {
+        dataflow_cache_updater = std::move(updater);
+    }
 
 protected:
     virtual void updateOutputHeader() = 0;
@@ -136,7 +142,7 @@ protected:
     /// It is used only for introspection (EXPLAIN PIPELINE).
     Processors processors;
 
-    std::optional<size_t> dataflow_cache_key;
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater;
 
     static void describePipeline(const Processors & processors, FormatSettings & settings);
 
