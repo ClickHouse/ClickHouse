@@ -32,6 +32,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
 }
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
@@ -148,9 +149,22 @@ protected:
                     continue;
                 }
 
-                auto metadata_snapshot = storage->getInMemoryMetadataPtr();
+                StorageMetadataPtr metadata_snapshot;
+                /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
+                try
+                {
+                    metadata_snapshot = storage->getInMemoryMetadataPtr();
+                    serialization_hints = storage->getSerializationHints();
+                }
+                catch (const Exception & e)
+                {
+                    if (storage->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
+                        throw;
+                    metadata_snapshot = std::make_shared<StorageInMemoryMetadata>();
+                    tryLogCurrentException(getLogger("SystemColumns"), fmt::format("Cannot find target database/table for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
+                }
+
                 columns = metadata_snapshot->getColumns();
-                serialization_hints = storage->getSerializationHints();
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
@@ -162,7 +176,7 @@ protected:
                     }
                     catch (const Exception & e)
                     {
-                        if (e.code() != ErrorCodes::UNKNOWN_DATABASE)
+                        if ((storage->getName() != "Merge" && storage->getName() != "Alias") || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
                             throw;
                         tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
                     }

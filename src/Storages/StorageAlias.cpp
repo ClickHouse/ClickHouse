@@ -303,7 +303,7 @@ void registerStorageAlias(StorageFactory & factory)
         // Storage Alias does not support explicit column definitions
         // Columns are always dynamically fetched from the target table
         // Only check for CREATE, not for ATTACH/RESTORE
-        if (!args.columns.empty() && args.mode < LoadingStrictnessLevel::ATTACH)
+        if (!args.columns.empty() && args.mode == LoadingStrictnessLevel::CREATE)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");

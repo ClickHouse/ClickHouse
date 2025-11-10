@@ -35,6 +35,11 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_DATABASE;
+    extern const int UNKNOWN_TABLE;
+}
 
 static constexpr const char * DATABASE_CONTEXT = "database";
 static constexpr const char * TABLE_CONTEXT = "table";
@@ -89,7 +94,20 @@ void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto & snapshot = table->getInMemoryMetadataPtr();
+    StorageMetadataPtr snapshot;
+    /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
+    try
+    {
+        snapshot = table->getInMemoryMetadataPtr();
+    }
+    catch (const Exception & e)
+    {
+        if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
+            throw;
+        tryLogCurrentException(getLogger("SystemCompletions"), fmt::format("Cannot find target database/table for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
+        return;
+    }
+
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
