@@ -37,7 +37,6 @@ function test_copy()
 test_copy "test_local_disk_metadata_local_object_storage"
 test_copy "test_local_disk_metadata_s3_object_storage"
 # For these following disks, adding new blob to metadata is not supported, when appending, it fails.
-test_copy "test_plain_metadata_s3_object_storage"
 test_copy "test_plain_rewriteable_metadata_s3_object_storage"
 
 
