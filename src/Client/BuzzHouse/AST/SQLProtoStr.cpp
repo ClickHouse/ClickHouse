@@ -2950,6 +2950,11 @@ CONV_FN(IndexParam, ip)
         case IndexParamType::kUnescapedSval:
             ret += ip.unescaped_sval();
             break;
+        case IndexParamType::kKval:
+            ret += ip.kval().key();
+            ret += " = ";
+            ExprToString(ret, ip.kval().value());
+            break;
         default:
             ret += "0";
     }

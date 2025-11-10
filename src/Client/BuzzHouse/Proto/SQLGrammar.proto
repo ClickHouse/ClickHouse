@@ -3178,12 +3178,18 @@ enum CompressionCodec {
     COMP_AES_256_GCM_SIV = 15;
 }
 
+message IndexKeyVal {
+    required string key = 1;
+    required Expr value = 2;
+}
+
 message IndexParam {
     oneof index_param_oneof {
         double dval = 1;
         uint32 ival = 2;
         string sval = 3;
         string unescaped_sval = 4;
+        IndexKeyVal kval = 5;
     }
 }
 

@@ -1777,6 +1777,18 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             buf += has_paren ? ")" : "";
             idef->add_params()->set_unescaped_sval(std::move(buf));
+
+            if (rg.nextSmallNumber() < 4)
+            {
+                IndexKeyVal * ikv = idef->add_params()->mutable_kval();
+
+                ikv->set_key("preprocessor");
+                flatTableColumnPath(
+                    flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+                colRefOrExpression(
+                    rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), ikv->mutable_value());
+                this->entries.clear();
+            }
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(1, 512);
