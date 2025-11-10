@@ -201,12 +201,14 @@ void TraceCollector::run()
                     .memory_blocked_context = memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN ? std::nullopt : std::make_optional<VariableContext>(static_cast<VariableContext>(memory_blocked_context)),
                     .event = event,
                     .increment = increment,
+#if USE_XRAY
                     .instrumented_point_id = 0,
                     .function_id = std::nullopt,
                     .function_name = std::nullopt,
                     .handler = std::nullopt,
                     .entry_type = std::nullopt,
                     .duration_microseconds = std::nullopt,
+#endif
                 };
                 trace_log->add(std::move(element));
             }
