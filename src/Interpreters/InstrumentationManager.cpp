@@ -185,7 +185,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     }
 }
 
-InstrumentationManager::InstrumentedPoints InstrumentationManager::getInstrumentedPoints()
+InstrumentationManager::InstrumentedPoints InstrumentationManager::getInstrumentedPoints() const
 {
     SharedLockGuard lock(shared_mutex);
     InstrumentedPoints points;
@@ -195,6 +195,12 @@ InstrumentationManager::InstrumentedPoints InstrumentationManager::getInstrument
         points.emplace_back(info);
 
     return points;
+}
+
+const InstrumentationManager::FunctionsContainer & InstrumentationManager::getFunctions()
+{
+    ensureInitialization();
+    return functions_container;
 }
 
 void InstrumentationManager::dispatchHandler(Int32 func_id, XRayEntryType entry_type)

@@ -69,6 +69,33 @@ public:
         }
     };
 
+    struct FunctionInfo
+    {
+        Int32 function_id;
+        String function_name;
+        String stripped_function_name;
+
+        FunctionInfo(Int32 function_id_, const String & function_name_, const String & stripped_function_name_) :
+            function_id(function_id_),
+            function_name(function_name_),
+            stripped_function_name(stripped_function_name_)
+        {}
+
+        bool operator<(const FunctionInfo & other) const { return function_id < other.function_id; }
+    };
+
+    struct FunctionId {};
+    struct FunctionName {};
+    struct StrippedFunctionName {};
+
+    using FunctionsContainer = boost::multi_index_container<
+        FunctionInfo,
+        boost::multi_index::indexed_by<
+            boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<FunctionInfo, Int32, &FunctionInfo::function_id>>,
+            boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::function_name>>,
+            boost::multi_index::hashed_non_unique<boost::multi_index::tag<StrippedFunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::stripped_function_name>>
+        >>;
+
     using XRayHandlerFunction = std::function<void(XRayEntryType, const InstrumentedPointInfo &)>;
 
     static InstrumentationManager & instance();
@@ -77,7 +104,8 @@ public:
     [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, bool> id);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
-    InstrumentedPoints getInstrumentedPoints();
+    InstrumentedPoints getInstrumentedPoints() const;
+    const FunctionsContainer & getFunctions();
 
 protected:
     static std::string_view removeTemplateArgs(std::string_view input);
@@ -117,33 +145,6 @@ private:
         }
     };
 
-    struct FunctionInfo
-    {
-        Int32 function_id;
-        String function_name;
-        String stripped_function_name;
-
-        FunctionInfo(Int32 function_id_, const String & function_name_, const String & stripped_function_name_) :
-            function_id(function_id_),
-            function_name(function_name_),
-            stripped_function_name(stripped_function_name_)
-        {}
-
-        bool operator<(const FunctionInfo & other) const { return function_id < other.function_id; }
-    };
-
-    struct FunctionId {};
-    struct FunctionName {};
-    struct StrippedFunctionName {};
-
-    using FunctionsContainer = boost::multi_index_container<
-        FunctionInfo,
-        boost::multi_index::indexed_by<
-            boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<FunctionInfo, Int32, &FunctionInfo::function_id>>,
-            boost::multi_index::hashed_unique<boost::multi_index::tag<FunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::function_name>>,
-            boost::multi_index::hashed_non_unique<boost::multi_index::tag<StrippedFunctionName>, boost::multi_index::member<FunctionInfo, String, &FunctionInfo::stripped_function_name>>
-        >>;
-
     using InstrumentedPointContainer = boost::multi_index_container<
         InstrumentedPointInfo,
         boost::multi_index::indexed_by<
@@ -170,7 +171,7 @@ private:
     FunctionsContainer functions_container;
     std::vector<std::pair<String, XRayHandlerFunction>> handler_name_to_function;
 
-    SharedMutex shared_mutex;
+    mutable SharedMutex shared_mutex;
     std::atomic<UInt64> instrumented_point_ids;
     InstrumentedPointContainer instrumented_points TSA_GUARDED_BY(shared_mutex);
 
