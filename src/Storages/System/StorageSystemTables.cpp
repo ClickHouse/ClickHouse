@@ -842,11 +842,11 @@ protected:
                 {
                     try
                     {
-                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
-                    if (lifetime_bytes)
-                        res_columns[res_index]->insert(*lifetime_bytes);
-                    else
-                        res_columns[res_index]->insertDefault();
+                        auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
+                        if (lifetime_bytes)
+                            res_columns[res_index]->insert(*lifetime_bytes);
+                        else
+                            res_columns[res_index]->insertDefault();
                     }
                     catch (const Exception &)
                     {

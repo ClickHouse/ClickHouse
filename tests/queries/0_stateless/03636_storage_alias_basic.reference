@@ -1,4 +1,5 @@
 -- { echo }
+-- Tags: long
 
 DROP TABLE IF EXISTS source_table;
 DROP TABLE IF EXISTS alias_1;
@@ -138,7 +139,7 @@ Test Partition operations
 DROP TABLE IF EXISTS source_partitioned;
 DROP TABLE IF EXISTS alias_part;
 CREATE TABLE source_partitioned (date Date, id UInt32, value String)
-ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id;
+    ENGINE = MergeTree PARTITION BY toYYYYMM(date) ORDER BY id;
 CREATE TABLE alias_part ENGINE = Alias('source_partitioned');
 INSERT INTO alias_part VALUES ('2024-01-15', 1, 'january'), ('2024-02-15', 2, 'february'), ('2024-03-15', 3, 'march');
 SELECT count() FROM alias_part;
