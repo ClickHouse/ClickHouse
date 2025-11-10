@@ -270,7 +270,7 @@ def main():
         # a reasonable time.
         run = Shell.run(
             command=[
-                f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 30m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
+                f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 15m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
             ],
             verbose=True,
             log_file=shell_log_file,
