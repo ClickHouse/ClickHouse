@@ -2174,7 +2174,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         }
         tname = next.tname = this->table_counter++;
     }
-    ct->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
+    ct->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
     next.setName(ct->mutable_est(), false);
     if (!collectionHas<SQLTable>(tableLikeLambda) || rg.nextSmallNumber() < 9)
     {
@@ -2394,7 +2395,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         tname = next.tname = this->table_counter++;
     }
-    cd->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
+    cd->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
     next.setName(cd->mutable_est(), false);
 
     const auto & dictionary_table_lambda

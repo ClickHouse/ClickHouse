@@ -450,7 +450,8 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
         }
         tname = next.tname = this->table_counter++;
     }
-    cv->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
+    cv->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
     next.is_materialized = !next.is_temp && rg.nextBool();
     cv->set_materialized(next.is_materialized);
     next.setName(cv->mutable_est(), false);
@@ -4839,7 +4840,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (!ssq.explain().is_explain() && success)
         {
-            if (query.create_table().create_opt() == CreateReplaceOption::Replace)
+            if (query.create_table().create_opt() != CreateReplaceOption::Create)
             {
                 dropTable(false, true, tname);
             }
@@ -4856,7 +4857,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (!ssq.explain().is_explain() && success)
         {
-            if (query.create_view().create_opt() == CreateReplaceOption::Replace)
+            if (query.create_view().create_opt() != CreateReplaceOption::Create)
             {
                 this->views.erase(tname);
             }
@@ -4873,7 +4874,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
 
         if (!ssq.explain().is_explain() && success)
         {
-            if (query.create_view().create_opt() == CreateReplaceOption::Replace)
+            if (query.create_view().create_opt() != CreateReplaceOption::Create)
             {
                 this->dictionaries.erase(dname);
             }
