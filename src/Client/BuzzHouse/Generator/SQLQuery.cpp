@@ -1935,11 +1935,20 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
     {
-        static const std::vector<int32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
-        int32_t nlimit = rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomInt32();
+        String buf = rg.nextSmallNumber() < 3 ? "-" : "";
 
-        nlimit *= rg.nextSmallNumber() < 3 ? -1 : 1;
-        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(nlimit);
+        if (rg.nextSmallNumber() < 8)
+        {
+            static const std::vector<uint32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
+            buf += std::to_string(rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomUInt32());
+        }
+        else
+        {
+            std::uniform_int_distribution<uint32_t> frange(1, 999);
+
+            buf += fmt::format("0.{}", frange(rg.generator));
+        }
+        expr->mutable_lit_val()->set_no_quote_str(std::move(buf));
     }
     else
     {

@@ -354,7 +354,7 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
                 + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit + 1))
     {
-        std::uniform_int_distribution<uint32_t> frange(1, 1000);
+        std::uniform_int_distribution<uint32_t> frange(1, 999);
 
         lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
     }
