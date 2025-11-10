@@ -1515,6 +1515,9 @@ class TestCase:
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                self.base_client_options + client_options + " "
+            )
 
         return client_options + new_options
 
