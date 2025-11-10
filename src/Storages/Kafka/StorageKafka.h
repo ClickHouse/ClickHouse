@@ -161,6 +161,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     bool streamToViews();
 
