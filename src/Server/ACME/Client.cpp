@@ -214,6 +214,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             {
                 LOG_INFO(log, "Certificate for domain {} expires soon, initiating refresh", domain);
                 need_refresh = true;
+                break;
             }
         }
 
