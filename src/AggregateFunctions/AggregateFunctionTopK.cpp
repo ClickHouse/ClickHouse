@@ -64,15 +64,36 @@ protected:
     bool include_counts;
     bool is_approx_top_k;
 
+    using Base = IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>;
+
 public:
-    AggregateFunctionTopK(UInt64 threshold_, UInt64 reserved_, bool include_counts_, bool is_approx_top_k_, const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params, createResultType(argument_types_, include_counts_))
-        , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_)
+    AggregateFunctionTopK(
+        UInt64 threshold_,
+        UInt64 reserved_,
+        bool include_counts_,
+        bool is_approx_top_k_,
+        const DataTypes & argument_types_,
+        const Array & params)
+        : Base(argument_types_, params, createResultType(argument_types_, include_counts_))
+        , threshold(threshold_)
+        , reserved(reserved_)
+        , include_counts(include_counts_)
+        , is_approx_top_k(is_approx_top_k_)
     {}
 
-        AggregateFunctionTopK(UInt64 threshold_, UInt64 reserved_, bool include_counts_, bool is_approx_top_k_, const DataTypes & argument_types_, const Array & params, const DataTypePtr & result_type_)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKData<T>, AggregateFunctionTopK<T, is_weighted>>(argument_types_, params, result_type_)
-        , threshold(threshold_), reserved(reserved_), include_counts(include_counts_), is_approx_top_k(is_approx_top_k_)
+    AggregateFunctionTopK(
+        UInt64 threshold_,
+        UInt64 reserved_,
+        bool include_counts_,
+        bool is_approx_top_k_,
+        const DataTypes & argument_types_,
+        const Array & params,
+        const DataTypePtr & result_type_)
+        : Base(argument_types_, params, result_type_)
+        , threshold(threshold_)
+        , reserved(reserved_)
+        , include_counts(include_counts_)
+        , is_approx_top_k(is_approx_top_k_)
     {}
 
     String getName() const override
@@ -110,11 +131,106 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    void ensureCapacity(AggregateFunctionTopKData<T>::Set & set) const
+    {
+        if (unlikely(set.capacity() != reserved))
+            set.resize(reserved);
+    }
+
+    void addBatchSinglePlace(
+        size_t row_begin, size_t row_end, AggregateDataPtr __restrict place, const IColumn ** columns, Arena *, ssize_t if_argument_pos)
+        const override
+    {
+        auto & set = this->data(place).value;
+        ensureCapacity(set);
+
+        auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                {
+                    if constexpr (is_weighted)
+                        set.insert(data[i], columns[1]->getUInt(i));
+                    else
+                        set.insert(data[i]);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if constexpr (is_weighted)
+                    set.insert(data[i], columns[1]->getUInt(i));
+                else
+                    set.insert(data[i]);
+            }
+        }
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena *,
+        ssize_t if_argument_pos = -1) const override
+    {
+        auto & set = this->data(place).value;
+        ensureCapacity(set);
+
+        auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i] && flags[i])
+                {
+                    if constexpr (is_weighted)
+                        set.insert(data[i], columns[1]->getUInt(i));
+                    else
+                        set.insert(data[i]);
+                }
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!null_map[i])
+                {
+                    if constexpr (is_weighted)
+                        set.insert(data[i], columns[1]->getUInt(i));
+                    else
+                        set.insert(data[i]);
+                }
+            }
+        }
+    }
+
+    void addManyDefaults(AggregateDataPtr __restrict place, const IColumn ** columns, size_t length, Arena * /*arena*/) const override
+    {
+        auto & set = this->data(place).value;
+        ensureCapacity(set);
+
+        auto & data = assert_cast<const ColumnVector<T> &>(*columns[0]).getData();
+        if constexpr (is_weighted)
+            set.insert(data[0], length * columns[1]->getUInt(0));
+        else
+            set.insert(data[0], length);
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
 
         if constexpr (is_weighted)
             set.insert(assert_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num], columns[1]->getUInt(row_num));
@@ -125,8 +241,7 @@ public:
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
         set.merge(this->data(rhs).value);
     }
 
@@ -138,7 +253,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         auto & set = this->data(place).value;
-        set.resize(reserved);
+        ensureCapacity(set);
         set.read(buf);
     }
 
