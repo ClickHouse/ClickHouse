@@ -10,6 +10,8 @@ import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
+# User Defined Function (UDF) {#executable-user-defined-functions}
+
 <PrivatePreviewBadge/>
 
 :::note
