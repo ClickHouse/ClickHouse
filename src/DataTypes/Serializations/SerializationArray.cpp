@@ -118,7 +118,7 @@ void SerializationArray::serializeForHashCalculation(const IColumn & column, siz
     const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
 
-    size_t offset = offsets[row_num - 1];
+    size_t offset = offsets[ssize_t(row_num) - 1];
     size_t next_offset = offsets[row_num];
     size_t size = next_offset - offset;
 
