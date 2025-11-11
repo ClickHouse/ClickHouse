@@ -19,7 +19,7 @@ struct ResourceTest : public ResourceTestBase
 
     ResourceTest()
     {
-        scheduler.start(ThreadNames::TEST_SCHEDULER);
+        scheduler.start(ThreadName::TEST_SCHEDULER);
     }
 
     ~ResourceTest()

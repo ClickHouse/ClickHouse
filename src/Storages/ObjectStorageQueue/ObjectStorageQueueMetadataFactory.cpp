@@ -113,7 +113,7 @@ void ObjectStorageQueueFactory::shutdown()
         CurrentMetrics::ObjectStorageQueueShutdownThreadsScheduled,
         std::min<size_t>(default_shutdown_threads, shutdown_storages.size()));
 
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadNames::OBJECT_STORAGE_SHUTDOWN);
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::OBJECT_STORAGE_SHUTDOWN);
 
     LOG_DEBUG(log, "Will shutdown {} queue storages", shutdown_storages.size());
 

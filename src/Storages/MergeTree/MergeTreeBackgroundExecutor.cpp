@@ -41,7 +41,7 @@ void PriorityRuntimeQueue::updatePolicy(std::string_view)
 
 template <class Queue>
 MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
-    ThreadNames name_,
+    ThreadName name_,
     size_t threads_count_,
     size_t max_tasks_count_,
     CurrentMetrics::Metric metric_,

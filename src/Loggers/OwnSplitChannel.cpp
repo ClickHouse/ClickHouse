@@ -11,7 +11,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/setThreadName.h>
-#include "IO/WriteHelpers.h"
 
 #include <Poco/Message.h>
 
@@ -95,7 +94,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
 void logToSystemTextLogQueue(
     const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
     const ExtendedLogMessage & msg_ext,
-    ThreadNames msg_thread_name)
+    ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
     TextLogElement elem;
@@ -138,7 +137,7 @@ void logToSystemTextLogQueue(
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadNames msg_thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
 
@@ -305,7 +304,7 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    ThreadNames msg_thread_name;
+    ThreadName msg_thread_name;
 };
 
 
@@ -477,7 +476,7 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    DB::setThreadName(ThreadNames::ASYNC_LOGGER);
+    DB::setThreadName(ThreadName::ASYNC_LOGGER);
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
@@ -541,7 +540,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
-    DB::setThreadName(ThreadNames::ASYNC_TEXT_LOG);
+    DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
 
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {

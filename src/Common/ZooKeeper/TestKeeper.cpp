@@ -692,7 +692,7 @@ TestKeeper::~TestKeeper()
 
 void TestKeeper::processingThread()
 {
-    setThreadName(ThreadNames::TEST_KEEPER_PROC);
+    setThreadName(ThreadName::TEST_KEEPER_PROC);
 
     try
     {

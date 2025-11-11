@@ -835,7 +835,7 @@ namespace
     {
         try
         {
-            DB::setThreadName(ThreadNames::GRPC_SERVER_CALL);
+            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
             receiveQuery();
             executeQuery();
             processInput();
@@ -1900,7 +1900,7 @@ private:
 
     void run()
     {
-        DB::setThreadName(ThreadNames::GRPC_SERVER_QUEUE);
+        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
 
         bool ok = false;
         void * tag = nullptr;

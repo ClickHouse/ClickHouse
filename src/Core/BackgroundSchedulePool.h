@@ -55,7 +55,7 @@ public:
     /// be error prone. We support only increasing number of threads at runtime.
     void increaseThreadsCount(size_t new_threads_count);
 
-    static BackgroundSchedulePoolPtr create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadNames thread_name);
+    static BackgroundSchedulePoolPtr create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name);
     ~BackgroundSchedulePool();
 
     /// Shutdown the pool (set flag, destroy threads)
@@ -70,7 +70,7 @@ private:
     using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
 
     /// @param thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadNames thread_name_);
+    BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_);
 
     void threadFunction();
     void delayExecutionThreadFunction();
@@ -112,7 +112,7 @@ private:
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
-    ThreadNames thread_name;
+    ThreadName thread_name;
 
     size_t max_parallel_tasks_per_type;
 };

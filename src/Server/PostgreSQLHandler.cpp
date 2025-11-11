@@ -160,7 +160,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    DB::setThreadName(ThreadNames::POSTGRES_HANDLER);
+    DB::setThreadName(ThreadName::POSTGRES_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });

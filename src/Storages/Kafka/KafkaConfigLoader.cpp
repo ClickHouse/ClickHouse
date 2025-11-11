@@ -68,13 +68,13 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     switch (thread_type)
     {
         case RD_KAFKA_THREAD_MAIN:
-            DB::setThreadName(ThreadNames::KAFKA_MAIN);
+            DB::setThreadName(ThreadName::KAFKA_MAIN);
             break;
         case RD_KAFKA_THREAD_BACKGROUND:
-            DB::setThreadName(ThreadNames::KAFKA_BACKGROUND);
+            DB::setThreadName(ThreadName::KAFKA_BACKGROUND);
             break;
         case RD_KAFKA_THREAD_BROKER:
-            DB::setThreadName(ThreadNames::KAFKA_BROKER);
+            DB::setThreadName(ThreadName::KAFKA_BROKER);
             break;
     }
 

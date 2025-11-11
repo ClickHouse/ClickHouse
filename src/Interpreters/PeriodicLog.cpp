@@ -11,7 +11,7 @@ namespace DB
 {
 
 template <typename LogElement>
-void PeriodicLog<LogElement>::startCollect(ThreadNames thread_name, size_t collect_interval_milliseconds_)
+void PeriodicLog<LogElement>::startCollect(ThreadName thread_name, size_t collect_interval_milliseconds_)
 {
     collect_interval_milliseconds = collect_interval_milliseconds_;
     is_shutdown_metric_thread = false;

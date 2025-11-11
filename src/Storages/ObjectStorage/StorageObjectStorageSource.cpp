@@ -31,7 +31,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
-#include "Core/Names.h"
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Disks/IO/ReadBufferFromDistributedCache.h>
@@ -109,7 +108,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
               1 /* max_threads */))
     , file_iterator(file_iterator_)
     , schema_cache(StorageObjectStorage::getSchemaCache(context_, configuration->getTypeName()))
-    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadNames::READER_POOL))
+    , create_reader_scheduler(threadPoolCallbackRunnerUnsafe<ReaderHolder>(*create_reader_pool, ThreadName::READER_POOL))
 {
 }
 
@@ -1074,7 +1073,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
         CurrentMetrics::StorageObjectStorageThreadsActive,
         CurrentMetrics::StorageObjectStorageThreadsScheduled, max_threads_count);
 
-    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, ThreadNames::READ_TASK_ITERATOR);
+    auto pool_scheduler = threadPoolCallbackRunnerUnsafe<ObjectInfoPtr>(pool, ThreadName::READ_TASK_ITERATOR);
 
     std::vector<std::future<ObjectInfoPtr>> objects;
     objects.reserve(max_threads_count);

@@ -4,9 +4,9 @@
 namespace DB
 {
 
-enum class ThreadNames : uint8_t
+enum class ThreadName : uint8_t
 {
-    UNKNOW = 0,
+    UNKNOWN = 0,
     AGGREGATED_ZOOKEEPER_LOG,
     AGGREGATOR_DESTRUCTION,
     AGGREGATOR_POOL,
@@ -159,17 +159,17 @@ enum class ThreadNames : uint8_t
     ZOOKEEPER_SEND,
 };
 
-static_assert( sizeof(enum ThreadNames) == 1 );
+static_assert(sizeof(enum ThreadName) == 1, "ThreadName enum size is larger than 1 byte");
 
 /** Sets the thread name (maximum length is 15 bytes),
   *  which will be visible in ps, gdb, /proc,
   *  for convenience of observation and debugging.
   *
   */
-void setThreadName(ThreadNames name);
-ThreadNames getThreadName();
+void setThreadName(ThreadName name);
+ThreadName getThreadName();
 
-std::string toString(ThreadNames name);
-ThreadNames parceThreadName(const std::string & name);
+std::string toString(ThreadName name);
+ThreadName parceThreadName(const std::string & name);
 
 }

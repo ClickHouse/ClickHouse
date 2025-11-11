@@ -129,7 +129,7 @@ KeeperDispatcher::KeeperDispatcher()
 
 void KeeperDispatcher::requestThread()
 {
-    DB::setThreadName(ThreadNames::KEEPER_REQUEST);
+    DB::setThreadName(ThreadName::KEEPER_REQUEST);
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
@@ -333,7 +333,7 @@ void KeeperDispatcher::requestThread()
 
 void KeeperDispatcher::responseThread()
 {
-    DB::setThreadName(ThreadNames::KEEPER_RESPONSE);
+    DB::setThreadName(ThreadName::KEEPER_RESPONSE);
 
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
@@ -361,7 +361,7 @@ void KeeperDispatcher::responseThread()
 
 void KeeperDispatcher::snapshotThread()
 {
-    DB::setThreadName(ThreadNames::KEEPER_SNAPSHOT);
+    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
 
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     CreateSnapshotTask task;

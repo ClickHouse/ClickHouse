@@ -413,7 +413,7 @@ bool ZooKeeperReplicator::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper
 void ZooKeeperReplicator::runWatchingThread()
 {
     LOG_DEBUG(&Poco::Logger::get(storage_name), "Started watching thread");
-    DB::setThreadName(ThreadNames::ZOOKEEPER_ACL_WATCHER);
+    DB::setThreadName(ThreadName::ZOOKEEPER_ACL_WATCHER);
 
     while (watching)
     {

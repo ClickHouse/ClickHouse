@@ -284,7 +284,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
             return loadMarksSync();
         },
         *load_marks_threadpool,
-        ThreadNames::LOAD_MARKS);
+        ThreadName::LOAD_MARKS);
 }
 
 void addMarksToCache(const IMergeTreeDataPart & part, const PlainMarksByName & cached_marks, MarkCache * mark_cache)

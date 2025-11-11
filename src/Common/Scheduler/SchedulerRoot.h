@@ -64,7 +64,7 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(ThreadNames name)
+    void start(ThreadName name)
     {
         if (!scheduler.joinable())
             scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
@@ -232,7 +232,7 @@ private:
         value->next = nullptr;
     }
 
-    void schedulerThread(ThreadNames name)
+    void schedulerThread(ThreadName name)
     {
         DB::setThreadName(name);
 

@@ -14,7 +14,6 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
-#include "base/types.h"
 
 
 namespace DB
@@ -104,7 +103,7 @@ void TraceCollector::run()
 {
     [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
 
-    DB::setThreadName(ThreadNames::TRACE_COLLECTOR);
+    DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
@@ -192,7 +191,7 @@ void TraceCollector::run()
                     .timestamp_ns = timestamp_ns,
                     .trace_type = trace_type,
                     .thread_id = thread_id,
-                    .thread_name = static_cast<ThreadNames>(thread_name_id),
+                    .thread_name = static_cast<ThreadName>(thread_name_id),
                     .query_id = query_id,
                     .trace = std::move(trace),
                     .size = size,

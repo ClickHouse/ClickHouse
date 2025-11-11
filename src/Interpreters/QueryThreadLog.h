@@ -2,7 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
@@ -33,7 +33,7 @@ struct QueryThreadLogElement
     Int64 memory_usage{};
     Int64 peak_memory_usage{};
 
-    ThreadNames thread_name;
+    ThreadName thread_name;
     UInt64 thread_id{};
     UInt64 master_thread_id{};
 

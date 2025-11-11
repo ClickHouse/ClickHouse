@@ -557,7 +557,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         /// TODO: Consider using parser_shared_resources->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
-            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadNames::PARALLEL_READ),
+            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::PARALLEL_READ),
             max_download_threads,
             settings[Setting::max_download_buffer_size],
             file_size);

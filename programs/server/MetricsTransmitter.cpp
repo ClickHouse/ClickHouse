@@ -51,7 +51,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-    setThreadName(ThreadNames::METRICS_TRANSMITTER);
+    setThreadName(ThreadName::METRICS_TRANSMITTER);
 
     const auto get_next_time = [](size_t seconds)
     {

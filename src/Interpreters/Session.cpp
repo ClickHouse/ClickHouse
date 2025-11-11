@@ -222,7 +222,7 @@ private:
 
     void cleanThread()
     {
-        DB::setThreadName(ThreadNames::SESSION_CLEANUP);
+        DB::setThreadName(ThreadName::SESSION_CLEANUP);
         std::unique_lock lock{mutex};
         while (!quit)
         {

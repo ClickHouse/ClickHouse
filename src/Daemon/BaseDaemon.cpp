@@ -625,7 +625,7 @@ void BaseDaemon::setupWatchdog()
         notify_sync.close();
 
         /// Change short thread name and process name.
-        DB::setThreadName(ThreadNames::CLICKHOUSE_WATCH);
+        DB::setThreadName(ThreadName::CLICKHOUSE_WATCH);
 
         if (argv0)
         {

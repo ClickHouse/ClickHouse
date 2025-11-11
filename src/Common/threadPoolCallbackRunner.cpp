@@ -1,4 +1,4 @@
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Common/futex.h>
@@ -13,7 +13,7 @@ namespace ErrorCodes
 
 ThreadPoolCallbackRunnerFast::ThreadPoolCallbackRunnerFast() = default;
 
-void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadNames thread_name_, ThreadGroupPtr thread_group_)
+void ThreadPoolCallbackRunnerFast::initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_)
 {
     chassert(!pool);
     mode = Mode::ThreadPool;
@@ -301,7 +301,7 @@ void ShutdownHelper::shutdown()
     wait_shutdown();
 }
 
-template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool & thread_pool, ThreadNames thread);
+template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool & thread_pool, ThreadName thread);
 template class ThreadPoolCallbackRunnerLocal<void>;
 
 }

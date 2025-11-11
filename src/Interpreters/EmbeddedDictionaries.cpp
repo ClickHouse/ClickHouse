@@ -97,7 +97,7 @@ bool EmbeddedDictionaries::reloadImpl(const bool throw_on_error, const bool forc
 
 void EmbeddedDictionaries::reloadPeriodically()
 {
-    DB::setThreadName(ThreadNames::DICT_RELOAD);
+    DB::setThreadName(ThreadName::DICT_RELOAD);
 
     while (true)
     {

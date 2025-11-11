@@ -674,7 +674,7 @@ catch (...)
 
 void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event)
 {
-    DB::setThreadName(ThreadNames::HTTP_HANDLER);
+    DB::setThreadName(ThreadName::HTTP_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     SCOPE_EXIT({ session.reset(); });

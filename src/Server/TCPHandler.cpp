@@ -348,7 +348,7 @@ TCPHandler::~TCPHandler() = default;
 
 void TCPHandler::runImpl()
 {
-    DB::setThreadName(ThreadNames::TCP_HANDLER);
+    DB::setThreadName(ThreadName::TCP_HANDLER);
 
     extractConnectionSettingsFromContext(server.context());
 

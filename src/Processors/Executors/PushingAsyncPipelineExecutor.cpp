@@ -101,7 +101,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, ThreadNames::PUSHING_ASYNC_EXECUTOR);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }

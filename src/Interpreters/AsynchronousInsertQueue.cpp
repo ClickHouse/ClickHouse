@@ -813,7 +813,7 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
-    DB::setThreadName(ThreadNames::ASYNC_INSERT_QUEUE);
+    DB::setThreadName(ThreadName::ASYNC_INSERT_QUEUE);
 
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);

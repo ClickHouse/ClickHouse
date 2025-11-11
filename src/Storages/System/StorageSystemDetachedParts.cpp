@@ -165,7 +165,7 @@ private:
 
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
 
-        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadNames::DETACHED_PARTS_BYTES);
+        ThreadPoolCallbackRunnerLocal<void> runner(getIOThreadPool().get(), ThreadName::DETACHED_PARTS_BYTES);
 
         for (size_t i = 0; i < max_thread_to_run; ++i)
         {

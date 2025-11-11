@@ -17,7 +17,7 @@ public:
         CurrentMetrics::Metric threads_metric,
         CurrentMetrics::Metric threads_active_metric,
         CurrentMetrics::Metric threads_scheduled_metric,
-        ThreadNames thread_name);
+        ThreadName thread_name);
 
     ~IObjectStorageIteratorAsync() override;
 

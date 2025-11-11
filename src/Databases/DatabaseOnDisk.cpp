@@ -735,7 +735,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
-                DB::setThreadName(ThreadNames::DATABASE_ON_DISK);
+                DB::setThreadName(ThreadName::DATABASE_ON_DISK);
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);

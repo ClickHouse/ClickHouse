@@ -393,21 +393,21 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(ThreadNames::METRIC_LOG, collect_interval_milliseconds);
+        metric_log->startCollect(ThreadName::METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (transposed_metric_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        transposed_metric_log->startCollect(ThreadNames::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
+        transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(ThreadNames::ERROR_LOG, collect_interval_milliseconds);
+        error_log->startCollect(ThreadName::ERROR_LOG, collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -419,7 +419,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        aggregated_zookeeper_log->startCollect(ThreadNames::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
+        aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 }
 
@@ -594,7 +594,7 @@ void SystemLog<LogElement>::shutdown()
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
 {
-    DB::setThreadName(ThreadNames::SYSTEM_LOG_FLUSH);
+    DB::setThreadName(ThreadName::SYSTEM_LOG_FLUSH);
 
     while (true)
     {

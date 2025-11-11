@@ -11,8 +11,8 @@
 
 #include <cstring>
 
-#include <Common/Exception.h>
 #include <Common/setThreadName.h>
+#include <Common/Exception.h>
 #include <Common/Jemalloc.h>
 
 constexpr size_t THREAD_NAME_SIZE = 16;
@@ -28,7 +28,7 @@ namespace ErrorCodes
 }
 
 #define THREAD_NAMES_VALUES(M)\
-    M(UNKNOW, "Unknow") \
+    M(UNKNOWN, "Unknown") \
     M(DEFAULT_THREAD_POOL, "ThreadPool") \
     M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
     M(ASYNC_METRICS, "AsyncMetrics") \
@@ -188,10 +188,10 @@ constexpr std::string as_string(char const (&s)[N])
     return std::string(s, N-1);
 }
 
-const static std::map<std::string, ThreadNames> str_to_thread_name = []{
-    std::map<std::string, ThreadNames> result;
+const static std::map<std::string, ThreadName> str_to_thread_name = []{
+    std::map<std::string, ThreadName> result;
 
-    #define ACTION(NAME, STR) result[as_string(STR)] = ThreadNames::NAME;
+    #define ACTION(NAME, STR) result[as_string(STR)] = ThreadName::NAME;
     THREAD_NAMES_VALUES(ACTION)
     #undef ACTION
 
@@ -199,27 +199,27 @@ const static std::map<std::string, ThreadNames> str_to_thread_name = []{
 }();
 
 /// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
-static thread_local ThreadNames thread_name = ThreadNames::UNKNOW;
+static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
-std::string toString(ThreadNames name)
+std::string toString(ThreadName name)
 {
-    switch(name)
+    switch (name)
     {
-        #define ACTION(NAME, STR) case ThreadNames::NAME: return as_string(STR);
+        #define ACTION(NAME, STR) case ThreadName::NAME: return as_string(STR);
         THREAD_NAMES_VALUES(ACTION)
         #undef ACTION
     }
 }
 
-ThreadNames parceThreadName(const std::string & name)
+ThreadName parceThreadName(const std::string & name)
 {
     if (auto it = str_to_thread_name.find(name); it != str_to_thread_name.end())
         return it->second;
     else
-        return ThreadNames::UNKNOW;
+        return ThreadName::UNKNOWN;
 }
 
-void setThreadName(ThreadNames name)
+void setThreadName(ThreadName name)
 {
     thread_name = name;
 
@@ -246,9 +246,9 @@ void setThreadName(ThreadNames name)
 #endif
 }
 
-ThreadNames getThreadName()
+ThreadName getThreadName()
 {
-    if (thread_name != ThreadNames::UNKNOW)
+    if (thread_name != ThreadName::UNKNOWN)
         return thread_name;
 
     char tmp_thread_name[THREAD_NAME_SIZE] = {};

@@ -297,7 +297,7 @@ class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
     MergeTreeBackgroundExecutor(
-        ThreadNames name_,
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -309,7 +309,7 @@ public:
         std::string_view policy = {});
 
     MergeTreeBackgroundExecutor(
-        ThreadNames name_,
+        ThreadName name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -342,7 +342,7 @@ public:
     }
 
 private:
-    ThreadNames name;
+    ThreadName name;
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;

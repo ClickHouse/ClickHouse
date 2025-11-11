@@ -241,9 +241,9 @@ private:
     static constexpr auto get_thread_name()
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-            return ThreadNames::DATABASE_REPLICAS;
+            return ThreadName::DATABASE_REPLICAS;
         else
-            return ThreadNames::SYSTEM_REPLICAS;
+            return ThreadName::SYSTEM_REPLICAS;
     }
 
     static std::string get_holder_name(const TBaseHolderPtr & base_holder)

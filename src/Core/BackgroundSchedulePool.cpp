@@ -207,12 +207,12 @@ Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback(
 /// BackgroundSchedulePool
 ///
 
-BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadNames thread_name)
+BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
 {
     return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
 }
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadNames thread_name_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
     : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", thread_name)))
     , tasks_metric(tasks_metric_)
     , size_metric(size_metric_, size_)
@@ -445,7 +445,7 @@ void BackgroundSchedulePool::threadFunction()
 
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
-    DB::setThreadName(ThreadNames::POOL_DELAYED_EXECUTION);
+    DB::setThreadName(ThreadName::POOL_DELAYED_EXECUTION);
 
     while (!shutdown)
     {

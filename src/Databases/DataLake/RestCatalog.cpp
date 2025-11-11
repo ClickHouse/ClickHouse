@@ -1,6 +1,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequest.h>
-#include "Common/setThreadName.h"
+#include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
@@ -359,7 +359,7 @@ bool RestCatalog::empty() const
 DB::Names RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadNames::DATALAKE_REST_CATALOG);
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
 
     DB::Names tables;
     std::mutex mutex;

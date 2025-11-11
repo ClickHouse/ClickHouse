@@ -1,5 +1,4 @@
 #include <Interpreters/QueryThreadLog.h>
-#include <array>
 #include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -18,7 +17,6 @@
 #include <Interpreters/QueryLog.h>
 #include <Poco/Net/IPAddress.h>
 #include <Common/ClickHouseRevision.h>
-#include "Parsers/CommonParsers.h"
 
 
 namespace DB

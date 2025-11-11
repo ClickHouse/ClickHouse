@@ -26,7 +26,7 @@ public:
     using TimePoint = std::chrono::system_clock::time_point;
 
     /// Launches a background thread to collect metrics with periodic interval
-    void startCollect(ThreadNames thread_name, size_t collect_interval_milliseconds_);
+    void startCollect(ThreadName thread_name, size_t collect_interval_milliseconds_);
 
     void shutdown() final;
 
