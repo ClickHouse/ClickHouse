@@ -24,5 +24,6 @@ $CLICKHOUSE_CLIENT --query-id="$query_id" -q "SELECT 1 FORMAT Null;"
 $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.trace_log;
-    SELECT entry_type FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND function_name ILIKE '%QueryMetricLog::startQuery%' AND NOT empty(trace);
+    SELECT entry_type, duration_microseconds FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'entry' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%QueryMetricLog::startQuery%', symbols);
+    SELECT entry_type, duration_microseconds > 0 FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'exit' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%QueryMetricLog::startQuery%', symbols);
 """

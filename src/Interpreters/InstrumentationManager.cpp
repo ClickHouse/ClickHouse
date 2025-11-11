@@ -42,14 +42,6 @@ static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
 
-/// The offset of 5 is to remove all the frames added by the instrumentation itself:
-/// ./build/../src/Common/StackTrace.cpp:395: StackTrace::StackTrace() @ 0x0000000014e5c964
-/// ./build/./src/Interpreters/InstrumentationManager.cpp:419: DB::InstrumentationManager::log(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&) @ 0x000000001ab046cc
-/// ./contrib/llvm-project/libcxx/include/__functional/function.h:716: ? @ 0x000000001ab0155c
-/// ./build/./src/Interpreters/InstrumentationManager.cpp:235: DB::InstrumentationManager::dispatchHandler(int, XRayEntryType)
-/// __xray_FunctionEntry
-static const auto STACK_OFFSET = 5;
-
 auto logger = getLogger("InstrumentationManager");
 
 InstrumentationManager::InstrumentationManager()
@@ -328,13 +320,13 @@ TraceLogElement InstrumentationManager::createTraceLogElement(const Instrumented
     const auto stack_trace = StackTrace();
     const auto frame_pointers = stack_trace.getFramePointers();
 
-    element.trace.reserve(stack_trace.getSize() - STACK_OFFSET - 1); /// -1 because of this createTraceLogElement
+    element.trace.reserve(stack_trace.getSize() - stack_trace.getOffset());
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     const auto * object = SymbolIndex::instance().thisObject();
 #endif
 
-    for (size_t i = stack_trace.getOffset() + STACK_OFFSET + 1; i < stack_trace.getSize(); ++i)
+    for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
     {
         /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
         uintptr_t offset = 0;
@@ -356,8 +348,8 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
-    const auto & params = params_opt.value();
 
+    const auto & params = params_opt.value();
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
 
@@ -385,8 +377,9 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
     }
 
     LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms.value());
+    auto now = std::chrono::system_clock::now();
     std::this_thread::sleep_for(duration<Float64, std::milli>(duration_ms.value()));
-    auto element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now());
+    auto element = createTraceLogElement(instrumented_point, entry_type, now);
     if (instrumented_point.context)
     {
         if (auto log = instrumented_point.context->getTraceLog())
@@ -401,7 +394,6 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
 
     const auto & params = params_opt.value();
-
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
 
@@ -411,7 +403,7 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
     {
         String logger_info = std::get<String>(param);
         StackTrace stack_trace;
-        String stack_trace_str = StackTrace::toString(stack_trace.getFramePointers().data(), stack_trace.getOffset() + STACK_OFFSET, stack_trace.getSize() - STACK_OFFSET);
+        String stack_trace_str = StackTrace::toString(stack_trace.getFramePointers().data(), stack_trace.getOffset(), stack_trace.getSize() - stack_trace.getOffset());
 
         LOG_INFO(logger, "Log ({}, function_id {}, {}): {}\nStack trace:\n{}",
             instrumented_point.function_name, instrumented_point.function_id,

@@ -19,6 +19,7 @@ query_id_prefix="${CLICKHOUSE_DATABASE}"
 
 statements=(
     "SELECT * FROM system.instrumentation FORMAT NULL"
+    "SELECT count() FROM system.symbols WHERE function_id IS NOT NULL FORMAT NULL SETTINGS allow_introspection_functions=1"
     "SELECT * FROM system.trace_log WHERE event_date >= yesterday() AND event_time > now() - INTERVAL 1 MINUTE AND trace_type = 'Instrumentation' FORMAT NULL"
     "SYSTEM INSTRUMENT REMOVE ALL"
     "SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation LIMIT 2)"
