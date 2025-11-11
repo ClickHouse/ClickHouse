@@ -99,7 +99,7 @@ KeyPair KeyPair::fromBuffer(const std::string & buffer, const std::string & pass
         BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
 
         if (!bio_buffer)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
 
         key = PEM_read_bio_PrivateKey(bio_buffer.get(), nullptr, nullptr, password.empty() ? nullptr : const_cast<char *>(password.c_str()));
     }
@@ -215,7 +215,7 @@ std::string KeyPair::privateKey() const
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new failed: {}", getOpenSSLErrors());
 
     if (!PEM_write_bio_PrivateKey(bio.get(), key, nullptr, nullptr, 0, nullptr, nullptr))
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PUBKEY failed: {}", getOpenSSLErrors());
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PrivateKey failed: {}", getOpenSSLErrors());
 
     char * data;
     uint64_t len = BIO_get_mem_data(bio.get(), &data);
