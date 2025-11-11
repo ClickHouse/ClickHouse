@@ -20,13 +20,11 @@
 namespace DB
 {
 
-namespace {
+namespace
+{
 
 ColumnPtr BuildAndExecuteFunction(
-    const std::string & func_name,
-    const ColumnsWithTypeAndName & func_args,
-    ContextPtr context,
-    size_t expected_column_count)
+    const std::string & func_name, const ColumnsWithTypeAndName & func_args, ContextPtr context, size_t expected_column_count)
 {
     auto func = FunctionFactory::instance().get(func_name, context)->build(func_args);
     return func->execute(func_args, func->getResultType(), expected_column_count, /* dry_run = */ false);
