@@ -61,7 +61,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "First argument for function {} must be Array, got {}", getName(), arguments[0].column->getName());
 
-    ColumnPtr arr_data_col = arr_col->getDataPtr();
+    const auto & arr_data_col = arr_col->getDataPtr();
     const auto & arr_offsets = arr_col->getOffsets();
     size_t arr_elements_count = arr_data_col->size();
 
