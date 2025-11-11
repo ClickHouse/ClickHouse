@@ -34,6 +34,32 @@ namespace DB
 namespace ACME
 {
 
+Directory Directory::parse(const std::string & json_data)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(json_data).extract<Poco::JSON::Object::Ptr>();
+
+    auto dir = Directory{
+        .new_account = Poco::URI(json->getValue<std::string>(Directory::new_account_key)),
+        .new_order = Poco::URI(json->getValue<std::string>(Directory::new_order_key)),
+        .new_nonce = Poco::URI(json->getValue<std::string>(Directory::new_nonce_key)),
+    };
+
+    chassert(!dir.new_account.empty());
+    chassert(!dir.new_order.empty());
+    chassert(!dir.new_nonce.empty());
+
+    LOG_TEST(
+        &Poco::Logger::get("ACME::Directory"),
+        "Directory: newAccount: {}, newOrder: {}, newNonce: {}",
+        dir.new_account.toString(),
+        dir.new_order.toString(),
+        dir.new_nonce.toString()
+    );
+
+    return dir;
+}
+
 namespace
 {
     std::string readURLUntilEOF(const Poco::URI & url)
