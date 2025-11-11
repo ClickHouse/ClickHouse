@@ -61,12 +61,8 @@ X509Certificate::X509Certificate(const std::string & path)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed for file {}: {}", path, getOpenSSLErrors());
 }
 
-X509Certificate::List X509Certificate::fromFile(const std::string & path)
+X509Certificate::List readCertificatesFromBIO(const BIO_ptr & bio, const std::string & source_description)
 {
-    BIO_ptr bio(BIO_new_file(path.c_str(), "r"), BIO_free);
-    if (!bio)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
-
     X509Certificate::List certs;
 
     while (true)
@@ -92,16 +88,25 @@ X509Certificate::List X509Certificate::fromFile(const std::string & path)
                 break;
 
             throw Exception(
-                ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), path, getOpenSSLErrors());
+                ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, f:{}, e:{}", certs.size(), source_description, getOpenSSLErrors());
         }
 
         certs.emplace_back(cert);
     }
 
     if (certs.empty())
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "No certificates found in file: {}", path);
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "No certificates found in {}", source_description);
 
     return certs;
+}
+
+X509Certificate::List X509Certificate::fromFile(const std::string & path)
+{
+    BIO_ptr bio(BIO_new_file(path.c_str(), "r"), BIO_free);
+    if (!bio)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
+
+    return readCertificatesFromBIO(bio, path);
 }
 
 X509Certificate::List X509Certificate::fromBuffer(const std::string & buffer)
@@ -110,41 +115,7 @@ X509Certificate::List X509Certificate::fromBuffer(const std::string & buffer)
     if (!bio)
         throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
 
-    X509Certificate::List certs;
-
-    while (true)
-    {
-        X509 * cert = PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr);
-
-        if (!cert)
-        {
-            auto err = ERR_peek_last_error();
-            if (err == 0)
-                break;
-
-            /// We read at least one cert, and can't find
-            /// the beginning of a next one.
-            /// This most likely means we reached the end of the file.
-            if (!certs.empty()
-                /// Manually unwrap ERR_GET_REASON(err) due to ossl_unused
-                /// https://github.com/openssl/openssl/issues/16776
-                ///
-                /// To be fixed in OpenSSL 3.4+
-                && ((err & ERR_SYSTEM_FLAG) == 0 && (err & ERR_REASON_MASK) == PEM_R_NO_START_LINE))
-                /// Means we reached the end of the file.
-                break;
-
-            throw Exception(
-                ErrorCodes::OPENSSL_ERROR, "PEM_read_bio_X509 failed: c:{}, e:{}", certs.size(), getOpenSSLErrors());
-        }
-
-        certs.emplace_back(cert);
-    }
-
-    if (certs.empty())
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "No certificates found in buffer");
-
-    return certs;
+    return readCertificatesFromBIO(bio, "buffer");
 }
 
 X509Certificate::~X509Certificate()
