@@ -225,12 +225,7 @@ std::unique_ptr<Client> Client::create(
 
 std::unique_ptr<Client> Client::clone() const
 {
-    return cloneWithConfigurationOverride(this->client_configuration);
-}
-
-std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
-{
-    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
+    return std::unique_ptr<Client>(new Client(*this, client_configuration));
 }
 
 namespace
@@ -291,7 +286,27 @@ Client::Client(
 
     LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
-    logConfiguration();
+    if (client_configuration.for_disk_s3)
+    {
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
+    else
+    {
+        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client: slowing down threads on retryable errors is {}",
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -319,8 +334,6 @@ Client::Client(
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
-
-    logConfiguration();
 
     ProfileEvents::increment(ProfileEvents::TinyS3Clients);
 }
@@ -875,31 +888,6 @@ void Client::slowDownAfterRetryableError() const
 
         LOG_TRACE(log, "Request failed from a retryable error, now waiting {} ms before retrying", sleep_ms);
         sleepForMilliseconds(sleep_ms);
-    }
-}
-
-void Client::logConfiguration() const
-{
-    if (client_configuration.for_disk_s3)
-    {
-        LOG_TRACE(
-            log,
-            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
-            client_configuration.opt_disk_name.value_or(""),
-            client_configuration.retry_strategy.max_retries);
-        LOG_TRACE(
-            log,
-            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
-            client_configuration.opt_disk_name.value_or(""),
-            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
-    }
-    else
-    {
-        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
-        LOG_TRACE(
-            log,
-            "S3 client: slowing down threads on retryable errors is {}",
-            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
     }
 }
 

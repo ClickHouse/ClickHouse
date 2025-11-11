@@ -61,6 +61,7 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
+    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
@@ -110,7 +111,7 @@ GlueCatalog::GlueCatalog(
     int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
     int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
-    bool s3_slow_all_threads_after_retryable_error = false;
+    bool s3_slow_all_threads_after_retryable_error = global_settings[DB::Setting::s3_slow_all_threads_after_retryable_error];
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
 
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(
