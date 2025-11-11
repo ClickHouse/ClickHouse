@@ -95,6 +95,9 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(const String & ex
 
 std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
 {
+    chassert(index_column_with_type_and_name.name == column_name);
+    chassert(isStringOrFixedString(index_column_with_type_and_name.type));
+
     ColumnPtr index_column = index_column_with_type_and_name.column;
 
     if (expression.getActions().empty())
@@ -103,7 +106,7 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
     if (start_row != 0 || n_rows != index_column->size())
         index_column = index_column->cut(start_row, n_rows);
 
-    Block block({ColumnWithTypeAndName(index_column, index_column_with_type_and_name.type, index_column_with_type_and_name.name)});
+    Block block({ColumnWithTypeAndName(index_column, index_column_with_type_and_name.type, column_name)});
 
     expression.execute(block, n_rows);
 
@@ -112,37 +115,30 @@ std::pair<ColumnPtr,size_t> MergeTreeIndexTextPreprocessor::processColumn(const 
 
 std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumnArray(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const
 {
+    chassert(index_column_with_type_and_name.name == column_name);
     chassert(isArray(index_column_with_type_and_name.type));
 
-    const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(index_column_with_type_and_name.type.get());
-    chassert(isStringOrFixedString(array_type->getNestedType()));
-
-    const ColumnArray & column_array = assert_cast<const ColumnArray &>(*index_column_with_type_and_name.column);
-
+    ColumnPtr index_column = index_column_with_type_and_name.column;
     if (expression.getActions().empty())
-        return {index_column_with_type_and_name.column, start_row};
+        return {index_column, start_row};
 
-    const auto & column_data = column_array.getData();
-    const auto & column_offsets = column_array.getOffsets();
+    /// Only copy if needed
+    if (start_row != 0 || n_rows != index_column->size())
+        index_column = assert_cast<const ColumnArray &>(*index_column).cut(start_row, n_rows);
 
-    const size_t start_offset = column_offsets[start_row - 1];
-    const size_t length = column_offsets[start_row + n_rows - 1] - start_offset;
+    /// Get the right type
+    const DataTypeArray & array_type = typeid_cast<const DataTypeArray &>(*index_column_with_type_and_name.type);
+    const DataTypePtr processing_type = array_type.getNestedType();
 
-    auto flatten_copy = column_data.cut(start_offset, length);
+    ColumnWithTypeAndName tmp(index_column, processing_type, column_name);
+    auto [processed_column, _] = processColumn(tmp, 0, index_column->size());
 
-    Block block({ColumnWithTypeAndName(flatten_copy, array_type->getNestedType(), index_column_with_type_and_name.name)});
+    const ColumnArray * column_array = assert_cast<const ColumnArray *>(index_column.get());
+    const ColumnPtr offsets = column_array->getOffsetsPtr();
 
-    expression.execute(block, n_rows);
+    ColumnPtr result_column = ColumnArray::create(processed_column, offsets);
 
-    auto offsets_column = ColumnVector<UInt64>::create();
-    ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
-
-    for (size_t i = 0; i < n_rows; ++i)
-        offsets_data.push_back(column_offsets[start_offset + i] - start_offset);
-
-    ColumnPtr result = ColumnArray::create(block.safeGetByPosition(0).column, std::move(offsets_column));
-
-    return {result, 0};
+    return {result_column, 0};
 }
 
 String MergeTreeIndexTextPreprocessor::process(const String &input) const
@@ -208,7 +204,20 @@ ExpressionActions MergeTreeIndexTextPreprocessor::parseExpression(const IndexDes
     const String name = expression_ast->getColumnName();
     const String alias = expression_ast->getAliasOrColumnName();
 
-    NamesAndTypesList source_columns({{index_description.column_names.front(), index_description.data_types.front()}});
+    DataTypePtr column_data_type = index_description.data_types.front();
+    if (isArray(column_data_type))
+    {
+        const DataTypeArray * array_type = typeid_cast<const DataTypeArray*>(column_data_type.get());
+        chassert(array_type != nullptr);
+
+        column_data_type = array_type->getNestedType();
+    }
+
+    if (!isStringOrFixedString(column_data_type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index column type {} is not supported", column_data_type->getName());
+
+
+    NamesAndTypesList source_columns({{index_description.column_names.front(), column_data_type}});
 
     NamesAndTypesList aggregation_keys;
     ColumnNumbersList aggregation_keys_indexes_list;
