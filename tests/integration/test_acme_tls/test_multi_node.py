@@ -71,17 +71,16 @@ def test_coordinated_acme_authorization(started_multi_replica_cluster):
         if checked_nodes < 3:
             continue
 
-        # curl_result = node1.exec_in_container(["curl", "http://node1/counters"])
-        # counters = json.loads(curl_result)
-        #
-        # assert counters["nonce_count"] > 0
-        # assert counters["order_count"] == 1
-        # assert counters["csr_count"] == 1
-        # assert counters["jwk_count"] == 1
-        # assert counters["call_counters"]["new_account"] == 3
-        # assert counters["call_counters"]["new_order"] == 1
-        # assert counters["call_counters"]["process_challenge"] == 1
-        # assert counters["call_counters"]["finalize_order"] == 1
+        zk = started_multi_replica_cluster.get_kazoo_client("zoo1")
+        zk.start()
+
+        assert zk.exists("/clickhouse/acme")
+        assert zk.exists("/clickhouse/acme/10.5.11.2")
+        assert zk.exists("/clickhouse/acme/10.5.11.2/account_private_key")
+        assert zk.exists("/clickhouse/acme/10.5.11.2/challenges")
+        assert len(zk.get_children("/clickhouse/acme/10.5.11.2/challenges")) == 1
+        assert zk.exists("/clickhouse/acme/10.5.11.2/domains")
+        assert len(zk.get_children("/clickhouse/acme/10.5.11.2/domains")) == 1
 
         return
 

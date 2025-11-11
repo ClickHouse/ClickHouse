@@ -53,29 +53,16 @@ def test_acme_authorization(started_single_replica_cluster):
 
         assert "CN=Pebble Intermediate CA" in curl_result
 
-        # curl_result = node.exec_in_container(["curl", "http://node_acme/counters"])
-        # counters = json.loads(curl_result)
-        # print(counters)
-        #
-        # assert counters["nonce_count"] > 0
-        # assert counters["order_count"] == 1
-        # assert counters["csr_count"] == 1
-        # assert counters["jwk_count"] == 1
-        # assert counters["call_counters"]["new_account"] == 1
-        # assert counters["call_counters"]["new_order"] == 1
-        # assert counters["call_counters"]["process_challenge"] == 1
-        # assert counters["call_counters"]["finalize_order"] == 1
-        #
-        # zk = started_single_replica_cluster.get_kazoo_client("zoo1")
-        # zk.start()
-        #
-        # assert zk.exists("/clickhouse/acme")
-        # assert zk.exists("/clickhouse/acme/node_acme")
-        # assert zk.exists("/clickhouse/acme/node_acme/account_private_key")
-        # assert zk.exists("/clickhouse/acme/node_acme/challenges")
-        # assert len(zk.get_children("/clickhouse/acme/node_acme/challenges")) == 1
-        # assert zk.exists("/clickhouse/acme/node_acme/domains")
-        # assert len(zk.get_children("/clickhouse/acme/node_acme/domains")) == 1
+        zk = started_single_replica_cluster.get_kazoo_client("zoo1")
+        zk.start()
+
+        assert zk.exists("/clickhouse/acme")
+        assert zk.exists("/clickhouse/acme/10.5.11.2")
+        assert zk.exists("/clickhouse/acme/10.5.11.2/account_private_key")
+        assert zk.exists("/clickhouse/acme/10.5.11.2/challenges")
+        assert len(zk.get_children("/clickhouse/acme/10.5.11.2/challenges")) == 1
+        assert zk.exists("/clickhouse/acme/10.5.11.2/domains")
+        assert len(zk.get_children("/clickhouse/acme/10.5.11.2/domains")) == 1
 
         return
 
