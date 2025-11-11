@@ -25,6 +25,7 @@ struct FormatSettings
     bool with_names_use_header = false;
     bool with_types_use_header = false;
     bool write_statistics = true;
+    bool into_outfile_create_parent_directories = false;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool force_null_for_omitted_fields = false;
@@ -295,6 +296,7 @@ struct FormatSettings
         bool preserve_order = false;
         bool enable_row_group_prefetch = true;
         bool verify_checksums = true;
+        bool local_time_as_utc = true;
         std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;

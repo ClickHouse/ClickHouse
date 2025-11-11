@@ -1671,7 +1671,7 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     return true;
 }
 
-void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & source_columns)
+void ColumnObject::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Object column");
@@ -1729,7 +1729,8 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
     dynamic_paths.clear();
     dynamic_paths_ptrs.clear();
     sorted_dynamic_paths.clear();
-    max_dynamic_paths = global_max_dynamic_paths;
+    /// If max_dynamic_subcolumns is set, use it as max number of paths.
+    max_dynamic_paths = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_paths) : global_max_dynamic_paths;
     Statistics new_statistics(Statistics::Source::MERGE);
 
     /// Check if the number of all dynamic paths exceeds the limit.
@@ -1793,7 +1794,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
             if (it != source_object.dynamic_paths.end())
                 dynamic_path_source_columns.push_back(it->second);
         }
-        column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns);
+        column->takeDynamicStructureFromSourceColumns(dynamic_path_source_columns, max_dynamic_subcolumns);
     }
 
     /// Typed paths also can contain types with dynamic structure.
@@ -1803,7 +1804,7 @@ void ColumnObject::takeDynamicStructureFromSourceColumns(const DB::Columns & sou
         typed_path_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
             typed_path_source_columns.push_back(assert_cast<const ColumnObject &>(*source_column).typed_paths.at(path));
-        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns);
+        column->takeDynamicStructureFromSourceColumns(typed_path_source_columns, max_dynamic_subcolumns);
     }
 }
 
@@ -1902,147 +1903,130 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, StringRef
     }
 }
 
-/// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
-class ColumnObject::SortedPathsIterator
+ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & column_object_, size_t row_)
+    : column_object(column_object_)
+    , typed_paths_it(column_object.sorted_typed_paths.begin())
+    , typed_paths_end(column_object.sorted_typed_paths.end())
+    , dynamic_paths_it(column_object.sorted_dynamic_paths.begin())
+    , dynamic_paths_end(column_object.sorted_dynamic_paths.end())
+    , row(row_)
 {
-public:
-    SortedPathsIterator(const ColumnObject & column_object_, size_t row_)
-        : column_object(column_object_)
-        , typed_paths_it(column_object.sorted_typed_paths.begin())
-        , typed_paths_end(column_object.sorted_typed_paths.end())
-        , dynamic_paths_it(column_object.sorted_dynamic_paths.begin())
-        , dynamic_paths_end(column_object.sorted_dynamic_paths.end())
-        , row(row_)
+    std::tie(shared_data_paths, shared_data_values) = column_object.getSharedDataPathsAndValues();
+    const auto & shared_data_offsets = column_object.getSharedDataOffsets();
+    shared_data_it = shared_data_offsets[row - 1];
+    shared_data_end = shared_data_offsets[row];
+    setCurrentPath();
+}
+
+void ColumnObject::SortedPathsIterator::next()
+{
+    switch (current_path_type)
     {
-        std::tie(shared_data_paths, shared_data_values) = column_object.getSharedDataPathsAndValues();
-        const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-        shared_data_it = shared_data_offsets[row - 1];
-        shared_data_end = shared_data_offsets[row];
-        setCurrentPath();
-    }
-
-    void next()
-    {
-        switch (current_path_type)
-        {
-            case PathType::DYNAMIC:
-                ++dynamic_paths_it;
-                break;
-            case PathType::TYPED:
-                ++typed_paths_it;
-                break;
-            case PathType::SHARED_DATA:
-                ++shared_data_it;
-                break;
-        }
-
-        setCurrentPath();
-    }
-
-    /// Compare paths and values of 2 iterators.
-    /// Returns -1, 0, 1 if this iterator is less, equal or greater than rhs.
-    int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const
-    {
-        /// First, compare paths as strings.
-        auto path = getCurrentPath();
-        auto rhs_path = rhs.getCurrentPath();
-        if (path != rhs_path)
-            return path < rhs_path ? -1 : 1;
-
-        /// If paths are equal, compare their values.
-        auto [column, n] = getCurrentPathColumnAndRow();
-        auto [rhs_column, rhs_n] = rhs.getCurrentPathColumnAndRow();
-        return column->compareAt(n, rhs_n, *rhs_column, nan_direction_hint);
-    }
-
-    bool end()
-    {
-        return typed_paths_it == typed_paths_end && dynamic_paths_it == dynamic_paths_end && shared_data_it == shared_data_end;
-    }
-
-private:
-    void setCurrentPath()
-    {
-        /// We have 3 sorted lists of paths - typed paths, dynamic paths and paths in shared data.
-        /// We store iterators for each of these lists. Here we try to find the iterator with the lexicographically smallest path.
-
-        /// Null in dynamic path is considered as absence of this path.
-        while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
+        case PathType::DYNAMIC:
             ++dynamic_paths_it;
-
-        std::array<std::pair<PathType, std::optional<std::string_view>>, 3> paths{
-            std::pair{PathType::TYPED, typed_paths_it == typed_paths_end ? std::nullopt : std::optional<std::string_view>(*typed_paths_it)},
-            std::pair{PathType::DYNAMIC, dynamic_paths_it == dynamic_paths_end ? std::nullopt : std::optional<std::string_view>(*dynamic_paths_it)},
-            std::pair{
-                PathType::SHARED_DATA, shared_data_it == shared_data_end ? std::nullopt : std::optional<std::string_view>(shared_data_paths->getDataAt(shared_data_it).toView())},
-        };
-
-        auto min_path = std::ranges::min(
-            paths,
-            [](auto first_path, auto second_path)
-            {
-                if (!second_path.second)
-                    return true;
-
-                if (!first_path.second)
-                    return false;
-
-                return first_path.second < second_path.second;
-            });
-
-        if (min_path.second)
-            current_path_type = min_path.first;
+            break;
+        case PathType::TYPED:
+            ++typed_paths_it;
+            break;
+        case PathType::SHARED_DATA:
+            ++shared_data_it;
+            break;
     }
 
-    std::string_view getCurrentPath() const
-    {
-        switch (current_path_type)
-        {
-            case PathType::DYNAMIC:
-                return *dynamic_paths_it;
-            case PathType::TYPED:
-                return *typed_paths_it;
-            case PathType::SHARED_DATA:
-                return shared_data_paths->getDataAt(shared_data_it).toView();
-        }
-    }
+    setCurrentPath();
+}
 
-    std::pair<ColumnPtr, size_t> getCurrentPathColumnAndRow() const
-    {
-        switch (current_path_type)
-        {
-            case PathType::DYNAMIC:
-                return {column_object.dynamic_paths.find(*dynamic_paths_it)->second, row};
-            case PathType::TYPED:
-                return {column_object.typed_paths.find(*typed_paths_it)->second, row};
-            case PathType::SHARED_DATA:
-            {
-                auto tmp_column = ColumnDynamic::create();
-                ColumnObject::deserializeValueFromSharedData(shared_data_values, shared_data_it, *tmp_column);
-                return {std::move(tmp_column), 0};
-            }
-        }
-    }
+int ColumnObject::SortedPathsIterator::compare(const SortedPathsIterator & rhs, int nan_direction_hint) const
+{
+    /// First, compare paths as strings.
+    auto path = getCurrentPath();
+    auto rhs_path = rhs.getCurrentPath();
+    if (path != rhs_path)
+        return path < rhs_path ? -1 : 1;
 
-    enum class PathType
-    {
-        TYPED,
-        DYNAMIC,
-        SHARED_DATA,
+    /// If paths are equal, compare their values.
+    auto [column, n] = getCurrentPathColumnAndRow();
+    auto [rhs_column, rhs_n] = rhs.getCurrentPathColumnAndRow();
+    return column->compareAt(n, rhs_n, *rhs_column, nan_direction_hint);
+}
+
+bool ColumnObject::SortedPathsIterator::end()
+{
+    return typed_paths_it == typed_paths_end && dynamic_paths_it == dynamic_paths_end && shared_data_it == shared_data_end;
+}
+
+void ColumnObject::SortedPathsIterator::setCurrentPath()
+{
+    /// We have 3 sorted lists of paths - typed paths, dynamic paths and paths in shared data.
+    /// We store iterators for each of these lists. Here we try to find the iterator with the lexicographically smallest path.
+
+    /// Null in dynamic path is considered as absence of this path.
+    while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
+        ++dynamic_paths_it;
+
+    std::array<std::pair<PathType, std::optional<std::string_view>>, 3> paths{
+        std::pair{PathType::TYPED, typed_paths_it == typed_paths_end ? std::nullopt : std::optional<std::string_view>(*typed_paths_it)},
+        std::pair{PathType::DYNAMIC, dynamic_paths_it == dynamic_paths_end ? std::nullopt : std::optional<std::string_view>(*dynamic_paths_it)},
+        std::pair{
+            PathType::SHARED_DATA, shared_data_it == shared_data_end ? std::nullopt : std::optional<std::string_view>(shared_data_paths->getDataAt(shared_data_it).toView())},
     };
 
-    const ColumnObject & column_object;
-    decltype(column_object.sorted_typed_paths)::const_iterator typed_paths_it;
-    decltype(column_object.sorted_typed_paths)::const_iterator typed_paths_end;
-    decltype(column_object.sorted_dynamic_paths)::const_iterator dynamic_paths_it;
-    decltype(column_object.sorted_dynamic_paths)::const_iterator dynamic_paths_end;
-    size_t shared_data_it;
-    size_t shared_data_end;
-    const ColumnString * shared_data_paths;
-    const ColumnString * shared_data_values;
-    PathType current_path_type;
-    size_t row;
+    auto min_path = std::ranges::min(
+        paths,
+        [](auto first_path, auto second_path)
+        {
+            if (!second_path.second)
+                return true;
+
+            if (!first_path.second)
+                return false;
+
+            return first_path.second < second_path.second;
+        });
+
+    if (min_path.second)
+        current_path_type = min_path.first;
+}
+
+std::string_view ColumnObject::SortedPathsIterator::getCurrentPath() const
+{
+    switch (current_path_type)
+    {
+        case PathType::DYNAMIC:
+            return *dynamic_paths_it;
+        case PathType::TYPED:
+            return *typed_paths_it;
+        case PathType::SHARED_DATA:
+            return shared_data_paths->getDataAt(shared_data_it).toView();
+    }
+}
+
+std::pair<ColumnPtr, size_t> ColumnObject::SortedPathsIterator::getCurrentPathColumnAndRow() const
+{
+    switch (current_path_type)
+    {
+        case PathType::DYNAMIC:
+            return {column_object.dynamic_paths.find(*dynamic_paths_it)->second, row};
+        case PathType::TYPED:
+            return {column_object.typed_paths.find(*typed_paths_it)->second, row};
+        case PathType::SHARED_DATA:
+        {
+            auto tmp_column = ColumnDynamic::create();
+            tmp_column->reserve(1);
+            ColumnObject::deserializeValueFromSharedData(shared_data_values, shared_data_it, *tmp_column);
+            return {std::move(tmp_column), 0};
+        }
+    }
 };
+
+ColumnObject::SortedPathsIterator::PathInfo ColumnObject::SortedPathsIterator::getCurrentPathInfo() const
+{
+    PathInfo path_info;
+    path_info.type = current_path_type;
+    path_info.path = getCurrentPath();
+    std::tie(path_info.column, path_info.row) = getCurrentPathColumnAndRow();
+    return path_info;
+}
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnObject::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const

@@ -925,7 +925,12 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
         /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, "UTC");
+        String timezone = "UTC";
+        if (!options.format.parquet.local_time_as_utc &&
+            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
+             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
+            timezone = "";
+        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
         auto converter = std::make_shared<IntConverter>();
         /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
         /// (i.e. time of day rather than timestamp).
