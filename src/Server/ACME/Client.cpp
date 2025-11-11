@@ -34,6 +34,8 @@
 #include <Server/ACME/Client.h>
 #include <Server/CertificateReloader.h>
 
+#include <base/sleep.h>
+
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
@@ -261,7 +263,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             {
                 auto path = fs::path(zookeeper_path) / acme_hostname / "challenges" / token;
 
-                zk->createIfNotExists(path, token);
+                zk->createOrUpdate(path, token, zkutil::CreateMode::Ephemeral);
                 zk->sync(path);
             };
 
