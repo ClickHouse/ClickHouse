@@ -122,6 +122,8 @@ public:
     /// Gets the current size of the queue.
     size_t getCurrentMessageSize();
 
+    std::atomic<bool> request_flush = false;
+
 private:
     Queue message_queue;
     std::condition_variable condition;
@@ -184,7 +186,6 @@ private:
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;
     std::atomic<int> text_log_max_priority = 0;
-    std::atomic<bool> flush_text_logs = false;
 };
 
 

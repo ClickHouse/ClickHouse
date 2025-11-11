@@ -61,7 +61,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         interpreter.buildQueryPlan(*query_plan);
     }
 
-    addConvertingActions(*query_plan, header);
+    addConvertingActions(*query_plan, header, new_context);
     return query_plan;
 }
 

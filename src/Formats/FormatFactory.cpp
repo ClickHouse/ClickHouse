@@ -290,6 +290,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.with_names_use_header = settings[Setting::input_format_with_names_use_header];
     format_settings.with_types_use_header = settings[Setting::input_format_with_types_use_header];
     format_settings.write_statistics = settings[Setting::output_format_write_statistics];
+    format_settings.into_outfile_create_parent_directories = settings[Setting::into_outfile_create_parent_directories];
     format_settings.arrow.low_cardinality_as_dictionary = settings[Setting::output_format_arrow_low_cardinality_as_dictionary];
     format_settings.arrow.use_signed_indexes_for_dictionary = settings[Setting::output_format_arrow_use_signed_indexes_for_dictionary];
     format_settings.arrow.use_64_bit_indexes_for_dictionary = settings[Setting::output_format_arrow_use_64_bit_indexes_for_dictionary];

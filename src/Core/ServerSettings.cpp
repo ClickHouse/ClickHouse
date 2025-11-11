@@ -494,6 +494,22 @@ namespace DB
     :::)", 0) \
     DECLARE(UInt64, text_index_dictionary_block_cache_max_entries, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_MAX_ENTRIES, "Size of cache for text index dictionary block in entries. Zero means disabled.", 0) \
     DECLARE(Double, text_index_dictionary_block_cache_size_ratio, DEFAULT_TEXT_INDEX_DICTIONARY_BLOCK_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index dictionary block cache relative to the cache's total size.", 0) \
+    DECLARE(String, text_index_header_cache_policy, DEFAULT_TEXT_INDEX_HEADER_CACHE_POLICY, "Text index header cache policy name.", 0) \
+    DECLARE(UInt64, text_index_header_cache_size, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE, R"(Size of cache for text index headers. Zero means disabled.
+
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::)", 0) \
+    DECLARE(UInt64, text_index_header_cache_max_entries, DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES, "Size of cache for text index header in entries. Zero means disabled.", 0) \
+    DECLARE(Double, text_index_header_cache_size_ratio, DEFAULT_TEXT_INDEX_HEADER_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index header cache relative to the cache's total size.", 0) \
+    DECLARE(String, text_index_postings_cache_policy, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_POLICY, "Text index posting list cache policy name.", 0) \
+    DECLARE(UInt64, text_index_postings_cache_size, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE, R"(Size of cache for text index posting lists. Zero means disabled.
+
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::)", 0) \
+    DECLARE(UInt64, text_index_postings_cache_max_entries, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES, "Size of cache for text index posting list in entries. Zero means disabled.", 0) \
+    DECLARE(Double, text_index_postings_cache_size_ratio, DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the text index posting list cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
@@ -1051,7 +1067,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
-    Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
+    Disable insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance. Inserts into external engines (S3, DataLake, MySQL, PostrgeSQL, Kafka, etc) are allowed despite this setting.
     )", 0) \
     DECLARE(UInt64, parts_kill_delay_period, 30, R"(
     Period to completely remove parts for SharedMergeTree. Only available in ClickHouse Cloud

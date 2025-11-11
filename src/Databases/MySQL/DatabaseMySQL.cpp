@@ -39,6 +39,10 @@
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
 
+#if CLICKHOUSE_CLOUD
+#    include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -99,11 +103,20 @@ DatabaseMySQL::DatabaseMySQL(
     catch (...)
     {
         if (attach)
+        {
             tryLogCurrentException("DatabaseMySQL");
+        }
+#if CLICKHOUSE_CLOUD
+        else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
+        {
+            tryLogCurrentException("DatabaseMySQL");
+        }
+#endif
         else
             throw;
     }
 
+    persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
         auto db_disk = getDisk();
@@ -242,6 +255,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
+    create_query->uuid = db_uuid;
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
         create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
@@ -456,9 +470,9 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
     return local_tables_cache[table_name].second;
 }
 
-void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
+void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 String DatabaseMySQL::getMetadataPath() const

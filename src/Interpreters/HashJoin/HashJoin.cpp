@@ -1837,7 +1837,7 @@ void HashJoin::onBuildPhaseFinish()
         }
     }
 
-    if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind))
+    if (all_values_unique && strictness == JoinStrictness::All && isInnerOrLeft(kind) && data->maps.size() == 1)
     {
         strictness = JoinStrictness::RightAny;
         all_join_was_promoted_to_right_any = true;

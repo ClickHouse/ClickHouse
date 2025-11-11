@@ -603,7 +603,6 @@ void HTTPHandler::processQuery(
     executeQuery(
         std::move(in),
         *used_output.out_maybe_delayed_and_compressed,
-        /* allow_into_outfile = */ false,
         context,
         set_query_result,
         QueryFlags{},
