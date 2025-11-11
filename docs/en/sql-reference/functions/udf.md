@@ -224,6 +224,8 @@ functions:
   </TabItem>
 </Tabs>
 
+<br/>
+
 Create script file `test_function_sum_json.py` inside the `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` with default path settings).
 
 ```python
@@ -292,6 +294,8 @@ functions:
   </TabItem>
 </Tabs>
 
+<br/>
+
 Create script file `test_function_parameter_python.py` inside the `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` with default path settings).
 
 ```python
@@ -353,6 +357,8 @@ functions:
 ```
   </TabItem>
 </Tabs>
+
+<br/>
 
 Create a script file `test_shell.sh` inside the `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_shell.sh` with default path settings).
 
