@@ -110,7 +110,8 @@ public:
         const std::string & bucket_,
         const std::string & path_prefix,
         std::shared_ptr<const S3::Client> client_,
-        size_t max_list_size)
+        size_t max_list_size,
+        bool with_tags_)
         : IObjectStorageIteratorAsync(
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
@@ -118,6 +119,7 @@ public:
             "ListObjectS3")
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
+        , with_tags(with_tags_)
     {
         request->SetBucket(bucket_);
         request->SetPrefix(path_prefix);
@@ -148,7 +150,9 @@ private:
             auto objects = outcome.GetResult().GetContents();
             for (const auto & object : objects)
             {
-                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}};
+                ObjectMetadata metadata{static_cast<uint64_t>(object.GetSize()), Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()), object.GetETag(), {}, {}};
+                if (with_tags)
+                    metadata.tags = S3::getObjectTags(*client, request->GetBucket(), object.GetKey());
                 batch.emplace_back(std::make_shared<RelativePathWithMetadata>(object.GetKey(), std::move(metadata)));
             }
 
@@ -164,6 +168,7 @@ private:
 
     std::shared_ptr<const S3::Client> client;
     std::unique_ptr<S3::ListObjectsV2Request> request;
+    const bool with_tags;
 };
 
 }
@@ -254,12 +259,12 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 }
 
 
-ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+ObjectStorageIteratorPtr S3ObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const
 {
     auto settings_ptr = s3_settings.get();
     if (!max_keys)
         max_keys = settings_ptr->request_settings[S3RequestSetting::list_object_keys_size];
-    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys);
+    return std::make_shared<S3IteratorAsync>(uri.bucket, path_prefix, client.get(), max_keys, with_tags);
 }
 
 void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
@@ -296,6 +301,7 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
                     static_cast<uint64_t>(object.GetSize()),
                     Poco::Timestamp::fromEpochTime(object.GetLastModified().Seconds()),
                     object.GetETag(),
+                    {},
                     {}}));
 
         if (max_keys)
@@ -361,10 +367,10 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
-std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path) const
+std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 {
     auto settings_ptr = s3_settings.get();
-    auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true);
+    auto object_info = S3::getObjectInfoIfExists(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true, with_tags);
 
     if (object_info.size == 0 && object_info.last_modification_time == 0 && object_info.metadata.empty())
         return {};
@@ -373,18 +379,19 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.tags = object_info.tags;
     result.attributes = object_info.metadata;
 
     return result;
 }
 
-ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
 {
     auto settings_ptr = s3_settings.get();
     S3::ObjectInfo object_info;
     try
     {
-        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, {}, /* with_metadata= */ true);
+        object_info = S3::getObjectInfo(*client.get(), uri.bucket, path, /*version_id=*/ {}, /*with_metadata=*/ true, /*with_tags=*/ with_tags);
     }
     catch (DB::Exception & e)
     {
@@ -396,6 +403,7 @@ ObjectMetadata S3ObjectStorage::getObjectMetadata(const std::string & path) cons
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
     result.etag = object_info.etag;
+    result.tags = std::move(object_info.tags);
     result.attributes = object_info.metadata;
 
     return result;
