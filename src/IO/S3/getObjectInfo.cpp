@@ -87,7 +87,7 @@ namespace
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
-        if (with_tags)
+        if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
 
         return {object_info, {}};
