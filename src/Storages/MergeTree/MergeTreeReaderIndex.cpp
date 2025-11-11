@@ -89,24 +89,26 @@ size_t MergeTreeReaderIndex::readRows(
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
 {
-    chassert(mark < index_read_result->skip_index_read_result->granules_selected.size());
-
-    if (!index_read_result->skip_index_read_result->granules_selected.at(mark))
-        return true;
-
-    Field value;
-    if (index_read_result->skip_index_read_result->threshold_tracker && index_read_result->skip_index_read_result->threshold_tracker->isSet())
+    if (index_read_result->skip_index_read_result)
     {
-        /// TODO : assumes all index marks have been read.
-        if (index_read_result->skip_index_read_result->threshold_tracker->getDirection() == 1) /// ASC
-            value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].min_value;
-        else
-            value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].max_value;
+        chassert(mark < index_read_result->skip_index_read_result->granules_selected.size());
 
-        if (!index_read_result->skip_index_read_result->threshold_tracker->isValueInsideThreshold(value))
+        if (!index_read_result->skip_index_read_result->granules_selected.at(mark))
             return true;
-    }
 
+        if (index_read_result->skip_index_read_result->threshold_tracker && index_read_result->skip_index_read_result->threshold_tracker->isSet())
+        {
+            /// TODO : assumes all index marks have been read.
+            Field value;
+            if (index_read_result->skip_index_read_result->threshold_tracker->getDirection() == 1) /// ASC
+                value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].min_value;
+            else
+                value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].max_value;
+
+            if (!index_read_result->skip_index_read_result->threshold_tracker->isValueInsideThreshold(value))
+                return true;
+        }
+    }
     if (index_read_result->projection_index_read_result)
     {
         size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
