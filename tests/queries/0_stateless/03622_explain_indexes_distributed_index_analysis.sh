@@ -2,7 +2,7 @@
 # Tags: no-random-merge-tree-settings, no-random-settings
 # - no-random-merge-tree-settings -- may change number of parts
 
-# There will be warnings in logs for unavailable replicas that we have in parallel_replcas cluster.
+# There will be warnings in logs for unavailable replicas that we have in parallel_replicas cluster.
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -10,7 +10,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Generate many parts (partitions) to ensure that all replicas will be chosen for distributed index analysis
-# even failed replica (that is included into parallel_replcas), and ensure that the SELECT wont fail (parts should be analyzed locally).
+# even failed replica (that is included into parallel_replicas), and ensure that the SELECT wont fail (parts should be analyzed locally).
 
 $CLICKHOUSE_CLIENT -nm -q "
   drop table if exists test_10m;
@@ -22,7 +22,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 
 echo "distributed_index_analysis=0"
 $CLICKHOUSE_CLIENT --format=LineAsString -q "explain indexes=1, json=1 select * from test_10m where key > 100000" | {
-  jq '.[]?.Plan.Plans[]?.Plans[]?.Indexes[]? | select(.Type == "PrimaryKey")'
+  jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey")'
 }
 
 echo "distributed_index_analysis=1"
@@ -30,7 +30,8 @@ explain_opts=(
   --format=LineAsString
   --cluster_for_parallel_replicas=parallel_replicas
   --distributed_index_analysis=1
+  --max_parallel_replicas=11
 )
 $CLICKHOUSE_CLIENT "${explain_opts[@]}" -q "explain indexes=1, json=1 select * from test_10m where key > 100000" | {
-  jq '.[]?.Plan.Plans[]?.Plans[]?.Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
+  jq '.. | objects | select(has("Indexes")) | .Indexes[]? | select(.Type == "PrimaryKey") | .Distributed |= sort_by(.Address)'
 }
