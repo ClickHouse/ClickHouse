@@ -89,13 +89,13 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "A stack trace that represents a list of physical addresses where the called methods are stored."
             },
         {
-                "symbols",
+                "last_errors_symbols",
                 symbolized_type,
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."
             },
         {
-                "lines",
+                "last_error_lines",
                 symbolized_type,
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."
