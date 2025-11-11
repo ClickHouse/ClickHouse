@@ -275,11 +275,8 @@ public:
         points[size] = {value, weight};
         ++size;
         // check if the input sequence is monotonic increasing, which is a commonly occurring pattern
-        if (value < last_inserted)
-            sorted_prefix = 0;
-        else{
-            sorted_prefix = size;
-        }
+        if (sorted_prefix == size - 1 && last_insertd <= value)
+            ++sorted_prefix;
         last_inserted = value;
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
