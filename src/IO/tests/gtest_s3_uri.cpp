@@ -242,5 +242,21 @@ TEST(S3UriTest, versionIdChecks)
     }
 }
 
+TEST(S3UriTest, WildcardQuestionMarksCustomEndpoint)
+{
+    // Custom endpoint (like MinIO) with bucket in the first path segment and
+    // wildcard '??' in the path. Ensure the bucket and key are parsed correctly
+    // and that '?' from the path is preserved in the key (folded from query),
+    // while query is cleared and versionId remains empty.
+    using namespace DB;
+    S3::URI uri("http://minio1:9001/root/data/wildcard_test_??.tsv.gz");
+
+    ASSERT_EQ("http://minio1:9001", uri.endpoint);
+    ASSERT_EQ("root", uri.bucket);
+    ASSERT_EQ("data/wildcard_test_??.tsv.gz", uri.key);
+    ASSERT_EQ("", uri.version_id);
+    ASSERT_FALSE(uri.is_virtual_hosted_style);
+}
+
 }
 #endif
