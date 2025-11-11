@@ -86,7 +86,8 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     ColumnPtr filter_col;
     if (elem_is_const_null)
     {
-        if (!canContainNull(*arr_data_type)) {
+        if (!canContainNull(*arr_data_type))
+        {
             return arguments[0].column;
         }
 
