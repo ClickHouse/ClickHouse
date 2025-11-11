@@ -141,15 +141,14 @@ std::string API::formatJWSRequestData(const Poco::URI & url, const std::string &
     auto payload_enc = base64Encode(payload, /*url_encoding*/ true, /*no_padding*/ true);
 
     EVP_PKEY * pkey = static_cast<EVP_PKEY*>(*configuration.private_key);
-    std::string signature = calculateHMACwithSHA256(
-        fmt::format("{}.{}", protected_enc, payload_enc),
-        pkey
-    );
+    std::string to_sign = fmt::format("{}.{}", protected_enc, payload_enc);
+    std::string signature = rsaSHA256Sign(pkey, to_sign);
+    std::string encoded_signature = base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true);
 
     return
         R"({"protected":")" + protected_enc
         + R"(","payload":")" + payload_enc
-        + R"(","signature":")" + signature
+        + R"(","signature":")" + encoded_signature
         + R"("})";
 }
 
