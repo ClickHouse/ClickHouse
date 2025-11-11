@@ -20,15 +20,15 @@ $CLICKHOUSE_CLIENT -q """
     SELECT '-- Empty table';
     SELECT count() FROM system.instrumentation;
 
-    SELECT '-- Add one entry';
+    SELECT '-- Add one';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'my log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
-    SELECT '-- Adding the same entry produces an error';
+    SELECT '-- Adding the same one produces an error';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'another log in finishQuery'; -- { serverError BAD_ARGUMENTS }
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
-    SELECT '-- Add another entry';
+    SELECT '-- Add another one';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'my log in startQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 """
@@ -40,13 +40,13 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE $id;
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
-    SELECT '-- Add 2 more entries';
+    SELECT '-- Add 2 more';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'my other in startQuery';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG EXIT 'my other in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
-    SELECT '-- Remove the entries with entry_type = exit';
-    SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE entry_type = 'exit');
+    SELECT '-- Remove the entries with entry_type = Exit';
+    SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE entry_type = 'Exit');
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Remove everything';

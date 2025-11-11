@@ -1,6 +1,6 @@
-log	entry
-profile	entry
-profile	exit
-sleep	entry
-log	exit
+log	Entry
+profile	Entry
+profile	Exit
+sleep	Entry
+log	Exit
 1

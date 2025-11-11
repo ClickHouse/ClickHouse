@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -15,6 +16,7 @@
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>
+#include <xray/xray_interface.h>
 
 #include <filesystem>
 
@@ -61,6 +63,13 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         "`Thread` represents thread (thread of particular process) context. "
         "`Max` this is a special value means that memory tracker is not blocked (for blocked_context column). ";
 
+    auto entry_type_enum = std::make_shared<DataTypeEnum8> (
+        DataTypeEnum8::Values
+        {
+            {"Entry", static_cast<Int8>(XRayEntryType::ENTRY)},
+            {"Exit", static_cast<Int8>(XRayEntryType::EXIT)},
+        });
+
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
@@ -95,7 +104,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
         {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
-        {"entry_type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, entry type of the instrumented function."},
+        {"entry_type", std::make_shared<DataTypeNullable>(entry_type_enum), "For trace type Instrumentation, entry type of the instrumented function."},
         {"duration_microseconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For trace type Instrumentation, time the function was running for in microseconds."},
     };
 }

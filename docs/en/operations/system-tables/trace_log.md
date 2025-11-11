@@ -40,6 +40,7 @@ Columns:
   - `ProfileEvent` represents collecting of increments of profile events.
   - `JemallocSample` represents collecting of jemalloc samples.
   - `MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only).
+  - `Instrumentation` represents traces collected by the instrumentation performed through XRay.
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/operations/system-tables/query_log) system table.
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
@@ -48,6 +49,11 @@ Columns:
 - `increment` ([UInt64](../../sql-reference/data-types/int-uint.md)) - For trace type `ProfileEvent` is the amount of increment of profile event, for other trace types is 0.
 - `symbols`, ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`.
 - `lines`, ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`.
+- `function_id` ([Nullable(Int32)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary.
+- `function_name` ([Nullable(String)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, name of the instrumented function.
+- `handler` ([Nullable(String)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, handler of the instrumented function.
+- `entry_type` ([Nullable(Enum('Entry' = 0, 'Exit' = 1))](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, entry type of the trace.
+- `duration_microseconds` ([Nullable(UInt32)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, time the function was running for in microseconds.
 
 The symbolization can be enabled or disabled in the `symbolize` under `trace_log` in the server's configuration file.
 
@@ -72,3 +78,55 @@ query_id:
 trace:                   [371912858,371912789,371798468,371799717,371801313,371790250,624462773,566365041,566440261,566445834,566460071,566459914,566459842,566459580,566459469,566459389,566459341,566455774,371993941,371988245,372158848,372187428,372187309,372187093,372185478,140222123165193,140222122205443]
 size:                    5244400
 ```
+
+The profiling information can be converted easily to Chrome's Event Trace Format creating the following query in a `chrome_trace.sql` file:
+
+```sql
+SELECT
+    format(
+        '{{"traceEvents": [{}\n]}}',
+        arrayStringConcat(
+            groupArray(
+                concat(
+                    -- Begin Event
+                    format(
+                        '\n{{"name": "{}", "cat": "{}", "ph": "B", "ts": {}, "pid": 1, "tid": {}, "args": {{"query_id": "{}", "stack": "{}"}}}}',
+                        function_name,
+                        'clickhouse',
+                        toString(event_time_microseconds),
+                        toString(tid),
+                        query_id,
+                        concat('\n', arrayStringConcat(arrayMap((x, y) -> concat(x, ': ', y), lines, symbols)))
+                    ),
+                    ',',
+                    -- End Event
+                    format(
+                        '\n{{"name": "{}", "cat": "{}", "ph": "E", "ts": {}, "pid": 1, "tid": {}, "args": {{"query_id": "{}", , "stack": "{}"}}}}',
+                        function_name,
+                        'clickhouse',
+                        toString(event_time_microseconds + duration_microseconds),
+                        toString(tid),
+                        query_id,
+                        concat('\n', arrayStringConcat(arrayMap((x, y) -> concat(x, ': ', y), lines, symbols)))
+                    )
+                )
+            )
+        )
+    ) AS trace_json
+FROM system.trace_log
+WHERE event_date >= today();
+```
+
+And executing it with ClickHouse Client to export it to a `trace.json` file that we can import either with [Perfetto](https://ui.perfetto.dev/) or [speedscope](https://www.speedscope.app/).
+
+```bash
+echo $(clickhouse client --query "$(cat chrome_trace.sql)") > trace.json
+```
+
+We can omit the stack part if we want a more compact but less informative trace.
+
+**See also**
+
+- [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
+- [system.instrumentation](../../operations/system-tables/instrumentation.md) - Inspect instrumented functions.
+

@@ -1,2 +1,3 @@
-entry	\N
-exit	1
+EntryAndExit
+Entry	\N
+Exit	1

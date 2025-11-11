@@ -314,7 +314,7 @@ TraceLogElement InstrumentationManager::createTraceLogElement(const Instrumented
     element.function_id = instrumented_point.function_id;
     element.function_name = instrumented_point.symbol;
     element.handler = instrumented_point.handler_name;
-    element.entry_type = (entry_type == XRayEntryType::ENTRY) ? "entry" : "exit";
+    element.entry_type = entry_type;
     element.symbolize = true;
 
     const auto stack_trace = StackTrace();
@@ -407,7 +407,7 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
 
         LOG_INFO(logger, "Log ({}, function_id {}, {}): {}\nStack trace:\n{}",
             instrumented_point.function_name, instrumented_point.function_id,
-            entry_type == XRayEntryType::ENTRY ? "entry" : "exit", logger_info, stack_trace_str);
+            entry_type == XRayEntryType::ENTRY ? "Entry" : "Exit", logger_info, stack_trace_str);
 
         auto element = createTraceLogElement(instrumented_point, entry_type, std::chrono::system_clock::now());
         if (instrumented_point.context)
@@ -465,7 +465,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
 
             auto start_us = Int64(element.event_time_microseconds);
             element.duration_microseconds = Decimal64(now_us - start_us);
-            element.entry_type = "exit";
+            element.entry_type = XRayEntryType::EXIT;
 
             if (instrumented_point.context)
             {

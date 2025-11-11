@@ -30,6 +30,6 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.trace_log, system.text_log;
     SELECT handler, entry_type FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%QueryMetricLog::startQuery%', symbols) ORDER BY event_time_microseconds, entry_type;
-    SELECT handler, entry_type FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND function_name LIKE '%QueryMetricLog::startQuery%' AND handler = 'log' AND entry_type = 'exit' AND arrayExists(x -> x LIKE 'DB::logQueryStart%', symbols) ORDER BY event_time_microseconds, entry_type;
+    SELECT handler, entry_type FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND function_name LIKE '%QueryMetricLog::startQuery%' AND handler = 'log' AND entry_type = 'Exit' AND arrayExists(x -> x LIKE 'DB::logQueryStart%', symbols) ORDER BY event_time_microseconds, entry_type;
     SELECT (max(event_time_microseconds) - min(event_time_microseconds)) > 2 FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message ILIKE '%this is an%log%';
 """
