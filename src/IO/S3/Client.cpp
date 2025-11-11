@@ -14,6 +14,7 @@
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
@@ -489,6 +490,12 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
+
+Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest & request) const
+{
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
+}
 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
