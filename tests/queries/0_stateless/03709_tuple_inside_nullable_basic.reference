@@ -414,3 +414,9 @@ Complex - Multiple operations
 Complex - Nested aggregation
 high	2	38.5
 low	2	11
+Multiple nullable tuple elements
+Alice	Alice	100
+\N	\N	\N
+Bob	Bob	200
+\N	\N	\N
+Charlie	Charlie	300

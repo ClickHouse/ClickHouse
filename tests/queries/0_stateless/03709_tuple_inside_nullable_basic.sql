@@ -570,3 +570,26 @@ GROUP BY category
 ORDER BY category;
 
 DROP TABLE IF EXISTS tuple_test;
+
+SELECT 'Multiple nullable tuple elements';
+DROP TABLE IF EXISTS test_nullable_tuple;
+
+CREATE TABLE test_nullable_tuple
+(
+    data Nullable(Tuple(String, UInt64))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test_nullable_tuple VALUES
+    (('Alice', 100)),
+    (NULL),
+    (('Bob', 200)),
+    (NULL),
+    (('Charlie', 300));
+
+SELECT
+    tupleElement(data, 1), tupleElement(data, 1), tupleElement(data, 2)
+FROM test_nullable_tuple;
+
+DROP TABLE IF EXISTS test_nullable_tuple;
