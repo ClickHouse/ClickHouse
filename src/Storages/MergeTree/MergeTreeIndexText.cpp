@@ -8,6 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include "Core/ColumnWithTypeAndName.h"
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -1100,11 +1101,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    const auto & index_column = block.getByName(index_column_name);
+    const ColumnWithTypeAndName & column_with_type_and_name = block.getByName(index_column_name);
 
-    if (isArray(index_column.column->getDataType()))
+    if (isArray(column_with_type_and_name.column->getDataType()))
     {
-        auto [processed_column, offset] = preprocessor->processColumnArray(index_column, *pos, rows_read);
+        auto [processed_column, offset] = preprocessor->processColumnArray(column_with_type_and_name, *pos, rows_read);
 
         const auto & column_array = assert_cast<const ColumnArray &>(*processed_column);
         const auto & column_data = column_array.getData();
@@ -1123,7 +1124,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     }
     else
     {
-        auto [processed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
+        auto [processed_column, offset] = preprocessor->processColumn(column_with_type_and_name, *pos, rows_read);
         for (size_t i = 0; i < rows_read; ++i)
         {
             const std::string_view ref = processed_column->getDataAt(offset + i);
