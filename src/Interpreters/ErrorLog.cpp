@@ -77,7 +77,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "Remote exception (i.e. received during one of the distributed queries)."
             },
             {
-                "last_error_query_id",
+                "query_id",
                 std::make_shared<DataTypeString>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Id of a query that caused the last error (if available)."
