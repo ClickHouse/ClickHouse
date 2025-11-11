@@ -13,10 +13,10 @@ namespace ErrorCodes
 namespace ProfileEvents
 {
     extern const Event S3GetObject;
-    extern const Event S3GetObjectAttributes;
+    extern const Event S3GetObjectTagging;
     extern const Event S3HeadObject;
     extern const Event DiskS3GetObject;
-    extern const Event DiskS3GetObjectAttributes;
+    extern const Event DiskS3GetObjectTagging;
     extern const Event DiskS3HeadObject;
 }
 
@@ -52,9 +52,9 @@ namespace
         const String & key,
         const String & version_id)
     {
-        ProfileEvents::increment(ProfileEvents::S3GetObjectAttributes);
+        ProfileEvents::increment(ProfileEvents::S3GetObjectTagging);
         if (client.isClientForDisk())
-            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectAttributes);
+            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectTagging);
 
         S3::GetObjectTaggingRequest req;
         req.SetBucket(bucket);
