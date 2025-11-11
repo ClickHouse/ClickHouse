@@ -34,6 +34,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/FieldBinaryEncoding.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 
 namespace DB
 {
