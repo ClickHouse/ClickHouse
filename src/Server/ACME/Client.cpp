@@ -406,9 +406,6 @@ void Client::refreshKeyTask()
             private_key = rsa_key.privateKey();
 
             zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
-
-            refresh_key_task->schedule();
-            return;
         }
     }
     catch (...)
