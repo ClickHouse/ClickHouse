@@ -115,6 +115,9 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     if (initialized)
         return;
 
+    if (!config.has("acme"))
+        return;
+
     terms_of_service_agreed = config.getBool("acme.terms_of_service_agreed");
     if (!terms_of_service_agreed)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "ACME certificate provisioning requires accepting the terms of service.");
@@ -124,9 +127,6 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
         if (private_acme_key && api && api->isReady())
             return;
     }
-
-    if (!config.has("acme"))
-        return;
 
     auto http_port = config.getInt("http_port");
     if (http_port != 80)
