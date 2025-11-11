@@ -86,6 +86,17 @@ SELECT count() FROM tab WHERE hasToken(str, 'baz');
 DROP TABLE tab;
 DROP FUNCTION udf_preprocessor;
 
+SELECT 'The preprocessor expression is compatible with array columns';
+CREATE TABLE tab
+(
+    key UInt64,
+    arr_str Array(String),
+    INDEX idx(arr_str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr_str))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+DROP TABLE tab;
+
 SELECT 'Negative tests on preprocessor construction validations.';
 
 -- The preprocessor argument must reference the index column
@@ -178,16 +189,6 @@ CREATE TABLE tab
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(str, toString(rand())))
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
-
-SELECT '- The preprocessor expression is not compatible with array columns (yet)';
-CREATE TABLE tab
-(
-    key UInt64,
-    arr_str Array(String),
-    INDEX idx(arr_str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr_str))
-)
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError BAD_ARGUMENTS }
-
 
 
 DROP TABLE IF EXISTS tab;
