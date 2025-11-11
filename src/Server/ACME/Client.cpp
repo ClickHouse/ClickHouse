@@ -137,10 +137,8 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     std::vector<std::string> served_domains;
     for (const auto & key : domains_keys)
-    {
         served_domains.push_back(config.getString("acme.domains." + key));
-        LOG_DEBUG(log, "Serving domain: {}", served_domains.back());
-    }
+
     chassert(!served_domains.empty());
 
     domains = served_domains;
@@ -148,7 +146,7 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     refresh_certificates_before = config.getInt("acme.refresh_certificates_before", /* one month */ 60 * 60 * 24 * 30);
 
     acme_hostname = Poco::URI(directory_url).getHost();
-    LOG_DEBUG(log, "ACME server hostname: {}", acme_hostname);
+    LOG_TEST(log, "ACME server hostname: {}", acme_hostname);
 
     auto zk = Context::getGlobalContextInstance()->getZooKeeper();
 
@@ -162,9 +160,9 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
-    refresh_certificates_task = bgpool.createTask("ACME::refresh_certificates_fn", [this, &config] {refresh_certificates_fn(config);});
-    authentication_task = bgpool.createTask("ACME::authentication_fn", [this] { authentication_fn(); });
-    refresh_key_task = bgpool.createTask("ACME::refresh_key_fn", [this] { refresh_key_fn(); });
+    refresh_certificates_task = bgpool.createTask("ACME::refreshCertificatesTask", [this, &config] { refreshCertificatesTask(config); });
+    authentication_task = bgpool.createTask("ACME::authenticationTask", [this] { authenticationTask(); });
+    refresh_key_task = bgpool.createTask("ACME::refreshKeyTask", [this] { refreshKeyTask(); });
 
     {
         std::lock_guard key_lock(private_acme_key_mutex);
@@ -175,7 +173,7 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     initialized = true;
 }
 
-void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & config)
+void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & config)
 {
     chassert(keys_initialized);
     chassert(api && api->isReady());
@@ -332,7 +330,7 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
     refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
 }
 
-void Client::authentication_fn()
+void Client::authenticationTask()
 {
     LOG_DEBUG(log, "Running ACME::Client authentication task");
     if (api && api->isReady())
@@ -344,11 +342,7 @@ void Client::authentication_fn()
         std::lock_guard key_lock(private_acme_key_mutex);
 
         if (!private_acme_key)
-        {
-            LOG_FATAL(log, "Private key is not initialized, retrying in 1 second. This is a bug.");
-            refresh_key_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
-            return;
-        }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Private ACME key is not initialized");
     }
 
     try
@@ -376,7 +370,7 @@ void Client::authentication_fn()
     authentication_task->scheduleAfter(REFRESH_TASK_IN_A_SECOND);
 }
 
-void Client::refresh_key_fn()
+void Client::refreshKeyTask()
 {
     LOG_DEBUG(log, "Running ACME::Client key refresh task");
 
