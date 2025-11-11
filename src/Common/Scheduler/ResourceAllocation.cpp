@@ -1,25 +1,33 @@
 #include <Common/Scheduler/ResourceAllocation.h>
-#include <Common/Scheduler/IAllocationConstraint.h>
-
-#include <base/defines.h>
-
-#include <ranges>
+#include <Common/Scheduler/IAllocationQueue.h>
 
 namespace DB
 {
 
-void ResourceAllocation::decrease(ResourceCost size)
+ResourceAllocation::ResourceAllocation(
+    IAllocationQueue & queue_,
+    ResourceCost initial_size,
+    IncreaseRequest & increase_,
+    DecreaseRequest & decrease_)
+    : queue(queue_), increase(increase_), decrease(decrease_)
 {
-    chassert(allocated_size > size);
+    queue.insertAllocation(*this, initial_size);
+}
 
-    allocated_size -= size;
+ResourceAllocation::~ResourceAllocation()
+{
+    std::unique_lock lock(mutex);
+    if (is_removed)
+        return;
+    queue.decreaseAllocation(*this, 0);
+    cv.wait(lock, [this]() { return is_removed; });
+}
 
-    // Iterate over constraints in reverse order
-    for (ISchedulerConstraint * constraint : std::ranges::reverse_view(constraints))
-    {
-        if (constraint)
-            static_cast<IAllocationConstraint*>(constraint)->decreaseAllocation(this, size);
-    }
+void ResourceAllocation::allocationRemoved()
+{
+    std::unique_lock lock(mutex);
+    is_removed = true;
+    cv.notify_all();
 }
 
 }

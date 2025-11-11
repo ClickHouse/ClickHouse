@@ -17,6 +17,8 @@
 #include <mutex>
 #include <unordered_map>
 
+// TODO(serxa): move this class outside of Nodes folder
+
 namespace DB
 {
 
@@ -47,14 +49,15 @@ namespace
     }
 }
 
-WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit, const ASTPtr & ast, const String & resource_name)
+WorkloadResourceManager::NodeInfo::NodeInfo(CostUnit unit_, const ASTPtr & ast, const String & resource_name)
 {
     auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
     parent = create->getWorkloadParent();
+    unit = unit_;
     // We ignore unknown settings here for forward-compatibility.
     // There is no way to report error at this point other than stop server.
-    settings.initFromChanges(unit, create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
+    settings.initFromChanges(create->changes, resource_name, /*throw_on_unknown_setting=*/ false);
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
@@ -62,12 +65,24 @@ WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
     , resource_name(getEntityName(resource_entity))
     , unit(getResourceUnit(resource_entity_))
 {
-    scheduler.start("Sch." + resource_name);
+    switch (getSharingMode(unit))
+    {
+        case SharingMode::TimeShared:
+        {
+            setup<TimeSharedWorkloadNode, TimeSharedScheduler>();
+            break;
+        }
+        case SharingMode::SpaceShared:
+        {
+            setup<SpaceSharedWorkloadNode, SpaceSharedScheduler>();
+            break;
+        }
+    }
 }
 
 WorkloadResourceManager::Resource::~Resource()
 {
-    scheduler.stop();
+    stop(scheduler);
 }
 
 void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
@@ -90,20 +105,19 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 
     if (info.parent.empty() && root_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The second root workload '{}' is not allowed (current root '{}') in resource '{}'",
-            info.name, root_node->basename, resource_name);
+            info.name, dynamic_cast<ISchedulerNode &>(*root_node).basename, resource_name);
 
     executeInSchedulerThread([&, this]
     {
-        auto node = std::make_shared<UnifiedSchedulerNode>(scheduler.event_queue, info.settings);
-        node->basename = info.name;
+        auto [workload_node, scheduler_node] = make_workload_node(scheduler->event_queue, info);
         if (!info.parent.empty())
-            node_for_workload[info.parent]->attachUnifiedChild(node);
+            node_for_workload[info.parent]->attachWorkloadChild(workload_node);
         else
         {
-            root_node = node;
-            scheduler.attachChild(root_node);
+            root_node = workload_node;
+            scheduler->attachChild(scheduler_node);
         }
-        node_for_workload[info.name] = node;
+        node_for_workload[info.name] = workload_node;
 
         updateCurrentVersion();
     });
@@ -121,18 +135,18 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 
     auto node = node_for_workload[info.name];
 
-    if (node->hasUnifiedChildren())
+    if (node->hasWorkloadChildren())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removing workload '{}' with children in resource '{}'",
         info.name, resource_name);
 
     executeInSchedulerThread([&]
     {
         if (!info.parent.empty())
-            node_for_workload[info.parent]->detachUnifiedChild(node);
+            node_for_workload[info.parent]->detachWorkloadChild(node);
         else
         {
             chassert(node == root_node);
-            scheduler.removeChild(root_node.get());
+            scheduler->removeChild(&dynamic_cast<ISchedulerNode &>(*root_node));
             root_node.reset();
         }
 
@@ -168,10 +182,14 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
     {
         auto node = node_for_workload[old_info.name];
         bool detached = false;
-        if (UnifiedSchedulerNode::updateRequiresDetach(old_info.parent, new_info.parent, old_info.settings, new_info.settings))
+        if (IWorkloadNode::updateRequiresDetach(
+            old_info.parent,
+            new_info.parent,
+            old_info.settings,
+            new_info.settings))
         {
             if (!old_info.parent.empty())
-                node_for_workload[old_info.parent]->detachUnifiedChild(node);
+                node_for_workload[old_info.parent]->detachWorkloadChild(node);
             detached = true;
         }
 
@@ -180,7 +198,7 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
         if (detached)
         {
             if (!new_info.parent.empty())
-                node_for_workload[new_info.parent]->attachUnifiedChild(node);
+                node_for_workload[new_info.parent]->attachWorkloadChild(node);
         }
         updateCurrentVersion();
     });
@@ -383,7 +401,7 @@ std::future<void> WorkloadResourceManager::Resource::detachClassifier(VersionPtr
 {
     auto detach_promise = std::make_shared<std::promise<void>>(); // event queue task is std::function, which requires copy semanticss
     auto future = detach_promise->get_future();
-    scheduler.event_queue->enqueue([detached_version = std::move(version), promise = std::move(detach_promise)] mutable
+    scheduler->event_queue.enqueue([detached_version = std::move(version), promise = std::move(detach_promise)] mutable
     {
         try
         {
@@ -441,17 +459,17 @@ std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier
 {
     auto attach_promise = std::make_shared<std::promise<void>>(); // event queue task is std::function, which requires copy semantics
     auto future = attach_promise->get_future();
-    scheduler.event_queue->enqueue([&, this, promise = std::move(attach_promise)]
+    scheduler->event_queue.enqueue([&, this, promise = std::move(attach_promise)]
     {
         try
         {
             if (auto iter = node_for_workload.find(workload_name); iter != node_for_workload.end())
             {
-                auto queue = iter->second->getQueue();
-                if (!queue)
+                if (ResourceLink link = iter->second->getLink())
+                    classifier.attach(shared_from_this(), current_version, link);
+                else
                     throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Unable to use workload '{}' that have children for resource '{}'",
                         workload_name, resource_name);
-                classifier.attach(shared_from_this(), current_version, ResourceLink{.queue = queue.get()});
             }
             else
             {

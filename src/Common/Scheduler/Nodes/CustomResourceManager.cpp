@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int INVALID_SCHEDULER_NODE;
 }
 
-CustomResourceManager::State::State(EventQueue * event_queue, const Poco::Util::AbstractConfiguration & config)
+CustomResourceManager::State::State(EventQueue & event_queue, const Poco::Util::AbstractConfiguration & config)
     : classifiers(config)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
@@ -36,7 +36,7 @@ CustomResourceManager::State::State(EventQueue * event_queue, const Poco::Util::
 
 CustomResourceManager::State::Resource::Resource(
     const String & name,
-    EventQueue * event_queue,
+    EventQueue & event_queue,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix)
 {
@@ -98,14 +98,14 @@ CustomResourceManager::State::Resource::~Resource()
     if (attached_to != nullptr)
     {
         ISchedulerNode * root = nodes.find("/")->second.ptr.get();
-        attached_to->event_queue->enqueue([my_scheduler = attached_to, root]
+        attached_to->event_queue.enqueue([my_scheduler = attached_to, root]
         {
             my_scheduler->removeChild(root);
         });
     }
 }
 
-CustomResourceManager::State::Node::Node(const String & name, EventQueue * event_queue, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+CustomResourceManager::State::Node::Node(const String & name, EventQueue & event_queue, const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     : type(config.getString(config_prefix + ".type", "fifo"))
     , ptr(SchedulerNodeFactory::instance().get(type, event_queue, config, config_prefix))
 {
@@ -216,7 +216,7 @@ void CustomResourceManager::updateConfiguration(const Poco::Util::AbstractConfig
     {
         const SchedulerNodePtr & root = resource->nodes.find("/")->second.ptr;
         resource->attached_to = &scheduler;
-        scheduler.event_queue->enqueue([this, root]
+        scheduler.event_queue.enqueue([this, root]
         {
             scheduler.attachChild(root);
         });
@@ -254,7 +254,7 @@ void CustomResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
 
     std::promise<void> promise;
     auto future = promise.get_future();
-    scheduler.event_queue->enqueue([state_ref, visitor, &promise]
+    scheduler.event_queue.enqueue([state_ref, visitor, &promise]
     {
         for (auto & [name, resource] : state_ref->resources)
             for (auto & [path, node] : resource->nodes)

@@ -6,15 +6,15 @@
 #include <Common/Logger.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/SchedulerRoot.h>
-#include <Common/Scheduler/Nodes/UnifiedSchedulerNode.h>
+#include <Common/Scheduler/TimeSharedScheduler.h>
+#include <Common/Scheduler/SpaceSharedScheduler.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 
 #include <Parsers/IAST_fwd.h>
 
 #include <boost/core/noncopyable.hpp>
 
-#include <exception>
 #include <memory>
 #include <mutex>
 #include <future>
@@ -26,7 +26,7 @@ namespace DB
 /*
  * Implementation of `IResourceManager` that creates hierarchy of scheduler nodes according to
  * workload entities (WORKLOADs and RESOURCEs). It subscribes for updates in IWorkloadEntityStorage and
- * creates hierarchy of UnifiedSchedulerNode identical to the hierarchy of WORKLOADs.
+ * creates hierarchy of WorkloadNode identical to the hierarchy of WORKLOADs.
  * For every RESOURCE an independent hierarchy of scheduler nodes is created.
  *
  * Manager process updates of WORKLOADs and RESOURCEs: CREATE/DROP/ALTER.
@@ -38,10 +38,10 @@ namespace DB
  * `ClassifierPtr` is acquired and held.
  *
  * === RESOURCE ARCHITECTURE ===
- * Let's consider how a single resource is implemented. Every workload is represented by corresponding UnifiedSchedulerNode.
- * Every UnifiedSchedulerNode manages its own subtree of ISchedulerNode objects (see details in UnifiedSchedulerNode.h)
- * UnifiedSchedulerNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
- * Parent of the root workload for a resource is SchedulerRoot with its own scheduler thread.
+ * Let's consider how a single resource is implemented. Every workload is represented by corresponding WorkloadNode.
+ * Every WorkloadNode manages its own subtree of ISchedulerNode objects (see details in WorkloadNode.h)
+ * WorkloadNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
+ * Parent of the root workload for a resource is the scheduler with its own thread.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -50,15 +50,15 @@ namespace DB
  *    CREATE WORKLOAD production PARENT all
  *    CREATE WORKLOAD development PARENT all
  *
- *             root                - SchedulerRoot (with scheduler thread and EventQueue)
+ *             root                - TimeSharedScheduler (with a thread and an EventQueue)
  *               |
- *              all                - UnifiedSchedulerNode
+ *              all                - WorkloadNode
  *               |
- *            p0_fair              - FairPolicy (part of parent UnifiedSchedulerNode internal structure)
+ *            p0_fair              - FairPolicy (part of parent WorkloadNode internal structure)
  *            /     \
- *    production     development   - UnifiedSchedulerNode
+ *    production     development   - WorkloadNode
  *        |               |
- *      queue           queue      - FifoQueue (part of parent UnifiedSchedulerNode internal structure)
+ *      queue           queue      - FifoQueue (part of parent WorkloadNode internal structure)
  *
  * === UPDATING WORKLOADS ===
  * Workload may be created, updated or deleted.
@@ -145,9 +145,10 @@ private:
     {
         String name; // Workload name
         String parent; // Name of parent workload
+        CostUnit unit; // Cost unit of the resource
         WorkloadSettings settings; // Settings specific for a given resource
 
-        NodeInfo(CostUnit unit, const ASTPtr & ast, const String & resource_name);
+        NodeInfo(CostUnit unit_, const ASTPtr & ast, const String & resource_name);
     };
 
     /// Ownership control for scheduler nodes, which could be referenced by raw pointers
@@ -192,7 +193,7 @@ private:
         {
             std::promise<void> promise;
             auto future = promise.get_future();
-            scheduler.event_queue->enqueue([&]
+            scheduler->event_queue.enqueue([&]
             {
                 try
                 {
@@ -207,15 +208,45 @@ private:
             future.get(); // Blocks until execution is done in the scheduler thread
         }
 
+        // Setup resource for specific node and scheduler types
+        template <class Node, class Scheduler>
+        void setup()
+        {
+            auto sched = std::make_shared<Scheduler>();
+            sched->start("Sch." + resource_name);
+            scheduler = sched;
+
+            stop = [] (const SchedulerNodePtr & root)
+            {
+                std::static_pointer_cast<Scheduler>(root)->stop();
+            };
+            make_workload_node = [] (EventQueue & event_queue, const NodeInfo & info) -> std::pair<WorkloadNodePtr, SchedulerNodePtr>
+            {
+                auto result = std::make_shared<Node>(event_queue, info.settings, info.unit);
+                result->basename = info.name;
+                // We return pointers to the same workload node for both independent base classes to erase type time-shared vs. space-shared
+                // This is safe as pointers will share the same control block
+                return
+                {
+                    std::static_pointer_cast<IWorkloadNode>(result),
+                    std::static_pointer_cast<typename Node::Base>(result)
+                };
+            };
+        }
+
+        // Type-erasure for time-shared vs. space-shared resources
+        std::function<void(const SchedulerNodePtr &)> stop;
+        std::function<std::pair<WorkloadNodePtr, SchedulerNodePtr>(EventQueue &, const NodeInfo &)> make_workload_node;
+
         ASTPtr resource_entity;
         const String resource_name;
         const CostUnit unit;
-        SchedulerRoot scheduler;
+        SchedulerNodePtr scheduler;
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
-        std::unordered_map<String, UnifiedSchedulerNodePtr> node_for_workload;
-        UnifiedSchedulerNodePtr root_node;
+        std::unordered_map<String, WorkloadNodePtr> node_for_workload;
+        WorkloadNodePtr root_node;
         VersionPtr current_version;
     };
 

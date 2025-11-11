@@ -5,10 +5,8 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
-#include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
 #include <Common/Scheduler/ISchedulerConstraint.h>
-
-#include <Poco/Util/XMLConfiguration.h>
 
 #include <unordered_map>
 #include <memory>
@@ -23,40 +21,38 @@ namespace ErrorCodes
     extern const int INVALID_SCHEDULER_NODE;
 }
 
-/*
- * Resource scheduler root node with a dedicated thread.
- * Immediate children correspond to different resources.
- */
-class SchedulerRoot final : public ISchedulerNode
+/// Resource scheduler root node with a dedicated thread.
+/// Immediate children correspond to different resources.
+class TimeSharedScheduler final : public ITimeSharedNode
 {
 private:
     struct Resource
     {
-        SchedulerNodePtr root;
+        TimeSharedNodePtr root;
 
         // Intrusive cyclic list of active resources
         Resource * next = nullptr;
         Resource * prev = nullptr;
 
-        explicit Resource(const SchedulerNodePtr & root_)
+        explicit Resource(const TimeSharedNodePtr & root_)
             : root(root_)
         {
-            root->info.parent.ptr = this;
+            root->parent_data.ptr = this;
         }
 
         // Get pointer stored by ctor in info
-        static Resource * get(SchedulerNodeInfo & info)
+        static Resource * get(ITimeSharedNode & node)
         {
-            return reinterpret_cast<Resource *>(info.parent.ptr);
+            return reinterpret_cast<Resource *>(node.parent_data.ptr);
         }
     };
 
 public:
-    explicit SchedulerRoot()
-        : ISchedulerNode(&events)
+    explicit TimeSharedScheduler()
+        : ITimeSharedNode(events)
     {}
 
-    ~SchedulerRoot() override
+    ~TimeSharedScheduler() override
     {
         stop();
         while (!children.empty())
@@ -106,13 +102,15 @@ public:
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * _ = dynamic_cast<SchedulerRoot *>(other))
+        if (auto * _ = dynamic_cast<TimeSharedScheduler *>(other))
             return true;
         return false;
     }
 
-    void attachChild(const SchedulerNodePtr & child) override
+    void attachChild(const SchedulerNodePtr & child_base) override
     {
+        TimeSharedNodePtr child = std::static_pointer_cast<ITimeSharedNode>(child_base);
+
         // Take ownership
         assert(child->parent == nullptr);
         if (auto [it, inserted] = children.emplace(child.get(), child); !inserted)
@@ -121,24 +119,25 @@ public:
                 "Can't add the same scheduler node twice");
 
         // Attach
-        child->setParent(this);
+        child->setParentNode(this);
 
         // Activate child if required
         if (child->isActive())
-            activateChild(child.get());
+            activateChild(*child);
     }
 
-    void removeChild(ISchedulerNode * child) override
+    void removeChild(ISchedulerNode * child_base) override
     {
+        ITimeSharedNode * child = static_cast<ITimeSharedNode *>(child_base);
         if (auto iter = children.find(child); iter != children.end())
         {
-            SchedulerNodePtr removed = iter->second.root;
+            TimeSharedNodePtr removed = iter->second.root;
 
             // Deactivate if required
             deactivate(&iter->second);
 
             // Detach
-            removed->setParent(nullptr);
+            removed->setParentNode(nullptr);
 
             // Remove ownership
             children.erase(iter);
@@ -158,6 +157,7 @@ public:
                 return {nullptr, false};
 
             // Dequeue request from current resource
+            // We ask request of any kind and the nodes prioritize Release over Acquire internally (if both are supported)
             auto [request, resource_active] = current->root->dequeueRequest();
 
             // Deactivate resource if required
@@ -184,9 +184,9 @@ public:
         return 0;
     }
 
-    void activateChild(ISchedulerNode * child) override
+    void activateChild(ITimeSharedNode & child) override
     {
-        activate(Resource::get(child->info));
+        activate(Resource::get(child));
     }
 
 private:
@@ -250,7 +250,7 @@ private:
     }
 
     Resource * current = nullptr; // round-robin pointer
-    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
+    std::unordered_map<ITimeSharedNode *, Resource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
     ThreadFromGlobalPool scheduler;

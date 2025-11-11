@@ -370,11 +370,9 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
             }
 
-            WorkloadSettings io_validator;
-            io_validator.initFromChanges(CostUnit::IOByte, workload->changes);
-
-            WorkloadSettings cpu_validator;
-            cpu_validator.initFromChanges(CostUnit::CPUNanosecond, workload->changes);
+            // Check the settings values and throw if something is wrong
+            WorkloadSettings validator;
+            validator.initFromChanges(workload->changes);
         }
 
         // Validate resource
@@ -396,6 +394,11 @@ bool WorkloadEntityStorageBase::storeEntity(
                 {
                     if (!query_resource.empty() && query_resource != resource->getResourceName())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for QUERY is not allowed. Current resource name: '{}'.", query_resource);
+                }
+                if (operation.mode == ResourceAccessMode::MemoryReservation)
+                {
+                    if (!memory_reservation_resource.empty() && memory_reservation_resource != resource->getResourceName())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MEMORY RESERVATION is not allowed. Current resource name: '{}'.", memory_reservation_resource);
                 }
             }
         }
@@ -422,7 +425,7 @@ bool WorkloadEntityStorageBase::storeEntity(
 
                         // Validate that we could parse the settings for specific resource
                         WorkloadSettings validator;
-                        validator.initFromChanges(target_resource->unit, workload->changes, target);
+                        validator.initFromChanges(workload->changes, target);
                         break;
                     }
                 }
@@ -546,6 +549,12 @@ String WorkloadEntityStorageBase::getQueryResourceName()
     return query_resource;
 }
 
+String WorkloadEntityStorageBase::getMemoryReservationResourceName()
+{
+    std::lock_guard lock{mutex};
+    return memory_reservation_resource;
+}
+
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
     std::vector<Event> tx)
@@ -658,6 +667,8 @@ void WorkloadEntityStorageBase::applyEvent(
                     worker_thread_resource = resource->getResourceName();
                 if (operation.mode == ResourceAccessMode::Query)
                     query_resource = resource->getResourceName();
+                if (operation.mode == ResourceAccessMode::MemoryReservation)
+                    memory_reservation_resource = resource->getResourceName();
             }
         }
 
@@ -689,6 +700,9 @@ void WorkloadEntityStorageBase::applyEvent(
 
         if (event.name == query_resource)
             query_resource.clear();
+
+        if (event.name == memory_reservation_resource)
+            memory_reservation_resource.clear();
 
         // Clean up references
         removeReferences(it->second);

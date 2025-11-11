@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/SchedulerRoot.h>
+#include <Common/Scheduler/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/ClassifiersConfig.h>
 
 #include <mutex>
@@ -13,7 +13,7 @@ namespace DB
  * Implementation of `IResourceManager` supporting arbitrary hierarchy of scheduler nodes.
  * Scheduling hierarchies for every resource is described through server xml or yaml configuration.
  * Configuration could be changed dynamically without server restart.
- * All resources are controlled by single root `SchedulerRoot`.
+ * All resources are controlled by a single root `TimeSharedScheduler`.
  *
  * State of manager is set of resources attached to the scheduler. States are referenced by classifiers.
  * Classifiers are used (1) to access resources and (2) to keep shared ownership of resources with pending
@@ -46,7 +46,7 @@ private:
 
             Node(
                 const String & name,
-                EventQueue * event_queue,
+                EventQueue & event_queue,
                 const Poco::Util::AbstractConfiguration & config,
                 const std::string & config_prefix);
             bool equals(const Node & o) const;
@@ -55,11 +55,11 @@ private:
         struct Resource
         {
             std::unordered_map<String, Node> nodes; // by path
-            SchedulerRoot * attached_to = nullptr;
+            TimeSharedScheduler * attached_to = nullptr;
 
             Resource(
                 const String & name,
-                EventQueue * event_queue,
+                EventQueue & event_queue,
                 const Poco::Util::AbstractConfiguration & config,
                 const std::string & config_prefix);
             ~Resource(); // unregisters resource from scheduler
@@ -72,7 +72,7 @@ private:
         ClassifiersConfig classifiers;
 
         State() = default;
-        explicit State(EventQueue * event_queue, const Poco::Util::AbstractConfiguration & config);
+        explicit State(EventQueue & event_queue, const Poco::Util::AbstractConfiguration & config);
     };
 
     using StatePtr = std::shared_ptr<State>;
@@ -87,10 +87,10 @@ private:
     private:
         const ClassifierSettings settings;
         std::unordered_map<String, ResourceLink> resources; // accessible resources by names
-        StatePtr state; // hold state to avoid ResourceLink invalidation due to resource deregistration from SchedulerRoot
+        StatePtr state; // hold state to avoid ResourceLink invalidation due to resource deregistration from scheduler
     };
 
-    SchedulerRoot scheduler;
+    TimeSharedScheduler scheduler;
     mutable std::mutex mutex;
     StatePtr state;
 };

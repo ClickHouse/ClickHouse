@@ -48,6 +48,7 @@ public:
     String getMasterThreadResourceName() override;
     String getWorkerThreadResourceName() override;
     String getQueryResourceName() override;
+    String getMemoryReservationResourceName() override;
 
 protected:
     enum class OperationResult
@@ -121,6 +122,7 @@ private:
     String master_thread_resource; /// current resource name for worker threads
     String worker_thread_resource; /// current resource name for master threads
     String query_resource; /// current resource name for queries
+    String memory_reservation_resource; /// current resource name for memory reservations
 
 protected:
     ContextPtr global_context;

@@ -49,24 +49,29 @@ struct WorkloadSettings
     /// Limits total number of waiting queries
     Int64 max_waiting_queries = unlimited;
 
-    /// Settings that are applied depend on cost unit
-    CostUnit unit = CostUnit::IOByte;
+    /// Limits total memory reservation
+    Int64 max_memory = unlimited;
 
-    // Throttler
-    bool hasThrottler() const;
-    Float64 getThrottlerMaxSpeed() const;
-    Float64 getThrottlerMaxBurst() const;
+    // Throttler (time-shared resource)
+    bool hasThrottler(CostUnit unit) const;
+    Float64 getThrottlerMaxSpeed(CostUnit unit) const;
+    Float64 getThrottlerMaxBurst(CostUnit unit) const;
 
-    // Semaphore
-    bool hasSemaphore() const;
-    Int64 getSemaphoreMaxRequests() const;
-    Int64 getSemaphoreMaxCost() const;
+    // Semaphore (time-shared resource)
+    bool hasSemaphore(CostUnit unit) const;
+    Int64 getSemaphoreMaxRequests(CostUnit unit) const;
+    Int64 getSemaphoreMaxCost(CostUnit unit) const;
 
-    // Queue
-    Int64 getQueueSize() const;
+    // Queue (both time-shared and space-shared resources)
+    bool hasQueueLimit(CostUnit unit) const;
+    Int64 getQueueLimit(CostUnit unit) const;
+
+    // Allocation Limit (space-shared resource)
+    bool hasAllocationLimit(CostUnit unit) const;
+    Int64 getAllocationLimit(CostUnit unit) const;
 
     // Should be called after default constructor
-    void initFromChanges(CostUnit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
+    void initFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {}, bool throw_on_unknown_setting = true);
 };
 
 }
