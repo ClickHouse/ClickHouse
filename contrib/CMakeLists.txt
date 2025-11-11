@@ -167,9 +167,10 @@ add_contrib (datasketches-cpp-cmake datasketches-cpp)
 add_contrib (incbin-cmake incbin)
 add_contrib (sqids-cpp-cmake sqids-cpp)
 
-option(ENABLE_CPPJIEBA "Enable cppjieba support" ${ENABLE_LIBRARIES})
-if (ENABLE_CPPJIEBA)
+option(ENABLE_JIEBA "Enable jieba support" ${ENABLE_LIBRARIES})
+if (ENABLE_JIEBA)
     add_contrib (darts-clone-cmake darts-clone)
+    add_contrib (clickhouse-jieba)
 endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
