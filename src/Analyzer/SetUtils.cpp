@@ -162,7 +162,8 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expres
     DataTypes set_element_types = {expression_type};
     const auto * lhs_tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get());
 
-    if (lhs_tuple_type && lhs_tuple_type->getElements().size() != 1)
+    /// Do not unpack if empty tuple or single element tuple
+    if (lhs_tuple_type && lhs_tuple_type->getElements().size() > 1)
         set_element_types = lhs_tuple_type->getElements();
 
     for (auto & set_element_type : set_element_types)
