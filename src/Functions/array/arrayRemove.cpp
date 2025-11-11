@@ -76,12 +76,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         return func->execute(func_args, func->getResultType(), arr_elements_count, /* dry_run = */ false);
     };
 
-    bool elem_is_const_null = false;
-    if (const auto * elem_nullable = checkAndGetColumn<ColumnNullable>(arguments[1].column.get()))
-    {
-        if (elem_nullable->size() == 1 && elem_nullable->isNullAt(0))
-            elem_is_const_null = true;
-    }
+    bool elem_is_const_null = elem_type->onlyNull();
 
     ColumnPtr replicated_elem_col;
     if (!elem_is_const_null)
