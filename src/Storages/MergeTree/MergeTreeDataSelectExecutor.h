@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 
 namespace DB
@@ -97,6 +98,15 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
+
+    static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        MergeTreeIndexPtr skip_index_minmax,
+        const MergeTreeReaderSettings & reader_settings,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache);
 
 private:
     const MergeTreeData & data;
@@ -201,6 +211,7 @@ public:
         const std::optional<KeyCondition> & part_offset_condition,
         const std::optional<KeyCondition> & total_offset_condition,
         const UsefulSkipIndexes & skip_indexes,
+        const std::optional<TopNFilterInfo> & top_n_filter_info,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
         size_t num_streams,

@@ -89,10 +89,21 @@ size_t MergeTreeReaderIndex::readRows(
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
 {
-    if (index_read_result->skip_index_read_result)
+    chassert(mark < index_read_result->skip_index_read_result->granules_selected.size());
+
+    if (!index_read_result->skip_index_read_result->granules_selected.at(mark))
+        return true;
+
+    Field value;
+    if (index_read_result->skip_index_read_result->threshold_tracker && index_read_result->skip_index_read_result->threshold_tracker->isSet())
     {
-        chassert(mark < index_read_result->skip_index_read_result->size());
-        if (!index_read_result->skip_index_read_result->at(mark))
+        /// TODO : assumes all index marks have been read.
+        if (index_read_result->skip_index_read_result->threshold_tracker->getDirection() == 1) /// ASC
+            value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].min_value;
+        else
+            value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].max_value;
+
+        if (!index_read_result->skip_index_read_result->threshold_tracker->isValueInsideThreshold(value))
             return true;
     }
 

@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -96,6 +97,7 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
+    extern const SettingsBool use_skip_indexes_for_top_n;
 }
 
 namespace MergeTreeSetting
@@ -659,6 +661,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     const UsefulSkipIndexes & skip_indexes,
+    const std::optional<TopNFilterInfo> & top_n_filter_info,
     const MergeTreeReaderSettings & reader_settings,
     LoggerPtr log,
     size_t num_streams,
@@ -1085,6 +1088,40 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             return !part.data_part || part.ranges.empty();
         });
 
+    /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
+    /// TODO : We can still perform this optimization if the WHERE clause is only a range condition on the PK
+    if (top_n_filter_info && skip_indexes.skip_index_for_top_n_filtering && !top_n_filter_info->where_clause)
+    {
+        auto mark_cache = context->getIndexMarkCache();
+        auto uncompressed_cache = context->getIndexUncompressedCache();
+        auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
+
+        /// TODO - multithreading
+        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        {
+            /// TODO - decision based on N v/s number of granules in part
+            if (parts_with_ranges[part_index].ranges.getNumberOfMarks() > (10 * top_n_filter_info->limit_n))
+            {
+                auto min_max_granules = getMinMaxIndexGranules(parts_with_ranges[part_index].data_part,
+                                        parts_with_ranges[part_index].ranges,
+                                        skip_indexes.skip_index_for_top_n_filtering,
+                                        reader_settings,
+                                        mark_cache.get(),
+                                        uncompressed_cache.get(),
+                                        vector_similarity_index_cache.get());
+
+                std::vector<size_t> result;
+                min_max_granules->getTopN(top_n_filter_info->limit_n, result, top_n_filter_info->direction);
+                MarkRanges res;
+                for (auto range : result)
+                    res.push_back({range, range + 1});
+                std::sort(res.begin(), res.end());
+                parts_with_ranges[part_index].ranges = res;
+            }
+            /// TODO If there are 100's of parts, maybe should do TopN of the TopN from each part! Specially for N=1000+
+        }
+    }
+
     return parts_with_ranges;
 }
 
@@ -1282,6 +1319,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
     return ReadFromMergeTree::selectRangesToRead(
         std::move(parts),
         mutations_snapshot,
+        std::nullopt,
         std::nullopt,
         metadata_snapshot,
         query_info,
@@ -2187,6 +2225,56 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
         if (!select_parts(parts))
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
+}
+
+/// Read and return index granules from a minmax index.
+MergeTreeIndexBulkGranulesMinMaxPtr
+MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        MergeTreeIndexPtr skip_index_minmax,
+        const MergeTreeReaderSettings & reader_settings,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache)
+{
+    /// TODO - make sure it is a minmax index and index is materialized for part
+    auto index_granularity = skip_index_minmax->index.granularity;
+    size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
+    size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;
+
+    MarkRanges index_ranges;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+            range.begin / index_granularity,
+            (range.end + index_granularity - 1) / index_granularity);
+        index_ranges.push_back(index_range);
+    }
+
+    MergeTreeIndexReader reader(
+            skip_index_minmax,
+            part,
+            index_marks_count,
+            index_ranges,
+            mark_cache,
+            uncompressed_cache,
+            vector_similarity_index_cache,
+            reader_settings);
+
+    auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
+                                    skip_index_minmax->index.sample_block);
+    auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
+
+    for (size_t i = 0; i < index_ranges.size(); ++i)
+    {
+        const MarkRange & index_range = index_ranges[i];
+        for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
+        {
+            reader.read(index_mark, index_mark, bulk_granules);
+        }
+    }
+    return min_max_granules;
 }
 
 }

@@ -183,6 +183,8 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool use_skip_indexes_for_top_n;
+    extern const SettingsBool use_top_n_dynamic_filtering;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
@@ -1786,6 +1788,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         getParts(),
         mutations_snapshot,
         vector_search_parameters,
+        top_n_filter_info,
         storage_snapshot->metadata,
         query_info,
         context,
@@ -1807,6 +1810,7 @@ static void buildIndexes(
     const MergeTreeData & data,
     const RangesInDataParts & parts,
     [[maybe_unused]] const std::optional<VectorSearchParameters> & vector_search_parameters,
+    [[maybe_unused]] const std::optional<TopNFilterInfo> top_n_filter_info,
     const ContextPtr & context,
     const SelectQueryInfo & query_info,
     const StorageMetadataPtr & metadata_snapshot)
@@ -1901,14 +1905,26 @@ static void buildIndexes(
         }
         else
         {
-            if (!filter_dag.predicate)
-                continue;
-
-            condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+            if (filter_dag.predicate)
+                condition = index_helper->createIndexCondition(filter_dag.predicate, context);
         }
 
-        if (!condition->alwaysUnknownOrTrue())
+        if (condition && !condition->alwaysUnknownOrTrue())
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
+
+        auto canSkipIndexBeUsedForTopNFiltering = [top_n_filter_info](const MergeTreeIndexPtr & skip_index)
+        {
+                return top_n_filter_info && skip_index->index.column_names.size() == 1 &&
+                       top_n_filter_info->column_name == skip_index->index.column_names[0] &&
+                       typeid_cast<const MergeTreeIndexMinMax *>(skip_index.get());
+        };
+
+        if (settings[Setting::use_skip_indexes_for_top_n] && canSkipIndexBeUsedForTopNFiltering(index_helper))
+        {
+            skip_indexes.skip_index_for_top_n_filtering = index_helper;
+            if (settings[Setting::use_top_n_dynamic_filtering])
+                skip_indexes.threshold_tracker = top_n_filter_info->threshold_tracker;
+        }
     }
 
     {
@@ -1990,6 +2006,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
             data,
             getParts(),
             vector_search_parameters,
+            top_n_filter_info,
             context,
             query_info,
             storage_snapshot->metadata);
@@ -2000,6 +2017,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     RangesInDataParts parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopNFilterInfo> & top_n_filter_info,
     const StorageMetadataPtr & metadata_snapshot,
     const SelectQueryInfo & query_info_,
     ContextPtr context_,
@@ -2037,6 +2055,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             data,
             parts,
             vector_search_parameters,
+            top_n_filter_info,
             context_,
             query_info_,
             metadata_snapshot);
@@ -2114,6 +2133,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             indexes->part_offset_condition,
             indexes->total_offset_condition,
             indexes->skip_indexes,
+            top_n_filter_info,
             reader_settings,
             log,
             num_streams,

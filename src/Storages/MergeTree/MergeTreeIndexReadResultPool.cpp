@@ -92,11 +92,25 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     if (is_cancelled)
         return {};
 
-    auto res = std::make_shared<SkipIndexReadResult>(ending_mark);
+    auto res = std::make_shared<SkipIndexReadResult>();
+    res->granules_selected.resize(ending_mark, false);
     for (const auto & range : ranges)
     {
         for (auto i = range.begin; i < range.end; ++i)
-            (*res)[i] = true;
+            (*res).granules_selected[i] = true;
+    }
+
+    if (skip_indexes.skip_index_for_top_n_filtering)
+    {
+        res->min_max_index_for_top_n = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
+            part.data_part,
+            ranges,
+            skip_indexes.skip_index_for_top_n_filtering,
+            reader_settings,
+            mark_cache.get(),
+            uncompressed_cache.get(),
+            vector_similarity_index_cache.get());
+            res->threshold_tracker = skip_indexes.threshold_tracker;
     }
     return res;
 }

@@ -225,6 +225,43 @@ MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTree
     return {0 /* unknown */, {}};
 }
 
+MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_) :
+    index_name(index_name_),
+    index_sample_block(index_sample_block_)
+{
+    const DataTypePtr & type = index_sample_block.getByPosition(0).type;
+    serializations.push_back(type->getDefaultSerialization());
+}
+
+void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion /*version*/)
+{
+    serializations[0]->deserializeBinary(min_val, istr, format_settings);
+    serializations[0]->deserializeBinary(max_val, istr, format_settings);
+/*
+    granule_nums.emplace_back(granule_num);
+    min_values.emplace_back(min_val);
+    max_values.emplace_back(max_val);
+*/
+    granules.emplace_back(MinMaxGranule{granule_num, min_val, max_val});
+}
+
+void MergeTreeIndexBulkGranulesMinMax::getTopN(size_t n, std::vector<size_t> & result, int direction)
+{
+    if (direction == 1)
+        std::sort(granules.begin(), granules.end(),
+                    [](const MinMaxGranule & granule_a, const MinMaxGranule & granule_b) { return granule_a.min_value > granule_b.min_value; });
+    else
+        std::sort(granules.begin(), granules.end(),
+                    [](const MinMaxGranule & granule_a, const MinMaxGranule & granule_b) { return granule_a.max_value < granule_b.max_value; });
+
+    auto start = granules.begin() + (granules.size() - n);
+    while (start != granules.end())
+    {
+        result.push_back(start->granule_num);
+        start++;
+    }
+}
+
 MergeTreeIndexPtr minmaxIndexCreator(
     const IndexDescription & index)
 {

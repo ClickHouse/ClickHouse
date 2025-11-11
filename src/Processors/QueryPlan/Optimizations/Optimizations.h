@@ -41,6 +41,8 @@ struct Optimization
         /// Other settings
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
+
+        bool use_top_n_dynamic_filtering;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -112,9 +114,12 @@ size_t tryAggregatePartitionsIndependently(QueryPlan::Node * node, QueryPlan::No
 /// This condition can potentially be pushed down all the way to the storage and filter unmatched rows very early.
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
+/// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
+size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 16> optimizations = {{
+    static const std::array<Optimization, 17> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
@@ -131,6 +136,7 @@ inline const auto & getOptimizations()
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
+        {tryOptimizeTopN, "tryOptimizeTopN", &QueryPlanOptimizationSettings::try_use_top_n_pushdown},
     }};
 
     return optimizations;
