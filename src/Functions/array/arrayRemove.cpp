@@ -66,7 +66,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     size_t arr_elements_count = arr_data_col->size();
 
     const auto & arr_data_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
-    auto elem_type = arguments[1].type;
+    const auto & elem_type = arguments[1].type;
 
     auto build_and_execute_function = [&](
         const std::string & func_name,
