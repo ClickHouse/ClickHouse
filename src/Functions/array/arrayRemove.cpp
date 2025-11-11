@@ -59,7 +59,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     const auto * arr_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
     if (!arr_col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "First argument for function {} must be Array", getName());
+            "First argument for function {} must be Array, got {}", getName(), arguments[0].column->getName());
 
     ColumnPtr arr_data_col = arr_col->getDataPtr();
     const auto & arr_offsets = arr_col->getOffsets();
