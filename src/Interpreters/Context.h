@@ -760,8 +760,8 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password!
+    /// Sets the current user, assuming they are already authenticated.
+    /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
