@@ -1410,6 +1410,9 @@ TEST(T64Test, TranscodeRawInput)
 
 TEST(T64Test, CompressZeroBufferThrows)
 {
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
     std::vector<DataTypePtr> types = {
         std::make_shared<DataTypeInt8>(),
         std::make_shared<DataTypeInt16>(),
@@ -1423,7 +1426,9 @@ TEST(T64Test, CompressZeroBufferThrows)
 
     for (const auto & type : types)
     {
-        for (size_t buffer_size = 0; buffer_size < type->getSizeOfValueInMemory(); buffer_size++)
+        // If the buffer size is 0, 'assert(source != nullptr && dest != nullptr);' will be triggered
+        // in ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest)
+        for (size_t buffer_size = 1; buffer_size < type->getSizeOfValueInMemory(); buffer_size++)
         {
             DB::Memory<> source_memory;
             source_memory.resize(buffer_size);
@@ -1439,6 +1444,7 @@ TEST(T64Test, CompressZeroBufferThrows)
             ASSERT_THROW(codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data()), Exception);
         }
     }
+#endif
 }
 
 }
