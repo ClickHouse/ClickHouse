@@ -204,10 +204,107 @@ FunctionBasePtr JoinGetOverloadResolver<or_null>::buildImpl(const ColumnsWithTyp
 
 REGISTER_FUNCTION(JoinGet)
 {
+    FunctionDocumentation::Description description_joinGet = R"(
+Allows you to extract data from a table the same way as from a dictionary.
+Gets data from Join tables using the specified join key.
+
+:::note
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
+:::
+)";
+    FunctionDocumentation::Syntax syntax_joinGet = "joinGet(join_storage_table_name, value_column, join_keys)";
+    FunctionDocumentation::Arguments arguments_joinGet = {
+        {"join_storage_table_name", "An identifier which indicates where to perform the search. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE database_name` query or specify the database and the table through a dot, like `database_name.table_name`.", {"String"}},
+        {"value_column", "The name of the column of the table that contains required data.", {"const String"}},
+        {"join_keys", "A list of join keys.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_joinGet = {"Returns list of values corresponded to list of keys.", {"Any"}};
+    FunctionDocumentation::Examples examples_joinGet = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
+
+SELECT joinGet(db_test.id_val, 'val', toUInt32(1));
+        )",
+        R"(
+┌─joinGet(db_test.id_val, 'val', toUInt32(1))─┐
+│                                          11 │
+└─────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Usage with table from current database",
+        R"(
+USE db_test;
+SELECT joinGet(id_val, 'val', toUInt32(2));
+        )",
+        R"(
+┌─joinGet(id_val, 'val', toUInt32(2))─┐
+│                                  12 │
+└─────────────────────────────────────┘
+        )"
+    },
+    {
+        "Using arrays as join keys",
+        R"(
+CREATE TABLE some_table (id1 UInt32, id2 UInt32, name String) ENGINE = Join(ANY, LEFT, id1, id2);
+INSERT INTO some_table VALUES (1, 11, 'a') (2, 12, 'b') (3, 13, 'c');
+
+SELECT joinGet(some_table, 'name', 1, 11);
+        )",
+        R"(
+┌─joinGet(some_table, 'name', 1, 11)─┐
+│ a                                  │
+└────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_joinGet = {18, 16};
+    FunctionDocumentation::Category category_joinGet = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_joinGet = {description_joinGet, syntax_joinGet, arguments_joinGet, returned_value_joinGet, examples_joinGet, introduced_in_joinGet, category_joinGet};
+
+    FunctionDocumentation::Description description_joinGetOrNull = R"(
+Allows you to extract data from a table the same way as from a dictionary.
+Gets data from Join tables using the specified join key.
+Unlike [`joinGet`](#joinGet) it returns `NULL` when the key is missing.
+
+:::note
+Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [statement](/engines/table-engines/special/join).
+:::
+)";
+    FunctionDocumentation::Syntax syntax_joinGetOrNull = "joinGetOrNull(join_storage_table_name, value_column, join_keys)";
+    FunctionDocumentation::Arguments arguments_joinGetOrNull = {
+        {"join_storage_table_name", "An identifier which indicates where to perform the search. The identifier is searched in the default database (see parameter default_database in the config file). To override the default database, use the `USE database_name` query or specify the database and the table through a dot, like `database_name.table_name`.", {"String"}},
+        {"value_column", "The name of the column of the table that contains required data.", {"const String"}},
+        {"join_keys", "A list of join keys.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_joinGetOrNull = {"Returns a list of values corresponding to the list of keys, or `NULL` if a key is not found.", {"Any"}};
+    FunctionDocumentation::Examples examples_joinGetOrNull = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
+
+SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.id_val, 'val', toUInt32(999));
+        )",
+        R"(
+┌─joinGetOrNull(db_test.id_val, 'val', toUInt32(1))─┬─joinGetOrNull(db_test.id_val, 'val', toUInt32(999))─┐
+│                                                11 │                                                ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_joinGetOrNull = {20, 4};
+    FunctionDocumentation::Category category_joinGetOrNull = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_joinGetOrNull = {description_joinGetOrNull, syntax_joinGetOrNull, arguments_joinGetOrNull, returned_value_joinGetOrNull, examples_joinGetOrNull, introduced_in_joinGetOrNull, category_joinGetOrNull};
+
     // joinGet
-    factory.registerFunction<JoinGetOverloadResolver<false>>();
+    factory.registerFunction<JoinGetOverloadResolver<false>>(documentation_joinGet);
     // joinGetOrNull
-    factory.registerFunction<JoinGetOverloadResolver<true>>();
+    factory.registerFunction<JoinGetOverloadResolver<true>>(documentation_joinGetOrNull);
 }
 
 }

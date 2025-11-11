@@ -66,6 +66,7 @@ class Benchmark : public Poco::Util::Application
 {
 public:
     Benchmark(unsigned concurrency_,
+            unsigned max_concurrency_,
             double delay_,
             Strings && hosts_,
             Ports && ports_,
@@ -95,8 +96,10 @@ public:
         :
         round_robin(round_robin_),
         concurrency(concurrency_),
+        max_concurrency(std::max(concurrency_, max_concurrency_)),
+        threads(concurrency_),
         delay(delay_),
-        queue(concurrency),
+        queue(max_concurrency),
         randomize(randomize_),
         cumulative(cumulative_),
         max_iterations(max_iterations_),
@@ -113,7 +116,7 @@ public:
         settings(settings_),
         shared_context(Context::createShared()),
         global_context(Context::createGlobal(shared_context.get())),
-        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, concurrency)
+        pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, max_concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
@@ -128,7 +131,7 @@ public:
             std::string cur_host = i >= hosts_.size() ? "localhost" : hosts_[i];
 
             connections.emplace_back(std::make_unique<ConnectionPool>(
-                concurrency,
+                max_concurrency,
                 cur_host, cur_port,
                 default_database_, user_, password_,
                 proto_send_chunked_, proto_recv_chunked_,
@@ -196,6 +199,8 @@ private:
 
     bool round_robin;
     unsigned concurrency;
+    unsigned max_concurrency;
+    unsigned threads;
     double delay;
 
     using Query = std::string;
@@ -358,10 +363,36 @@ private:
         if (delay > 0 && seconds > delay)
         {
             printNumberOfQueriesExecuted(queries_executed);
+            if (concurrency < max_concurrency)
+            {
+                std::lock_guard lock(mutex);
+                log << "Concurrency: " << threads;
+                log << " of " << max_concurrency;
+                log << " parallel queries.\n" << flush;
+            }
             cumulative
                 ? report(comparison_info_total, total_watch.elapsedSeconds())
                 : report(comparison_info_per_interval, seconds);
             delay_watch.restart();
+
+            // Special mode: gradually increasing concurrency.
+            // Concurrency is constant between reports and increased by one after every report.
+            if (concurrency < max_concurrency)
+            {
+                if (threads == max_concurrency)
+                    return false; // Reached maximum concurrency
+                try
+                {
+                    pool.scheduleOrThrowOnError([this]() mutable { thread(); });
+                    threads++;
+                }
+                catch (...)
+                {
+                    shutdown = true;
+                    pool.wait();
+                    throw;
+                }
+            }
         }
 
         return true;
@@ -633,6 +664,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("verbose", "Increase output verbosity")
             ("query,q",       value<std::string>()->default_value(""),          "query to execute")
             ("concurrency,c", value<unsigned>()->default_value(1),              "number of parallel queries")
+            ("max_concurrency,C", value<unsigned>()->default_value(0),          "gradually increase number of parallel queries up to specified value, making one report for every concurrency level")
             ("delay,d",       value<double>()->default_value(1),                "delay between intermediate reports in seconds (set 0 to disable reports)")
             ("stage",         value<std::string>()->default_value("complete"),  "request query processing up to specified stage: complete,fetch_columns,with_mergeable_state,with_mergeable_state_after_aggregation,with_mergeable_state_after_aggregation_and_limit")
             ("iterations,i",  value<size_t>()->default_value(0),                "amount of queries to be executed")
@@ -736,6 +768,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
 
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),
+            options["max_concurrency"].as<unsigned>(),
             options["delay"].as<double>(),
             std::move(hosts),
             std::move(ports),

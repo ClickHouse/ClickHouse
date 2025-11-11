@@ -53,6 +53,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -881,7 +882,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     }
 
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
-    setStepDescription(std::move(description));
+    setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()

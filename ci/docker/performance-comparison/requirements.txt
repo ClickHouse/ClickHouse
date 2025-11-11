@@ -1,5 +1,6 @@
 blinker==1.4
 clickhouse-driver==0.2.7
+clickhouse-connect==0.8.18
 cryptography==44.0.1
 dbus-python==1.2.18
 distro==1.7.0

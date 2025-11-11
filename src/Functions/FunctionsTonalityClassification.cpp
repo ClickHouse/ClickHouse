@@ -70,7 +70,7 @@ struct FunctionDetectTonalityImpl
         size_t prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            res[i] = detectTonality(data.data() + prev_offset, offsets[i] - 1 - prev_offset, emotional_dict);
+            res[i] = detectTonality(data.data() + prev_offset, offsets[i] - prev_offset, emotional_dict);
             prev_offset = offsets[i];
         }
     }

@@ -293,20 +293,6 @@ extern "C" void * __wrap_valloc(size_t size) // NOLINT
     return res;
 }
 
-extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
-{
-    AllocationTrace trace;
-    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
-    void * res = __real_memalign(alignment, size);
-    if (unlikely(!res))
-    {
-        trace = CurrentMemoryTracker::free(actual_size);
-        return nullptr;
-    }
-    trace.onAlloc(res, actual_size);
-    return res;
-}
-
 extern "C" void * __wrap_reallocarray(void * ptr, size_t number_of_members, size_t size) // NOLINT
 {
     size_t real_size = 0;
@@ -323,6 +309,22 @@ extern "C" void __wrap_free(void * ptr) // NOLINT
     trace.onFree(ptr, actual_size);
     __real_free(ptr);
 }
+
+#if !defined(OS_DARWIN)
+extern "C" void * __wrap_memalign(size_t alignment, size_t size) // NOLINT
+{
+    AllocationTrace trace;
+    size_t actual_size = Memory::trackMemory(size, trace, static_cast<std::align_val_t>(alignment));
+    void * res = __real_memalign(alignment, size);
+    if (unlikely(!res))
+    {
+        trace = CurrentMemoryTracker::free(actual_size);
+        return nullptr;
+    }
+    trace.onAlloc(res, actual_size);
+    return res;
+}
+#endif
 
 #if !defined(USE_MUSL) && defined(OS_LINUX)
 extern "C" void * __wrap_pvalloc(size_t size) // NOLINT

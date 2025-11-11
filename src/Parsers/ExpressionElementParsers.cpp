@@ -1228,7 +1228,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         return makeStringLiteral(pos, node, "");
 
     PODArray<UInt8> res;
-    res.resize((pos->size() + word_size) / word_size + 1);
+    res.resize((str_end - str_begin + word_size - 1) / word_size);
     char * res_begin = reinterpret_cast<char *>(res.data());
     char * res_pos = res_begin;
 
@@ -1241,7 +1241,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)

@@ -75,12 +75,12 @@ private:
     std::shared_ptr<PageCache> page_cache;
 
 #if USE_JEMALLOC
-    JemallocMibCache<uint64_t> epoch_mib{"epoch"};
-    JemallocMibCache<size_t> resident_mib{"stats.resident"};
+    Jemalloc::MibCache<uint64_t> epoch_mib{"epoch"};
+    Jemalloc::MibCache<size_t> resident_mib{"stats.resident"};
 
 #define STRINGIFY_HELPER(x) #x
 #define STRINGIFY(x) STRINGIFY_HELPER(x)
-    JemallocMibCache<size_t> purge_mib{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
+    Jemalloc::MibCache<size_t> purge_mib{"arena." STRINGIFY(MALLCTL_ARENAS_ALL) ".purge"};
 #undef STRINGIFY
 #undef STRINGIFY_HELPER
 #endif

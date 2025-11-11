@@ -1,9 +1,8 @@
--- Tags: no-parallel-replicas
--- no-parallel-replicas: projections don't work with parallel replicas.
 
 DROP TABLE IF EXISTS t_update_projections;
 
 SET apply_mutations_on_fly = 1;
+SET parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 CREATE TABLE t_update_projections (id UInt64, v UInt64, PROJECTION proj (SELECT sum(v)))
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_update_projections', '1') ORDER BY tuple();

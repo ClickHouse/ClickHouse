@@ -54,8 +54,6 @@ private:
         bool after_conversions,
         const Block & additional_columns) const;
 
-    using PatchReadResultPtr = MergeTreePatchReader::PatchReadResultPtr;
-
     RangeReaders range_readers;
     MergeTreePatchReaders patch_readers;
     std::vector<std::deque<PatchReadResultPtr>> patches_results;

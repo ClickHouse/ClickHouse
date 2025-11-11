@@ -31,6 +31,8 @@ struct WriteSettings
     bool write_through_distributed_cache = false;
     DistributedCacheSettings distributed_cache_settings;
 
+    bool is_initial_access_check = false;
+
     bool operator==(const WriteSettings & other) const = default;
 };
 

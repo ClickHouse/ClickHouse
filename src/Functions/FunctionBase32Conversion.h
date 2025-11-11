@@ -15,8 +15,7 @@ struct Base32EncodeTraits
         auto const string_count = src_column.size();
         /// Every 5 bytes becomes 8 bytes in base32
         /// Add padding for incomplete blocks and round up
-        /// Plus one byte for null terminator for each string
-        return ((src_length + 4) / 5 * 8 + 1) * string_count;
+        return (src_length + 4) / 5 * 8 * string_count;
     }
 
     static size_t perform(std::string_view src, UInt8 * dst)
@@ -33,8 +32,7 @@ struct Base32DecodeTraits
         auto const string_length = src_column.byteSize();
         auto const string_count = src_column.size();
         /// decoded size is at most length of encoded (every 8 bytes becomes at most 5 bytes)
-        /// plus one byte for null terminator for each string
-        return ((string_length * 5 + 7) / 8 + 1) * string_count;
+        return (string_length * 5 + 7) / 8 * string_count;
     }
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)

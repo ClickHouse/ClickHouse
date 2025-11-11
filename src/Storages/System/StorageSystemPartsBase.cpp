@@ -151,7 +151,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 String database_name = (*database_column_for_filter)[i].safeGet<String>();
                 const DatabasePtr & database = databases.at(database_name);
 
-                offsets[i] = i ? offsets[i - 1] : 0;
+                offsets[i] = offsets[i - 1];
                 for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
                 {
                     String table_name = iterator->name();

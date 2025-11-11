@@ -10,7 +10,7 @@ SETTINGS index_granularity = 1, enable_block_number_column = 1, enable_block_off
 
 INSERT INTO t_lwd_index SELECT * FROM numbers(1000);
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 DELETE FROM t_lwd_index WHERE id = 200;

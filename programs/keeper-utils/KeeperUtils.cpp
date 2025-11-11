@@ -159,13 +159,13 @@ void analyzeSnapshot(const std::string & snapshot_path, bool full_storage, bool 
                     if (with_node_stats)
                     {
                         std::cout << "Finding biggest subtrees... " << std::endl;
-                        std::unordered_map<StringRef, size_t> subtree_sizes;
+                        std::unordered_map<std::string_view, size_t> subtree_sizes;
                         for (const auto & path : result.paths)
                         {
                             if (path == "/")
                                 continue;
 
-                            StringRef current_path = path;
+                            std::string_view current_path = path;
                             while (true)
                             {
                                 auto parent = parentNodePath(current_path);
@@ -475,9 +475,9 @@ void dumpNodes(const DB::KeeperMemoryStorage & storage, const std::string & outp
             for (const auto & child : value.getChildren())
             {
                 if (key == "/")
-                    keys.push(key + child.toString());
+                    keys.push(fmt::format("/{}", child));
                 else
-                    keys.push(key + "/" + child.toString());
+                    keys.push(fmt::format("{}/{}", key, child));
             }
         }
     };

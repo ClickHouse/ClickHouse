@@ -55,8 +55,8 @@ TEST(FST, SimpleTest)
 TEST(FST, TestForLongTerms)
 {
     /// Test long terms within limitation
-    String term1(DB::FST::MAX_TERM_LENGTH - 1, 'A');
-    String term2(DB::FST::MAX_TERM_LENGTH, 'B');
+    String term1(DB::FST::MAX_TOKEN_LENGTH - 1, 'A');
+    String term2(DB::FST::MAX_TOKEN_LENGTH, 'B');
 
     DB::FST::Output output1 = 100;
     DB::FST::Output output2 = 200;
@@ -83,7 +83,7 @@ TEST(FST, TestForLongTerms)
     ASSERT_EQ(result2, output2);
 
     /// Test exception case when term length exceeds limitation
-    String term3(DB::FST::MAX_TERM_LENGTH + 1, 'C');
+    String term3(DB::FST::MAX_TOKEN_LENGTH + 1, 'C');
     DB::FST::Output output3 = 300;
 
     std::vector<UInt8> buffer3;

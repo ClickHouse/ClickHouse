@@ -12,6 +12,8 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 Contains error codes with the number of times they have been triggered.
 
+To show all possible error codes, including ones which were not triggered, set setting [system_events_show_zero_values](../settings/settings.md#system_events_show_zero_values) to 1.
+
 Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) — name of the error (`errorCodeToName`).

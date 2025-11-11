@@ -662,6 +662,11 @@ openSSL:
     caConfig: '/etc/ssl/cert.pem'
 ```
 
+## Environment variable options {#environment-variable-options}
+
+The user name, password and host can be set via environment variables `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` and `CLICKHOUSE_HOST`.
+Command line arguments `--user`, `--password` or `--host`, or a [connection string](#connection_string) (if specified) take precedence over environment variables.
+
 ## Command-line options {#command-line-options}
 
 All command-line options can be specified directly on the command line or as defaults in the [configuration file](#configuration_files).

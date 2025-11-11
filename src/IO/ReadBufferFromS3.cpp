@@ -101,7 +101,15 @@ bool ReadBufferFromS3::nextImpl()
         });
 
         if (impl->isResultReleased())
+        {
+            if (read_until_position)
+            {
+                LOG_TRACE(
+                    log, "Impl was released, but expected read range is not finished. "
+                    "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
+            }
             return false;
+        }
 
         if (use_external_buffer)
         {

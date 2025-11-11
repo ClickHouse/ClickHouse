@@ -12,6 +12,7 @@
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/JoinExpressionActions.h>
 
 
 namespace DB::ErrorCodes
@@ -127,48 +128,38 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
         return 0;
 
-    const auto & join_info = join->getJoinInfo();
+    const auto & join_operator = join->getJoinOperator();
 
     /// Let's allow Strictness::All with a wrong result for now.
-    if (join_info.strictness != JoinStrictness::Any && join_info.strictness != JoinStrictness::All)
+    if (join_operator.strictness != JoinStrictness::Any && join_operator.strictness != JoinStrictness::All)
         return 0;
 
     /// TODO: support left in the future
-    if (!isInner(join_info.kind)/*&& !isLeft(join_info.kind) && !isRight(join_info.kind)*/)
+    if (!isInner(join_operator.kind)/*&& !isLeft(join_operator.kind) && !isRight(join_operator.kind)*/)
         return 0;
 
     /// Do not support many condition for now.
-    if (!join_info.expression.disjunctive_conditions.empty())
+    if (join_operator.expression.empty())
         return 0;
 
+
     /// Only equality expressions are supported.
+    std::vector<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
+    for (const auto & predicate : join_operator.expression)
     {
-        if (join_info.expression.condition.predicates.empty())
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
             return 0;
 
-        if (!join_info.expression.condition.residual_conditions.empty())
+        if (lhs.fromLeft() && rhs.fromRight())
+            key_pairs.emplace_back(lhs, rhs);
+        else if (lhs.fromRight() && rhs.fromLeft())
+            key_pairs.emplace_back(rhs, lhs);
+        else
             return 0;
-
-        auto isJoinConstant = [](const std::string & name)
-        {
-            return name == "__lhs_const" || name == "__rhs_const";
-        };
-
-        for (const auto & predicate : join_info.expression.condition.predicates)
-        {
-            if (predicate.op != PredicateOperator::Equals)
-                return 0;
-
-            /// Looks like filter-push-down works incorrectly if we have a FilterDAG like `__lhs_const IN set` before JOIN
-            if (isJoinConstant(predicate.left_node.getColumnName()) || isJoinConstant(predicate.right_node.getColumnName()))
-                return 0;
-        }
     }
 
-    const auto & required_output_columns = join->getRequiredOutpurColumns();
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
-
-    const auto & join_expression_actions = join->getExpressionActions();
+    const auto & join_output_header = join->getOutputHeader();
 
     const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
@@ -177,23 +168,18 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// Check output columns come from one side.
     {
-        auto hasAnyInSet = [](const SharedHeader & header, NameSet & set)
+        auto hasAnyInSet = [](const SharedHeader & sub, const SharedHeader & super)
         {
-            for (const auto & column : *header)
-                if (set.contains(column.name))
+            for (const auto & column : *sub)
+                if (super->has(column.name))
                     return true;
             return false;
         };
 
-        if (isInnerOrLeft(join_info.kind) && !hasAnyInSet(right_input_header, required_output_columns_set))
+        if (isInnerOrLeft(join_operator.kind) && !hasAnyInSet(right_input_header, join_output_header))
         {
             /// Transform right to IN
         }
-        // else if (isInnerOrRight(join_info.kind) && !hasAnyInSet(left_input_header, required_output_columns_set))
-        // {
-        //     /// Transform left to IN
-        //     build_set_from_left_part = true;
-        // }
         else
             return 0;
     }
@@ -208,9 +194,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         }
     }
 
-    JoinActionRef unused_post_filter(nullptr);
-    join->appendRequiredOutputsToActions(unused_post_filter);
-
     // {
     //     WriteBufferFromOwnString buf;
     //     IQueryPlanStep::FormatSettings s{.out=buf, .write_header=true};
@@ -218,20 +201,23 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     //     std::cerr << buf.stringView() << std::endl;
     // }
 
-    QueryPlan::Node * lhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
-    QueryPlan::Node * rhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
-
     if (build_set_from_left_part)
-        std::swap(lhs_in_node, rhs_in_node);
+    {
+        for (auto & p : key_pairs)
+            std::swap(p.first, p.second);
+    }
 
     NamePairs name_pairs;
-    name_pairs.reserve(join_info.expression.condition.predicates.size());
-    for (const auto & predicate : join_info.expression.condition.predicates)
-    {
-        name_pairs.push_back(NamePair{predicate.left_node.getColumnName(), predicate.right_node.getColumnName()});
-        if (build_set_from_left_part)
-            std::swap(name_pairs.back().lhs_name, name_pairs.back().rhs_name);
-    }
+    for (auto & [lhs, rhs] : key_pairs)
+        name_pairs.emplace_back(lhs.getColumnName(), rhs.getColumnName());
+
+    auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
+    auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
+    auto * lhs_in_node = parent_node->children.at(0);
+    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes);
+    auto * rhs_in_node = parent_node->children.at(1);
+    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes);
+    parent_node->children.pop_back();
 
     /// Join equality does not match Nulls.
     /// In case we support NullSafeEquals, we should set transform_null_in = true.
@@ -253,8 +239,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         lhs_in_node = &nodes.emplace_back(QueryPlan::Node{std::move(step), {lhs_in_node}});
     }
 
-    lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(*join_expression_actions.post_join_actions), {}, nodes);
-
     auto creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
         lhs_in_node->step->getOutputHeader(),
         PreparedSets::Subqueries{std::move(in_conversion.set)},
@@ -265,7 +249,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};
 
-    /// JoinLogical is replaced to [Expression(left_pre_join_actions), Expression(IN), Expression(post_join_actions), DelayedCreatingSets]
+    /// JoinLogical is replaced to [Expression(left_pre_join_actions), Expression(IN), DelayedCreatingSets]
     return 4;
 }
 

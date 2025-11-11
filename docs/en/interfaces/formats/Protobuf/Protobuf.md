@@ -23,7 +23,7 @@ The `Protobuf` format is the [Protocol Buffers](https://protobuf.dev/) format.
 This format requires an external format schema, which is cached between queries.
 
 ClickHouse supports:
-- both `proto2` and `proto3` syntaxes. 
+- both `proto2` and `proto3` syntaxes.
 - `Repeated`/`optional`/`required` fields.
 
 ## Example usage {#example-usage}
@@ -84,6 +84,41 @@ message MessageType {
   optional int32 result_per_page = 3 [default = 10];
 }
 ```
+
+If a message contains [oneof](https://protobuf.dev/programming-guides/proto3/#oneof) and `input_format_protobuf_oneof_presence` is set, ClickHouse fills column that indicates which field of oneof was found.
+
+```capnp
+syntax = "proto3";
+
+message StringOrString {
+  oneof string_oneof {
+    string string1 = 1;
+    string string2 = 42;
+  }
+}
+```
+
+```sql
+CREATE TABLE string_or_string ( string1 String, string2 String, string_oneof Enum('no'=0, 'hello' = 1, 'world' = 42))  Engine=MergeTree ORDER BY tuple();
+INSERT INTO string_or_string from INFILE '$CURDIR/data_protobuf/String1' SETTINGS format_schema='$SCHEMADIR/string_or_string.proto:StringOrString' FORMAT ProtobufSingle;
+SELECT * FROM string_or_string
+```
+
+```text
+   ┌─────────┬─────────┬──────────────┐
+   │ string1 │ string2 │ string_oneof │
+   ├─────────┼─────────┼──────────────┤
+1. │         │ string2 │ world        │
+   ├─────────┼─────────┼──────────────┤
+2. │ string1 │         │ hello        │
+   └─────────┴─────────┴──────────────┘
+
+```
+Name of the column that indicates presence must be the same as the name of oneof. Nested messages are supported (see  [basic-examples](#basic-examples)).
+Allowed types are Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Enum, Enum8 or Enum16.
+Enum (as well as Enum8 or Enum16) must contain all oneof' possible tags plus 0 to indicate absence, string representations does not matter.
+
+The setting [`input_format_protobuf_oneof_presence`](/operations/settings/settings-formats.md#input_format_protobuf_oneof_presence) is disabled by default
 
 ClickHouse inputs and outputs protobuf messages in the `length-delimited` format.
 This means that before every message its length should be written as a [variable width integer (varint)](https://developers.google.com/protocol-buffers/docs/encoding#varints).

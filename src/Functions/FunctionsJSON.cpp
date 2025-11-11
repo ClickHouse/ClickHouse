@@ -12,7 +12,6 @@
 #include <Core/Settings.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
@@ -87,7 +86,7 @@ concept Preparable = requires (T t)
 class FunctionJSONHelpers
 {
 public:
-    template <typename Name, template<typename> typename Impl, class JSONParser, bool case_insensitive = false>
+    template <typename Name, template <typename> typename Impl, typename JSONParser, bool case_insensitive = false>
     class Executor
     {
     public:
@@ -140,7 +139,7 @@ public:
             bool document_ok = false;
             if (col_json_const)
             {
-                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0] - 1};
+                std::string_view json{reinterpret_cast<const char *>(chars.data()), offsets[0]};
                 document_ok = parser.parse(json, document);
             }
 
@@ -149,7 +148,7 @@ public:
             {
                 if (!col_json_const)
                 {
-                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1] - 1};
+                    std::string_view json{reinterpret_cast<const char *>(&chars[offsets[i - 1]]), offsets[i] - offsets[i - 1]};
                     document_ok = parser.parse(json, document);
                 }
 
@@ -241,7 +240,7 @@ private:
         typename JSONParser::Element res_element = document;
         std::string_view key;
 
-        for (size_t j = 0; j != moves.size(); ++j)
+        for (size_t j = 0, size = moves.size(); j != size; ++j)
         {
             switch (moves[j].type)
             {
@@ -1009,7 +1008,6 @@ public:
             WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
             jsonElementToString<JSONParser>(element, buf, format_settings);
         }
-        chars.push_back(0);
         col_str.getOffsets().push_back(chars.size());
         return true;
     }

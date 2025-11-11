@@ -84,4 +84,7 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
     Names getAllRegisteredNames() const override;
 };
 
+ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
+IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context);
+
 }

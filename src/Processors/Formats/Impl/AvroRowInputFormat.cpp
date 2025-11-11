@@ -1083,7 +1083,10 @@ private:
                     .withReceiveTimeout(1);
 
                 Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
-                request.setHost(url.getHost());
+                if (url.getPort())
+                    request.setHost(url.getHost(), url.getPort());
+                else
+                    request.setHost(url.getHost());
 
                 if (!url.getUserInfo().empty())
                 {

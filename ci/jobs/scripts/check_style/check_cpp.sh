@@ -37,7 +37,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE_DOCS |
     xargs grep $@ -P '((class|struct|namespace|enum|if|for|while|else|throw|switch).*|\)(\s*const)?(\s*override)?\s*)\{$|\s$|^ {1,3}[^\* ]\S|\t|^\s*(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\(|\( [^\s\\]|\S \)' |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | trailing whitespace | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    grep -v -P '(//|:\s+\*|\$\(\()| \)"' && echo "{ should be a new line"
+    grep -v -P '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 
 # Tabs
@@ -373,6 +373,7 @@ CONTEXT_H_EXCLUDES=(
     --exclude "$ROOT_PATH/src/Client/ClientBase.h"
     --exclude "$ROOT_PATH/src/Common/tests/gtest_global_context.h"
     --exclude "$ROOT_PATH/src/Analyzer/InDepthQueryTreeVisitor.h"
+    --exclude "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
 
     # For functions we allow it for regular functions (due to lots of
     # templates), but forbid it in interface (IFunction) part.

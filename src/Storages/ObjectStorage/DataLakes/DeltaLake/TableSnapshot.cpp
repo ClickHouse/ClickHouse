@@ -35,11 +35,13 @@ namespace fs = std::filesystem;
 namespace DB::ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::Setting
 {
     extern const SettingsBool delta_lake_enable_expression_visitor_logging;
+    extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsBool delta_lake_throw_on_engine_predicate_error;
     extern const SettingsBool delta_lake_enable_engine_predicate;
 }
@@ -270,8 +272,7 @@ public:
 
                 object = data_files.front();
                 data_files.pop_front();
-                if (data_files.empty())
-                    schedule_next_batch_cv.notify_one();
+                schedule_next_batch_cv.notify_one();
             }
 
             chassert(object);
@@ -417,6 +418,7 @@ private:
     ThreadFromGlobalPool thread;
 };
 
+static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,
@@ -442,9 +444,16 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     enable_expression_visitor_logging = settings[DB::Setting::delta_lake_enable_expression_visitor_logging];
     throw_on_engine_visitor_error = settings[DB::Setting::delta_lake_throw_on_engine_predicate_error];
     enable_engine_predicate = settings[DB::Setting::delta_lake_enable_engine_predicate];
+    if (settings[DB::Setting::delta_lake_snapshot_version].value != LATEST_SNAPSHOT_VERSION)
+    {
+        if (settings[DB::Setting::delta_lake_snapshot_version].value < 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Snapshot version cannot be a negative value");
+
+        snapshot_version_to_read = settings[DB::Setting::delta_lake_snapshot_version];
+    }
 }
 
-bool TableSnapshot::update(DB::ContextPtr context)
+bool TableSnapshot::update(const DB::ContextPtr & context)
 {
     updateSettings(context);
     if (!kernel_snapshot_state)
@@ -464,12 +473,27 @@ void TableSnapshot::initSnapshot() const
     initSnapshotImpl();
 }
 
-TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_)
+TableSnapshot::KernelSnapshotState::KernelSnapshotState(const IKernelHelper & helper_, std::optional<size_t> snapshot_version_)
 {
     auto * engine_builder = helper_.createBuilder();
     engine = KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
-    snapshot = KernelUtils::unwrapResult(
-        ffi::snapshot(KernelUtils::toDeltaString(helper_.getTableLocation()), engine.get()), "snapshot");
+    if (snapshot_version_.has_value())
+    {
+        snapshot = KernelUtils::unwrapResult(
+            ffi::snapshot_at_version(
+                KernelUtils::toDeltaString(helper_.getTableLocation()),
+                engine.get(),
+                snapshot_version_.value()),
+            "snapshot");
+    }
+    else
+    {
+        snapshot = KernelUtils::unwrapResult(
+            ffi::snapshot(
+                KernelUtils::toDeltaString(helper_.getTableLocation()),
+                engine.get()),
+            "snapshot");
+    }
     snapshot_version = ffi::version(snapshot.get());
     scan = KernelUtils::unwrapResult(ffi::scan(snapshot.get(), engine.get(), /* predicate */{}), "scan");
 }
@@ -478,7 +502,7 @@ void TableSnapshot::initSnapshotImpl() const
 {
     LOG_TEST(log, "Initializing snapshot");
 
-    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper);
+    kernel_snapshot_state = std::make_shared<KernelSnapshotState>(*helper, snapshot_version_to_read);
 
     LOG_TRACE(log, "Initialized scan state. Snapshot version: {}", kernel_snapshot_state->snapshot_version);
 
@@ -486,6 +510,9 @@ void TableSnapshot::initSnapshotImpl() const
     LOG_TRACE(
         log, "Table logical schema: {}, physical names map size: {}",
         fmt::join(table_schema.getNames(), ", "), physical_names_map.size());
+
+    if (table_schema.empty())
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table schema cannot be empty");
 
     read_schema = getReadSchemaFromSnapshot(kernel_snapshot_state->scan.get());
     LOG_TRACE(log, "Table read schema: {}", fmt::join(read_schema.getNames(), ", "));

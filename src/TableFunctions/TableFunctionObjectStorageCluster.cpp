@@ -19,7 +19,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
     const ASTPtr & /*function*/, ContextPtr context,
     const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
-    auto configuration = Base::getConfiguration();
+    auto configuration = Base::getConfiguration(context);
 
     ColumnsDescription columns;
     if (configuration->structure != "auto")
@@ -31,8 +31,15 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
 
     auto object_storage = Base::getObjectStorage(context, !is_insert_query);
     StoragePtr storage;
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+
+    const auto & client_info = context->getClientInfo();
+
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
+        bool can_use_distributed_iterator =
+            client_info.collaborate_with_initiator &&
+            context->hasClusterFunctionReadTaskCallback();
+
         /// On worker node this filename won't contains globs
         storage = std::make_shared<StorageObjectStorage>(
             configuration,
@@ -47,7 +54,7 @@ StoragePtr TableFunctionObjectStorageCluster<Definition, Configuration, is_data_
             /* catalog*/nullptr,
             /* if_not_exists*/false,
             /* is_datalake_query*/ false,
-            /* distributed_processing */ true,
+            /* distributed_processing */ can_use_distributed_iterator,
             /* partition_by_ */Base::partition_by,
             /* is_table_function */true,
             /* lazy_init */ true);
@@ -124,6 +131,13 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
     UNUSED(factory);
 
 #if USE_AWS_S3
+    factory.registerFunction<TableFunctionIcebergCluster>(
+        {.documentation
+         = {.description = R"(The table function can be used to read the Iceberg table stored on store from disk in parallel for many nodes in a specified cluster.)",
+            .examples{{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster) SETTINGS datalake_disk_name = 'disk'", ""},{IcebergClusterDefinition::name, "SELECT * FROM icebergCluster(cluster, url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])", ""}},
+            .category = FunctionDocumentation::Category::TableFunction},
+         .allow_readonly = false});
+
     factory.registerFunction<TableFunctionIcebergS3Cluster>(
         {.documentation
          = {.description = R"(The table function can be used to read the Iceberg table stored on S3 object store in parallel for many nodes in a specified cluster.)",
@@ -159,7 +173,7 @@ void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionDeltaLakeCluster>(
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on object store in parallel for many nodes in a specified cluster.)",
-            .examples{{DeltaLakeClusterDefinition::name, "SELECT * FROM deltaLakeCluster(cluster, url, access_key_id, secret_access_key)", ""}},
+            .examples{{DeltaLakeClusterDefinition::name, "SELECT * FROM deltaLakeCluster(cluster, url, access_key_id, secret_access_key)", ""},{DeltaLakeClusterDefinition::name, "SELECT * FROM deltaLakeCluster(cluster) SETTINGS datalake_disk_name = 'disk'", ""}},
             .category = FunctionDocumentation::Category::TableFunction},
          .allow_readonly = false});
 }

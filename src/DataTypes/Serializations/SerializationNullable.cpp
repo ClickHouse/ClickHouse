@@ -125,14 +125,15 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnNullable & col = assert_cast<ColumnNullable &>(*mutable_column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
     {
-        col.getNullMapColumnPtr() = cached_column;
+        /// Data was inserted from cache.
     }
     else if (auto * stream = settings.getter(settings.path))
     {
+        size_t prev_size = col.getNullMapColumnPtr()->size();
         SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
-        addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
     }
 
     settings.path.back() = Substream::NullableElements;

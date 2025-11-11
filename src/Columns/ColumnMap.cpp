@@ -160,6 +160,11 @@ char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory) const
     return nested->serializeValueIntoMemory(n, memory);
 }
 
+std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
+{
+    return nested->getSerializedValueSize(n);
+}
+
 const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
 {
     return nested->deserializeAndInsertFromArena(pos);

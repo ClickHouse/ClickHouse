@@ -41,6 +41,8 @@ class _Environment(MetaClasses.Serializable):
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
+    WORKFLOW_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     name = "environment"
 
     @classmethod
@@ -63,6 +65,12 @@ class _Environment(MetaClasses.Serializable):
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
+
+        if Path(Settings.WORKFLOW_STATUS_FILE).is_file():
+            with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
+                WORKFLOW_DATA = json.load(f)
+        else:
+            assert False, "BUG?"
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -199,6 +207,8 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
+            JOB_KV_DATA={},
+            WORKFLOW_DATA=WORKFLOW_DATA,
         )
 
     @classmethod

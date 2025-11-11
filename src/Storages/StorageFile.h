@@ -92,6 +92,12 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
+    /// Things required for PREWHERE.
+    bool supportsPrewhere() const override;
+    bool canMoveConditionsToPrewhere() const override;
+    std::optional<NameSet> supportedPrewhereColumns() const override;
+    ColumnSizeByName getColumnSizes() const override;
+
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
 
@@ -180,6 +186,8 @@ private:
 
     bool is_db_table = true;        /// Table is stored in real database, not user's file
     bool use_table_fd = false;      /// Use table_fd instead of path
+
+    bool supports_prewhere = false;
 
     mutable std::shared_timed_mutex rwlock;
 

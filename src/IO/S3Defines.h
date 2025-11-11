@@ -34,6 +34,9 @@ inline static constexpr uint64_t DEFAULT_MAX_SINGLE_READ_TRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES = 4;
 inline static constexpr uint64_t DEFAULT_MAX_REDIRECTS = 10;
 inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 100;
+inline static constexpr uint64_t DEFAULT_RETRY_INITIAL_DELAY_MS = 25;
+inline static constexpr uint64_t DEFAULT_RETRY_MAX_DELAY_MS = 5000;
+inline static constexpr uint64_t DEFAULT_RETRY_JITTER_FACTOR = 0;
 inline static constexpr uint64_t DEFAULT_MIN_BYTES_FOR_SEEK = 1024 * 1024;
 inline static constexpr uint64_t DEFAULT_OBJECTS_CHUNK_SIZE_TO_DELETE = 1000;
 

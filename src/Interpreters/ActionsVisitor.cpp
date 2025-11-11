@@ -62,7 +62,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_variant_type;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -1377,9 +1376,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     DataTypePtr type;
     if (literal.custom_type)
         type = literal.custom_type;
-    else if (
-        data.getContext()->getSettingsRef()[Setting::allow_experimental_variant_type]
-        && data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
+    else if (data.getContext()->getSettingsRef()[Setting::use_variant_as_common_type])
         type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Variant>(), literal.value);
     else
         type = applyVisitor(FieldToDataType(), literal.value);

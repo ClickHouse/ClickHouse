@@ -50,6 +50,32 @@ const SharedHeader & IQueryPlanStep::getOutputHeader() const
     return output_header;
 }
 
+std::string_view IQueryPlanStep::getStepDescription() const
+{
+    if (std::holds_alternative<std::string_view>(step_description))
+        return std::get<std::string_view>(step_description);
+    if (std::holds_alternative<std::string>(step_description))
+        return std::get<std::string>(step_description);
+
+    return {};
+}
+
+void IQueryPlanStep::setStepDescription(std::string description, size_t limit)
+{
+    if (description.size() > limit)
+    {
+        description.resize(limit);
+        description.shrink_to_fit();
+    }
+
+    step_description = std::move(description);
+}
+
+void IQueryPlanStep::setStepDescription(const IQueryPlanStep & step)
+{
+    step_description = step.step_description;
+}
+
 QueryPlanStepPtr IQueryPlanStep::clone() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone {} plan step", getName());

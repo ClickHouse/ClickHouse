@@ -7,6 +7,8 @@
 #include <Client/TerminalKeystrokeInterceptor.h>
 #include <Client/TestHint.h>
 #include <Client/TestTags.h>
+#include <Core/SortDescription.h>
+#include <Interpreters/sortBlock.h>
 
 #if USE_CLIENT_AI
 #include <Client/AI/AISQLGenerator.h>
@@ -55,6 +57,7 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -121,6 +124,9 @@ namespace Setting
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsString promql_database;
+    extern const SettingsString promql_table;
+    extern const SettingsFloatAuto promql_evaluation_time;
 }
 
 namespace ErrorCodes
@@ -381,6 +387,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
         parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
     else if (dialect == Dialect::prql)
         parser = std::make_unique<ParserPRQLQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    else if (dialect == Dialect::promql)
+        parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
     else
         parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
@@ -581,6 +589,13 @@ void ClientBase::onLogData(Block & block)
     {
         std::unique_lock lock(tty_mutex);
         progress_table.clearTableOutput(*tty_buf, lock);
+    }
+    /// Logs can be unsorted, i.e. if they were combined from multiple servers (in case of distributed queries)
+    {
+        SortDescription desc;
+        desc.push_back(SortColumnDescription("event_time"));
+        desc.push_back(SortColumnDescription("event_time_microseconds"));
+        sortBlock(block, desc, 0, IColumn::PermutationSortStability::Stable);
     }
     logs_out_stream->writeLogs(block);
     logs_out_stream->flush();

@@ -228,7 +228,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
@@ -238,11 +238,14 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
+    bool have_eq;
 
     if (!name_p.parse(pos, node, expected))
         return false;
 
-    if (!s_eq.ignore(pos, expected))
+    have_eq = s_eq.ignore(pos, expected);
+
+    if (!enable_shorthand_syntax && !have_eq)
         return false;
 
     tryGetIdentifierNameInto(node, name);
@@ -250,6 +253,9 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     /// Parameter
     if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
     {
+        if (!have_eq)
+            return false;
+
         name = name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (name.empty())
@@ -264,23 +270,29 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         return true;
     }
 
-    /// Default
-    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+    if (have_eq)
     {
-        default_settings = name;
-        return true;
-    }
+        /// Default
+        if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+        {
+            default_settings = name;
+            return true;
+        }
 
-    /// Setting
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
-    {
-        change.name = name;
-        change.value = createFieldFromAST(function_ast);
+        /// Setting
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        {
+            change.name = name;
+            change.value = createFieldFromAST(function_ast);
 
-        return true;
+            return true;
+        }
+
+        if (!value_p.parse(pos, node, expected))
+            return false;
     }
-    if (!value_p.parse(pos, node, expected))
-        return false;
+    else
+        node = std::make_shared<ASTLiteral>(Field(UInt64(1)));
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
@@ -318,7 +330,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String name_of_default_setting;
         Parameter parameter;
 
-        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, shorthand_syntax))
             return false;
 
         if (!parameter.first.empty())

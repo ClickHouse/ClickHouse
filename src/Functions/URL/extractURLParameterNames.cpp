@@ -48,7 +48,7 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (pos == nullptr)
+        if (pos == end)
             return false;
 
         if (first)

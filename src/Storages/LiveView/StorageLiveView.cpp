@@ -267,9 +267,6 @@ void StorageLiveView::checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query
 
 void StorageLiveView::drop()
 {
-    auto table_id = getStorageID();
-    DatabaseCatalog::instance().removeViewDependency(select_query_description.select_table_id, table_id);
-
     std::lock_guard lock(mutex);
     condition.notify_all();
 }

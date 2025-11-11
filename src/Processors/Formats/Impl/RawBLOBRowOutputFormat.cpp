@@ -31,7 +31,8 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
     factory.registerOutputFormat("RawBLOB", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings &)
+        const FormatSettings &,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<RawBLOBRowOutputFormat>(buf, std::make_shared<const Block>(sample));
     });

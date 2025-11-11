@@ -90,6 +90,7 @@ private:
         const std::string & table_name, const String & compression_method_, bool is_insert_query) const override;
 
     const char * getStorageEngineName() const override { return "URL"; }
+    const String & getFunctionURI() const override { return filename; }
 
     std::optional<String> tryGetFormatFromFirstArgument() override;
 };

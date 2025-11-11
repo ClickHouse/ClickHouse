@@ -6,7 +6,11 @@ slug: /interfaces/postgresql
 title: 'PostgreSQL Interface'
 ---
 
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # PostgreSQL Interface
+
+<CloudNotSupportedBadge/>
 
 ClickHouse supports the PostgreSQL wire protocol, which allows you to use Postgres clients to connect to ClickHouse. In a sense, ClickHouse can pretend to be a PostgreSQL instance - allowing you to connect a PostgreSQL client application to ClickHouse that is not already directly supported by ClickHouse (for example, Amazon Redshift).
 

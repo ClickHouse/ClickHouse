@@ -381,6 +381,12 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     }
 }
 
+StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
+    : size(size_)
+    , offset(offset_)
+    , frame_pointers(std::move(frame_pointers_))
+{}
+
 void StackTrace::tryCapture()
 {
 #if defined(OS_DARWIN)

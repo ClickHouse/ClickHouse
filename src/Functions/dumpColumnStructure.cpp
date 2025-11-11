@@ -57,7 +57,32 @@ public:
 
 REGISTER_FUNCTION(DumpColumnStructure)
 {
-    factory.registerFunction<FunctionDumpColumnStructure>();
+    FunctionDocumentation::Description description_dumpColumnStructure = R"(
+Outputs a detailed description of the internal structure of a column and its data type.
+)";
+    FunctionDocumentation::Syntax syntax_dumpColumnStructure = "dumpColumnStructure(x)";
+    FunctionDocumentation::Arguments arguments_dumpColumnStructure = {
+        {"x", "Value for which to get the description of.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_dumpColumnStructure = {"Returns a description of the column structure used for representing the value.", {"String"}};
+    FunctionDocumentation::Examples examples_dumpColumnStructure = {
+    {
+        "Usage example",
+        R"(
+SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'));
+        )",
+        R"(
+┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ DateTime, Const(size = 1, UInt32(size = 1))                  │
+└──────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_dumpColumnStructure = {1, 1};
+    FunctionDocumentation::Category category_dumpColumnStructure = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_dumpColumnStructure = {description_dumpColumnStructure, syntax_dumpColumnStructure, arguments_dumpColumnStructure, returned_value_dumpColumnStructure, examples_dumpColumnStructure, introduced_in_dumpColumnStructure, category_dumpColumnStructure};
+
+    factory.registerFunction<FunctionDumpColumnStructure>(documentation_dumpColumnStructure);
 }
 
 }

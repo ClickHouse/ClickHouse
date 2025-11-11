@@ -97,6 +97,10 @@ Also, internal exceptions of type `LOGICAL_ERROR` crash immediately instead of f
 cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
+:::note
+If you wish to use a debugger such as gdb, add `-D DEBUG_O_LEVEL="0"` to the above command to remove all compiler optimizations, which can interfere with gdb's ability to view/access variables.
+:::
+
 Run ninja to build:
 
 ```sh

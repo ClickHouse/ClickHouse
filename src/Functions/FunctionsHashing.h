@@ -1083,7 +1083,7 @@ private:
                         key = Impl::getKey(key_cols, i);
                 const ToType hash = apply(key,
                     reinterpret_cast<const char *>(&data[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    offsets[i] - current_offset);
 
                 if constexpr (first)
                     vec_to[i] = hash;
@@ -1660,7 +1660,7 @@ private:
             {
                 out[i] = URLHashImpl::apply(
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    offsets[i] - current_offset);
 
                 current_offset = offsets[i];
             }
@@ -1691,7 +1691,7 @@ private:
                 out[i] = URLHierarchyHashImpl::apply(
                     level_col->getUInt(i),
                     reinterpret_cast<const char *>(&chars[current_offset]),
-                    offsets[i] - current_offset - 1);
+                    offsets[i] - current_offset);
 
                 current_offset = offsets[i];
             }
@@ -1708,7 +1708,7 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
-                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0] - 1);
+                out[i] = URLHierarchyHashImpl::apply(level_col->getUInt(i), reinterpret_cast<const char *>(chars.data()), offsets[0]);
             }
 
             return col_to;

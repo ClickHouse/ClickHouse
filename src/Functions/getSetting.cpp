@@ -89,35 +89,66 @@ private:
 
 REGISTER_FUNCTION(GetSetting)
 {
-    factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Exception>>(FunctionDocumentation{
-        .description = R"(
-Returns the current value of a custom setting.
-)",
-        .syntax = "getSetting('custom_setting')",
-        .arguments = {
-            {"custom_setting", "The setting name.", {"String"}}
-        },
-        .returned_value = {"The setting's current value."},
-        .examples = {
-            {"getSetting", "SET custom_a = 123; SELECT getSetting('custom_a');", "123"},
-        },
-        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
-    factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>(FunctionDocumentation{
-        .description = R"(
-Returns the current value of a custom setting or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
-)",
-        .syntax = "getSettingOrDefault('custom_setting', default_value)",
-        .arguments = {
-            {"custom_setting", "The setting name.", {"String"}},
-            {"default_value", "Value to return if custom_setting is not set. Value may be of any data type or Null."},
-        },
-        .returned_value = {"The setting's current value or the default_value if setting is not set."},
-        .examples = {
-            {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', 'my_value');", "my_value"},
-            {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', 100);", "100"},
-            {"getSettingOrDefault", "SELECT getSettingOrDefault('custom_undef1', NULL);", "NULL"},
-        },
-        .category = FunctionDocumentation::Category::Other}, FunctionFactory::Case::Sensitive);
+    FunctionDocumentation::Description description_getSetting = R"(
+Returns the current value of a setting.
+)";
+    FunctionDocumentation::Syntax syntax_getSetting = "getSetting(setting_name)";
+    FunctionDocumentation::Arguments arguments_getSetting = {
+        {"setting_Name", "The setting name.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_getSetting = {"Returns the setting's current value.", {"Any"}};
+    FunctionDocumentation::Examples examples_getSetting = {
+    {
+        "Usage example",
+        R"(
+SELECT getSetting('enable_analyzer');
+SET enable_analyzer = false;
+SELECT getSetting('enable_analyzer');
+        )",
+        R"(
+┌─getSetting('⋯_analyzer')─┐
+│ true                     │
+└──────────────────────────┘
+┌─getSetting('⋯_analyzer')─┐
+│ false                    │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getSetting = {20, 7};
+    FunctionDocumentation::Category category_getSetting = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getSetting = {description_getSetting, syntax_getSetting, arguments_getSetting, returned_value_getSetting, examples_getSetting, introduced_in_getSetting, category_getSetting};
+
+    factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Exception>>(documentation_getSetting, FunctionFactory::Case::Sensitive);
+    FunctionDocumentation::Description description_getSettingOrDefault = R"(
+Returns the current value of a setting or returns the default value specified in the second argument if the setting is not set in the current profile.
+)";
+    FunctionDocumentation::Syntax syntax_getSettingOrDefault = "getSettingOrDefault(setting_name, default_value)";
+    FunctionDocumentation::Arguments arguments_getSettingOrDefault = {
+        {"setting_name", "The setting name.", {"String"}},
+        {"default_value", "Value to return if custom_setting is not set. Value may be of any data type or Null."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_getSettingOrDefault = {"Returns the current value of the specified setting or `default_value` if the setting is not set."};
+    FunctionDocumentation::Examples examples_getSettingOrDefault = {
+    {
+        "Usage example",
+        R"(
+SELECT getSettingOrDefault('custom_undef1', 'my_value');
+SELECT getSettingOrDefault('custom_undef2', 100);
+SELECT getSettingOrDefault('custom_undef3', NULL);
+        )",
+        R"(
+my_value
+100
+NULL
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getSettingOrDefault = {24, 10};
+    FunctionDocumentation::Category category_getSettingOrDefault = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getSettingOrDefault = {description_getSettingOrDefault, syntax_getSettingOrDefault, arguments_getSettingOrDefault, returned_value_getSettingOrDefault, examples_getSettingOrDefault, introduced_in_getSettingOrDefault, category_getSettingOrDefault};
+
+    factory.registerFunction<FunctionGetSetting<ErrorHandlingMode::Default>>(documentation_getSettingOrDefault, FunctionFactory::Case::Sensitive);
 }
 
 }

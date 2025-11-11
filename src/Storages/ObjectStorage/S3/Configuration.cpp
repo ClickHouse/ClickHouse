@@ -1,3 +1,4 @@
+#include <memory>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 
 #if USE_AWS_S3
@@ -15,6 +16,7 @@
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -25,6 +27,8 @@
 #include <filesystem>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/IPartitionStrategy.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <IO/S3/URI.h>
 
 namespace DB
 {
@@ -64,6 +68,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace Setting
+{
+    extern const SettingsString datalake_disk_name;
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys =
@@ -293,77 +302,36 @@ bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3
     return true;
 }
 
-template <typename T>
-static std::optional<T> getFromPositionOrKeyValue(
-    const std::string & key,
-    const ASTs & args,
-    const std::unordered_map<std::string_view, size_t> & engine_args_to_idx,
-    const std::unordered_map<std::string, Field> & key_value_args)
+void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    if (auto arg_it = engine_args_to_idx.find(key); arg_it != engine_args_to_idx.end())
-        return checkAndGetLiteralArgument<T>(args[arg_it->second], key);
+    auto disk = context->getDisk(disk_name);
+    auto object_storage = disk->getObjectStorage();
+    const auto & s3_object_storage = assert_cast<const S3ObjectStorage &>(*object_storage);
+    s3_settings = std::make_unique<S3Settings>();
+    *s3_settings = s3_object_storage.getS3Settings();
 
-    if (auto arg_it = key_value_args.find(key); arg_it != key_value_args.end())
-        return arg_it->second.safeGet<T>();
-
-    return std::nullopt;
-};
-
-static std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context)
-{
-    std::unordered_map<std::string, Field> key_value_args;
-    for (const auto & arg : function_args)
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
     {
-        const auto * function_ast = arg->as<ASTFunction>();
-        if (!function_ast || function_ast->name != "equals")
-            continue;
-
-        auto * args_expr = assert_cast<ASTExpressionList *>(function_ast->arguments.get());
-        auto & children = args_expr->children;
-        if (children.size() != 2)
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Key value argument is incorrect: expected 2 arguments, got {}",
-                children.size());
-        }
-
-        auto key_literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[0], context);
-        auto value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(children[1], context);
-
-        auto arg_name_value = key_literal->as<ASTLiteral>()->value;
-        if (arg_name_value.getType() != Field::Types::Which::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as credential name");
-
-        auto arg_name = arg_name_value.safeGet<String>();
-        auto arg_value = value_literal->as<ASTLiteral>()->value;
-
-        auto inserted = key_value_args.emplace(arg_name, arg_value).second;
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate key value argument: {}", arg_name);
+        String path = s3_object_storage.getURI().uri_str;
+        fs::path root = path;
+        fs::path suffix = parsing_result.path_suffix;
+        url = S3::URI(String(root / suffix));
     }
-    return key_value_args;
-}
 
-static ASTs::iterator getFirstKeyValueArgument(ASTs & args)
-{
-    ASTs::iterator first_key_value_arg_it = args.end();
-    for (auto * it = args.begin(); it != args.end(); ++it)
+    if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
-        const auto * function_ast = (*it)->as<ASTFunction>();
-        if (function_ast && function_ast->name == "equals")
-        {
-             if (first_key_value_arg_it == args.end())
-                first_key_value_arg_it = it;
-        }
-        else if (first_key_value_arg_it != args.end())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Expected positional arguments to go before key-value arguments");
-        }
+        String path = object_storage_disk->getObjectsKeyPrefix();
+        fs::path root = path;
+        fs::path suffix = parsing_result.path_suffix;
+        setPathForRead(String(root / suffix));
+        setPaths({String(root / suffix)});
     }
-    return first_key_value_arg_it;
+    if (parsing_result.format.has_value())
+        format = *parsing_result.format;
+    if (parsing_result.compression_method.has_value())
+        compression_method = *parsing_result.compression_method;
+    if (parsing_result.structure.has_value())
+        structure = *parsing_result.structure;
 }
 
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -732,7 +700,10 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
             count -= key_value_asts.size();
         }
 
-        if (count == 0 || count > getMaxNumberOfArguments())
+        if (!count)
+            return;
+
+        if (count > getMaxNumberOfArguments())
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
