@@ -23,6 +23,8 @@ public:
         bool is_join_get;
 
         bool joined_block_split_single_row = false;
+
+        bool enable_lazy_columns_replication = false;
     };
 
     HashJoinResult(
@@ -70,6 +72,9 @@ private:
 
         /// If non-zero, limits the number of rows outputted from the block.
         size_t state_row_limit;
+        /// If non-zero, limits the number of bytes outputted from the block.
+        /// Works only when state_row_limit is also non-zero.
+        size_t state_bytes_limit;
 
         /// Rows already outputted from the block, which are skipped on next call to generateBlock.
         size_t state_row_offset = 0;

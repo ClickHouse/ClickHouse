@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -80,7 +81,8 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         {std::make_shared<DB::DataTypeInt64>(), "size"},
         {std::make_shared<DB::DataTypeInt64>(), "modificationTime"},
         {DB::DataTypeFactory::instance().get("Bool"), "dataChange"},
-        {std::make_shared<DB::DataTypeInt64>(), "numRecords"},
+        {std::make_shared<DB::DataTypeTuple>(
+                DB::DataTypes{std::make_shared<DB::DataTypeString>()}, DB::Names{"stats_json"}), "stats"}
     };
 
     DB::MutableColumns columns;
@@ -102,7 +104,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[2]->insert(size_bytes);
         columns[3]->insert(getCurrentTime());
         columns[4]->insert(true);
-        columns[5]->insert(size_rows);
+        std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
+        DB::Tuple stats{stats_json};
+        columns[5]->insert(stats);
     }
 
     DB::FormatSettings format_settings;
@@ -241,7 +245,7 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     {
         /// Takes ownership of `array` (but not`schema`) if successfully called.
         engine_data = DeltaLake::KernelUtils::unwrapResult(
-            ffi::get_engine_data(array, &schema, engine.get()),
+            ffi::get_engine_data(array, &schema, &KernelUtils::allocateError),
             "get_engine_data");
     }
     catch (...)

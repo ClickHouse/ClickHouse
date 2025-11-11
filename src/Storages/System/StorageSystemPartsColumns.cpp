@@ -319,7 +319,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
+                columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
 
             Array substreams;
             Array filenames;
@@ -372,7 +372,7 @@ void StorageSystemPartsColumns::processNextStorage(
 
                 subcolumn_names.push_back(name);
                 subcolumn_types.push_back(data.type->getName());
-                subcolumn_serializations.push_back(ISerialization::kindToString(data.serialization->getKind()));
+                subcolumn_serializations.push_back(ISerialization::kindStackToString(data.serialization->getKindStack()));
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);

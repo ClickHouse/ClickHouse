@@ -47,13 +47,13 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
 {
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
 
     field = Array();
     Array & arr = field.safeGet<Array>();
@@ -87,13 +87,13 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
 
     size_t size;
     readVarUInt(size, istr);
-    if (settings.binary.max_binary_string_size && size > settings.binary.max_binary_string_size)
+    if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_ARRAY_SIZE,
             "Too large array size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_array_size",
             size,
-            settings.binary.max_binary_string_size);
+            settings.binary.max_binary_array_size);
 
     IColumn & nested_column = column_array.getData();
 
@@ -113,6 +113,21 @@ void SerializationArray::deserializeBinary(IColumn & column, ReadBuffer & istr, 
     offsets.push_back(offsets.back() + size);
 }
 
+void SerializationArray::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
+    const ColumnArray::Offsets & offsets = column_array.getOffsets();
+
+    size_t offset = offsets[ssize_t(row_num) - 1];
+    size_t next_offset = offsets[row_num];
+    size_t size = next_offset - offset;
+
+    writeVarUInt(size, ostr);
+
+    const IColumn & nested_column = column_array.getData();
+    for (size_t i = offset; i < next_offset; ++i)
+        nested->serializeForHashCalculation(nested_column, i, ostr);
+}
 
 namespace
 {

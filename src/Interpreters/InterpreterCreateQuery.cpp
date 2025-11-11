@@ -800,6 +800,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else if (!create.as_table.empty())
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
+        getContext()->checkAccess(AccessType::SHOW_TABLES, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
@@ -1137,7 +1138,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         ActionsDAG::makeConvertingActions(
             input_columns,
             output_columns,
-            ActionsDAG::MatchColumnsMode::Position
+            ActionsDAG::MatchColumnsMode::Position,
+            getContext()
         );
     }
 }
@@ -1245,7 +1247,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
         setNullDictionarySourceIfExternal(create);
 
-    if (create.is_dictionary || create.is_ordinary_view || create.is_live_view || create.is_window_view)
+    if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
         return;
 
     if (create.temporary)
@@ -1333,9 +1335,6 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 qualified_name,
                 as_create.getTargetTableID(ViewTarget::To).getFullTableName());
         }
-
-        if (as_create.is_live_view)
-            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Live View", qualified_name);
 
         if (as_create.is_window_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
@@ -1731,6 +1730,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
+
+    if (create.temporary && create.replace_table)
+    {
+        chassert(!ddl_guard);
+        return doCreateOrReplaceTemporaryTable(create, properties, mode);
+    }
 
     if (create.replace_table
         || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
@@ -2215,11 +2220,40 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     }
 }
 
+BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
+                                                                const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
+{
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+
+    String temporary_table_name = create.getTable();
+    auto creator = [&](const StorageID & table_id)
+    {
+        auto res = StorageFactory::instance().get(create,
+            database->getTableDataPath(table_id.getTableName()),
+            getContext(),
+            getContext()->getGlobalContext(),
+            properties.columns,
+            properties.constraints,
+            mode,
+            is_restore_from_backup);
+        validateVirtualColumns(*res);
+        checkForUnsupportedColumns(*res, mode);
+        return res;
+    };
+
+    auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
+    /// addOrUpdateExternalTable will replace existing temporary table with the same name.
+    /// It is thread-safe because of internal locking in Context class.
+    getContext()->getSessionContext()->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
+    return fillTableIfNeeded(create);
+}
+
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view && !create.is_live_view
+        && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
@@ -2243,7 +2277,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
     }
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
-    if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view && !create.is_live_view
+    if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
         && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
@@ -2506,8 +2540,10 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
     if (sql_security.definer && !skip_check_permissions)
     {
         auto definer_name = sql_security.definer->toString();
-        auto & access_control = context_->getAccessControl();
+        if (definer_name != current_user_name)
+            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
 
+        auto & access_control = context_->getAccessControl();
         const auto user = access_control.read<User>(definer_name);
         if (access_control.isEphemeral(access_control.getID<User>(definer_name)))
         {
@@ -2519,9 +2555,6 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
             new_user->authentication_methods.emplace_back(AuthenticationType::NO_AUTHENTICATION);
             access_control.insertOrReplace(new_user);
         }
-
-        if (definer_name != current_user_name)
-            context_->checkAccess(AccessType::SET_DEFINER, definer_name);
     }
 
     if (sql_security.type == SQLSecurityType::NONE && !skip_check_permissions)

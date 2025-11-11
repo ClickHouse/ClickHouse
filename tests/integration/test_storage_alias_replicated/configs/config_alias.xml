@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_alias_table_engine>1</allow_experimental_alias_table_engine>
+        </default>
+    </profiles>
+</clickhouse>
