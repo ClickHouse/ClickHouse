@@ -10,7 +10,7 @@ static ExpressionActionsPtr getExpressionActions(
     const NamesAndTypesList & virtual_columns_,
     const ContextPtr & context_)
 {
-    auto filter = VirtualColumnUtils::createPathAndFileFilterDAG(filter_.getOutputs().at(0), virtual_columns_);
+    auto filter = VirtualColumnUtils::createPathAndFileFilterDAG(filter_.getOutputs().at(0), virtual_columns_, context_);
     if (filter.has_value())
     {
         VirtualColumnUtils::buildSetsForDAG(*filter, context_);
