@@ -5,7 +5,6 @@
 #include <Common/logger_useful.h>
 #include <Processors/TopNThresholdTracker.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>

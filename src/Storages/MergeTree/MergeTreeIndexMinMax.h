@@ -93,6 +93,7 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void getTopN(size_t n, std::vector<size_t> & result, int direction);
 
+    /// TODO : based on ASC or DESC, we need only either Min or Max of each granule?
     struct MinMaxGranule
     {
         size_t granule_num;

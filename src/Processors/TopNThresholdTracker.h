@@ -1,10 +1,10 @@
 #pragma once
-#include <Core/Field.h>
-#include <mutex>
 #include <shared_mutex>
+#include <Core/Field.h>
+#include <Common/SharedMutex.h>
 
 /// TODO : Field is "heavy", just use atomic<size_t> for Int32/Int64/UInt32/UInt64/Date/DateTime/Float/etc.
-/// Anthing better than Field + shared_mutex. Also there is a shared_ptr<> for the get / set.
+/// Anything better than Field + shared_mutex. Also there is a shared_ptr<> for the get / set.
 namespace DB
 {
 
@@ -76,7 +76,7 @@ struct TopNThresholdTracker
 
 private:
     Field threshold;
-    mutable std::shared_mutex mutex;
+    mutable SharedMutex mutex;
     bool is_set{false};
     int direction{0};
 };

@@ -1097,13 +1097,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
 
         /// TODO - multithreading
-        for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+        for (auto & part_with_ranges : parts_with_ranges)
         {
             /// TODO - decision based on N v/s number of granules in part
-            if (parts_with_ranges[part_index].ranges.getNumberOfMarks() > (10 * top_n_filter_info->limit_n))
+            if (part_with_ranges.ranges.getNumberOfMarks() > (10 * top_n_filter_info->limit_n))
             {
-                auto min_max_granules = getMinMaxIndexGranules(parts_with_ranges[part_index].data_part,
-                                        parts_with_ranges[part_index].ranges,
+                auto min_max_granules = getMinMaxIndexGranules(part_with_ranges.data_part,
+                                        part_with_ranges.ranges,
                                         skip_indexes.skip_index_for_top_n_filtering,
                                         reader_settings,
                                         mark_cache.get(),
@@ -1116,7 +1116,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 for (auto range : result)
                     res.push_back({range, range + 1});
                 std::sort(res.begin(), res.end());
-                parts_with_ranges[part_index].ranges = res;
+                part_with_ranges.ranges = res;
             }
             /// TODO If there are 100's of parts, maybe should do TopN of the TopN from each part! Specially for N=1000+
         }
@@ -2266,9 +2266,8 @@ MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
                                     skip_index_minmax->index.sample_block);
     auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
 
-    for (size_t i = 0; i < index_ranges.size(); ++i)
+    for (auto index_range : index_ranges)
     {
-        const MarkRange & index_range = index_ranges[i];
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             reader.read(index_mark, index_mark, bulk_granules);
