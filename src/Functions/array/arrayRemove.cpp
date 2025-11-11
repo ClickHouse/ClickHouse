@@ -51,7 +51,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
 {
     const auto * return_type_array = checkAndGetDataType<DataTypeArray>(return_type.get());
     if (!return_type_array)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be array.", getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Return type for function {} must be Array, got {}", getName(), return_type->getName());
 
     if (typeid_cast<const DataTypeNothing *>(return_type_array->getNestedType().get()))
         return return_type->createColumnConstWithDefaultValue(input_rows_count);
