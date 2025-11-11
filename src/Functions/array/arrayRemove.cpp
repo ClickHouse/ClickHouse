@@ -5,7 +5,7 @@
 
 #include <Common/HashTable/HashTable.h>
 #include <Common/assert_cast.h>
-#include "DataTypes/DataTypesNumber.h"
+#include <DataTypes/DataTypesNumber.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -24,6 +24,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -120,9 +121,8 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         // then: and(isNull(arr), isNull(elem))
         auto then_col = build_and_execute_function("and", {is_arr_null_arg, is_elem_null_arg});
 
-        auto unnest_nullable_arg = [&](
-            const ColumnPtr & nullable_col, 
-            const DataTypePtr & nullable_type) -> std::pair<ColumnPtr, DataTypePtr>
+        auto unnest_nullable_arg
+            = [&](const ColumnPtr & nullable_col, const DataTypePtr & nullable_type) -> std::pair<ColumnPtr, DataTypePtr>
         {
             const auto * nullable_type_ptr = typeid_cast<const DataTypeNullable *>(nullable_type.get());
             if (nullable_type_ptr)
@@ -133,7 +133,7 @@ ColumnPtr FunctionArrayRemove::executeImpl(
                 if (!nullable_col_ptr)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnNullable but received {}", nullable_col->getName());
 
-                return { nullable_col_ptr->getNestedColumnPtr(), nested_type };
+                return {nullable_col_ptr->getNestedColumnPtr(), nested_type};
             }
             return { nullable_col, nullable_type };
         };
