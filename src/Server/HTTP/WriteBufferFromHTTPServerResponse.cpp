@@ -367,7 +367,10 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
 
             // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
+            {
                 compression_buffer->next();
+                compression_buffer->finalize();
+            }
             next();
 
             LOG_DEBUG(

@@ -1138,7 +1138,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         ActionsDAG::makeConvertingActions(
             input_columns,
             output_columns,
-            ActionsDAG::MatchColumnsMode::Position
+            ActionsDAG::MatchColumnsMode::Position,
+            getContext()
         );
     }
 }
@@ -1730,6 +1731,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
+    if (create.temporary && create.replace_table)
+    {
+        chassert(!ddl_guard);
+        return doCreateOrReplaceTemporaryTable(create, properties, mode);
+    }
+
     if (create.replace_table
         || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
     {
@@ -2211,6 +2218,35 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         }
         throw;
     }
+}
+
+BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
+                                                                const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
+{
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+
+    String temporary_table_name = create.getTable();
+    auto creator = [&](const StorageID & table_id)
+    {
+        auto res = StorageFactory::instance().get(create,
+            database->getTableDataPath(table_id.getTableName()),
+            getContext(),
+            getContext()->getGlobalContext(),
+            properties.columns,
+            properties.constraints,
+            mode,
+            is_restore_from_backup);
+        validateVirtualColumns(*res);
+        checkForUnsupportedColumns(*res, mode);
+        return res;
+    };
+
+    auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
+    /// addOrUpdateExternalTable will replace existing temporary table with the same name.
+    /// It is thread-safe because of internal locking in Context class.
+    getContext()->getSessionContext()->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
+    return fillTableIfNeeded(create);
 }
 
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)

@@ -817,6 +817,15 @@ void SerializationVariant::deserializeBinary(IColumn & column, ReadBuffer & istr
     }
 }
 
+void SerializationVariant::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    auto global_discr = col.globalDiscriminatorAt(row_num);
+    writeBinaryLittleEndian(global_discr, ostr);
+    if (global_discr != ColumnVariant::NULL_DISCRIMINATOR)
+        variant_serializations[global_discr]->serializeForHashCalculation(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr);
+}
+
 namespace
 {
 

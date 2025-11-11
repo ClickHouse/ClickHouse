@@ -1104,7 +1104,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
         auto conversion_action = ActionsDAG::makeConvertingActions(
             pipes[0].getHeader().getColumnsWithTypeAndName(),
             pipes[1].getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            context);
         auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
         pipes[0].addSimpleTransform(
             [converting_expr](const SharedHeader & header)
@@ -1766,7 +1767,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         auto conversion_action = ActionsDAG::makeConvertingActions(
             pipes[0].getHeader().getColumnsWithTypeAndName(),
             pipes[1].getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            context);
         auto converting_expr = std::make_shared<ExpressionActions>(std::move(conversion_action));
         pipes[0].addSimpleTransform(
             [converting_expr](const SharedHeader & header)
@@ -2895,7 +2897,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         auto converting = ActionsDAG::makeConvertingActions(
             cur_header.getColumnsWithTypeAndName(),
             getOutputHeader()->getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            context);
 
         append_actions(std::move(converting));
     }
@@ -2917,6 +2920,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             pipe.getHeader().getColumnsWithTypeAndName(),
             getOutputHeader()->getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
+            context,
             true);
 
         auto converting_dag_expr = std::make_shared<ExpressionActions>(std::move(convert_actions_dag));
