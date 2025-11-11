@@ -84,7 +84,7 @@ inline void readChar(char & x, ReadBuffer & buf)
 
 
 /// Read bytes from buffer
-inline void readNBytes(char* output, ReadBuffer & buf, size_t size)
+inline void readNBytes(char * output, size_t size, ReadBuffer & buf)
 {
     /// If the whole value fits in buffer do not call readStrict and copy with
     /// __builtin_memcpy since it is faster than generic memcpy for small copies.
@@ -105,7 +105,7 @@ template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
     static constexpr size_t size = sizeof(T); /// NOLINT
-    readNBytes(reinterpret_cast<char *>(&x), buf, size);
+    readNBytes(reinterpret_cast<char *>(&x), size, buf);
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -175,7 +175,7 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
     v.resize(size);
 
     if constexpr (is_trivially_serializable<T>)
-        readNBytes(reinterpret_cast<char *>(v.data()), buf, size * sizeof(T));
+        readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
     else
         for (size_t i = 0; i < size; ++i)
             readBinary(v[i], buf);
