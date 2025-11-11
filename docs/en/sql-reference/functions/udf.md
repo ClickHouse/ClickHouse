@@ -47,6 +47,8 @@ A function configuration contains the following settings:
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
+## Executable User Defined Functions {#executable-user-defined-functions}
+
 ## Examples {#examples}
 
 ### UDF from inline script {#udf-inline}
