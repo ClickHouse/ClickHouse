@@ -1,19 +1,21 @@
-#include <Server/HTTPHandlerFactory.h>
-
-#include <Server/ACME/Client.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
+#include <Server/HTTPHandler.h>
+#include <Server/HTTPHandlerFactory.h>
 #include <Server/IServer.h>
+#include <Server/IndexRequestHandler.h>
+#include <Server/InterserverIOHTTPHandler.h>
 #include <Server/PrometheusMetricsWriter.h>
 #include <Server/PrometheusRequestHandlerFactory.h>
+#include <Server/ReplicasStatusHandler.h>
+#include <Server/StaticRequestHandler.h>
+#include <Server/WebUIRequestHandler.h>
+
+#if USE_SSL
+#include <Server/ACME/RequestHandler.h>
+#include <Server/ACME/Client.h>
+#endif
 
 #include <Poco/Util/AbstractConfiguration.h>
-
-#include <Server/HTTPHandler.h>
-#include <Server/StaticRequestHandler.h>
-#include <Server/ReplicasStatusHandler.h>
-#include <Server/InterserverIOHTTPHandler.h>
-#include <Server/IndexRequestHandler.h>
-#include <Server/WebUIRequestHandler.h>
 
 
 namespace DB

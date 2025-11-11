@@ -10,10 +10,6 @@
 #include <Interpreters/Context.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
-#if USE_SSL
-#include <Server/ACME/Client.h>
-#endif
-
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -94,21 +90,5 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         *response.send() << "Not found.\n";
     }
 }
-
-#if USE_SSL
-void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
-{
-    auto challenge = ACME::Client::instance().requestChallenge(request.getURI());
-
-    if (challenge.empty())
-    {
-        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-        *response.send() << "Not found.\n";
-    }
-
-    handle(request, response, { challenge });
-}
-#endif
-
 
 }

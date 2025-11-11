@@ -87,11 +87,4 @@ private:
     std::unordered_map<String, String> http_response_headers_override;
 };
 
-class ACMERequestHandler : public HTTPRequestHandler
-{
-public:
-    explicit ACMERequestHandler(IServer &) {}
-    void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
-};
-
 }
