@@ -50,7 +50,7 @@ f_timestamp2_nn,
 toTimeZone(f_timestamp3_nn, 'Asia/Shanghai'),
 f_array,
 f_map
-FROM paimonS3(s3_conn, filename='paimon_all_types') ORDER BY f_int_nn;
+FROM paimonS3(s3_conn, filename='paimon_no_partition') ORDER BY f_int_nn;
 
 select '===';
-SELECT count(1) FROM paimonS3(s3_conn, filename='paimon_all_types');
+SELECT count(1) FROM paimonS3(s3_conn, filename='paimon_no_partition');
