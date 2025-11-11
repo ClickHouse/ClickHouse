@@ -6,7 +6,9 @@
 #include <Common/StackTrace.h>
 #include <Common/CurrentThread.h>
 
+#ifdef OS_LINUX
 #include <sched.h>
+#endif
 
 namespace
 {
@@ -63,7 +65,11 @@ void TraceSender::send(TraceType trace_type, const StackTrace & stack_trace, Ext
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
 
     std::string_view query_id;
+#ifdef OS_LINUX
     UInt64 cpu_id = sched_getcpu();
+#else
+    UInt64 cpu_id = 0;
+#endif
     UInt64 thread_id;
 
     if (CurrentThread::isInitialized())
