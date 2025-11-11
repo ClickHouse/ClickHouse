@@ -18,7 +18,7 @@
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
+    extern const int ACME_ERROR;
     extern const int LOGICAL_ERROR;
 }
 
@@ -195,7 +195,7 @@ std::string API::authenticate()
     auto json = doJWSRequestExpectingJSON(directory->new_account, payload, http_response);
 
     if (!json->has("status") || json->getValue<std::string>("status") != "valid")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Account creation failed"); // fixme
+        throw Exception(ErrorCodes::ACME_ERROR, "Account creation failed");
 
     key_id = (*http_response).get("Location");
 
