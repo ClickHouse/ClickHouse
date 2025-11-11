@@ -8,7 +8,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "Core/ColumnWithTypeAndName.h"
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
