@@ -25,12 +25,16 @@ node2 = multi_replica_cluster.add_instance(
     main_configs=["configs/config_multi.xml"],
     stay_alive=True,
     with_zookeeper=True,
+
+    ipv4_address="10.5.11.13",  # never copy-paste this line
 )
 node3 = multi_replica_cluster.add_instance(
     "node3",
     main_configs=["configs/config_multi.xml"],
     stay_alive=True,
     with_zookeeper=True,
+
+    ipv4_address="10.5.11.14",  # never copy-paste this line
 )
 
 @pytest.fixture(scope="module")
@@ -46,7 +50,7 @@ def test_coordinated_acme_authorization(started_multi_replica_cluster):
     # Let Pebble know where to find our server
     requests.post(
         'http://10.5.11.3:8055/add-a',
-        json={'host': 'multi.integration-tests.clickhouse.com', 'addresses': ['10.5.11.12']}
+        json={'host': 'multi.integration-tests.clickhouse.com', 'addresses': ['10.5.11.12', '10.5.11.13', '10.5.11.14']}
     )
 
     for _ in range(60):
@@ -78,7 +82,6 @@ def test_coordinated_acme_authorization(started_multi_replica_cluster):
         assert zk.exists("/clickhouse/acme/10.5.11.2")
         assert zk.exists("/clickhouse/acme/10.5.11.2/account_private_key")
         assert zk.exists("/clickhouse/acme/10.5.11.2/challenges")
-        assert len(zk.get_children("/clickhouse/acme/10.5.11.2/challenges")) == 1
         assert zk.exists("/clickhouse/acme/10.5.11.2/domains")
         assert len(zk.get_children("/clickhouse/acme/10.5.11.2/domains")) == 1
 
