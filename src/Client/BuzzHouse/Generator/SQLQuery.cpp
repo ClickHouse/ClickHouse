@@ -2224,7 +2224,7 @@ void StatementGenerator::generateSelect(
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
-        if (rg.nextMediumNumber() < 99)
+        if (!this->allow_not_deterministic || !this->levels[this->current_level].inside_aggregate || rg.nextMediumNumber() < 99)
         {
             this->depth++;
             for (uint32_t i = 0; i < ncols; i++)
