@@ -83,9 +83,8 @@ public:
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
 
             /// Do not unpack if empty tuple or single element tuple
-            if (left_tuple_type && left_tuple_type->getElements().size() > 1) {
+            if (left_tuple_type && left_tuple_type->getElements().size() > 1)
                 set_element_types = left_tuple_type->getElements();
-            }
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
