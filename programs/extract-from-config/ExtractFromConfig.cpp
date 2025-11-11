@@ -13,6 +13,8 @@
 #include <Poco/PatternFormatter.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
+#include <Poco/DOM/DOMWriter.h>
+#include <Poco/XML/XMLWriter.h>
 
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -182,6 +184,128 @@ static void printXmlLike(const Poco::Util::AbstractConfiguration & config, const
         printXmlLike(config, full_key, out, indent + 4);
     }
     out << indent_str << "</" << tag << ">\n";
+}
+
+static void printPrettyXML(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users)
+{
+    bool throw_on_bad_include = !ignore_errors;
+    DB::ConfigProcessor processor(config_path,
+        /* throw_on_bad_incl = */ false,
+        /* log_to_console = */ false,
+        /* substitutions= */ {},
+        /* throw_on_bad_include_from= */ throw_on_bad_include);
+
+    bool has_zk_includes;
+    DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
+
+    if (has_zk_includes && process_zk_includes)
+    {
+        DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
+        zkutil::validateZooKeeperConfig(*bootstrap_configuration);
+        zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
+        zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
+        zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
+        config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
+    }
+
+    if (get_users)
+    {
+        DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
+        bool has_user_directories = bootstrap_configuration->has("user_directories");
+        if (!has_user_directories && !ignore_errors)
+            throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Can't load config for users");
+
+        std::string users_config_path = bootstrap_configuration->getString("user_directories.users_xml.path");
+        const auto config_dir = fs::path{config_path}.remove_filename().string();
+        if (fs::path(users_config_path).is_relative() && fs::exists(fs::path(config_dir) / users_config_path))
+            users_config_path = fs::path(config_dir) / users_config_path;
+
+        DB::ConfigProcessor users_processor(users_config_path,
+            /* throw_on_bad_incl = */ false,
+            /* log_to_console = */ false,
+            /* substitutions= */ {},
+            /* throw_on_bad_include_from= */ throw_on_bad_include);
+        config_xml = users_processor.processConfig(&has_zk_includes);
+    }
+
+    /// Find the specific node if key is provided
+    DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+
+    if (!key.empty() && configuration->has(key))
+    {
+        /// Create a new document with just the subtree for the key
+        Poco::AutoPtr<Poco::XML::Document> sub_doc = new Poco::XML::Document;
+
+        /// Navigate to the requested key and extract that subtree
+        Poco::Util::AbstractConfiguration::Keys keys;
+        std::string current_key = key;
+
+        /// Split the key path
+        std::vector<std::string> key_parts;
+        size_t start = 0;
+        size_t end = key.find('.');
+        while (end != std::string::npos)
+        {
+            key_parts.push_back(key.substr(start, end - start));
+            start = end + 1;
+            end = key.find('.', start);
+        }
+        key_parts.push_back(key.substr(start));
+
+        /// Build a new XML tree with the path structure
+        Poco::XML::Element * current_elem = sub_doc->createElement(key_parts[0]);
+        sub_doc->appendChild(current_elem);
+
+        for (size_t i = 1; i < key_parts.size(); ++i)
+        {
+            Poco::XML::Element * child = sub_doc->createElement(key_parts[i]);
+            current_elem->appendChild(child);
+            current_elem = child;
+        }
+
+        /// Add the content
+        configuration->keys(key, keys);
+        if (keys.empty())
+        {
+            /// Leaf node
+            Poco::XML::Text * text = sub_doc->createTextNode(configuration->getString(key));
+            current_elem->appendChild(text);
+        }
+        else
+        {
+            /// Inner node - we need to recursively build the tree
+            std::function<void(Poco::XML::Element *, const std::string &)> buildTree;
+            buildTree = [&](Poco::XML::Element * parent, const std::string & prefix)
+            {
+                Poco::Util::AbstractConfiguration::Keys subkeys;
+                configuration->keys(prefix, subkeys);
+
+                if (subkeys.empty())
+                {
+                    Poco::XML::Text * text = sub_doc->createTextNode(configuration->getString(prefix));
+                    parent->appendChild(text);
+                    return;
+                }
+
+                for (const auto & subkey : subkeys)
+                {
+                    Poco::XML::Element * child = sub_doc->createElement(subkey);
+                    parent->appendChild(child);
+                    buildTree(child, prefix + "." + subkey);
+                }
+            };
+
+            buildTree(current_elem, key);
+        }
+
+        config_xml = sub_doc;
+    }
+
+    /// Write XML with pretty formatting
+    Poco::XML::DOMWriter writer;
+    writer.setOptions(Poco::XML::XMLWriter::PRETTY_PRINT);
+    writer.writeNode(std::cout, config_xml);
+    std::cout << std::endl;
 }
 
 static std::vector<std::string> extractFromConfig(const std::string & config_path, const std::string & key, bool process_zk_includes, bool ignore_errors, bool get_users, std::string & format)
