@@ -331,11 +331,6 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Actions", ExpressionActions(std::move(actions_dag)).toTree());
 }
 
-String JoinStepLogical::getOperationDescription() const
-{
-    return fmt::format("Type: {} {}, Expression: {}", join_operator.kind, join_operator.strictness, formatJoinCondition(join_operator.expression));
-}
-
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();

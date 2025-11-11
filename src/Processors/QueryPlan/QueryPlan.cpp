@@ -358,13 +358,6 @@ static void explainStep(
 
     settings.out.write('\n');
 
-    if (!options.actions)
-    {
-        auto operation_description = step.getOperationDescription();
-        if (!operation_description.empty())
-            settings.out << prefix << "  " << operation_description << '\n';
-    }
-
     const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
     {
         column.dumpNameAndType(out);
