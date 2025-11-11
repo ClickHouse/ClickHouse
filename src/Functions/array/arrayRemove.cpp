@@ -20,6 +20,20 @@
 namespace DB
 {
 
+namespace {
+
+ColumnPtr BuildAndExecuteFunction(
+    const std::string & func_name,
+    const ColumnsWithTypeAndName & func_args,
+    ContextPtr context,
+    size_t expected_column_count)
+{
+    auto func = FunctionFactory::instance().get(func_name, context)->build(func_args);
+    return func->execute(func_args, func->getResultType(), expected_column_count, /* dry_run = */ false);
+}
+
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -67,35 +81,26 @@ ColumnPtr FunctionArrayRemove::executeImpl(
 
     const auto & arr_data_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
     const auto & elem_type = arguments[1].type;
-
-    auto build_and_execute_function = [&](
-        const std::string & func_name,
-        const ColumnsWithTypeAndName & func_args) -> ColumnPtr
-    {
-        auto func = FunctionFactory::instance().get(func_name, context)->build(func_args);
-        return func->execute(func_args, func->getResultType(), arr_elements_count, /* dry_run = */ false);
-    };
-
     bool elem_is_const_null = elem_type->onlyNull();
-
-    ColumnPtr replicated_elem_col;
-    if (!elem_is_const_null)
-        replicated_elem_col = arguments[1].column->replicate(arr_offsets);
 
     ColumnPtr filter_col;
     if (elem_is_const_null)
     {
+        if (!canContainNull(*arr_data_type)) {
+            return arguments[0].column;
+        }
+
         // Filter = NOT isNull(arr)
-        auto is_arr_null_col = build_and_execute_function("isNull", { {arr_data_col, arr_data_type, "arr"} });
-        filter_col = build_and_execute_function("not",
-            { { is_arr_null_col, std::make_shared<DataTypeUInt8>(), "is_null_res" } });
+        auto is_arr_null_col = BuildAndExecuteFunction("isNull", {{arr_data_col, arr_data_type, "arr"}}, context, arr_elements_count);
+        filter_col = BuildAndExecuteFunction(
+            "not", {{is_arr_null_col, std::make_shared<DataTypeUInt8>(), "is_null_res"}}, context, arr_elements_count);
     }
-    else if (!arr_data_type->isNullable() && !elem_type->isNullable())
+    else if (!canContainNull(*arr_data_type) && !canContainNull(*elem_type))
     {
         // Filter = notEquals(arr, replicated_elem_col)
-        filter_col = build_and_execute_function("notEquals",
+        filter_col = BuildAndExecuteFunction("notEquals",
             {{arr_data_col, arr_data_type, "arr"},
-             {replicated_elem_col, elem_type, "elem"}});
+             {arguments[1].column->replicate(arr_offsets), elem_type, "elem"}}, context, arr_elements_count);
     }
     else
     {
@@ -104,31 +109,31 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         //      and(isNull(arr), isNull(elem)),      // then (NULL == NULL)
         //      equals(arr, elem)                    // else (Value == Value)
         // )
-        auto is_arr_null_col = build_and_execute_function("isNull", { {arr_data_col, arr_data_type, "arr"} });
-        auto is_elem_null_col = build_and_execute_function("isNull", { {replicated_elem_col, elem_type, "elem"} });
+        const auto & replicated_elem_col = arguments[1].column->replicate(arr_offsets);
+
+        auto is_arr_null_col = BuildAndExecuteFunction("isNull", {{arr_data_col, arr_data_type, "arr"}}, context, arr_elements_count);
+        auto is_elem_null_col = BuildAndExecuteFunction("isNull", {{replicated_elem_col, elem_type, "elem"}}, context, arr_elements_count);
 
         auto is_arr_null_arg = ColumnWithTypeAndName{is_arr_null_col, std::make_shared<DataTypeUInt8>(), "is_arr_null"};
         auto is_elem_null_arg = ColumnWithTypeAndName{is_elem_null_col, std::make_shared<DataTypeUInt8>(), "is_elem_null"};
 
         // cond: or(isNull(arr), isNull(elem))
-        auto cond_col = build_and_execute_function("or", {is_arr_null_arg, is_elem_null_arg});
+        auto cond_col = BuildAndExecuteFunction("or", {is_arr_null_arg, is_elem_null_arg}, context, arr_elements_count);
 
         // then: and(isNull(arr), isNull(elem))
-        auto then_col = build_and_execute_function("and", {is_arr_null_arg, is_elem_null_arg});
+        auto then_col = BuildAndExecuteFunction("and", {is_arr_null_arg, is_elem_null_arg}, context, arr_elements_count);
 
-        auto else_col = removeNullable(build_and_execute_function(
-            "equals",
-            {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}));
+        auto else_col = removeNullable(BuildAndExecuteFunction(
+            "equals", {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}, context, arr_elements_count));
 
         auto cond_arg = ColumnWithTypeAndName{cond_col, std::make_shared<DataTypeUInt8>(), "cond"};
         auto then_arg = ColumnWithTypeAndName{then_col, std::make_shared<DataTypeUInt8>(), "then"};
         auto else_arg = ColumnWithTypeAndName{else_col, std::make_shared<DataTypeUInt8>(), "else"};
 
-        auto equality_check_col = build_and_execute_function("if", {cond_arg, then_arg, else_arg});
-        auto equality_check_arg =
-            ColumnWithTypeAndName{equality_check_col, std::make_shared<DataTypeUInt8>(), "eq_check"};
+        auto equality_check_col = BuildAndExecuteFunction("if", {cond_arg, then_arg, else_arg}, context, arr_elements_count);
+        auto equality_check_arg = ColumnWithTypeAndName{equality_check_col, std::make_shared<DataTypeUInt8>(), "eq_check"};
 
-        filter_col = build_and_execute_function("not", {equality_check_arg});
+        filter_col = BuildAndExecuteFunction("not", {equality_check_arg}, context, arr_elements_count);
     }
 
     const auto * filter_col_uint8 = checkAndGetColumn<ColumnUInt8>(filter_col.get());
