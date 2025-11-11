@@ -96,3 +96,6 @@ CREATE TABLE nullable_arr (arr Array(Nullable(Int32))) ENGINE = Memory;
 INSERT INTO nullable_arr VALUES ([1,2,3]), ([NULL,2,3]);
 SELECT arrayRemove(arr, 2) FROM nullable_arr;
 SELECT arrayRemove(arr, NULL) FROM nullable_arr;
+
+SELECT arrayRemove(arr, elem)
+FROM (SELECT [1,2,3] AS arr, number AS elem FROM numbers(3));

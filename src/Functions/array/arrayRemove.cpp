@@ -68,7 +68,8 @@ ColumnPtr FunctionArrayRemove::executeImpl(
     if (typeid_cast<const DataTypeNothing *>(return_type_array->getNestedType().get()))
         return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-    const auto * arr_col = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+    const auto & arr_arg_column = arguments[0].column->convertToFullColumnIfConst();
+    const auto * arr_col = checkAndGetColumn<ColumnArray>(arr_arg_column.get());
     if (!arr_col)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "First argument for function {} must be Array, got {}", getName(), arguments[0].column->getName());
