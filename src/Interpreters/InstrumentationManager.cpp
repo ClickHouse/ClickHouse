@@ -424,6 +424,8 @@ void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPoi
 
 void InstrumentationManager::profile(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
+    using namespace std::chrono;
+
     /// This is the easiest way to do store the elements, because otherwise we'd need to have a mutex to protect a
     /// shared std::unordered_map. However, there might be a race condition in which this handler is already triggered
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
@@ -461,9 +463,12 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
                 return;
             }
 
-            auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
-
+            auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
             auto start_us = Int64(element.event_time_microseconds);
+
+            element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
+            element.event_time_microseconds = Decimal64(now_us);
+            element.timestamp_ns = duration_cast<nanoseconds>(now.time_since_epoch()).count();
             element.duration_microseconds = Decimal64(now_us - start_us);
             element.entry_type = XRayEntryType::EXIT;
 

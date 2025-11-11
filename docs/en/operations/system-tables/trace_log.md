@@ -95,26 +95,30 @@ duration_microseconds:   58
 The profiling information can be converted easily to Chrome's Event Trace Format creating the following query in a `chrome_trace.sql` file:
 
 ```sql
+WITH traces AS (
+    SELECT * FROM system.trace_log
+    WHERE event_date >= today() AND trace_type = 'Instrumentation' AND handler = 'profile'
+    ORDER BY event_time, entry_type
+)
 SELECT
     format(
         '{{"traceEvents": [{}\n]}}',
         arrayStringConcat(
             groupArray(
                 format(
-                    '\n{{"name": "{}", "cat": "clickhouse", "ph": "{}", "ts": {}, "pid": 1, "tid": {}, "args": {{"query_id": "{}", "cpu_id": {}, "stack": "{}"}}}},',
+                    '\n{{"name": "{}", "cat": "clickhouse", "ph": "{}", "ts": {}, "pid": 1, "tid": {}, "args": {{"query_id": "{}", "cpu_id": {}, "stack": [{}]}}}},',
                     function_name,
                     if(entry_type = 0, 'B', 'E'),
                     timestamp_ns/1000,
                     toString(thread_id),
                     query_id,
                     cpu_id,
-                    arrayStringConcat(arrayMap((x, y) -> concat(x, ': ', y, '\n'), lines, symbols))
+                    arrayStringConcat(arrayMap((x, y) -> concat('"', x, ': ', y, '", '), lines, symbols))
                 )
             )
         )
-    ) AS trace_json
-FROM system.trace_log
-WHERE event_date >= today() AND trace_type = 'Instrumentation' AND handler = 'profile';
+    )
+FROM traces;
 ```
 
 And executing it with ClickHouse Client to export it to a `trace.json` file that we can import either with [Perfetto](https://ui.perfetto.dev/) or [speedscope](https://www.speedscope.app/).
