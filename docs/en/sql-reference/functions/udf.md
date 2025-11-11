@@ -77,11 +77,11 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
 </functions>
 ```
   </TabItem>
-  <TabItem value="YML" label="YML">
+  <TabItem value="YAML" label="YAML">
 
-File `test_function.yml` (`/etc/clickhouse-server/test_function.yml` with default path settings).
+File `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` with default path settings).
 
-```yml title="/etc/clickhouse-server/test_function.yml"
+```yml title="/etc/clickhouse-server/test_function.yaml"
 functions:
   type: executable
   name: test_function_sum
@@ -115,7 +115,7 @@ SELECT test_function_sum(2, 2);
 
 In this example we create a UDF which reads a value from `STDIN` and returns it as a string.
 
-Create `test_function` using either XML OR YML configuration.
+Create `test_function` using either XML OR YAML configuration.
 
 <Tabs>
   <TabItem value="XML" label="XML" default>
@@ -136,9 +136,9 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
 </functions>
 ```
   </TabItem>
-  <TabItem value="YML" label="YML">
-File `test_function.yml` (`/etc/clickhouse-server/test_function.yml` with default path settings).
-```yml title="/etc/clickhouse-server/test_function.yml"
+  <TabItem value="YAML" label="YAML">
+File `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function.yaml"
 functions:
   type: executable
   name: test_function_python
@@ -179,7 +179,7 @@ SELECT test_function_python(toUInt64(2));
 
 ### Read two values from `STDIN` and return their sum as a JSON object {#udf-stdin}
 
-Create `test_function_sum_json` with named arguments and format [JSONEachRow](/interfaces/formats/JSONEachRow) using either XML or YML configuration.
+Create `test_function_sum_json` with named arguments and format [JSONEachRow](/interfaces/formats/JSONEachRow) using either XML or YAML configuration.
 
 <Tabs>
   <TabItem value="XML" label="XML" default>
@@ -205,9 +205,9 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
 </functions>
 ```
   </TabItem>
-  <TabItem value="YML" label="YML">
-File `test_function.yml` (`/etc/clickhouse-server/test_function.yml` with default path settings).
-```yml title="/etc/clickhouse-server/test_function.yml"
+  <TabItem value="YAML" label="YAML">
+File `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function.yaml"
 functions:
   type: executable
   name: test_function_sum_json
@@ -278,9 +278,9 @@ File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function
 </functions>
 ```
   </TabItem>
-  <TabItem value="YML" label="YML">
-File `test_function_parameter_python.yml` (`/etc/clickhouse-server/test_function_parameter_python.yml` with default path settings).
-```yml title="/etc/clickhouse-server/test_function_parameter_python.yml"
+  <TabItem value="YAML" label="YAML">
+File `test_function_parameter_python.yaml` (`/etc/clickhouse-server/test_function_parameter_python.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
 functions:
   type: executable
   execute_direct: true
@@ -342,9 +342,9 @@ File `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml`
 </functions>
 ```
   </TabItem>
-  <TabItem value="YML" label="YML">
-File `test_function_shell.yml` (`/etc/clickhouse-server/test_function_shell.yml` with default path settings).
-```yml title="/etc/clickhouse-server/test_function_shell.yml"
+  <TabItem value="YAML" label="YAML">
+File `test_function_shell.yaml` (`/etc/clickhouse-server/test_function_shell.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function_shell.yaml"
 functions:
   type: executable
   name: test_shell
