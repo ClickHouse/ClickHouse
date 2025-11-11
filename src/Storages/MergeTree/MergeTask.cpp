@@ -1701,6 +1701,9 @@ void MergeTask::cancel() noexcept
 
     if (global_ctx->to)
         global_ctx->to->cancel();
+
+    if (global_ctx->new_data_part)
+        global_ctx->new_data_part->removeIfNeeded();
 }
 
 
