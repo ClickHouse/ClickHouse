@@ -116,32 +116,9 @@ ColumnPtr FunctionArrayRemove::executeImpl(
         // then: and(isNull(arr), isNull(elem))
         auto then_col = build_and_execute_function("and", {is_arr_null_arg, is_elem_null_arg});
 
-        auto unnest_nullable_arg
-            = [&](const ColumnPtr & nullable_col, const DataTypePtr & nullable_type) -> std::pair<ColumnPtr, DataTypePtr>
-        {
-            const auto * nullable_type_ptr = typeid_cast<const DataTypeNullable *>(nullable_type.get());
-            if (nullable_type_ptr)
-            {
-                DataTypePtr nested_type = nullable_type_ptr->getNestedType();
-
-                const auto * nullable_col_ptr = checkAndGetColumn<ColumnNullable>(nullable_col.get());
-                if (!nullable_col_ptr)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnNullable but received {}", nullable_col->getName());
-
-                return {nullable_col_ptr->getNestedColumnPtr(), nested_type};
-            }
-            return { nullable_col, nullable_type };
-        };
-
-        // else: equals(arr, elem)
-        // When the `if` function will execute this `else` clause, both arr and elem are non-nullable.
-        // So first extract the nested column out if they exist. This will ensure the output type of
-        // the `else` clause is UInt8 and not Nullable(UInt8).
-        auto [unnested_arr_col, unnested_arr_type] = unnest_nullable_arg(arr_data_col, arr_data_type);
-        auto [unnested_elem_col, unnested_elem_type] = unnest_nullable_arg(replicated_elem_col, elem_type);
-        auto else_col = build_and_execute_function(
+        auto else_col = removeNullable(build_and_execute_function(
             "equals",
-            {{unnested_arr_col, unnested_arr_type, "arr"}, {unnested_elem_col, unnested_elem_type, "elem"}});
+            {{arr_data_col, arr_data_type, "arr"}, {replicated_elem_col, elem_type, "elem"}}));
 
         auto cond_arg = ColumnWithTypeAndName{cond_col, std::make_shared<DataTypeUInt8>(), "cond"};
         auto then_arg = ColumnWithTypeAndName{then_col, std::make_shared<DataTypeUInt8>(), "then"};
