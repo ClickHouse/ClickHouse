@@ -1,3 +1,4 @@
+#include <unordered_map>
 #include "config.h"
 
 #include <pthread.h>
@@ -49,7 +50,7 @@ namespace ErrorCodes
     M(MYSQL_DATABASE_CLEANUP, "MySQLDBCleaner") \
     M(DICT_RELOAD, "DictReload") \
     M(POOL_DELAYED_EXECUTION, "PoolDelayExec") \
-    M(CONFIG_REALOADER, "ConfigReloader") \
+    M(CONFIG_RELOADER, "ConfigReloader") \
     M(TEST_KEEPER_PROC, "TestKeeperProc") \
     M(ZOOKEEPER_SEND, "ZkSender") \
     M(ZOOKEEPER_RECV, "ZkReceiver") \
@@ -87,17 +88,17 @@ namespace ErrorCodes
     M(PROMETHEUS_HANDLER, "PrometheusHndlr") \
     M(TCP_HANDLER, "TCPHandler") \
     M(LOCAL_SERVER_PTY, "LocalServerPty") \
-    M(BACkGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
     M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
     M(MSG_BROKER_SCHEDULE_POOL, "BgMBSchPool") \
     M(DDL_WORKER_CLEANUP, "DDLWorkerClnup") \
     M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \
-    M(REMORE_FS_READ_THREAD_POOL, "VFSRead") \
+    M(REMOTE_FS_READ_THREAD_POOL, "VFSRead") \
     M(PARALLEL_COMPRESSORS_POOL, "ParallelCompres") \
-    M(REMORE_FS_WRITE_THREAD_POOL, "VFSWrite") \
+    M(REMOTE_FS_WRITE_THREAD_POOL, "VFSWrite") \
     M(AZURE_COPY_POOL, "AzureObjCopy") \
-    M(AZYRE_LIST_POOL, "AzureObjList") \
+    M(AZURE_LIST_POOL, "AzureObjList") \
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(DATALAKE_TABLE_SNAPSHOT, "TableSnapshot") \
@@ -117,9 +118,9 @@ namespace ErrorCodes
     M(CREATE_TABLES, "CreateTables") \
     M(DATABASE_BACKUP, "DatabaseBackup") \
     M(PREFIX_READER, "PrefixReader") \
-    M(BACKUP_COORDINATION_INERNAL, "BackupCoordInt") \
+    M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
     M(BACKUP_COORDINATION, "BackupCoord") \
-    M(RESTORE_COORDIANTION_INTERNAL, "RestoreCoordInt") \
+    M(RESTORE_COORDINATION_INTERNAL, "RestoreCoordInt") \
     M(RESTORE_COORDINATION, "RestoreCoord") \
     M(RESTORE_FIND_TABLE, "Restore_FindTbl") \
     M(RESTORE_MAKE_DATABASE, "Restore_MakeDB") \
@@ -159,23 +160,23 @@ namespace ErrorCodes
     M(PARALLEL_FORMATER_COLLECTOR, "Collector") \
     M(PUSHING_ASYNC_EXECUTOR, "QueryPushPipeEx") \
     M(PULLING_ASYNC_EXECUTOR, "QueryPullPipeEx") \
-    M(QUERY_ASYNC_EXCUTOR, "QueryPipelineEx") \
+    M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
     M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
     M(HASHED_DICT_LOAD, "HashedDictLoad") \
     M(PREFETCH_READER, "ReadPrepare") \
     M(LOAD_MARKS, "LoadMarksThread") \
     M(PARALLEL_FORMATER_PARSER, "ChunkParser") \
     M(POLYGON_DICT_LOAD, "PolygonDict") \
-    M(UNIQ_EXACT_CONCVERT, "UniqExaConvert") \
+    M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(MERGETREE_READ, "MergeTreeRead") \
     M(RUNTIME_DATA, "RuntimeData") \
     M(ORC_FILE, "ORCFile") \
     M(PARQUET_PREFETCH, "ParquetPrefetch") \
-    M(CACHE_DICKTIONARY_UPDATE_QUEUE, "UpdQueue") \
+    M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(SUGGEST, "Suggest") \
     M(PARALLEL_READ, "ParallelRead") \
-    M(DWARF_DECORER, "DWARFDecoder") \
+    M(DWARF_DECODER, "DWARFDecoder") \
     M(RESTORE_MAKE_TABLE, "Restore_MakeTbl") \
     M(HASHED_DICT_DTOR, "HashedDictDtor") \
     M(METRICS_TRANSMITTER, "MetricsTransmtr") \
@@ -188,8 +189,8 @@ constexpr std::string as_string(char const (&s)[N])
     return std::string(s, N-1);
 }
 
-const static std::map<std::string, ThreadName> str_to_thread_name = []{
-    std::map<std::string, ThreadName> result;
+const static std::unordered_map<std::string, ThreadName> str_to_thread_name = []{
+    std::unordered_map<std::string, ThreadName> result;
 
     #define ACTION(NAME, STR) result[as_string(STR)] = ThreadName::NAME;
     THREAD_NAMES_VALUES(ACTION)
@@ -211,7 +212,7 @@ std::string toString(ThreadName name)
     }
 }
 
-ThreadName parceThreadName(const std::string & name)
+ThreadName parseThreadName(const std::string & name)
 {
     if (auto it = str_to_thread_name.find(name); it != str_to_thread_name.end())
         return it->second;
@@ -266,7 +267,7 @@ ThreadName getThreadName()
             throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with prctl(PR_GET_NAME)");
 #endif
 
-    return parceThreadName(std::string{tmp_thread_name});
+    return parseThreadName(std::string{tmp_thread_name});
 }
 
 }
