@@ -101,6 +101,7 @@ struct VirtualsForFileLikeStorage
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
+    const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
 };
 

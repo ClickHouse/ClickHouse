@@ -32,7 +32,7 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
     {
         for (const auto & [saved_disk_name, saved_disk] : disks)
         {
-            if (!saved_disk->isPlain() || disk->isReadOnly() || disk->isWriteOnce())
+            if (!saved_disk->isPlain() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
                 continue;
 
             /// Same endpoint
