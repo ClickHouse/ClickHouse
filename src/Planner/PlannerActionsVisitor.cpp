@@ -502,7 +502,7 @@ public:
 
     [[maybe_unused]] bool containsNode(const std::string & node_name)
     {
-        return node_name_to_node.find(node_name) != node_name_to_node.end();
+        return node_name_to_node.contains(node_name);
     }
 
     [[maybe_unused]] bool containsInputNode(const std::string & node_name)

@@ -1,6 +1,3 @@
-set use_query_condition_cache = 0;
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-set use_skip_indexes_on_data_read=0;
 drop table if exists test;
 
 {% for create_command in ['create table test (id UInt64, a Tuple(b Tuple(c UInt32, d String, e Array(UInt32))), data String, index idx1 a.b.c type minmax, index idx2 a.b.d type minmax, index idx3 a.b.c || a.b.d type minmax) engine=MergeTree order by tuple() settings min_rows_for_wide_part=100000000, index_granularity=1;',

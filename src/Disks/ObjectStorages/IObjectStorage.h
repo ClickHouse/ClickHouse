@@ -39,6 +39,7 @@
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <azure/identity/client_secret_credential.hpp>
 
 namespace DB::AzureBlobStorage
 {
@@ -69,6 +70,7 @@ using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
+    std::shared_ptr<Azure::Identity::ClientSecretCredential>,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
@@ -89,8 +91,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 class ReadBufferFromFileBase;
@@ -113,8 +114,6 @@ struct RelativePathWithMetadata
     String relative_path;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// Delta lake related object metadata.
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     RelativePathWithMetadata() = default;
 
@@ -125,15 +124,10 @@ struct RelativePathWithMetadata
 
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
-    virtual ~RelativePathWithMetadata() = default;
+    ~RelativePathWithMetadata() = default;
 
-    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
-    virtual std::string getPath() const { return relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
+    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getPath() const { return relative_path; }
 };
 
 struct ObjectKeyWithMetadata

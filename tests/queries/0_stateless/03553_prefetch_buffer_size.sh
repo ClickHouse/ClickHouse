@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT -nm -q "
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test_1 (s String CODEC(NONE)) ENGINE = MergeTree() ORDER BY ()
-SETTINGS disk = disk(name = 'test_prefetch_buffer_size_$CLICKHOUSE_DATABASE', type = cache, max_size = '10Gi', path = 'test_prefetch_buffer_size_$CLICKHOUSE_DATABASE', disk = 's3_disk'), min_bytes_for_wide_part=0, serialization_info_version='default'
+SETTINGS disk = disk(name = 'test_prefetch_buffer_size_$CLICKHOUSE_DATABASE', type = cache, max_size = '10Gi', path = 'test_prefetch_buffer_size_$CLICKHOUSE_DATABASE', disk = 's3_disk'), min_bytes_for_wide_part=0, serialization_info_version='basic'
 AS SELECT repeat('a', 1024) FROM numbers_mt(20e3) SETTINGS enable_filesystem_cache = 0;
 
 -- Need separate tables to avoid cache polution

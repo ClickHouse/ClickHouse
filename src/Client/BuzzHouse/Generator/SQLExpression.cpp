@@ -1,3 +1,5 @@
+#include <Common/StringUtils.h>
+
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
@@ -161,6 +163,8 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
 
 void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, const bool complex, Expr * expr)
 {
+    const bool allow_floats
+        = (this->next_type_mask & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     uint32_t nested_prob = 0;
     LiteralValue * lv = expr->mutable_lit_val();
     const uint32_t hugeint_lit = 20;
@@ -170,18 +174,19 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t time_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_time) != 0);
     const uint32_t date_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_dates) != 0);
     const uint32_t datetime_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_datetimes) != 0);
-    const uint32_t dec_lit = 50 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
+    const uint32_t dec_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
     const uint32_t random_str = 30 * static_cast<uint32_t>(complex && this->allow_not_deterministic);
     const uint32_t uuid_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_uuid) != 0);
     const uint32_t ipv4_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv4) != 0);
     const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv6) != 0);
-    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0);
+    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0 && allow_floats);
     const uint32_t str_lit = 50;
     const uint32_t special_val = 80;
     const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);
     const uint32_t null_lit = 10;
+    const uint32_t frac_lit = 25;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
-        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit;
+        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -346,9 +351,18 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     {
         lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
     }
+    else if (
+        frac_lit
+        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
+                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit + 1))
+    {
+        std::uniform_int_distribution<uint32_t> frange(1, 1000);
+
+        lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
+    }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
     addFieldAccess(rg, expr, nested_prob);
 }
@@ -698,7 +712,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
         addFieldAccess(rg, expr, 0);
     }
@@ -1071,7 +1085,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     const auto & level_rels = this->levels[this->current_level].rels;
 
     const uint32_t literal_value = this->inside_projection ? 50 : 100;
-    const uint32_t col_ref_expr = 300;
+    const uint32_t col_ref_expr = this->inside_projection ? 600 : 300;
     const uint32_t predicate_expr = 50 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t cast_expr = 25 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t unary_expr = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
@@ -1324,6 +1338,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 this->ids.emplace_back(static_cast<uint32_t>(WINlead));
                 this->ids.emplace_back(static_cast<uint32_t>(WINleadInFrame));
             }
+            this->ids.emplace_back(static_cast<uint32_t>(WINcume_dist));
             this->ids.emplace_back(static_cast<uint32_t>(WINdense_rank));
             this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));
             this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
@@ -1419,7 +1434,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 
     addFieldAccess(rg, expr, 6);

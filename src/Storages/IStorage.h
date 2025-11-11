@@ -100,6 +100,15 @@ public:
 
     virtual bool isDataLake() const { return false; }
 
+    /// Returns true if the storage is an external database (MySQL, PostgreSQL, MongoDB, etc.)
+    virtual bool isExternalDatabase() const { return false; }
+
+    /// Returns true if the storage is object storage (S3, Azure, GCS, HDFS, etc.)
+    virtual bool isObjectStorage() const { return false; }
+
+    /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
+    virtual bool isMessageQueue() const { return false; }
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -198,7 +207,10 @@ public:
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+    virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
+    {
+        return metadata.get();
+    }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

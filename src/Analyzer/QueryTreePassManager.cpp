@@ -25,6 +25,7 @@
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 #include <Analyzer/Passes/CountDistinctPass.h>
 #include <Analyzer/Passes/CrossToInnerJoinPass.h>
+#include <Analyzer/Passes/DisableParallelReplicasPass.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <Analyzer/Passes/FuseFunctionsPass.h>
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
@@ -322,6 +323,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 
     manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
+
+    manager.addPass(std::make_unique<DisableParallelReplicasPass>());
 }
 
 }

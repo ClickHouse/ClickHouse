@@ -3,9 +3,7 @@
 -- Tests that text indexes can be build on and used with Map columns.
 
 SET enable_analyzer = 1;
-SET use_query_condition_cache = 0;
 SET allow_experimental_full_text_index = 1;
-SET use_skip_indexes_on_data_read = 0; --- for EXPLAIN indexes = 1 <query>
 
 SELECT 'Function mapKeys';
 
@@ -390,7 +388,7 @@ CREATE VIEW explain_index_has AS (
     SELECT trimLeft(explain) AS explain FROM (
         EXPLAIN indexes=1
         SELECT count() FROM tab WHERE (
-            CASE 
+            CASE
                 WHEN {use_idx_fixed:boolean} = 1 THEN has(mapValues(map_fixed), {filter:FixedString(2)})
                 ELSE has(mapValues(map), {filter:String})
             END
