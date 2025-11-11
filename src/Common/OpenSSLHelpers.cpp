@@ -233,37 +233,34 @@ std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * 
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Error adding CN to X509_NAME: {}", getOpenSSLErrors());
 
     /// Add Subject Alternative Names
-    if (domain_names.size() > 1)
+    std::string san_entries;
+    for (const auto & domain_name: domain_names)
     {
-        std::string san_entries;
-        for (size_t i = 1; i < domain_names.size(); ++i)
-        {
-            if (!domain_names[i].empty())
-                san_entries += "DNS:" + domain_names[i] + ",";
-        }
-        if (!san_entries.empty() && san_entries.back() == ',')
-            san_entries.pop_back();
-
-        /// Add Subject Alternative Name extension.
-        /// Everything in this stack and the stack itself will be freed by smart pointer.
-        X509_EXTENSIONS_ptr extensions(sk_X509_EXTENSION_new_null());
-        if (!extensions)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to create extensions stack for Subject Alternative Name {}", getOpenSSLErrors());
-
-        auto * san_extension = X509V3_EXT_conf_nid(nullptr, nullptr, NID_subject_alt_name, san_entries.c_str());
-        if (!san_extension)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to create Subject Alternative Name extension {}", getOpenSSLErrors());
-
-        if (!OPENSSL_sk_push(
-            reinterpret_cast<OPENSSL_STACK *>(extensions.get()),
-            reinterpret_cast<void *>(san_extension)
-        ))
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to add Subject Alternative Name to extensions {}", getOpenSSLErrors());
-
-        // And tie it to the X509
-        if (!X509_REQ_add_extensions(req.get(), extensions.get()))
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to add Subject Alternative Names to CSR {}", getOpenSSLErrors());
+        if (!domain_name.empty())
+            san_entries += "DNS:" + domain_name + ",";
     }
+    if (!san_entries.empty() && san_entries.back() == ',')
+        san_entries.pop_back();
+
+    /// Add Subject Alternative Name extension.
+    /// Everything in this stack and the stack itself will be freed by smart pointer.
+    X509_EXTENSIONS_ptr extensions(sk_X509_EXTENSION_new_null());
+    if (!extensions)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to create extensions stack for Subject Alternative Name {}", getOpenSSLErrors());
+
+    auto * san_extension = X509V3_EXT_conf_nid(nullptr, nullptr, NID_subject_alt_name, san_entries.c_str());
+    if (!san_extension)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to create Subject Alternative Name extension {}", getOpenSSLErrors());
+
+    if (!OPENSSL_sk_push(
+        reinterpret_cast<OPENSSL_STACK *>(extensions.get()),
+        reinterpret_cast<void *>(san_extension)
+    ))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to add Subject Alternative Name to extensions {}", getOpenSSLErrors());
+
+    // And tie it to the X509
+    if (!X509_REQ_add_extensions(req.get(), extensions.get()))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Unable to add Subject Alternative Names to CSR {}", getOpenSSLErrors());
 
     if (!X509_REQ_set_pubkey(req.get(), key))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "Failure in X509_REQ_set_pubkey: {}", getOpenSSLErrors());

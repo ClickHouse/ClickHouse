@@ -57,13 +57,6 @@ namespace
 
         return result;
     }
-
-    Poco::JSON::Object::Ptr readURLUntilEOFToJSON(const Poco::URI & url)
-    {
-        Poco::JSON::Parser parser;
-        auto response = readURLUntilEOF(url);
-        return parser.parse(response).extract<Poco::JSON::Object::Ptr>();
-    }
 }
 
 API::API(Configuration _configuration): configuration(_configuration)
@@ -177,6 +170,12 @@ Poco::JSON::Object::Ptr API::doJWSRequestExpectingJSON(
     return parser.parse(response_data).extract<Poco::JSON::Object::Ptr>();
 }
 
+std::string API::doJWSRequestWithEmptyPayload(const Poco::URI & url) const
+{
+    auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
+    return doJWSRequest(url, /*payload=*/ "", http_response);
+}
+
 std::string API::authenticate()
 {
     if (!key_id.empty())
@@ -246,7 +245,8 @@ std::string API::order(const Domains & domains, OrderCallback callback) const
 
 Order API::describeOrder(const Poco::URI & order_url) const
 {
-    auto json = readURLUntilEOFToJSON(order_url);
+    auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
+    auto json = doJWSRequestExpectingJSON(order_url, "", http_response);
 
     auto status = json->getValue<std::string>("status");
     auto finalize = json->getValue<std::string>("finalize");
@@ -265,7 +265,7 @@ Order API::describeOrder(const Poco::URI & order_url) const
 
 std::string API::pullCertificate(const Poco::URI & certificate_url) const
 {
-    return readURLUntilEOF(certificate_url);
+    return doJWSRequestWithEmptyPayload(certificate_url);
 }
 
 bool API::finalizeOrder(const Poco::URI & finalize_url, const Domains & domains, const KeyPair & pkey) const
@@ -282,7 +282,8 @@ bool API::finalizeOrder(const Poco::URI & finalize_url, const Domains & domains,
 
 void API::processAuthorization(const Poco::URI & auth_url, OrderCallback callback) const
 {
-    auto json = readURLUntilEOFToJSON(auth_url);
+    auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
+    auto json = doJWSRequestExpectingJSON(auth_url, "", http_response);
 
     for (const auto & challenge : *json->getArray("challenges"))
     {

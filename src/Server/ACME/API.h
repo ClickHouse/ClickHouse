@@ -119,6 +119,7 @@ private:
     std::string authenticate();
     std::string requestNonce() const;
     std::string doJWSRequest(const Poco::URI &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>) const;
+    std::string doJWSRequestWithEmptyPayload(const Poco::URI &) const;
     std::string formatJWSRequestData(const Poco::URI &, const std::string &, const std::string &) const;
     Poco::JSON::Object::Ptr doJWSRequestExpectingJSON(const Poco::URI &, const std::string &, std::shared_ptr<Poco::Net::HTTPResponse>) const;
 };
