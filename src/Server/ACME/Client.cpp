@@ -245,7 +245,17 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
         if (!active_order.has_value())
         {
             lock = std::make_shared<zkutil::ZooKeeperLock>(zk, fs::path(zookeeper_path) / acme_hostname, "active_order", "ACME::Client");
-            lock->tryLock();
+            if (!lock->tryLock())
+            {
+                LOG_DEBUG(
+                    log,
+                    "Certificate order lock {} is active; retrying after {}ms",
+                    std::string(active_order_path),
+                    REFRESH_TASK_AFTER_ERROR_MS
+                );
+                refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+                return;
+            }
 
             auto order_callback = [&](std::string token)
             {
@@ -259,7 +269,17 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
             return;
         }
 
-        lock->tryLock();
+        if (!lock->tryLock())
+        {
+            LOG_DEBUG(
+                log,
+                "Certificate order lock {} is active; retrying after {}ms",
+                std::string(active_order_path),
+                REFRESH_TASK_AFTER_ERROR_MS
+            );
+            refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
+            return;
+        }
 
         auto order_url = active_order.value();
         auto order_data = api->describeOrder(Poco::URI(order_url));
