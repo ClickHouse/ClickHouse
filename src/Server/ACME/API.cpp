@@ -184,9 +184,12 @@ std::string API::authenticate()
     std::string payload;
 
     if (!configuration.contact_email.empty())
-        payload = fmt::format(R"({{"contact":["mailto:{}"],"termsOfServiceAgreed":true}})", configuration.contact_email);
+        payload = fmt::format(
+            R"({{"contact":["mailto:{}"],"termsOfServiceAgreed":{}}})",
+            configuration.contact_email,
+            configuration.terms_of_service_agreed ? "true" : "false");
     else
-        payload = R"({"termsOfServiceAgreed":true})";
+        payload = fmt::format(R"({{"termsOfServiceAgreed":{}}})", configuration.terms_of_service_agreed);
 
     auto http_response = std::make_shared<Poco::Net::HTTPResponse>();
     auto json = doJWSRequestExpectingJSON(directory->new_account, payload, http_response);

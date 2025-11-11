@@ -113,6 +113,10 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     if (initialized)
         return;
 
+    terms_of_service_agreed = config.getBool("acme.terms_of_service_agreed");
+    if (!terms_of_service_agreed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ACME certificate provisioning requires accepting the terms of service.");
+
     {
         std::lock_guard key_lock(private_acme_key_mutex);
         if (private_acme_key && api && api->isReady())
@@ -130,7 +134,6 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     directory_url = config.getString("acme.directory_url", LetsEncrypt::PRODUCTION_DIRECTORY_URL);
     contact_email = config.getString("acme.email", "");
-    terms_of_service_agreed = config.getBool("acme.terms_of_service_agreed");
 
     Poco::Util::AbstractConfiguration::Keys domains_keys;
     config.keys("acme.domains", domains_keys);
@@ -350,9 +353,11 @@ void Client::authenticationTask()
         std::lock_guard key_lock(private_acme_key_mutex);
 
         if (!api)
-            api = std::make_shared<ACME::API>(ACME::API::Configuration{
+            api = std::make_shared<ACME::API>(ACME::API::Configuration
+            {
                 .directory_url = directory_url,
                 .contact_email = contact_email,
+                .terms_of_service_agreed = terms_of_service_agreed,
                 .private_key = private_acme_key,
             });
 

@@ -90,6 +90,7 @@ public:
     {
         const Poco::URI directory_url;
         const std::string contact_email;
+        const bool terms_of_service_agreed;
 
         const std::shared_ptr<KeyPair> private_key;
     };
