@@ -1,27 +1,9 @@
 #pragma once
 
-#include <cstring>
-#include <string>
-#include <string_view>
-#include <limits>
-#include <bit>
-#include <span>
 
-#include <type_traits>
-
-#include <Common/StackTrace.h>
-#include <Common/formatIPv6.h>
-#include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/LocalDate.h>
-#include <Common/LocalDateTime.h>
-#include <Common/transformEndianness.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
-
-#include <Core/Types.h>
-#include <Core/DecimalFunctions.h>
-#include <base/IPv4andIPv6.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -30,6 +12,7 @@
 
 #include <Formats/FormatSettings.h>
 
+#include <IO/ReadWriteHelpersCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -100,23 +83,29 @@ inline void readChar(char & x, ReadBuffer & buf)
 }
 
 
+/// Read bytes from buffer
+inline void readNBytes(char* output, ReadBuffer & buf, size_t size)
+{
+    /// If the whole value fits in buffer do not call readStrict and copy with
+    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
+    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
+    {
+        __builtin_memcpy(output, buf.position(), size);
+        buf.position() += size;
+    }
+    else
+    {
+        buf.readStrict(output, size);
+    }
+}
+
+
 /// Read POD-type in native format
 template <typename T>
 inline void readPODBinary(T & x, ReadBuffer & buf)
 {
     static constexpr size_t size = sizeof(T); /// NOLINT
-
-    /// If the whole value fits in buffer do not call readStrict and copy with
-    /// __builtin_memcpy since it is faster than generic memcpy for small copies.
-    if (buf.position() && buf.position() + size <= buf.buffer().end()) [[likely]]
-    {
-        __builtin_memcpy(reinterpret_cast<char *>(&x), buf.position(), size);
-        buf.position() += size;
-    }
-    else
-    {
-        buf.readStrict(reinterpret_cast<char *>(&x), size);
-    }
+    readNBytes(reinterpret_cast<char *>(&x), buf, size);
 }
 
 inline void readUUIDBinary(UUID & x, ReadBuffer & buf)
@@ -184,8 +173,12 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf)
                         "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
 
     v.resize(size);
-    for (size_t i = 0; i < size; ++i)
-        readBinary(v[i], buf);
+
+    if constexpr (is_trivially_serializable<T>)
+        readNBytes(reinterpret_cast<char *>(v.data()), buf, size * sizeof(T));
+    else
+        for (size_t i = 0; i < size; ++i)
+            readBinary(v[i], buf);
 }
 
 
@@ -1506,8 +1499,7 @@ inline void readTime64Text(Decimal64 & time64, UInt32 scale, ReadBuffer & buf)
 }
 
 /// Generic methods to read value in native binary format.
-template <typename T>
-requires is_arithmetic_v<T>
+template <is_trivially_serializable T>
 inline void readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(bool & x, ReadBuffer & buf)
@@ -1520,13 +1512,6 @@ inline void readBinary(bool & x, ReadBuffer & buf)
 }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
-inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x.value, buf); }
-inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(IPv4 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(IPv6 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(UUID & x, ReadBuffer & buf)
 {
