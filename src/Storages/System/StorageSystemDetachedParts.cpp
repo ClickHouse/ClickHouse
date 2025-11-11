@@ -327,7 +327,7 @@ void ReadFromSystemDetachedParts::applyFilters(ActionDAGNodes added_filter_nodes
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUInt8>(), "active"));
         block.insert(ColumnWithTypeAndName({}, std::make_shared<DataTypeUUID>(), "uuid"));
 
-        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block);
+        filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
         if (filter)
             VirtualColumnUtils::buildSetsForDAG(*filter, context);
     }
