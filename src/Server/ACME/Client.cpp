@@ -329,6 +329,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
     {
         refresh_certificates_task->scheduleAfter(REFRESH_TASK_AFTER_ERROR_MS);
         tryLogCurrentException("ACME::Client");
+        return;
     }
 
     refresh_certificates_task->scheduleAfter(refresh_certificates_task_interval);
