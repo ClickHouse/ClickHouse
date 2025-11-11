@@ -16,8 +16,6 @@
 #include <Interpreters/castColumn.h>
 #include <Formats/EscapingRuleUtils.h>
 
-#include <re2/re2.h>
-
 namespace DB
 {
 
