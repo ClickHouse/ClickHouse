@@ -2978,3 +2978,10 @@ def test_object_tags(started_cluster):
     expected_with_empty_tags = f"{{}}\t{table_name_without_tags}.tsv\troot/{table_name_without_tags}.tsv\t1\n"
     assert read_s3_tags(f'{table_name_without_tags}.tsv', query_id=query_id) == expected_with_empty_tags
     assert read_s3_tags_events(query_id) == (0, 0)
+
+    # Just in case make sure that virtual columns not requested via 'SELECT *'
+    # (it should be always like that, but, who knows what "workarounds" we can
+    # have)
+    query_id = uuid.uuid4().hex
+    instance.query(f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name_with_tags}.tsv', auto, 'x UInt64')", query_id=query_id)
+    assert read_s3_tags_events(query_id) == (0, 0)
