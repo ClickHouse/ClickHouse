@@ -110,8 +110,8 @@ struct QuantileReservoirSampler
 };
 
 
-template <typename Value, bool float_return> using FuncQuantile = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantile, false, std::conditional_t<float_return, Float64, void>, false, false>;
-template <typename Value, bool float_return> using FuncQuantiles = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantiles, false, std::conditional_t<float_return, Float64, void>, true, false>;
+template <typename Value, bool float_return> using FuncQuantile = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantile, void, std::conditional_t<float_return, Float64, void>, false, false>;
+template <typename Value, bool float_return> using FuncQuantiles = AggregateFunctionQuantile<Value, QuantileReservoirSampler<Value>, NameQuantiles, void, std::conditional_t<float_return, Float64, void>, true, false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(

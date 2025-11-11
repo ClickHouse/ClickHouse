@@ -93,10 +93,10 @@ bool rsaSHA256Verify(EVP_PKEY * pkey, const std::string & data, const std::strin
         throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
 
     if (EVP_DigestVerifyInit(ctx, nullptr, EVP_sha256(), nullptr, pkey) != 1)
-        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors);
+        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
 
     if (EVP_DigestVerifyUpdate(ctx, data.data(), data.size()) != 1)
-        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors);
+        throw DB::Exception(DB::ErrorCodes::OPENSSL_ERROR, "{}", getOpenSSLErrors());
 
     int result = EVP_DigestVerifyFinal(
         ctx,

@@ -1303,7 +1303,8 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 }
 
 
-std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
+    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1342,7 +1343,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
     /// Select query is needed for pruining on virtual columns
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster);
+        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr());
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1469,7 +1470,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     checkAlterIsPossible(params, local_context);
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
     params.apply(new_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -1624,7 +1625,7 @@ void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 }
 
 
-DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name)
+std::shared_ptr<DistributedAsyncInsertDirectoryQueue> StorageDistributed::getDirectoryQueue(const DiskPtr & disk, const std::string & name)
 {
     const std::string & disk_path = disk->getPath();
     const std::string key(disk_path + name);
@@ -1638,13 +1639,13 @@ DistributedAsyncInsertDirectoryQueue & StorageDistributed::getDirectoryQueue(con
         node_data.addresses = parseAddresses(name);
         node_data.clusters_version = getContext()->getClustersVersion();
         node_data.connection_pool = DistributedAsyncInsertDirectoryQueue::createPool(node_data.addresses, *this);
-        node_data.directory_queue = std::make_unique<DistributedAsyncInsertDirectoryQueue>(
+        node_data.directory_queue = std::make_shared<DistributedAsyncInsertDirectoryQueue>(
             *this, disk, relative_data_path + name,
             node_data.connection_pool,
             async_insert_blocker,
             getContext()->getDistributedSchedulePool());
     }
-    return *node_data.directory_queue;
+    return node_data.directory_queue;
 }
 
 std::vector<DistributedAsyncInsertDirectoryQueue::Status> StorageDistributed::getDirectoryQueueStatuses() const
@@ -1855,7 +1856,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             return nullptr;
 
         if (select_without_join.prewhere() && select_without_join.where())
-            condition_ast = makeASTFunction("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
+            condition_ast = makeASTOperator("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
         else
             condition_ast = select_without_join.prewhere() ? select_without_join.prewhere()->clone() : select_without_join.where()->clone();
     }

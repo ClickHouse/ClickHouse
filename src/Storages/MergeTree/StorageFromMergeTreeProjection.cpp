@@ -76,6 +76,7 @@ StorageFromMergeTreeProjection::getStorageSnapshot(const StorageMetadataPtr & me
     const auto & parent_snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*parent_storage_snapshot->data);
 
     auto data = std::make_unique<MergeTreeData::SnapshotData>();
+    data->storage = parent_snapshot_data.storage;
     data->parts = parent_snapshot_data.parts;
     data->mutations_snapshot = parent_snapshot_data.mutations_snapshot;
 

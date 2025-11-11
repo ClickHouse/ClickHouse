@@ -3,6 +3,7 @@ description: 'Aggregate function that calculates PromQL-like rate over time seri
 sidebar_position: 225
 slug: /sql-reference/aggregate-functions/reference/timeSeriesRateToGrid
 title: 'timeSeriesRateToGrid'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `rate` are considered within the specified time window.
@@ -25,7 +26,7 @@ The following query calculates `rate` values on the grid [90, 105, 120, 135, 150
 
 ```sql
 WITH
-    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window paramater
+    -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 1, 3, 4, 5, 5, 8, 12, 13]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid

@@ -163,7 +163,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
-        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, query_condition_cache_writer);
+        return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals, nullptr, condition);
     });
 
     if (!blocksHaveEqualStructure(pipeline.getHeader(), *output_header))
@@ -171,7 +171,8 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
         auto convert_actions = std::make_shared<ExpressionActions>(std::move(convert_actions_dag), settings.getActionsSettings());
 
         pipeline.addSimpleTransform([&](const SharedHeader & header)
@@ -238,9 +239,9 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setQueryConditionCacheWriter(QueryConditionCacheWriterPtr & query_condition_cache_writer_)
+void FilterStep::setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_)
 {
-    query_condition_cache_writer = query_condition_cache_writer_;
+    condition = {condition_hash_, condition_};
 }
 
 bool FilterStep::canUseType(const DataTypePtr & filter_type)

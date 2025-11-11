@@ -25,7 +25,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_IDENTIFIER;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 std::string_view toString(JoinConditionOperator op)
@@ -283,7 +283,7 @@ JoinActionRef JoinExpressionActions::findNode(const String & column_name, bool i
         if (node->result_name == column_name)
             return JoinActionRef(node, data);
     if (throw_if_not_found)
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Cannot find column {} in actions DAG {}:\n{}",
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Cannot find column {} in actions DAG {}:\n{}",
             column_name, is_input ? "input" : "output", data->actions_dag.dumpDAG());
     return JoinActionRef(nullptr);
 }
@@ -459,8 +459,6 @@ static FunctionOverloadResolverPtr operatorToFunction(JoinConditionOperator op)
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         case JoinConditionOperator::Or:
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-        case JoinConditionOperator::NullSafeEquals:
-            return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>());
         default:
             auto function_name = operatorToFunctionName(op);
             return FunctionFactory::instance().get(function_name, nullptr);

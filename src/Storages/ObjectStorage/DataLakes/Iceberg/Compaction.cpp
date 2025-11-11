@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -118,7 +118,7 @@ Plan getPlan(
     LoggerPtr log = getLogger("IcebergCompaction::getPlan");
 
     Plan plan;
-    plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method);
+    plan.generator = FileNamesGenerator(configuration->getRawPath().path, configuration->getRawPath().path, false, compression_method, configuration->format);
 
     const auto [metadata_version, metadata_file_path, _]
         = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, log.get());
@@ -180,7 +180,7 @@ Plan getPlan(
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
-                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file);
+                IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(data_file, 0);
                 std::shared_ptr<DataFilePlan> data_file_ptr;
                 if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
                 {
@@ -209,7 +209,7 @@ Plan getPlan(
         std::vector<Iceberg::ManifestFileEntry> result_delete_files;
         for (auto & data_file : plan.partitions[partition_index])
         {
-            if (data_file->data_object_info->sequence_number <= delete_file.added_sequence_number)
+            if (data_file->data_object_info->info.sequence_number <= delete_file.added_sequence_number)
                 data_file->data_object_info->addPositionDeleteObject(delete_file);
         }
     }
@@ -247,7 +247,7 @@ void writeDataFiles(
             8192,
             format_settings,
             parser_shared_resources,
-            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr),
+            std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
             chooseCompressionMethod(data_file->data_object_info->getPath(), configuration->compression_method),
             false);

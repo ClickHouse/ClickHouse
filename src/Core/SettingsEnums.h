@@ -394,6 +394,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     UNITY,
     GLUE,
     ICEBERG_HIVE,
+    ICEBERG_ONELAKE,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -422,6 +423,22 @@ enum class GeoToH3ArgumentOrder : uint8_t
 };
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
+enum class MergeTreeSerializationInfoVersion : uint8_t
+{
+    BASIC = 0,
+    WITH_TYPES = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
+
+enum class MergeTreeStringSerializationVersion : uint8_t
+{
+    SINGLE_STREAM = 0,
+    WITH_SIZE_STREAM = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
 
 enum class MergeTreeObjectSerializationVersion : uint8_t
 {
@@ -458,6 +475,14 @@ enum class SearchOrphanedPartsDisks : uint8_t
 };
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
+
+enum class DecorrelationJoinKind : uint8_t
+{
+    LEFT = 0,
+    RIGHT,
+};
+
+DECLARE_SETTING_ENUM(DecorrelationJoinKind)
 
 enum class IcebergMetadataLogLevel : uint8_t
 {

@@ -353,7 +353,8 @@ struct HashMethodSerialized
     /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    PODArray<char> serialized_buffer;
+    bool use_batch_serialize = false;
+    PaddedPODArray<char> serialized_buffer;
     std::vector<StringRef> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
@@ -383,29 +384,51 @@ struct HashMethodSerialized
             for (auto row_size : row_sizes)
                 total_size += row_size;
 
-            serialized_buffer.resize(total_size);
-
-            const size_t rows = row_sizes.size();
-            char * memory = serialized_buffer.data();
-            std::vector<char *> memories(rows);
-            serialized_keys.resize(rows);
-            for (size_t i = 0; i < row_sizes.size(); ++i)
+            use_batch_serialize = shouldUseBatchSerialize();
+            if (use_batch_serialize)
             {
-                memories[i] = memory;
-                serialized_keys[i].data = memory;
-                serialized_keys[i].size = row_sizes[i];
+                serialized_buffer.resize(total_size);
 
-                memory += row_sizes[i];
-            }
+                const size_t rows = row_sizes.size();
+                char * memory = serialized_buffer.data();
+                std::vector<char *> memories(rows);
+                serialized_keys.resize(rows);
+                for (size_t i = 0; i < row_sizes.size(); ++i)
+                {
+                    memories[i] = memory;
+                    serialized_keys[i].data = memory;
+                    serialized_keys[i].size = row_sizes[i];
 
-            for (size_t i = 0; i < keys_size; ++i)
-            {
-                if constexpr (nullable)
-                    key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
-                else
-                    key_columns[i]->batchSerializeValueIntoMemory(memories);
+                    memory += row_sizes[i];
+                }
+
+                for (size_t i = 0; i < keys_size; ++i)
+                {
+                    if constexpr (nullable)
+                        key_columns[i]->batchSerializeValueIntoMemoryWithNull(memories, null_maps[i]);
+                    else
+                        key_columns[i]->batchSerializeValueIntoMemory(memories);
+                }
             }
         }
+    }
+
+    bool shouldUseBatchSerialize() const
+    {
+#if defined(__aarch64__)
+        // On ARM64 architectures, always use batch serialization, otherwise it would cause performance degradation in related perf tests.
+        return true;
+#endif
+
+        size_t l2_size = 256 * 1024;
+#if defined(OS_LINUX) && defined(_SC_LEVEL2_CACHE_SIZE)
+        if (auto ret = sysconf(_SC_LEVEL2_CACHE_SIZE); ret != -1)
+            l2_size = ret;
+#endif
+        // Calculate the average row size.
+        size_t avg_row_size = total_size / std::max(row_sizes.size(), 1UL);
+        // Use batch serialization only if total size fits in 4x L2 cache and average row size is small.
+        return total_size <= 4 * l2_size && avg_row_size < 128;
     }
 
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
@@ -413,7 +436,23 @@ struct HashMethodSerialized
     ALWAYS_INLINE ArenaKeyHolder getKeyHolder(size_t row, Arena & pool) const
     requires(prealloc)
     {
-        return ArenaKeyHolder{serialized_keys[row], pool};
+        if (use_batch_serialize)
+            return ArenaKeyHolder{serialized_keys[row], pool};
+        else
+        {
+            std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
+            char * memory = holder.get();
+            StringRef key(memory, row_sizes[row]);
+            for (size_t j = 0; j < keys_size; ++j)
+            {
+                if constexpr (nullable)
+                    memory = key_columns[j]->serializeValueIntoMemoryWithNull(row, memory, null_maps[j]);
+                else
+                    memory = key_columns[j]->serializeValueIntoMemory(row, memory);
+            }
+
+            return ArenaKeyHolder{key, pool, std::move(holder)};
+        }
     }
 
     ALWAYS_INLINE SerializedKeyHolder getKeyHolder(size_t row, Arena & pool) const

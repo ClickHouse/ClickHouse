@@ -24,12 +24,6 @@ public:
 
     String getEngineName() const override { return "SQLite"; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
-
-    bool canContainRocksDBTables() const override { return false; }
-
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     bool isTableExist(const String & name, ContextPtr context) const override;
@@ -44,7 +38,7 @@ public:
 
     void shutdown() override {}
 
-    void alterDatabaseComment(const AlterCommand & command) override;
+    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;

@@ -3,6 +3,7 @@ description: 'System table containing information about parts of MergeTree'
 keywords: ['system table', 'parts']
 slug: /operations/system-tables/parts
 title: 'system.parts'
+doc_type: 'reference'
 ---
 
 # system.parts

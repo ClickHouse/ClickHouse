@@ -6,6 +6,7 @@ sidebar_position: 51
 sidebar_label: 'ALTER DATABASE ... MODIFY COMMENT'
 title: 'ALTER DATABASE ... MODIFY COMMENT Statements'
 keywords: ['ALTER DATABASE', 'MODIFY COMMENT']
+doc_type: 'reference'
 ---
 
 # ALTER DATABASE ... MODIFY COMMENT

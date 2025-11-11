@@ -115,7 +115,10 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 void DatabaseAtomic::drop(ContextPtr)
 {
     waitDatabaseStarted();
-    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
+    {
+        std::lock_guard lock(mutex);
+        assert(tables.empty());
+    }
 
     auto db_disk = getDisk();
     try

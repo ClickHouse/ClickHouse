@@ -395,7 +395,7 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 static Strings getAllDatabases(const ContextPtr & context)
 {
     Strings res;
-    const auto & databases = DatabaseCatalog::instance().getDatabases();
+    const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
     for (const auto & [database_name, _] : databases)
     {

@@ -71,12 +71,16 @@ def started_cluster():
             ],
             user_configs=[
                 "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
             ],
             stay_alive=True,
         )
         cluster.add_instance(
             "instance2",
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
             with_minio=True,
             with_zookeeper=True,
             main_configs=[
@@ -117,6 +121,40 @@ def started_cluster():
                 "configs/remote_servers_245.xml",
             ],
             with_installed_binary=True,
+        )
+        cluster.add_instance(
+            "instance_without_keeper_fault_injection",
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+                "configs/disable_streaming.xml",
+            ],
+            user_configs=[
+                "configs/users.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "readonly_instance",
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+                "configs/disable_streaming.xml",
+                "configs/read_only_mode.xml",
+            ],
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
+            stay_alive=True,
         )
 
         logging.info("Starting cluster...")
@@ -832,6 +870,47 @@ def test_disable_streaming(started_cluster):
     assert expected_rows == get_count()
 
 
+def test_disable_insertion_and_mutation(started_cluster):
+    node = started_cluster.instances["readonly_instance"]
+
+    table_name = f"test_disable_insertion_and_mutation_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    files_to_generate = 10
+
+    assert (
+            "true"
+            == node.query("SELECT getServerSetting('disable_insertion_and_mutation')").strip()
+    )
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "processing_threads_num": 1,
+            "keeper_path": keeper_path,
+        },
+    )
+
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_count():
+        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
+
+    assert node.contains_in_log(
+        f"StorageS3Queue (default.{table_name}): Streaming is disabled, rescheduling next check in 5000 ms"
+    )
+    assert 0 == get_count()
+
+
 def test_shutdown_logs(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"test_shutdown_logs"
@@ -1208,16 +1287,16 @@ def test_create_or_replace_table(started_cluster):
 
 def test_persistent_processing_nodes_cleanup(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = "max_persistent_processing_nodes_cleanup"
+    table_name = f"max_persistent_processing_nodes_cleanup_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
 
     create_table(
         started_cluster,
         node,
         table_name,
-        "unordered",
+        "ordered",
         files_path,
         additional_settings={
             "keeper_path": keeper_path,
@@ -1234,11 +1313,20 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
     zk.create(f"{keeper_path}/processing/test", b"somedata")
     assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
 
+    bucket_lock_path = f"{keeper_path}/buckets/0/lock"
+    zk.create(bucket_lock_path, b"somedata")
+
     time.sleep(5)
     assert b"somedata" == zk.get(f"{keeper_path}/processing/test")[0]
-    time.sleep(6)
+    assert b"somedata" == zk.get(bucket_lock_path)[0]
+    time.sleep(10)
     try:
         zk.get(f"{keeper_path}/processing/test")[0]
+        assert False
+    except NoNodeError:
+        pass
+    try:
+        zk.get(bucket_lock_path)
         assert False
     except NoNodeError:
         pass
@@ -1246,10 +1334,10 @@ def test_persistent_processing_nodes_cleanup(started_cluster):
 
 def test_persistent_processing(started_cluster):
     node = started_cluster.instances["instance"]
-    table_name = "max_persistent_processing"
+    table_name = f"max_persistent_processing_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     format = "a Int32, b String"
 
@@ -1291,12 +1379,12 @@ def test_persistent_processing(started_cluster):
     )
     node.query(
         f"""
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(1);
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
         """
     )
 
     found = False
-    for _ in range(10):
+    for _ in range(20):
         nodes = zk.get_children(f"{keeper_path}/processing")
         if len(nodes) > 0:
             found = True
@@ -1310,20 +1398,24 @@ def test_persistent_processing(started_cluster):
     assert len(nodes) == 0
 
 
-def test_persistent_processing_failed_commit_retries(started_cluster):
-    node = started_cluster.instances["instance"]
-    table_name = f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
+@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+def test_persistent_processing_failed_commit_retries(started_cluster, mode):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    table_name = (
+        f"max_persistent_processing_failed_commit_retries_{generate_random_string()}"
+    )
     dst_table_name = f"{table_name}_dst"
     mv_name = f"{table_name}_mv"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     format = "a Int32, b String"
 
+    processing_threads = 16
     create_table(
         started_cluster,
         node,
         table_name,
-        "unordered",
+        mode,
         files_path,
         format=format,
         additional_settings={
@@ -1336,6 +1428,7 @@ def test_persistent_processing_failed_commit_retries(started_cluster):
             "cleanup_interval_max_ms": 500,
             "polling_max_timeout_ms": 1000,
             "polling_backoff_ms": 100,
+            "processing_threads_num": processing_threads,
         },
     )
     i = [0]
@@ -1353,6 +1446,16 @@ def test_persistent_processing_failed_commit_retries(started_cluster):
     zk = started_cluster.get_kazoo_client("zoo1")
     nodes = zk.get_children(f"{keeper_path}/processing")
     assert len(nodes) == 0
+    is_ordered = mode == "ordered"
+    if is_ordered:
+        nodes = zk.get_children(f"{keeper_path}/buckets")
+        assert len(nodes) == processing_threads
+        for id in range(processing_threads):
+            try:
+                zk.get(f"{keeper_path}/buckets/{id}/lock")
+                assert False
+            except NoNodeError:
+                pass
 
     node.query(
         f"""
@@ -1365,18 +1468,27 @@ def test_persistent_processing_failed_commit_retries(started_cluster):
     node.query(f"SYSTEM ENABLE FAILPOINT object_storage_queue_fail_commit_once")
     node.query(
         f"""
-        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.3);
+        CREATE MATERIALIZED VIEW {mv_name} TO {dst_table_name} AS SELECT * FROM {table_name} WHERE NOT sleepEachRow(0.5);
         """
     )
 
     found = False
-    for _ in range(10):
+    for _ in range(100):
         nodes = zk.get_children(f"{keeper_path}/processing")
         if len(nodes) > 0:
             found = True
             break
-        time.sleep(1)
+        time.sleep(0.1)
     assert found
+    if is_ordered:
+        locked_buckets = 0
+        for id in range(processing_threads):
+            try:
+                zk.get(f"{keeper_path}/buckets/{id}/lock")
+                locked_buckets += 1
+            except NoNodeError:
+                pass
+        assert locked_buckets > 0
 
     found = False
     for _ in range(10):
@@ -1387,6 +1499,8 @@ def test_persistent_processing_failed_commit_retries(started_cluster):
             break
         time.sleep(1)
     assert found
+
+    node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_once")
 
     assert node.contains_in_log(
         f"StorageS3Queue (default.{table_name}): Failed to commit processed files at try 1/6"
@@ -1424,4 +1538,14 @@ def test_persistent_processing_failed_commit_retries(started_cluster):
             found = True
             break
         time.sleep(1)
-    assert found
+    nodes = zk.get_children(f"{keeper_path}/processing")
+    assert found, f"Nodes: {nodes}"
+
+    node.query(f"DROP TABLE default.{table_name} SYNC")
+    if is_ordered:
+        for id in range(processing_threads):
+            try:
+                zk.get(f"{keeper_path}/buckets/{id}/lock")
+                assert False
+            except NoNodeError:
+                pass

@@ -168,7 +168,7 @@ private:
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
-    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
+    std::shared_ptr<DistributedAsyncInsertDirectoryQueue> getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
     /// Parse the address corresponding to the directory name of the directory queue
     Cluster::Addresses parseAddresses(const std::string & name) const;
@@ -227,7 +227,8 @@ private:
 
     void delayInsertOrThrowIfNeeded() const;
 
-    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    std::optional<QueryPipeline>
+    distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();

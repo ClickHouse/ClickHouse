@@ -163,6 +163,7 @@ namespace
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
+        read_settings.read_through_distributed_cache = false;
         return read_settings;
     }
 

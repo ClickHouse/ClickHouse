@@ -742,8 +742,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
-                configuration.get_request_throttler,
-                configuration.put_request_throttler);
+                configuration.opt_disk_name,
+                configuration.request_throttler);
             AddProvider(std::make_shared<AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider>(aws_client_configuration, credentials_configuration.expiration_window_seconds, credentials_configuration.kms_role_arn));
         }
 
@@ -759,8 +759,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
-                configuration.get_request_throttler,
-                configuration.put_request_throttler);
+                configuration.opt_disk_name,
+                configuration.request_throttler);
             AddProvider(std::make_shared<SSOCredentialsProvider>(
                 std::move(aws_client_configuration), credentials_configuration.expiration_window_seconds));
         }
@@ -811,8 +811,8 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.s3_slow_all_threads_after_retryable_error,
                 configuration.enable_s3_requests_logging,
                 configuration.for_disk_s3,
-                configuration.get_request_throttler,
-                configuration.put_request_throttler,
+                configuration.opt_disk_name,
+                configuration.request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
             /// See MakeDefaultHTTPResourceClientConfiguration().

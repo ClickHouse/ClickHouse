@@ -280,7 +280,7 @@ void WorkloadSettings::initFromChanges(const ASTCreateWorkloadQuery::SettingsCha
         if (share_limit > 0)
         {
             Float64 value = share_limit * getNumberOfCPUCoresToUse();
-            if (value > 0 && value < limit)
+            if (value > 0 && (limit == 0 || value < limit))
                 limit = value;
         }
         max_cpus = limit;

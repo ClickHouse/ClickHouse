@@ -27,6 +27,11 @@ class FunctionNode;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 
+namespace QueryPlanOptimizations
+{
+    class FullTextMatchingFunctionDAGReplacer;
+}
+
 namespace JSONBuilder
 {
     class JSONMap;
@@ -39,6 +44,13 @@ class SortDescription;
 
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
+
+struct PartialEvaluationParameters
+{
+    bool throw_on_error = false;
+    bool skip_materialize = false;
+    bool allow_unknown_function_arguments = false;
+};
 
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
@@ -159,7 +171,7 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -191,6 +203,11 @@ public:
     /// If columns is in inputs and has no dependent nodes, remove it from inputs too.
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
+
+    /// Remove node with <node_name> from outputs.
+    /// Remove unused actions after that.
+    /// Do not remove any inputs.
+    void removeFromOutputs(const std::string & node_name);
 
     /// Remove actions that are not needed to compute output nodes
     void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
@@ -281,6 +298,11 @@ public:
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
 
+    /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
+    /// Special handling for logical AND: non-computable children are replaced with constant true.
+    /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
+    ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
+
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
@@ -294,7 +316,8 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        bool throw_on_error);
+        PartialEvaluationParameters params = {}
+    );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
     void decorrelate() noexcept;
@@ -323,6 +346,7 @@ public:
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
+        ContextPtr context,
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr);
@@ -468,6 +492,8 @@ public:
 
     UInt64 getHash() const;
     void updateHash(SipHash & hash_state) const;
+
+    friend class QueryPlanOptimizations::FullTextMatchingFunctionDAGReplacer;
 
     /* Create actions which calculate conjunction of selected nodes.
      * Conjunction nodes are assumed to be predicates that will be combined with AND if multiple.

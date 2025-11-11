@@ -16,10 +16,12 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DeltaMetadataLog.h>
 
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -240,10 +242,11 @@ struct DeltaLakeMetadataImpl
         std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(metadata_file_path);
+        RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
         char c;
+        String sum_json;
         while (!buf->eof())
         {
             /// May be some invalid characters before json.
@@ -259,6 +262,7 @@ struct DeltaLakeMetadataImpl
             if (json_str.empty())
                 continue;
 
+            sum_json += json_str;
             Poco::JSON::Parser parser;
             Poco::Dynamic::Var json = parser.parse(json_str);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
@@ -299,7 +303,6 @@ struct DeltaLakeMetadataImpl
                                     file_schema.toString(), current_schema.toString());
                 }
             }
-
             auto configuration_ptr = configuration.lock();
             const auto read_path_string = configuration_ptr->getPathForRead().path;
 
@@ -358,6 +361,8 @@ struct DeltaLakeMetadataImpl
                 result.erase(fs::path(read_path_string) / path);
             }
         }
+        auto configuration_ptr = configuration.lock();
+        insertDeltaRowToLogTable(context, sum_json, configuration_ptr->getRawPath().path, metadata_file_path);
     }
 
     NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const
@@ -410,7 +415,7 @@ struct DeltaLakeMetadataImpl
 
         String json_str;
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(last_checkpoint_file);
+        RelativePathWithMetadata object_info(last_checkpoint_file);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
         readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -480,7 +485,7 @@ struct DeltaLakeMetadataImpl
         LOG_TRACE(log, "Using checkpoint file: {}", checkpoint_path.string());
 
         auto read_settings = context->getReadSettings();
-        ObjectInfo object_info(checkpoint_path);
+        RelativePathWithMetadata object_info(checkpoint_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
         auto format_settings = getFormatSettings(context);
 
@@ -504,7 +509,7 @@ struct DeltaLakeMetadataImpl
         THROW_ARROW_NOT_OK(
             parquet::arrow::OpenFile(
                 asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES),
-                ArrowMemoryPool::instance(),
+                arrow::default_memory_pool(),
                 &reader));
 
         ArrowColumnToCHColumn column_reader(
@@ -758,6 +763,7 @@ ObjectIterator DeltaLakeMetadata::iterate(
     const ActionsDAG * filter_dag,
     FileProgressCallback callback,
     size_t /* list_batch_size */,
+    StorageMetadataPtr /*storage_metadata_snapshot*/,
     ContextPtr /*context*/) const
 {
     return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);

@@ -4,6 +4,7 @@ sidebar_label: 'lagInFrame'
 sidebar_position: 9
 slug: /sql-reference/window-functions/lagInFrame
 title: 'lagInFrame'
+doc_type: 'reference'
 ---
 
 # lagInFrame

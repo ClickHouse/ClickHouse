@@ -1,0 +1,54 @@
+-- { echoOn }
+SELECT * FROM explain_indexes;
+Parts: 2/2
+Granules: 4/4
+Name: idx
+Description: text GRANULARITY 1
+Parts: 1/2
+Granules: 2/4
+Ranges: 1
+--
+--hasAnyTokens:
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['foo']);
+[1,3,5]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar']);
+[4,6]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['foo', 'bar']);
+[1,3,4,5,6]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['foo', 'ba']);
+[1,3,5]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['fo', 'ba']);
+[]
+--
+--hasAllTokens:
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['foo']);
+[1,3,5]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['bar']);
+[4,6]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['foo', 'bar']);
+[]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['abc', 'fo']);
+[]
+-- { echoOn }
+SELECT * FROM explain_indexes;
+Parts: 2/2
+Granules: 4/4
+Name: idx
+Description: text GRANULARITY 1
+Parts: 1/2
+Granules: 2/4
+Ranges: 1
+--
+-- Test that splitByNonAlpha tokenizer is applied even to column part which does not have a materialized text index
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar']);
+[2,4,6]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, ['bar$']); -- test default tokenizer
+[]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(message, tokens('bar$', 'splitByNonAlpha'));
+[2,4,6]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['bar']);
+[2,4,6]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, ['bar$']); -- test default tokenizer
+[]
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokens(message, tokens('bar$', 'splitByNonAlpha'));
+[2,4,6]

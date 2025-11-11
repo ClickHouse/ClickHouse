@@ -3,6 +3,7 @@ description: 'Aggregate function that calculates PromQL-like resets over time se
 sidebar_position: 230
 slug: /sql-reference/aggregate-functions/reference/timeSeriesResetsToGrid
 title: 'timeSeriesResetsToGrid'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like resets](https://prometheus.io/docs/prometheus/latest/querying/functions/#resets) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `resets` are considered within the specified time window.
@@ -25,7 +26,7 @@ The following query calculates `resets` values on the grid [90, 105, 120, 135, 1
 
 ```sql
 WITH
-    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window paramater
+    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid

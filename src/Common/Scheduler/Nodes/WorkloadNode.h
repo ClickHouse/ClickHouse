@@ -627,7 +627,10 @@ public:
 
     ResourceLink getLink() const final
     {
-        return Traits::getLink(impl.branch.queue);
+        if (impl.branch.queue)
+            return Traits::getLink(impl.branch.queue);
+        else
+            throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Unable to link to workload '{}' that has children", this->basename);
     }
 
     void addRawPointerNodes(std::vector<SchedulerNodePtr> & nodes) final

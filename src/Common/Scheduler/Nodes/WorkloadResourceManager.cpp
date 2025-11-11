@@ -441,11 +441,23 @@ ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_na
     }
 }
 
-void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link)
+WorkloadSettings WorkloadResourceManager::Classifier::getWorkloadSettings(const String & resource_name) const
+{
+    std::unique_lock lock{mutex};
+    auto iter = attachments.find(resource_name);
+    if (iter != attachments.end())
+    {
+        // Extract settings from the attached resource
+        return iter->second.settings;
+    }
+    return {};
+}
+
+void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, IWorkloadNode & node)
 {
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
-    attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link};
+    attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = node.getLink(), .settings = node.getSettings()};
 }
 
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
@@ -464,13 +476,7 @@ std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier
         try
         {
             if (auto iter = node_for_workload.find(workload_name); iter != node_for_workload.end())
-            {
-                if (ResourceLink link = iter->second->getLink())
-                    classifier.attach(shared_from_this(), current_version, link);
-                else
-                    throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Unable to use workload '{}' that have children for resource '{}'",
-                        workload_name, resource_name);
-            }
+                classifier.attach(shared_from_this(), current_version, *iter->second);
             else
             {
                 // This resource does not have specified workload. It is either unknown or managed by another resource manager.
