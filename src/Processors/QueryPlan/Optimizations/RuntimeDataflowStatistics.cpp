@@ -50,14 +50,15 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 
     auto log_stats = [](const auto & stats, auto type) TSA_REQUIRES(stats.mutex)
     {
-        LOG_DEBUG(
+        LOG_TEST(
             getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}",
+            "{} bytes={}, sample_bytes={}, compressed_bytes={}, compression_ratio={}, elapsed_microseconds={}",
             type,
             stats.bytes,
             stats.sample_bytes,
             stats.compressed_bytes,
-            (stats.sample_bytes / 1.0 / stats.compressed_bytes));
+            (stats.sample_bytes / 1.0 / stats.compressed_bytes),
+            stats.elapsed_microseconds);
     };
 
     RuntimeDataflowStatistics res;
@@ -82,7 +83,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 
     LOG_DEBUG(
         getLogger("RuntimeDataflowStatisticsCacheUpdater"),
-        "Collected statistics: input_bytes={}, output_bytes={}",
+        "Collected statistics: input bytes={}, output bytes={}",
         res.input_bytes,
         res.output_bytes);
 
@@ -102,7 +103,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
     const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
     if (curr % 50 == 0 && curr < 150 && chunk.hasRows())
     {
-        chassert(chunk.getNumColumns() != header.columns());
+        chassert(chunk.getNumColumns() == header.columns());
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
             key_columns_compressed_size += getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
     }
