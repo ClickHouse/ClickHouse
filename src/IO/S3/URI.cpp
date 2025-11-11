@@ -162,7 +162,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         key += "?";
     }
 
-    /// Merge non-presigned, non-versionId query into key as required
+    /// Merge non-presigned, non-versionId query into key as required.
     const std::string original_query = original_uri.getQuery();
     if (!original_query.empty() && !has_version_id && !looks_like_presigned)
     {
