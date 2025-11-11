@@ -250,7 +250,7 @@ std::string X509Certificate::validFrom() const
 
 std::string X509Certificate::expiresOn() const
 {
-    ASN1_TIME * not_before = X509_get_notBefore(certificate);
+    ASN1_TIME * not_before = X509_get_notAfter(certificate);
     return reinterpret_cast<char *>(not_before->data);
 }
 

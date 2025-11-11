@@ -10,6 +10,7 @@
         </domains>
         <directory_url>https://10.5.11.2:14000/dir</directory_url>
         <refresh_certificates_task_interval>1000</refresh_certificates_task_interval>
+        <refresh_certificates_before>3600</refresh_certificates_before> <!-- one hour -->
     </acme>
     <openSSL>
         <client>
