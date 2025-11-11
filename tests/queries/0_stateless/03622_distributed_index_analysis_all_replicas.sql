@@ -12,6 +12,7 @@ set parallel_replicas_for_non_replicated_merge_tree=1;
 set parallel_replicas_index_analysis_only_on_coordinator=1;
 set parallel_replicas_local_plan=1;
 set distributed_index_analysis=1;
+set max_parallel_replicas=100;
 set cluster_for_parallel_replicas='parallel_replicas';
 --- Ignore warnings when replica does not respond, and analysis is done on initiator
 set send_logs_level='error';
