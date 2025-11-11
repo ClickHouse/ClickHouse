@@ -505,10 +505,20 @@ protected:
                     static const size_t DATA_PATHS_INDEX = 5;
                     if (columns_mask[DATA_PATHS_INDEX])
                     {
-                        lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-                        if (!lock)
-                            // Table was dropped while acquiring the lock, skipping table
-                            continue;
+                        /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
+                        try
+                        {
+                            lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                            if (!lock)
+                                // Table was dropped while acquiring the lock, skipping table
+                                continue;
+                        }
+                        catch (const Exception & e)
+                        {
+                            if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
+                                throw;
+                            tryLogCurrentException(getLogger("StorageSystemTables"), fmt::format("Cannot find target database/table for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
+                        }
                     }
                 }
                 ++rows_count;

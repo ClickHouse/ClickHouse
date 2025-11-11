@@ -141,18 +141,20 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableLockHolder table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
-
-                if (table_lock == nullptr)
-                {
-                    // Table was dropped while acquiring the lock, skipping table
-                    continue;
-                }
-
+                TableLockHolder table_lock;
                 StorageMetadataPtr metadata_snapshot;
+
                 /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
                 try
                 {
+                    table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
+
+                    if (table_lock == nullptr)
+                    {
+                        // Table was dropped while acquiring the lock, skipping table
+                        continue;
+                    }
+
                     metadata_snapshot = storage->getInMemoryMetadataPtr();
                     serialization_hints = storage->getSerializationHints();
                 }
