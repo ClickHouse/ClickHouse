@@ -57,7 +57,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeDateTime>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "The time when the last error happened."
-            },       
+            },
         {
                 "last_error_message",
                 std::make_shared<DataTypeString>(),
@@ -87,18 +87,6 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "A stack trace that represents a list of physical addresses where the called methods are stored."
-            },
-        {
-                "last_error_symbols",
-                symbolized_type,
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."
-            },
-        {
-                "last_error_lines",
-                symbolized_type,
-                parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
-                "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."
             }
     };
 }
@@ -117,18 +105,15 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(value);
     columns[column_idx++]->insert(remote);
     columns[column_idx++]->insert(query_id);
-    
+
     std::vector<UInt64> error_trace_array;
     error_trace_array.reserve(error_trace.size());
-    
+
     for (auto * ptr : error_trace)
         error_trace_array.emplace_back(reinterpret_cast<UInt64>(ptr));
 
     columns[column_idx++]->insert(Array(error_trace_array.begin(), error_trace_array.end()));
 
-    //Leave symbols and lines empty for now
-    columns[column_idx++]->insertDefault();
-    columns[column_idx++]->insertDefault();
 }
 
 struct ValuePair
@@ -172,7 +157,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
                 .remote=true,
                 .query_id=error.remote.query_id,
                 .error_trace=error.remote.trace
-            }; 
+            };
             add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;
         }
