@@ -151,10 +151,13 @@ private:
     }
 };
 
-/// Cache cell containing V3 native Parquet metadata
+/* Cache cell containing V3 native Parquet metadata
+we store the native metadata here instead of a shared pointer
+wrapping the metadata
+*/
 struct ParquetV3MetadataCacheCell : private boost::noncopyable
 {
-    parquet::format::FileMetaData metadata;  // Native V3 metadata (not shared_ptr)
+    parquet::format::FileMetaData metadata;
     Int64 memory_bytes;
     explicit ParquetV3MetadataCacheCell(parquet::format::FileMetaData metadata_)
         : metadata(std::move(metadata_))
@@ -167,8 +170,8 @@ private:
 
     size_t calculateMemorySize() const
     {
-        // Estimate memory usage of native metadata
-        // This is simpler than Arrow metadata since it's not a shared_ptr
+        /// Estimate memory usage of native metadata
+        /// This is simpler than Arrow metadata since it's not a shared_ptr
         return sizeof(metadata) + metadata.schema.size() * 100; // Rough estimate
     }
 };
@@ -192,7 +195,7 @@ public:
         : Base(cache_policy, CurrentMetrics::ParquetMetadataCacheBytes, CurrentMetrics::ParquetMetadataCacheFiles, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    // Same factory method as V2 - reuse the key creation logic
+    /// Same factory method as V2 - reuse the key creation logic
     static ParquetMetadataCacheKey createKey(const String & file_path, const String & etag)
     {
         return ParquetMetadataCacheKey{file_path, etag};
@@ -204,16 +207,16 @@ public:
     {
         auto load_fn_wrapper = [&]()
         {
-            auto metadata = load_fn();  // Returns Parquet::parq::FileMetaData directly
+            auto metadata = load_fn();
             return std::make_shared<ParquetV3MetadataCacheCell>(std::move(metadata));
         };
         auto result = Base::getOrSet(key, load_fn_wrapper);
-        // Reuse same ProfileEvents as V2 cache
+        /// Reuse same ProfileEvents as V2 cache
         if (result.second)
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::ParquetMetadataCacheHits);
-        return result.first->metadata;  // Return by value (native metadata)
+        return result.first->metadata;
     }
 
 private:

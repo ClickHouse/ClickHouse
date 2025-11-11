@@ -668,10 +668,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (is_stopped)
         return;
 
-    // Use cache if available and file is remote, otherwise read directly
+    /// Use cache if available and file is remote, otherwise read directly
     if (metadata_cache && dynamic_cast<ReadBufferFromS3*>(in))
     {
-        // Only cache S3 files since they have reliable ETags
+        /// Only cache S3 files since they have reliable ETags
         auto [file_path, etag] = extractFilePathAndETagFromReadBuffer(*in);
         if (etag != "s3_metadata_unavailable")
         {

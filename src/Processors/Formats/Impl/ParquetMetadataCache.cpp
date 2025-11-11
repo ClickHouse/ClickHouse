@@ -7,7 +7,7 @@ std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in)
 {
     String full_path = getFileNameFromReadBuffer(in);
     String etag;
-    // Extract ETag from S3 metadata if available
+    /// Extract ETag from S3 metadata if available
     if (auto * s3_buffer = dynamic_cast<ReadBufferFromS3*>(&in))
     {
         try
@@ -17,7 +17,7 @@ std::pair<String, String> extractFilePathAndETagFromReadBuffer(ReadBuffer & in)
         }
         catch (...)
         {
-            // If metadata not available, use a fallback
+            /// If metadata not available, use a fallback
             etag = "s3_metadata_unavailable";
         }
     }
