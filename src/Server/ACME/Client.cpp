@@ -91,8 +91,8 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
     /// All domains have the same certificate
     std::string domain = domains.front();
 
-    zk->tryGet(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain / "private_key", pkey);
-    zk->tryGet(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain / "certificate", certificate);
+    zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key", pkey);
+    zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate", certificate);
 
     if (pkey.empty() || certificate.empty())
     {
@@ -113,9 +113,11 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     if (initialized)
         return;
 
-    std::lock_guard key_lock(private_acme_key_mutex);
-    if (private_acme_key && api && api->isReady())
-        return;
+    {
+        std::lock_guard key_lock(private_acme_key_mutex);
+        if (private_acme_key && api && api->isReady())
+            return;
+    }
 
     if (!config.has("acme"))
         return;
@@ -123,6 +125,8 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     auto http_port = config.getInt("http_port");
     if (http_port != 80)
         LOG_WARNING(log, "For ACME HTTP challenge HTTP port must be 80, but is {}", http_port);
+
+    zookeeper_path = config.getString("acme.zookeeper_path", DEFAULT_ZOOKEEPER_BASE_PATH);
 
     directory_url = config.getString("acme.directory_url", LetsEncrypt::PRODUCTION_DIRECTORY_URL);
     contact_email = config.getString("acme.email", "");
@@ -148,13 +152,13 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
 
     auto zk = Context::getGlobalContextInstance()->getZooKeeper();
 
-    zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH), "");
-    zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname, "");
-    zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "challenges", "");
-    zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains", "");
+    zk->createIfNotExists(fs::path(zookeeper_path), "");
+    zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname, "");
+    zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "challenges", "");
+    zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "domains", "");
 
     for (const auto & domain : domains)
-        zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain, "");
+        zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "domains" / domain, "");
 
     BackgroundSchedulePool & bgpool = Context::getGlobalContextInstance()->getSchedulePool();
 
@@ -162,8 +166,11 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     authentication_task = bgpool.createTask("ACME::authentication_fn", [this] { authentication_fn(); });
     refresh_key_task = bgpool.createTask("ACME::refresh_key_fn", [this] { refresh_key_fn(); });
 
-    if (!private_acme_key)
-        refresh_key_task->activateAndSchedule();
+    {
+        std::lock_guard key_lock(private_acme_key_mutex);
+        if (!private_acme_key)
+            refresh_key_task->activateAndSchedule();
+    }
 
     initialized = true;
 }
@@ -184,8 +191,8 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
             std::string private_key;
             std::string pem_certificate;
 
-            zk->tryGet(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain / "private_key", private_key);
-            zk->tryGet(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain / "certificate", pem_certificate);
+            zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key", private_key);
+            zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate", pem_certificate);
 
             if (private_key.empty() || pem_certificate.empty())
             {
@@ -219,7 +226,7 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
             return;
         }
 
-        auto active_order_path = fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "active_order";
+        auto active_order_path = fs::path(zookeeper_path) / acme_hostname / "active_order";
         if ((!lock || !lock->isLocked()) && zk->exists(active_order_path))
         {
             LOG_DEBUG(
@@ -235,12 +242,12 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
         /// Start the order
         if (!active_order.has_value())
         {
-            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname, "active_order", "ACME::Client");
+            lock = std::make_shared<zkutil::ZooKeeperLock>(zk, fs::path(zookeeper_path) / acme_hostname, "active_order", "ACME::Client");
             lock->tryLock();
 
             auto order_callback = [&](std::string token)
             {
-                auto path = fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "challenges" / token;
+                auto path = fs::path(zookeeper_path) / acme_hostname / "challenges" / token;
                 zk->createIfNotExists(path, token);
             };
 
@@ -274,7 +281,7 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
 
             for (const auto & domain : domains)
             {
-                auto path = fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain / "private_key";
+                auto path = fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "private_key";
                 zk->createOrUpdate(path, pkey, zkutil::CreateMode::Persistent);
                 LOG_DEBUG(log, "Updated private key for domain {}", domain);
             }
@@ -300,7 +307,7 @@ void Client::refresh_certificates_fn(const Poco::Util::AbstractConfiguration & c
 
             for (const auto & domain : domains)
             {
-                auto path = fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "domains" / domain / "certificate";
+                auto path = fs::path(zookeeper_path) / acme_hostname / "domains" / domain / "certificate";
                 zk->createOrUpdate(path, certificate, zkutil::CreateMode::Persistent);
                 LOG_DEBUG(log, "Updated certificate for domain {}", domain);
             }
@@ -390,7 +397,7 @@ void Client::refresh_key_fn()
         auto context = Context::getGlobalContextInstance();
         auto zk = context->getZooKeeper();
 
-        zk->tryGet(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "account_private_key", private_key);
+        zk->tryGet(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
         if (private_key.empty())
         {
             LOG_INFO(log, "Generating new RSA private key for ACME account");
@@ -398,7 +405,7 @@ void Client::refresh_key_fn()
             auto rsa_key = KeyPair::generateRSA(4096, RSA_F4);
             private_key = rsa_key.privateKey();
 
-            zk->createIfNotExists(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "account_private_key", private_key);
+            zk->createIfNotExists(fs::path(zookeeper_path) / acme_hostname / "account_private_key", private_key);
 
             refresh_key_task->schedule();
             return;
@@ -452,7 +459,7 @@ std::string Client::requestChallenge(const std::string & uri)
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
-    auto active_challenges = zk->getChildren(fs::path(ZOOKEEPER_BASE_PATH) / acme_hostname / "challenges");
+    auto active_challenges = zk->getChildren(fs::path(zookeeper_path) / acme_hostname / "challenges");
     if (active_challenges.empty())
     {
         LOG_DEBUG(log, "No challenge found for uri: {}", uri);

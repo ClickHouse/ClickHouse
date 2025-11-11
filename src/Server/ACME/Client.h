@@ -26,7 +26,7 @@ namespace ACME
 {
 
 static constexpr auto CHALLENGE_HTTP_PATH = "/.well-known/acme-challenge/";
-static constexpr auto ZOOKEEPER_BASE_PATH = "/clickhouse/acme";
+static constexpr auto DEFAULT_ZOOKEEPER_BASE_PATH = "/clickhouse/acme";
 
 static constexpr auto REFRESH_TASK_AFTER_ERROR_MS = 10000;
 static constexpr auto REFRESH_TASK_HAPPY_PATH_MS = 5000;
@@ -63,6 +63,8 @@ private:
     std::atomic<bool> authenticated;
 
     std::shared_ptr<ACME::API> api;
+
+    std::string zookeeper_path;
 
     bool terms_of_service_agreed;
     Poco::URI directory_url;
