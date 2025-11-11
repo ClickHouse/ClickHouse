@@ -198,11 +198,12 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
             size_t it = 0;
+            const auto period = std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100);
             table.forEachMapped(
                 [&](AggregateDataPtr place)
                 {
                     chassert(place);
-                    if (it++ % 100 == 0)
+                    if (it++ % period == 0)
                     {
                         is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
                                         : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
@@ -211,7 +212,7 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                 });
             wbuf.finalize();
             if (it)
-                res += static_cast<size_t>((table.size() / ceil(it / 100.)) * wb.count());
+                res += static_cast<size_t>((table.size() / (it / period)) * wb.count());
         }
     };
 

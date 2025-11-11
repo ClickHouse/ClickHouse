@@ -126,7 +126,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
 
     Stopwatch watch;
 
-    if (bucket == -1
+    if (variant.type == AggregatedDataVariants::Type::without_key
         && std::ranges::any_of(
             variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
     {
@@ -166,7 +166,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
     const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
     size_t key_columns_compressed_size = 0;
     const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
-    if (curr % 50 == 0 && curr < 150 && block.rows())
+    if (curr % 1 == 0 && curr < 15000000000 && block.rows())
         key_columns_compressed_size = getKeyColumnsSize(/*compressed=*/true);
 
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];

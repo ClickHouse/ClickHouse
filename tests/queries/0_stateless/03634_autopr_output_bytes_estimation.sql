@@ -1,12 +1,11 @@
--- Tags: stateful, no-random-settings
+-- Tags: stateful
 
 SET optimize_read_in_order=0, query_plan_read_in_order=0, local_filesystem_read_prefetch=0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0, local_filesystem_read_method='pread_threadpool', use_uncompressed_cache=0;
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
+SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
-SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=2;
-
+SET max_threads=8, use_hedged_requests=0, max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
@@ -34,11 +33,9 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Just checking that the estimation is not too far off (within 75% error)
+-- Just checking that the estimation is not too far off
 WITH
-    [32+32+32, 252512+133120+133120, 6389760+4069632+2129920, 1180160+589824+589824, 32+32, 22560+4224+3136, 41536+32088+8832, 20000, 19931136+5726464+5406720, 135266304+72351744+67633152] AS expected_bytes,
-    --[32+32+32, 2097152+1048576+1048576, 252512+133120+133120, 6389760+4069632+2129920, 1180160+589824+589824, 32+32, 22560+4224+3136, 41536+37088+8832, 30000, 19931136+5726464+5406720, 135266304+72351744+67633152] AS expected_bytes,
-    --[32, 2097152, 252512, 6389760, 1180160, 32, 22560, 41536, 16192, 19931136, 135266304] AS expected_bytes,
+    [96, 518752, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM

@@ -673,7 +673,11 @@ private:
 
 #define M(NAME) \
     else if (first->type == AggregatedDataVariants::Type::NAME) \
-        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled);
+    { \
+        params->aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(*data, shared_data->is_cancelled); \
+        if (updater) \
+            updater->recordAggregationStateSizes(*first, /*bucket=*/-1); \
+    }
             if (false) {} // NOLINT
             APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
 #undef M
@@ -683,8 +687,14 @@ private:
 
         auto blocks = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
         for (auto & block : blocks)
+        {
             if (block.rows() > 0)
+            {
+                if (updater)
+                    updater->recordAggregationKeySizes(params->aggregator, block);
                 single_level_chunks.emplace_back(convertToChunk(block));
+            }
+        }
 
         finished = true;
         data.reset();
