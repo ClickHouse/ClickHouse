@@ -121,21 +121,16 @@ private:
         if (size <= max_bins)
             return;
 
-        auto cmp = [](const WeightedValue & a, const WeightedValue & b)
-        { return a.mean < b.mean; };
-        UInt32 prefix = sorted_prefix;
-        // If array is already sorted, we can skip sorting
-        if (prefix != size)
+        auto cmp = [](const WeightedValue & a, const WeightedValue & b){ return a.mean < b.mean; };
+        if (sorted_prefix == 0)
         {
-            if (prefix == 0)
-            {
-                ::sort(points, points + size, cmp);
-            }else if (prefix < size)
-            {
-                // If part of array is already sorted: we need only to sort the tail and then merge
-                ::sort(points + prefix, points + size, cmp);
-                std::inplace_merge(points, points + prefix, points + size, cmp);
-            }
+            ::sort(points, points + size, cmp);
+        }
+        else if (sorted_prefix < size)
+        {
+            // If part of array is already sorted: we need only to sort the tail and then merge
+            ::sort(points + sorted_prefix, points + size, cmp);
+            std::inplace_merge(points, points + sorted_prefix, points + size, cmp);
         }
         auto new_size = size;
 
