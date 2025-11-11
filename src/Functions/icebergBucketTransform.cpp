@@ -255,7 +255,7 @@ REGISTER_FUNCTION(IcebergHash)
     FunctionDocumentation::Syntax syntax = "icebergHash(value)";
     FunctionDocumentation::Arguments arguments =
     {
-        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "string", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit Murmur3 hash, x86 variant, seeded with 0", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
