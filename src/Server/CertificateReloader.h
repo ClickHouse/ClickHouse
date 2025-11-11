@@ -45,7 +45,7 @@ public:
         std::string hash;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
-        Data(KeyPair, X509Certificate::List, std::string hash);
+        Data(KeyPair pkey, X509Certificate::List certs_chain, std::string hash);
     };
 
     struct File
