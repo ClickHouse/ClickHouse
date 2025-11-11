@@ -42,7 +42,7 @@ public:
         X509Certificate::List certs_chain;
         KeyPair key;
 
-        std::string hash;
+        const std::string hash;
 
         Data(std::string cert_path, std::string key_path, std::string pass_phrase);
         Data(KeyPair pkey, X509Certificate::List certs_chain, std::string hash);

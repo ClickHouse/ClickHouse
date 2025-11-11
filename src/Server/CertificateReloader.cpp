@@ -239,7 +239,7 @@ CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std
 }
 
 CertificateReloader::Data::Data(KeyPair _pkey, X509Certificate::List _certs_chain, std::string _hash)
-    : certs_chain(std::move(_certs_chain)), key(std::move(_pkey)), hash(_hash)
+    : certs_chain(std::move(_certs_chain)), key(std::move(_pkey)), hash(std::move(_hash))
 {
 }
 

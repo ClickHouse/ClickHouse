@@ -16,12 +16,6 @@
 #include <Poco/StreamCopier.h>
 
 
-namespace ErrorCodes
-{
-    extern const int ACME_ERROR;
-    extern const int LOGICAL_ERROR;
-}
-
 namespace ProfileEvents
 {
     extern const Event ACMECertificateOrders;
@@ -30,6 +24,12 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ACME_ERROR;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace ACME
 {
