@@ -228,7 +228,7 @@ public:
     using NodePtr = std::shared_ptr<BaseNode>;
     using SelfPtr = std::shared_ptr<WorkloadNodeCommon>;
 
-private:
+protected:
     /// Helper function for managing a parent of a node
     static void reparent(const NodePtr & node, const NodePtr & new_parent)
     {
@@ -596,12 +596,9 @@ private:
     };
 
 public:
-    WorkloadNodeCommon(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
+    WorkloadNodeCommon(EventQueue & event_queue_, const WorkloadSettings & settings)
         : BaseNode(event_queue_, SchedulerNodeInfo(settings.weight, settings.priority))
-    {
-        immediate_child = impl.initialize(event_queue_, settings, unit);
-        reparent(immediate_child, this);
-    }
+    {}
 
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
@@ -692,56 +689,60 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
         throw Exception(ErrorCodes::LOGICAL_ERROR, "WorkloadNode should not be used with CustomResourceManager");
     }
 
-    ISchedulerNode * getChild(const String & child_name) override
-    {
-        if (immediate_child->basename == child_name)
-            return immediate_child.get();
-        else
-            return nullptr;
-    }
-
     ConstraintsBranch impl;
-    std::shared_ptr<BaseNode> immediate_child; // An immediate child (actually the root of the whole subtree)
 };
 
 class TimeSharedWorkloadNode final : public WorkloadNodeCommon<ITimeSharedNode>
 {
 public:
-    using WorkloadNodeCommon::WorkloadNodeCommon;
+    TimeSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
+        : WorkloadNodeCommon(event_queue_, settings)
+    {
+        child = impl.initialize(event_queue_, settings, unit);
+        reparent(child, this);
+    }
 
     ~TimeSharedWorkloadNode() override
     {
-        if (immediate_child)
-            this->removeChild(immediate_child.get());
+        if (child)
+            this->removeChild(child.get());
     }
 
 private:
     /// Attaches an immediate child (used through `reparent()`)
     void attachChild(const SchedulerNodePtr & child_) override
     {
-        immediate_child = std::static_pointer_cast<ITimeSharedNode>(child_);
-        immediate_child->setParentNode(this);
+        child = std::static_pointer_cast<ITimeSharedNode>(child_);
+        child->setParentNode(this);
 
         // Activate if required
-        if (immediate_child->isActive())
-            activateChild(*immediate_child);
+        if (child->isActive())
+            activateChild(*child);
     }
 
     /// Removes an immediate child (used through `reparent()`)
-    void removeChild(ISchedulerNode * child) override
+    void removeChild(ISchedulerNode * child_) override
     {
-        if (immediate_child.get() == child)
+        if (child.get() == child_)
         {
             child_active = false; // deactivate
-            immediate_child->setParentNode(nullptr); // detach
-            immediate_child.reset();
+            child->setParentNode(nullptr); // detach
+            child.reset();
         }
+    }
+
+    ISchedulerNode * getChild(const String & child_name) override
+    {
+        if (child->basename == child_name)
+            return child.get();
+        else
+            return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
     {
         // Dequeue request from the child
-        auto [request, child_now_active] = immediate_child->dequeueRequest();
+        auto [request, child_now_active] = child->dequeueRequest();
 
         // Deactivate if necessary
         child_active = child_now_active;
@@ -766,56 +767,70 @@ private:
     }
 
     /// Activate an immediate child for a specific kind of resource request
-    void activateChild(ITimeSharedNode & child) override
+    void activateChild(ITimeSharedNode & child_) override
     {
-        if (&child == immediate_child.get())
+        if (&child_ == child.get())
             if (!std::exchange(child_active, true) && this->parent)
                 castParent().activateChild(*this);
     }
 
+    TimeSharedNodePtr child; // An immediate child (actually the root of the whole subtree)
     bool child_active = false;
 };
 
 class SpaceSharedWorkloadNode final : public WorkloadNodeCommon<ISpaceSharedNode>
 {
 public:
-    using WorkloadNodeCommon::WorkloadNodeCommon;
+    SpaceSharedWorkloadNode(EventQueue & event_queue_, const WorkloadSettings & settings, CostUnit unit)
+        : WorkloadNodeCommon(event_queue_, settings)
+    {
+        child = impl.initialize(event_queue_, settings, unit);
+        reparent(child, this);
+    }
 
     ~SpaceSharedWorkloadNode() override
     {
-        if (immediate_child)
-            this->removeChild(immediate_child.get());
+        if (child)
+            this->removeChild(child.get());
     }
 
 private:
     /// Attaches an immediate child (used through `reparent()`)
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {
-        immediate_child = std::static_pointer_cast<ISpaceSharedNode>(child_);
-        immediate_child->setParentNode(this);
-        propagateUpdate(*immediate_child, Update()
-            .setAttached(immediate_child.get())
-            .setIncrease(immediate_child->increase)
-            .setDecrease(immediate_child->decrease));
+        child = std::static_pointer_cast<ISpaceSharedNode>(child_);
+        child->setParentNode(this);
+        propagateUpdate(*child, Update()
+            .setAttached(child.get())
+            .setIncrease(child->increase)
+            .setDecrease(child->decrease));
     }
 
     /// Removes an immediate child (used through `reparent()`)
     void removeChild(ISchedulerNode * child_) override
     {
-        if (immediate_child.get() != child_)
+        if (child.get() != child_)
             return;
-        propagateUpdate(*immediate_child, Update()
-            .setDetached(immediate_child.get())
+        propagateUpdate(*child, Update()
+            .setDetached(child.get())
             .setIncrease(nullptr)
             .setDecrease(nullptr));
-        immediate_child->setParentNode(nullptr);
-        immediate_child.reset();
+        child->setParentNode(nullptr);
+        child.reset();
+    }
+
+    ISchedulerNode * getChild(const String & child_name) override
+    {
+        if (child->basename == child_name)
+            return child.get();
+        else
+            return nullptr;
     }
 
     void propagateUpdate(ISpaceSharedNode & from_child, Update update) override
     {
         chassert(parent);
-        chassert(&from_child == immediate_child.get());
+        chassert(&from_child == child.get());
         if (update.attached)
             allocated += update.attached->allocated;
         if (update.detached)
@@ -833,8 +848,8 @@ private:
         chassert(increase);
         allocated += increase->size;
         increase = nullptr;
-        immediate_child->approveIncrease();
-        increase = immediate_child->increase;
+        child->approveIncrease();
+        increase = child->increase;
     }
 
     void approveDecrease() override
@@ -842,15 +857,17 @@ private:
         chassert(decrease);
         allocated -= decrease->size;
         decrease = nullptr;
-        immediate_child->approveDecrease();
-        decrease = immediate_child->decrease;
+        child->approveDecrease();
+        decrease = child->decrease;
     }
 
     ResourceAllocation * selectAllocationToKill() override
     {
-        chassert(immediate_child);
-        return immediate_child->selectAllocationToKill();
+        chassert(child);
+        return child->selectAllocationToKill();
     }
+
+    SpaceSharedNodePtr child; // An immediate child (actually the root of the whole subtree)
 };
 
 using TimeSharedWorkloadNodePtr = TimeSharedWorkloadNode::SelfPtr;
