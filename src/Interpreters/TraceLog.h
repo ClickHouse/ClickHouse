@@ -46,14 +46,13 @@ struct TraceLogElement
     /// Increment of profile event for TraceType::ProfileEvent.
     ProfileEvents::Count increment{};
 
-#if USE_XRAY
+    /// Instrumentation values
     UInt64 instrumented_point_id;
     std::optional<Int32> function_id{};
     std::optional<String> function_name{};
     std::optional<String> handler{};
     std::optional<String> entry_type{};
     std::optional<UInt64> duration_microseconds{};
-#endif
 
     static std::string name() { return "TraceLog"; }
     static ColumnsDescription getColumnsDescription();

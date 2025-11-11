@@ -92,13 +92,11 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"increment", std::make_shared<DataTypeInt64>(), "For trace type ProfileEvent is the amount of increment of profile event, for other trace types is 0."},
         {"symbols", symbolized_type, "If the symbolization is enabled, contains demangled symbol names, corresponding to the `trace`."},
         {"lines", symbolized_type, "If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `trace`."},
-#if USE_XRAY
         {"function_id", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>()), "For trace type Instrumentation, ID assigned to the function in xray_instr_map section of elf-binary."},
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
         {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
         {"entry_type", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, entry type of the instrumented function."},
         {"duration_microseconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For trace type Instrumentation, time the function was running for in microseconds."},
-#endif
     };
 }
 
@@ -258,13 +256,11 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
     }
 
-#if USE_XRAY
     columns[i++]->insert(function_id.has_value() ? function_id.value() : Field());
     columns[i++]->insert(function_name.has_value() ? function_name.value() : Field());
     columns[i++]->insert(handler.has_value() ? handler.value() : Field());
     columns[i++]->insert(entry_type.has_value() ? entry_type.value() : Field());
     columns[i++]->insert(duration_microseconds.has_value() ? duration_microseconds.value() : Field());
-#endif
 }
 
 }
