@@ -460,6 +460,20 @@ std::string Client::requestChallenge(const std::string & uri)
 {
     LOG_TRACE(log, "Challenge requested for uri: {}", uri);
 
+    /// We may be in a situation when cluster just started,
+    /// order is already issued by one of replicas, but some have not loaded private key from Keeper yet.
+    /// Routing challenge request to such replica will fail whole order.
+    /// To prevent it to some degree, let's try waiting for keys initialization.
+    size_t retry_budget = 10;
+    while(!keys_initialized)
+    {
+        LOG_WARNING(log, "Got ACME challenge request, but private key is not yet initialized");
+        sleepForSeconds(1);
+
+        if (retry_budget-- == 0)
+            break;
+    }
+
     if (!keys_initialized)
     {
         LOG_WARNING(log, "ACME keys are not initialized, skipping challenge request");
