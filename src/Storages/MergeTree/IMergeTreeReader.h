@@ -41,10 +41,6 @@ public:
 
     virtual bool canReadIncompleteGranules() const = 0;
 
-    virtual size_t getResultColumnCount() const { return getColumns().size(); }
-
-    virtual bool producesFilterOnly() const { return false; }
-
     virtual ~IMergeTreeReader() = default;
 
     const ValueSizeMap & getAvgValueSizeHints() const;

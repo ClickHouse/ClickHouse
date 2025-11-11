@@ -32,16 +32,13 @@ Checks: [
   '-bugprone-crtp-constructor-accessibility',
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
-  '-bugprone-nondeterministic-pointer-iteration-order',
 
   '-cert-dcl16-c',
   '-cert-err58-cpp',
 
-  '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
-
   '-clang-analyzer-optin.performance.Padding',
 
-  '-clang-analyzer-security.ArrayBound', # only false positives
+  '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
   '-cppcoreguidelines-*', # impractical in a codebase as large as ClickHouse, also slow
 
@@ -97,8 +94,6 @@ Checks: [
   '-modernize-use-ranges',
   '-modernize-use-trailing-return-type',
   '-modernize-use-designated-initializers',
-  '-modernize-use-scoped-lock',
-  '-modernize-use-integer-sign-comparison',
 
   '-performance-avoid-endl',
   '-performance-enum-size',
@@ -108,8 +103,6 @@ Checks: [
   '-performance-unnecessary-value-param',
 
   '-portability-simd-intrinsics',
-  '-portability-avoid-pragma-once',
-  '-portability-template-virtual-member-function',
 
   '-readability-avoid-nested-conditional-operator',
   '-readability-avoid-unconditional-preprocessor-if',
@@ -136,7 +129,6 @@ Checks: [
   '-readability-uppercase-literal-suffix',
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
-  '-readability-use-concise-preprocessor-directives',
 
   '-zircon-*'
 ]

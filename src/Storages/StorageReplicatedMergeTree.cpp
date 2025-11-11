@@ -628,7 +628,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
-                metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
+                metadata_snapshot = getInMemoryMetadataPtr();
             }
         }
         catch (Coordination::Exception & e)
@@ -5757,8 +5757,6 @@ void StorageReplicatedMergeTree::shutdown(bool)
 
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
 
     flushAndPrepareForShutdown();
 
@@ -10733,27 +10731,27 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(
     return {};
 }
 
+
 bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
-    for (const auto & disk : getStoragePolicy()->getDisks())
-    {
-        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
-        {
-            if (it->name() == part_name)
+    fs::directory_iterator dir_end;
+    for (const std::string & path : getDataPaths())
+        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
+            if (dir_it->path().filename().string() == part_name)
                 return true;
-        }
-    }
     return false;
 }
 
 
 bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
 {
-    for (const auto & disk : getStoragePolicy()->getDisks())
+    fs::directory_iterator dir_end;
+
+    for (const std::string & path : getDataPaths())
     {
-        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
+        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
         {
-            const String file_name = it->name();
+            const String file_name = dir_it->path().filename().string();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
 
             if (part_info && part_info->getPartitionId() == partition_name)

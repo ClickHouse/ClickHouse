@@ -15,7 +15,6 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Core/QueryProcessingStage.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -2297,12 +2296,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
             < VersionNumber(23, 3, 0)
         && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
-
-    if (state->stage == QueryProcessingStage::WithMergeableState
-        && VersionNumber(client_info.connection_client_version_major, client_info.connection_client_version_minor, client_info.connection_client_version_patch)
-            < VersionNumber(25, 10, 0)
-    )
-        passed_settings.set("optimize_const_name_size", -1);
 
     auto settings_changes = passed_settings.changes();
     query_kind = state->query_context->getClientInfo().query_kind;

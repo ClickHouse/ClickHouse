@@ -3,13 +3,12 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/TextIndexCache.h>
 #include <roaring.hh>
 
 namespace DB
 {
 
-using PostingsMap = absl::flat_hash_map<StringRef, PostingListPtr>;
+using PostingsMap = absl::flat_hash_map<StringRef, const PostingList *>;
 
 /// A part of "direct read from text index" optimization.
 /// This reader fills virtual columns for text search filters
@@ -43,6 +42,7 @@ private:
     {
         MergeTreeIndexGranulePtr granule;
         PostingsMap postings;
+        std::list<PostingList> postings_holders;
         bool may_be_true = true;
         bool need_read_postings = true;
     };

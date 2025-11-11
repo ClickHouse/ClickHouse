@@ -99,7 +99,7 @@ struct BitPackedRLEDecoder : public PageDecoder
         else
         {
             const size_t byte_width = (bit_width + 7) / 8;
-            chassert(byte_width <= sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+            chassert(byte_width <= sizeof(T));
             const T value_mask = T((1ul << bit_width) - 1);
 
             run_length = len >> 1;
@@ -1259,7 +1259,7 @@ T byteswap(T x)
 template <typename T>
 BigEndianHelper<T>::BigEndianHelper(size_t input_size)
 {
-    chassert(sizeof(T) >= input_size);  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(sizeof(T) >= input_size);
     value_offset = sizeof(T) - input_size;
     value_mask = (~T(0)) << (8 * value_offset);
 
@@ -1297,7 +1297,7 @@ T BigEndianHelper<T>::convertPaddedValue(const char * data) const
 template <typename T>
 T BigEndianHelper<T>::convertUnpaddedValue(std::span<const char> data) const
 {
-    chassert(data.size() <= sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(data.size() <= sizeof(T));
     T x = 0;
     memcpy(reinterpret_cast<char *>(&x) + value_offset, data.data(), data.size());
     fixupValue(x);
@@ -1314,7 +1314,7 @@ void BigEndianDecimalFixedSizeConverter<T>::convertColumn(std::span<const char> 
 {
     const char * from_bytes = data.data();
     auto to_bytes = col.insertRawUninitialized(num_values);
-    chassert(to_bytes.size() == num_values * sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(to_bytes.size() == num_values * sizeof(T));
     T * to = reinterpret_cast<T *>(to_bytes.data());
     for (size_t i = 0; i < num_values; ++i)
     {
@@ -1342,7 +1342,7 @@ template <typename T>
 void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> chars, const UInt64 * offsets, size_t separator_bytes, size_t num_values, IColumn & col) const
 {
     auto to_bytes = col.insertRawUninitialized(num_values);
-    chassert(to_bytes.size() == num_values * sizeof(T));  /// NOLINT(bugprone-sizeof-expression,cert-arr39-c)
+    chassert(to_bytes.size() == num_values * sizeof(T));
     T * to = reinterpret_cast<T *>(to_bytes.data());
 
     for (size_t i = 0; i < num_values; ++i)

@@ -50,7 +50,6 @@
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Config/ConfigHelper.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/FailPoint.h>
@@ -235,18 +234,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
     extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
-    extern const ServerSettingsString text_index_dictionary_block_cache_policy;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_size;
-    extern const ServerSettingsUInt64 text_index_dictionary_block_cache_max_entries;
-    extern const ServerSettingsDouble text_index_dictionary_block_cache_size_ratio;
-    extern const ServerSettingsString text_index_header_cache_policy;
-    extern const ServerSettingsUInt64 text_index_header_cache_size;
-    extern const ServerSettingsUInt64 text_index_header_cache_max_entries;
-    extern const ServerSettingsDouble text_index_header_cache_size_ratio;
-    extern const ServerSettingsString text_index_postings_cache_policy;
-    extern const ServerSettingsUInt64 text_index_postings_cache_size;
-    extern const ServerSettingsUInt64 text_index_postings_cache_max_entries;
-    extern const ServerSettingsDouble text_index_postings_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -913,7 +900,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-                executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
                 if (result != "1\n" && result != "true\n")
@@ -942,7 +929,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-            executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+            executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
         if (!skipped_startup_scripts.empty())
@@ -1607,20 +1594,7 @@ try
         }
     }
 
-    /// Inject and enable failpoints declared in the configuration
-    {
-        auto & conf = config();
-        String root_key = "fail_points_active";
-        Poco::Util::AbstractConfiguration::Keys fail_point_names;
-        conf.keys(root_key, fail_point_names);
-
-        for (const auto & fail_point_name : fail_point_names)
-        {
-            if (ConfigHelper::getBool(conf, root_key + "." + fail_point_name))
-                FailPointInjection::enableFailPoint(fail_point_name);
-        }
-    }
-
+    FailPointInjection::enableFromGlobalConfig(config());
 #endif
 
     memory_worker.start();
@@ -1873,39 +1847,6 @@ try
         LOG_INFO(log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(vector_similarity_index_cache_size));
     }
     global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_entries, vector_similarity_index_cache_size_ratio);
-
-    String text_index_dictionary_block_cache_policy = server_settings[ServerSetting::text_index_dictionary_block_cache_policy];
-    size_t text_index_dictionary_block_cache_size = server_settings[ServerSetting::text_index_dictionary_block_cache_size];
-    size_t text_index_dictionary_block_cache_max_count = server_settings[ServerSetting::text_index_dictionary_block_cache_max_entries];
-    double text_index_dictionary_block_cache_size_ratio = server_settings[ServerSetting::text_index_dictionary_block_cache_size_ratio];
-    if (text_index_dictionary_block_cache_size > max_cache_size)
-    {
-        text_index_dictionary_block_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index dictionary block cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_dictionary_block_cache_size));
-    }
-    global_context->setTextIndexDictionaryBlockCache(text_index_dictionary_block_cache_policy, text_index_dictionary_block_cache_size, text_index_dictionary_block_cache_max_count, text_index_dictionary_block_cache_size_ratio);
-
-    String text_index_header_cache_policy = server_settings[ServerSetting::text_index_header_cache_policy];
-    size_t text_index_header_cache_size = server_settings[ServerSetting::text_index_header_cache_size];
-    size_t text_index_header_cache_max_count = server_settings[ServerSetting::text_index_header_cache_max_entries];
-    double text_index_header_cache_size_ratio = server_settings[ServerSetting::text_index_header_cache_size_ratio];
-    if (text_index_header_cache_size > max_cache_size)
-    {
-        text_index_header_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_header_cache_size));
-    }
-    global_context->setTextIndexHeaderCache(text_index_header_cache_policy, text_index_header_cache_size, text_index_header_cache_max_count, text_index_header_cache_size_ratio);
-
-    String text_index_postings_cache_policy = server_settings[ServerSetting::text_index_postings_cache_policy];
-    size_t text_index_postings_cache_size = server_settings[ServerSetting::text_index_postings_cache_size];
-    size_t text_index_postings_cache_max_count = server_settings[ServerSetting::text_index_postings_cache_max_entries];
-    double text_index_postings_cache_size_ratio = server_settings[ServerSetting::text_index_postings_cache_size_ratio];
-    if (text_index_postings_cache_size > max_cache_size)
-    {
-        text_index_postings_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(text_index_postings_cache_size));
-    }
-    global_context->setTextIndexPostingsCache(text_index_postings_cache_policy, text_index_postings_cache_size, text_index_postings_cache_max_count, text_index_postings_cache_size_ratio);
 
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)

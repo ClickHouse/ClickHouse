@@ -582,9 +582,6 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
-        /// Hold a reference to the storage since the snapshot cache in query context
-        /// may outlive the storage and delay destruction of data parts.
-        ConstStoragePtr storage;
         RangesInDataParts parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
@@ -1075,7 +1072,7 @@ public:
         return storage_settings.get();
     }
 
-    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
+    StorageMetadataPtr getInMemoryMetadataPtr() const override;
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1770,13 +1767,6 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
-    BackgroundSchedulePoolTaskHolder refresh_stats_task;
-
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
-
-    void refreshStatistics(UInt64 interval_seconds);
-
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1803,7 +1793,7 @@ private:
     ///
     /// @param need_rename - rename the part
     /// @param rename_in_transaction - if set, the rename will be done as part of transaction (without holding DataPartsLock), otherwise inplace (when it does not make sense).
-    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock & lock, bool need_rename, bool rename_in_transaction = false);
+    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction = false);
 
     /// Low-level method for preparing parts for commit (in-memory).
     /// FIXME Merge MergeTreeTransaction and Transaction
@@ -1926,8 +1916,6 @@ private:
     ///   on disks that are not a part of storage policy of the table).
     /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
     bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
-
-    ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

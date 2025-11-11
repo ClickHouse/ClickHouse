@@ -386,7 +386,7 @@ public:
     }
 
     // Alter comment of database.
-    virtual void alterDatabaseComment(const AlterCommand &, ContextPtr);
+    virtual void alterDatabaseComment(const AlterCommand &);
 
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
