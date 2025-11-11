@@ -1128,20 +1128,7 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
             ex.addMessage(fmt::format("While executing operation #{}", i));
 
             if (needRollbackBlobs(options))
-            {
-                for (int64_t j = i; j >= 0; --j)
-                {
-                    try
-                    {
-                        operations_to_execute[j]->undo();
-                    }
-                    catch (Exception & rollback_ex)
-                    {
-                        rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
-                        throw;
-                    }
-                }
-            }
+                undo();
 
             throw;
         }
