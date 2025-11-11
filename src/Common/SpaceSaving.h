@@ -317,7 +317,7 @@ public:
     }
 
 protected:
-    void push(std::unique_ptr<Counter> counter)
+    ALWAYS_INLINE void push(std::unique_ptr<Counter> counter)
     {
         counter->slot = counter_list.size();
         auto * ptr = counter.get();
@@ -327,7 +327,7 @@ protected:
     }
 
     // This is equivalent to one step of bubble sort
-    void percolate(Counter * counter)
+    NO_INLINE void percolate(Counter * counter)
     {
         while (counter->slot > 0)
         {
@@ -353,16 +353,12 @@ private:
         alpha_map.clear();
     }
 
-    void destroyLastElement()
+    ALWAYS_INLINE void destroyLastElement()
     {
         auto & last_element = counter_list.back();
         counter_map.erase(last_element->key);
         arena.free(last_element->key);
         counter_list.pop_back();
-
-        ++removed_keys;
-        if (removed_keys * 2 > counter_map.size())
-            rebuildCounterMap();
     }
 
     Counter * findCounter(const TKey & key, size_t hash)
@@ -376,7 +372,6 @@ private:
 
     void rebuildCounterMap()
     {
-        removed_keys = 0;
         counter_map.clear();
         for (auto & counter : counter_list)
             counter_map[counter->key] = counter.get();
@@ -389,7 +384,6 @@ private:
     std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map;
     SpaceSavingArena<TKey> arena;
     size_t m_capacity;
-    size_t removed_keys = 0;
 };
 
 }
