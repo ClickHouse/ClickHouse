@@ -66,4 +66,4 @@ parameters:    0.3
 **See also**
 
 - [SYSTEM INSTRUMENT](../../sql-reference/statements/system.md) — Add or remove instrumentation points.
-- [system.instrumentation_trace_log](../../operations/system-tables/instrumentation_trace_log.md) - Inspect profiling log.
+- [system.trace_log](../../operations/system-tables/trace_log.md) - Inspect profiling log.
