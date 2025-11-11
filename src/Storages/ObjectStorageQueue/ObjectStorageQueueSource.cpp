@@ -126,7 +126,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     recursive = globbed_key == "/**";
-    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
+    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));

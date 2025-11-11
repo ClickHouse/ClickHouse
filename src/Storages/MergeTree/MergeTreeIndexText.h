@@ -143,7 +143,6 @@ public:
     /// Information required to read the posting list.
     struct FuturePostings
     {
-        MergeTreeIndexDeserializationState state;
         UInt64 header = 0;
         UInt64 offset_in_file = 0;
         UInt32 cardinality = 0;
