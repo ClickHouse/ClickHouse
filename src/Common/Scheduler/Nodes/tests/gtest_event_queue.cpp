@@ -65,12 +65,12 @@ struct QueueTest {
     FakeSchedulerNode root_node;
 
     QueueTest()
-        : root_node(log, &event_queue)
+        : root_node(log, event_queue)
     {}
 
     SchedulerNodePtr makeNode(const String & name)
     {
-        auto node = std::make_shared<FakeSchedulerNode>(log, &event_queue);
+        auto node = std::make_shared<FakeSchedulerNode>(log, event_queue);
         node->basename = name;
         node->setParentNode(&root_node);
         return std::static_pointer_cast<ISchedulerNode>(node);

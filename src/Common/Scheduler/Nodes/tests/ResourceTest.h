@@ -124,13 +124,13 @@ public:
     template <class TClass>
     void add(const String & path, const String & xml = {})
     {
-        ResourceTestBase::add<TClass>(&event_queue, root_node, path, xml);
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, xml);
     }
 
     template <class TClass, class... Args>
     void addCustom(const String & path, Args... args)
     {
-        ResourceTestBase::add<TClass>(&event_queue, root_node, path, std::forward<Args>(args)...);
+        ResourceTestBase::add<TClass>(event_queue, root_node, path, std::forward<Args>(args)...);
     }
 
     TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const WorkloadSettings & settings = {})
@@ -140,7 +140,7 @@ public:
 
     TimeSharedWorkloadNodePtr createUnifiedNode(const String & basename, const TimeSharedWorkloadNodePtr & parent, const WorkloadSettings & settings = {})
     {
-        auto node = std::make_shared<TimeSharedWorkloadNode>(&event_queue, settings, CostUnit::IOByte);
+        auto node = std::make_shared<TimeSharedWorkloadNode>(event_queue, settings, CostUnit::IOByte);
         node->basename = basename;
         if (parent)
         {
