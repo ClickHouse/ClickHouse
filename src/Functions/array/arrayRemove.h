@@ -19,15 +19,20 @@ class FunctionArrayRemove : public IFunction
 {
 public:
     static constexpr auto name = "arrayRemove";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayRemove>(); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayRemove>(context_); }
+    explicit FunctionArrayRemove(ContextPtr context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override;
+
+private:
+    ContextPtr context;
 };
 
 }

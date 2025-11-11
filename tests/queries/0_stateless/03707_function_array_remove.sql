@@ -39,3 +39,7 @@ SELECT arrayRemove(['foo', 'bar', 'foo'], repeat('f',1) || 'oo');
 SELECT arrayRemove([[[]], [[], []], [[], []], [[]]], [[]]);
 SELECT arrayRemove([[1], [1,2], [2,3], [1,2]], [1,2]);
 SELECT arrayRemove([[1], [1,2], [2,3], [1,2]], [3]);
+
+CREATE TABLE test (array Array(UInt32), element UInt32) engine=Memory;
+INSERT INTO test VALUES ([1, 2, 3, 2], 2), ([3, 4, 3, 5], 3), ([6, 7, 7, 8], 7);
+SELECT arrayRemove(array, element) from test;
