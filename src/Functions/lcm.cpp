@@ -5,7 +5,7 @@
 #include <boost/integer/common_factor.hpp>
 
 
-namespace
+namespace abs_impl
 {
 
 template <typename T>
@@ -49,8 +49,8 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
           * (example: throw an exception or overflow in implementation specific way).
           */
 
-        Unsigned val1 = abs<Int>(a) / boost::integer::gcd(Int(a), Int(b)); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
-        Unsigned val2 = abs<Int>(b);
+        Unsigned val1 = abs_impl::abs<Int>(a) / boost::integer::gcd(Int(a), Int(b)); // NOLINT(clang-analyzer-core.UndefinedBinaryOperatorResult)
+        Unsigned val2 = abs_impl::abs<Int>(b);
 
         /// Overflow in implementation specific way.
         return ResultType(val1 * val2);

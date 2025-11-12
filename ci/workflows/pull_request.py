@@ -41,7 +41,10 @@ workflow = Workflow.Config(
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
-        *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.extra_validation_build_jobs],
+        *[
+            job.set_dependency(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.extra_validation_build_jobs
+        ],
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.release_build_jobs

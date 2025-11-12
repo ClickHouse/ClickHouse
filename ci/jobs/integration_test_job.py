@@ -15,7 +15,7 @@ temp_path = f"{repo_dir}/ci/tmp"
 MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
-mem_gb = round(Utils.physical_memory() / (1024**3), 1)
+mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 7
 
