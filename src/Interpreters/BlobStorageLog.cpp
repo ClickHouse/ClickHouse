@@ -42,7 +42,7 @@ ColumnsDescription BlobStorageLogElement::getColumnsDescription()
 
         {"query_id", std::make_shared<DataTypeString>(), "Identifier of the query associated with the event, if any."},
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Identifier of the thread performing the operation."},
-        {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the thread performing the operation."},
+        {"thread_name", std::make_shared<DataTypeString>(), "Name of the thread performing the operation."},
 
         {"disk_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the associated disk."},
         {"bucket", std::make_shared<DataTypeString>(), "Name of the bucket."},

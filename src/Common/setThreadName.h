@@ -1,165 +1,172 @@
 #pragma once
+#include <string_view>
 #include <string>
 
 namespace DB
 {
 
+#define THREAD_NAME_VALUES(M)\
+    M(AGGREGATED_ZOOKEEPER_LOG, "AggrZooLog") \
+    M(AGGREGATOR_DESTRUCTION, "AggregDestruct") \
+    M(AGGREGATOR_POOL, "AggregatorPool") \
+    M(ARROW_FILE, "ArrowFile") \
+    M(ARROW_FLIGHT, "ArrowFlight") \
+    M(ARROW_FLIGHT_EXPR, "ArrowFlightExpr") \
+    M(ARROW_FLIGHT_SERVER, "ArrowFlightSrv") \
+    M(ASYNC_COPY, "AsyncCopy") \
+    M(ASYNC_INSERT_QUEUE, "AsyncInsertQue") \
+    M(ASYNC_LOGGER, "AsyncLogger") \
+    M(ASYNC_METRICS, "AsyncMetrics") \
+    M(ASYNC_TABLE_LOADER, "AsyncTblLoader") \
+    M(ASYNC_TEXT_LOG, "AsyncTextLog") \
+    M(AZURE_BACKUP_READER, "BackupRDAzure") \
+    M(AZURE_BACKUP_WRITER, "BackupWRAzure") \
+    M(AZURE_COPY_POOL, "AzureObjCopy") \
+    M(AZURE_LIST_POOL, "AzureObjList") \
+    M(BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL, "BgBufSchPool") \
+    M(BACKGROUND_SCHEDULE_POOL, "BgSchPool") \
+    M(BACKUP_ASYNC, "BackupAsync") \
+    M(BACKUP_ASYNC_INTERNAL, "BackupAsyncInt") \
+    M(BACKUP_COLLECTOR, "BackupCollect") \
+    M(BACKUP_COORDINATION, "BackupCoord") \
+    M(BACKUP_COORDINATION_INTERNAL, "BackupCoordInt") \
+    M(BACKUP_WORKER, "BackupWorker") \
+    M(CACHE_DICTIONARY_UPDATE_QUEUE, "UpdQueue") \
+    M(CGROUP_MEMORY_OBSERVER, "CgrpMemUsgObsr") \
+    M(CLICKHOUSE_WATCH, "ClickHouseWatch") \
+    M(CLUSTER_DISCOVERY, "ClusterDiscover") \
+    M(COMPLETED_PIPELINE_EXECUTOR, "QueryCompPipeEx") \
+    M(CONFIG_RELOADER, "ConfigReloader") \
+    M(CONCURRENT_JOIN, "ConcurrentJoin") \
+    M(CREATE_TABLES, "CreateTables") \
+    M(CUSTOM_RESOURCE_MANAGER, "CustomResMgr") \
+    M(DATABASE_BACKUP, "DatabaseBackup") \
+    M(DATABASE_ON_DISK, "DatabaseOnDisk") \
+    M(DATABASE_REPLICAS, "DBReplicas") \
+    M(DATALAKE_REST_CATALOG, "RestCatalog") \
+    M(DATALAKE_TABLE_SNAPSHOT, "TableSnapshot") \
+    M(DDL_WORKER, "DDLWorker") \
+    M(DDL_WORKER_CLEANUP, "DDLWorkerClnup") \
+    M(DDL_WORKER_EXECUTER, "DDLWorkerExec") \
+    M(DEFAULT_THREAD_POOL, "ThreadPool") \
+    M(DETACHED_PARTS_BYTES, "DP_BytesOnDisk") \
+    M(DICT_RELOAD, "DictReload") \
+    M(DISTRIBUTED_FLUSH, "DistFlush") \
+    M(DISTRIBUTED_INIT, "DistInit") \
+    M(DISTRIBUTED_SCHEDULE_POOL, "BgDistSchPool") \
+    M(DISTRIBUTED_SINK, "DistrOutStrProc") \
+    M(DROP_TABLES, "DropTables") \
+    M(DWARF_DECODER, "DWARFDecoder") \
+    M(ERROR_LOG, "ErrorLog") \
+    M(EXTERNAL_LOADER, "ExternalLoader") \
+    M(GRPC_SERVER_CALL, "gRPCServerCall") \
+    M(GRPC_SERVER_QUEUE, "gRPCServerQueue") \
+    M(HASHED_DICT_DTOR, "HashedDictDtor") \
+    M(HASHED_DICT_LOAD, "HashedDictLoad") \
+    M(HTTP_HANDLER, "HTTPHandler") \
+    M(INTERSERVER_HANDLER, "IntersrvHandler") \
+    M(IO_URING_MONITOR, "IoUringMonitr") \
+    M(KEEPER_HANDLER, "KeeperHandler") \
+    M(KEEPER_REQUEST, "KeeperRequest") \
+    M(KEEPER_RESPONSE, "KeeperResponse") \
+    M(KEEPER_SNAPSHOT, "KeeperSnapshot") \
+    M(KEEPER_SNAPSHOT_S3, "KeeperSnapS3") \
+    M(KAFKA_BACKGROUND, "KafkaBackgrd") \
+    M(KAFKA_BROKER, "KafkaBroker") \
+    M(KAFKA_CLEANUP, "KafkaClnup") \
+    M(KAFKA_MAIN, "KafkaMain") \
+    M(LOAD_MARKS, "LoadMarksThread") \
+    M(LOCAL_SERVER_PTY, "LocalServerPty") \
+    M(MEMORY_WORKER, "MemoryWorker") \
+    M(MERGE_MUTATE, "MergeMutate") \
+    M(MERGETREE_COMMON, "Common") \
+    M(MERGETREE_FETCH, "Fetch") \
+    M(MERGETREE_FETCH_PARTITION, "FetchPartition") \
+    M(MERGETREE_FREEZE_PART, "FreezePart") \
+    M(MERGETREE_INDEX, "MergeTreeIndex") \
+    M(MERGETREE_LOAD_ACTIVE_PARTS, "ActiveParts") \
+    M(MERGETREE_LOAD_OUTDATED_PARTS, "OutdatedParts") \
+    M(MERGETREE_LOAD_UNEXPECTED_PARTS, "UnexpectedParts") \
+    M(MERGETREE_MOVE, "Move") \
+    M(MERGETREE_PARTS_CLEANUP, "PartsCleaning") \
+    M(MERGETREE_PREWARM_CACHE, "PrewarmCaches") \
+    M(MERGETREE_READ, "MergeTreeRead") \
+    M(MERGETREE_VECTOR_SIM_INDEX, "VectorSimIndex") \
+    M(METRIC_LOG, "MetricLog") \
+    M(METRICS_TRANSMITTER, "MetricsTransmtr") \
+    M(MSG_BROKER_SCHEDULE_POOL, "BgMBSchPool") \
+    M(MYSQL_DATABASE_CLEANUP, "MySQLDBCleaner") \
+    M(MYSQL_HANDLER, "MySQLHandler") \
+    M(OBJECT_STORAGE_SHUTDOWN, "ObjStorShutdwn") \
+    M(ORC_FILE, "ORCFile") \
+    M(PARALLEL_COMPRESSORS_POOL, "ParallelCompres") \
+    M(PARALLEL_FORMATER, "Formatter") \
+    M(PARALLEL_FORMATER_COLLECTOR, "Collector") \
+    M(PARALLEL_FORMATER_PARSER, "ChunkParser") \
+    M(PARALLEL_PARSING_SEGMENTATOR, "Segmentator") \
+    M(PARALLEL_READ, "ParallelRead") \
+    M(PARALLEL_WITH_QUERY, "ParallelWithQry") \
+    M(PARQUET_DECODER, "ParquetDecoder") \
+    M(PARQUET_ENCODER, "ParquetEncoder") \
+    M(PARQUET_PREFETCH, "ParquetPrefetch") \
+    M(PLAIN_REWRITABLE_META_LOAD, "PlainRWMetaLoad") \
+    M(POLYGON_DICT_LOAD, "PolygonDict") \
+    M(POOL_DELAYED_EXECUTION, "PoolDelayExec") \
+    M(POSTGRES_HANDLER, "PostgresHandler") \
+    M(PREFIX_READER, "PrefixReader") \
+    M(PREFETCH_READER, "ReadPrepare") \
+    M(PROMETHEUS_HANDLER, "PrometheusHndlr") \
+    M(PULLING_ASYNC_EXECUTOR, "QueryPullPipeEx") \
+    M(PUSHING_ASYNC_EXECUTOR, "QueryPushPipeEx") \
+    M(PRETTY_WRITER, "PrettyWriter") \
+    M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
+    M(READER_POOL, "Reader") \
+    M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
+    M(READ_THREAD_POOL, "ThreadPoolRead") \
+    M(REMOTE_FS_READ_THREAD_POOL, "VFSRead") \
+    M(REMOTE_FS_WRITE_THREAD_POOL, "VFSWrite") \
+    M(RESTORE_COORDINATION, "RestoreCoord") \
+    M(RESTORE_COORDINATION_INTERNAL, "RestoreCoordInt") \
+    M(RESTORE_FIND_TABLE, "Restore_FindTbl") \
+    M(RESTORE_MAKE_DATABASE, "Restore_MakeDB") \
+    M(RESTORE_MAKE_TABLE, "Restore_MakeTbl") \
+    M(RESTORE_TABLE_DATA, "Restore_TblData") \
+    M(RESTORE_TABLE_TASK, "Restore_TblTask") \
+    M(RUNTIME_DATA, "RuntimeData") \
+    M(S3_BACKUP_READER, "BackupReaderS3") \
+    M(S3_BACKUP_WRITER, "BackupWriterS3") \
+    M(S3_COPY_POOL, "S3ObjStor_copy") \
+    M(S3_LIST_POOL, "ListObjectS3") \
+    M(SESSION_CLEANUP, "SessionCleanup") \
+    M(SEND_TO_SHELL_CMD, "SendToShellCmd") \
+    M(SUGGEST, "Suggest") \
+    M(SYSTEM_LOG_FLUSH, "SystemLogFlush") \
+    M(SYSTEM_REPLICAS, "SysReplicas") \
+    M(TCP_HANDLER, "TCPHandler") \
+    M(TEST_KEEPER_PROC, "TestKeeperProc") \
+    M(TEST_SCHEDULER, "TestScheduler") \
+    M(TRACE_COLLECTOR, "TraceCollector") \
+    M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
+    M(TRUNCATE_TABLE, "TruncTbls") \
+    M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
+    M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
+    M(USER_DEFINED_WATCH, "UserDefWatch") \
+    M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
+    M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
+    M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
+    M(ZOOKEEPER_RECV, "ZkReceiver") \
+    M(ZOOKEEPER_SEND, "ZkSender") \
+
+
 enum class ThreadName : uint8_t
 {
     UNKNOWN = 0,
-    AGGREGATED_ZOOKEEPER_LOG,
-    AGGREGATOR_DESTRUCTION,
-    AGGREGATOR_POOL,
-    ARROW_FILE,
-    ARROW_FLIGHT,
-    ARROW_FLIGHT_EXPR,
-    ARROW_FLIGHT_SERVER,
-    ASYNC_COPY,
-    ASYNC_INSERT_QUEUE,
-    ASYNC_LOGGER,
-    ASYNC_METRICS,
-    ASYNC_TABLE_LOADER,
-    ASYNC_TEXT_LOG,
-    AZURE_BACKUP_READER,
-    AZURE_BACKUP_WRITER,
-    AZURE_COPY_POOL,
-    AZURE_LIST_POOL,
-    BACKGROUND_SCHEDULE_POOL,
-    BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL,
-    BACKUP_ASYNC,
-    BACKUP_ASYNC_INTERNAL,
-    BACKUP_COLLECTOR,
-    BACKUP_COORDINATION,
-    BACKUP_COORDINATION_INTERNAL,
-    BACKUP_WORKER,
-    CACHE_DICTIONARY_UPDATE_QUEUE,
-    CGROUP_MEMORY_OBSERVER,
-    CLICKHOUSE_WATCH,
-    CLUSTER_DISCOVERY,
-    COMPLETED_PIPELINE_EXECUTOR,
-    CONFIG_RELOADER,
-    CONCURRENT_JOIN,
-    CREATE_TABLES,
-    CUSTOM_RESOURCE_MANAGER,
-    DATABASE_BACKUP,
-    DATABASE_ON_DISK,
-    DATABASE_REPLICAS,
-    DEFAULT_THREAD_POOL,
-    DETACHED_PARTS_BYTES,
-    DICT_RELOAD,
-    DISTRIBUTED_FLUSH,
-    DISTRIBUTED_INIT,
-    DISTRIBUTED_SCHEDULE_POOL,
-    DISTRIBUTED_SINK,
-    DDL_WORKER,
-    DDL_WORKER_CLEANUP,
-    DDL_WORKER_EXECUTER,
-    DROP_TABLES,
-    DATALAKE_REST_CATALOG,
-    DATALAKE_TABLE_SNAPSHOT,
-    DWARF_DECODER,
-    ERROR_LOG,
-    EXTERNAL_LOADER,
-    GRPC_SERVER_CALL,
-    GRPC_SERVER_QUEUE,
-    HASHED_DICT_DTOR,
-    HASHED_DICT_LOAD,
-    HTTP_HANDLER,
-    INTERSERVER_HANDLER,
-    IO_URING_MONITOR,
-    KAFKA_BACKGROUND,
-    KAFKA_BROKER,
-    KAFKA_CLEANUP,
-    KAFKA_MAIN,
-    KEEPER_HANDLER,
-    KEEPER_REQUEST,
-    KEEPER_RESPONSE,
-    KEEPER_SNAPSHOT,
-    KEEPER_SNAPSHOT_S3,
-    LOAD_MARKS,
-    LOCAL_SERVER_PTY,
-    MEMORY_WORKER,
-    MERGE_MUTATE,
-    MERGETREE_COMMON,
-    MERGETREE_FETCH,
-    MERGETREE_FETCH_PARTITION,
-    MERGETREE_FREEZE_PART,
-    MERGETREE_INDEX,
-    MERGETREE_LOAD_ACTIVE_PARTS,
-    MERGETREE_LOAD_OUTDATED_PARTS,
-    MERGETREE_LOAD_UNEXPECTED_PARTS,
-    MERGETREE_MOVE,
-    MERGETREE_PARTS_CLEANUP,
-    MERGETREE_PREWARM_CACHE,
-    MERGETREE_READ,
-    MERGETREE_VECTOR_SIM_INDEX,
-    METRIC_LOG,
-    METRICS_TRANSMITTER,
-    MSG_BROKER_SCHEDULE_POOL,
-    MYSQL_DATABASE_CLEANUP,
-    MYSQL_HANDLER,
-    OBJECT_STORAGE_SHUTDOWN,
-    ORC_FILE,
-    PARALLEL_COMPRESSORS_POOL,
-    PARALLEL_FORMATER,
-    PARALLEL_FORMATER_COLLECTOR,
-    PARALLEL_FORMATER_PARSER,
-    PARALLEL_PARSING_SEGMENTATOR,
-    PARALLEL_READ,
-    PARALLEL_WITH_QUERY,
-    PARQUET_DECODER,
-    PARQUET_ENCODER,
-    PARQUET_PREFETCH,
-    PLAIN_REWRITABLE_META_LOAD,
-    POOL_DELAYED_EXECUTION,
-    POSTGRES_HANDLER,
-    POLYGON_DICT_LOAD,
-    PREFIX_READER,
-    PREFETCH_READER,
-    PRETTY_WRITER,
-    PROMETHEUS_HANDLER,
-    PUSHING_ASYNC_EXECUTOR,
-    PULLING_ASYNC_EXECUTOR,
-    QUERY_ASYNC_EXECUTOR,
-    READER_POOL,
-    READ_TASK_ITERATOR,
-    READ_THREAD_POOL,
-    REMOTE_FS_READ_THREAD_POOL,
-    REMOTE_FS_WRITE_THREAD_POOL,
-    RESTORE_COORDINATION_INTERNAL,
-    RESTORE_COORDINATION,
-    RESTORE_FIND_TABLE,
-    RESTORE_MAKE_DATABASE,
-    RESTORE_MAKE_TABLE,
-    RESTORE_TABLE_DATA,
-    RESTORE_TABLE_TASK,
-    RUNTIME_DATA,
-    S3_BACKUP_READER,
-    S3_BACKUP_WRITER,
-    S3_COPY_POOL,
-    S3_LIST_POOL,
-    SEND_TO_SHELL_CMD,
-    SESSION_CLEANUP,
-    SUGGEST,
-    SYSTEM_LOG_FLUSH,
-    SYSTEM_REPLICAS,
-    TCP_HANDLER,
-    TEST_KEEPER_PROC,
-    TEST_SCHEDULER,
-    TRACE_COLLECTOR,
-    TRANSPOSED_METRIC_LOG,
-    TRUNCATE_TABLE,
-    UNIQ_EXACT_CONVERT,
-    UNIQ_EXACT_MERGER,
-    USER_DEFINED_WATCH,
-    WORKLOAD_ENTRY_WATCH,
-    WORKLOAD_RESOURCE_MANAGER,
-    ZOOKEEPER_ACL_WATCHER,
-    ZOOKEEPER_RECV,
-    ZOOKEEPER_SEND,
+
+    #define THREAD_NAME_ACTION(NAME, STR) NAME,
+    THREAD_NAME_VALUES(THREAD_NAME_ACTION)
+    #undef THREAD_NAME_ACTION
 };
 
-static_assert(sizeof(enum ThreadName) == 1, "ThreadName enum size is larger than 1 byte");
 
 /** Sets the thread name (maximum length is 15 bytes),
   *  which will be visible in ps, gdb, /proc,
@@ -169,7 +176,7 @@ static_assert(sizeof(enum ThreadName) == 1, "ThreadName enum size is larger than
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
 
-std::string toString(ThreadName name);
+std::string_view toString(ThreadName name);
 ThreadName parseThreadName(const std::string & name);
 
 }

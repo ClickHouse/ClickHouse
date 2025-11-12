@@ -213,7 +213,7 @@ BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max
 }
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
-    : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", thread_name)))
+    : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
     , tasks_metric(tasks_metric_)
     , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
