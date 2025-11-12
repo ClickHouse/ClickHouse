@@ -1,0 +1,94 @@
+DROP TABLE IF EXISTS events;
+CREATE TABLE events ( Time DateTime, Id String ) ENGINE = MergeTree ORDER BY Time;
+INSERT INTO events SELECT toDateTime('2024-01-01 00:00:00') + INTERVAL number SECONDS AS Time, toString(number) AS Id FROM numbers(5_000_000);
+
+DROP TABLE IF EXISTS payloads;
+CREATE TABLE payloads ( Payload String, Id String ) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO payloads SELECT concat('Payload for event ', toString(number)) AS Payload, toString(number) AS Id FROM numbers(10)
+WHERE number % 2 = 0
+;
+
+SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
+SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
+SET read_in_order_use_virtual_row = 1;
+
+CREATE TEMPORARY TABLE start_ts AS ( SELECT now() AS ts );
+
+SET join_use_nulls = 1;
+
+{% for join_algorithm in ["'hash'", "'parallel_hash'", "DEFAULT"] -%}
+{% for join_kind in ["LEFT", "INNER"] -%}
+
+SET join_algorithm = {{ join_algorithm }};
+
+SELECT groupArray(trim(explain)) FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT events.Time, events.Id, payloads.Payload
+    FROM events
+    {{ join_kind }} JOIN payloads
+    ON events.Id = payloads.Id
+    ORDER BY events.Time
+    LIMIT 3
+) WHERE explain like '%ReadType%'
+;
+
+SELECT events.Time, events.Id, payloads.Payload
+FROM events
+{{ join_kind }} JOIN payloads
+ON events.Id = payloads.Id
+ORDER BY events.Time
+LIMIT 3
+SETTINGS log_comment = '03711_read_in_order_through_join'
+;
+
+{% endfor -%}
+{% endfor -%}
+
+SELECT events.Time, events.Id, payloads.Payload
+FROM events
+RIGHT JOIN payloads
+ON events.Id = payloads.Id
+ORDER BY events.Time
+LIMIT 3
+SETTINGS log_comment = '03711_read_in_order_through_join_no_optimize'
+;
+
+SELECT events.Time, events.Id, payloads.Payload
+FROM events
+JOIN payloads
+ON events.Id = payloads.Id
+ORDER BY events.Time
+LIMIT 3
+SETTINGS read_in_order_use_virtual_row = 0,
+    log_comment = '03711_read_in_order_through_join_no_optimize'
+;
+
+SYSTEM FLUSH LOGS system.query_log;
+
+SELECT '--';
+
+SELECT
+    if(read_rows < 1_000_000, 'OK', format('Fail: {} rows read, query_id={}', read_rows, query_id)) as status
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND log_comment == '03711_read_in_order_through_join'
+    AND current_database = currentDatabase()
+    AND event_time >= (SELECT ts FROM start_ts)
+    AND event_time >= yesterday()
+    AND current_database = currentDatabase()
+    AND query_kind = 'Select'
+;
+
+SELECT '--';
+
+SELECT
+    if(read_rows >= 5_000_000, 'OK', format('Fail: {} rows read, query_id={}', read_rows, query_id)) as status
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND log_comment == '03711_read_in_order_through_join_no_optimize'
+    AND current_database = currentDatabase()
+    AND event_time >= (SELECT ts FROM start_ts)
+    AND event_time >= yesterday()
+    AND current_database = currentDatabase()
+    AND query_kind = 'Select'
+;

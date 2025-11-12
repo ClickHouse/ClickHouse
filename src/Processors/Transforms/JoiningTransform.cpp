@@ -5,7 +5,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Processors/Port.h>
-#include <Common/logger_useful.h>
+#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 
 namespace ProfileEvents
 {
