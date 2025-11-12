@@ -131,30 +131,6 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const
-{
-    const uint32_t noption = rg.nextSmallNumber();
-
-    if (noption < 3)
-    {
-        gen.setAllowNotDetermistic(false);
-        gen.enforceFinal(true);
-        gen.setAllowEngineUDF(false);
-        if (noption == 1)
-        {
-            gen.generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
-        }
-        else
-        {
-            gen.generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
-        }
-        gen.setAllowNotDetermistic(true);
-        gen.enforceFinal(false);
-        gen.setAllowEngineUDF(true);
-        gen.levels.clear();
-    }
-}
-
 void QueryOracle::insertOnTableOrCluster(
     RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const bool peer, TableOrFunction * tof) const
 {
@@ -215,7 +191,6 @@ void QueryOracle::dumpTableContent(
     }
     gen.entries.clear();
 
-    addLimitOrOffset(rg, gen, ssc);
     if (test_content)
     {
         /// Don't write statistics
@@ -708,7 +683,6 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
-        addLimitOrOffset(rg, gen, nsel);
     }
 
     /// Don't write statistics
