@@ -183,11 +183,116 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                 query_settings.ignore_non_existent_file, skip_object_metadata, file_progress_callback);
         }
         else
-            /// Iterate through disclosed globs and make a source for each file
-            iterator = std::make_unique<GlobIterator>(
-                object_storage, configuration, predicate, virtual_columns, hive_columns,
-                local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
-                query_settings.throw_on_zero_files_match, file_progress_callback);
+        {
+            /// Try to extract path component filters and expand globs with constraints
+            /// First, extract the virtual column filter DAG (same as GlobIterator does)
+            auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
+
+            std::vector<VirtualColumnUtils::PathComponentFilter> path_filters;
+
+            if (filter_dag.has_value())
+            {
+                LOG_DEBUG(getLogger("StorageObjectStorageSource"), "Virtual column filter DAG: {}", filter_dag->dumpDAG());
+                /// Extract path component filters from the virtual column filter DAG
+                const auto * filter_predicate = filter_dag->getOutputs().at(0);
+                path_filters = VirtualColumnUtils::extractPathComponentFilters(filter_predicate);
+                LOG_DEBUG(getLogger("StorageObjectStorageSource"), "Extracted {} path component filters", path_filters.size());
+                for (const auto & filter : path_filters)
+                {
+                    LOG_DEBUG(getLogger("StorageObjectStorageSource"), "  Filter at index {}: {} values", filter.component_index, filter.allowed_values.size());
+                }
+            }
+            else
+            {
+                LOG_DEBUG(getLogger("StorageObjectStorageSource"), "No virtual column filter DAG created from predicate");
+            }
+
+            if (!path_filters.empty())
+            {
+                LOG_DEBUG(getLogger("StorageObjectStorageSource"),
+                    "Extracted {} path component filters from predicate", path_filters.size());
+
+                /// The _path virtual column includes the namespace/bucket prefix,
+                /// but the glob pattern might be relative to the namespace.
+                /// We need to construct the full pattern for matching.
+                std::string full_pattern;
+                const auto & namespace_str = configuration->getNamespace();
+                if (!namespace_str.empty() && !reading_path.path.starts_with(namespace_str))
+                {
+                    // Pattern is relative to namespace, prepend it
+                    full_pattern = std::filesystem::path(namespace_str) / reading_path.path;
+                    LOG_DEBUG(getLogger("StorageObjectStorageSource"), "Prepending namespace '{}' to pattern: {} -> {}", namespace_str, reading_path.path, full_pattern);
+                }
+                else
+                {
+                    full_pattern = reading_path.path;
+                }
+                auto expanded_patterns = VirtualColumnUtils::expandGlobWithPrefixFilters(
+                    full_pattern, path_filters);
+
+                // Strip namespace from expanded patterns if we added it
+                if (!namespace_str.empty() && !reading_path.path.starts_with(namespace_str))
+                {
+                    for (auto & pattern : expanded_patterns)
+                    {
+                        if (pattern.starts_with(namespace_str))
+                        {
+                            // Remove namespace prefix and leading slash
+                            pattern = pattern.substr(namespace_str.length());
+                            if (pattern.starts_with("/"))
+                                pattern = pattern.substr(1);
+                        }
+                    }
+                }
+
+                // If we expanded to a single more specific pattern, use it directly
+                if (expanded_patterns.size() == 1 && expanded_patterns[0] != reading_path.path)
+                {
+                    LOG_INFO(getLogger("StorageObjectStorageSource"),
+                        "Optimized glob pattern from '{}' to '{}' using path component filters",
+                        reading_path.path, expanded_patterns[0]);
+
+                    /// Update configuration with the more specific path
+                    configuration->setPathForRead(StorageObjectStorageConfiguration::Path(expanded_patterns[0]));
+
+                    iterator = std::make_unique<GlobIterator>(
+                        object_storage, configuration, predicate, virtual_columns, hive_columns,
+                        local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                        query_settings.throw_on_zero_files_match, file_progress_callback);
+                }
+                else if (expanded_patterns.size() > 1)
+                {
+                    LOG_DEBUG(getLogger("StorageObjectStorageSource"),
+                        "Path filters resulted in {} patterns, using first pattern for now: '{}'",
+                        expanded_patterns.size(), expanded_patterns[0]);
+
+                    // For now, just use the first pattern (TODO: implement proper multi-pattern support)
+                    configuration->setPathForRead(StorageObjectStorageConfiguration::Path(expanded_patterns[0]));
+
+                    iterator = std::make_unique<GlobIterator>(
+                        object_storage, configuration, predicate, virtual_columns, hive_columns,
+                        local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                        query_settings.throw_on_zero_files_match, file_progress_callback);
+                }
+                else
+                {
+                    LOG_DEBUG(getLogger("StorageObjectStorageSource"), "Filters didn't help");
+                    /// Filters didn't help, use regular GlobIterator
+                    iterator = std::make_unique<GlobIterator>(
+                        object_storage, configuration, predicate, virtual_columns, hive_columns,
+                        local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                        query_settings.throw_on_zero_files_match, file_progress_callback);
+                }
+            }
+            else
+            {
+                /// No path filters found, use regular GlobIterator
+                iterator = std::make_unique<GlobIterator>(
+                    object_storage, configuration, predicate, virtual_columns, hive_columns,
+                    local_context, is_archive ? nullptr : read_keys, query_settings.list_object_keys_size,
+                    query_settings.throw_on_zero_files_match, file_progress_callback);
+            }
+        }
     }
     else if (configuration->supportsFileIterator())
     {

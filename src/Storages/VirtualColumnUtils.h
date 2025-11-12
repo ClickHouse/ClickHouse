@@ -79,6 +79,22 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
 
+/// Represents a filter on a specific path component
+struct PathComponentFilter
+{
+    size_t component_index; /// Position in the path after splitting by '/'
+    std::vector<String> allowed_values;
+};
+
+/// Extract filters on path components from predicates like splitByChar('/', _path)[N] = 'value'
+/// Returns map of component index to allowed values
+std::vector<PathComponentFilter> extractPathComponentFilters(const ActionsDAG::Node * predicate);
+
+/// Expand glob pattern using path component filters
+/// For example: pattern="bucket/*/data/*", filters={0: ["proj1", "proj2"]}
+/// Returns: ["bucket/proj1/data/*", "bucket/proj2/data/*"]
+std::vector<std::string> expandGlobWithPrefixFilters(const String & pattern, const std::vector<PathComponentFilter> & filters);
+
 template <typename T>
 void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
 {

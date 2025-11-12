@@ -14,6 +14,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
+#include <Interpreters/Set.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -232,6 +233,319 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
     return splitFilterDagForAllowedInputs(predicate, &block);
+}
+
+/// Helper to check if a node is a call to splitByChar on _path
+static const ActionsDAG::Node * findSplitByCharOnPath(const ActionsDAG::Node * node)
+{
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION)
+        return nullptr;
+
+    if (!node->function_base || node->function_base->getName() != "splitByChar")
+        return nullptr;
+
+    // splitByChar has 2 children: delimiter and string
+    if (node->children.size() != 2)
+        return nullptr;
+
+    // Check if the second argument is _path
+    const auto * path_arg = node->children[1];
+    if (path_arg->type == ActionsDAG::ActionType::INPUT && path_arg->result_name == "_path")
+        return node;
+
+    return nullptr;
+}
+
+/// Helper to unwrap materialize() function calls
+static const ActionsDAG::Node * unwrapMaterialize(const ActionsDAG::Node * node)
+{
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION)
+        return node;
+    if (node->function_base && node->function_base->getName() == "materialize" && node->children.size() == 1)
+        return node->children[0];
+    return node;
+}
+
+/// Helper to extract array element index from arrayElement function
+static std::optional<size_t> extractArrayElementIndex(const ActionsDAG::Node * node)
+{
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION)
+        return std::nullopt;
+
+    if (!node->function_base || node->function_base->getName() != "arrayElement")
+        return std::nullopt;
+
+    // arrayElement has 2 children: array and index
+    if (node->children.size() != 2)
+        return std::nullopt;
+
+    // Extract the index from the second child (should be a constant)
+    const auto * index_node = node->children[1];
+    if (index_node->type != ActionsDAG::ActionType::COLUMN || !index_node->column)
+        return std::nullopt;
+
+    // Get the index value (1-based in ClickHouse)
+    if (index_node->column->size() != 1)
+        return std::nullopt;
+
+    Field index_field = (*index_node->column)[0];
+    UInt64 index = index_field.safeGet<UInt64>();
+
+    // Convert to 0-based index
+    return index > 0 ? std::optional<size_t>(index - 1) : std::nullopt;
+}
+
+/// Helper to extract string values from equals/in conditions
+static std::vector<String> extractFilterValues(const ActionsDAG::Node * node, const ActionsDAG::Node * target_node)
+{
+    std::vector<String> values;
+
+    if (!node || node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+        return values;
+
+    const auto & func_name = node->function_base->getName();
+
+    // Handle equals: arrayElement(...) = 'value'
+    if (func_name == "equals" && node->children.size() == 2)
+    {
+        const ActionsDAG::Node * value_node = nullptr;
+
+        // Find which child is the target and which is the constant
+        if (node->children[0] == target_node && node->children[1]->type == ActionsDAG::ActionType::COLUMN)
+            value_node = node->children[1];
+        else if (node->children[1] == target_node && node->children[0]->type == ActionsDAG::ActionType::COLUMN)
+            value_node = node->children[0];
+
+        if (value_node && value_node->column && value_node->column->size() == 1)
+        {
+            Field field = (*value_node->column)[0];
+            if (field.getType() == Field::Types::String)
+                values.push_back(field.safeGet<String>());
+        }
+    }
+    // Handle IN: arrayElement(...) IN ('value1', 'value2', ...)
+    else if (func_name == "in" && node->children.size() == 2)
+    {
+        if (node->children[0] != target_node)
+            return values;
+
+        const auto * set_node = node->children[1];
+        if (set_node->type == ActionsDAG::ActionType::COLUMN && set_node->column)
+        {
+            const auto * column_set = checkAndGetColumn<const ColumnSet>(set_node->column.get());
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (future_set)
+                {
+                    auto set_ptr = future_set->get();
+                    if (set_ptr && set_ptr->hasSetElements())
+                    {
+                        // Extract values from the set
+                        const auto set_elements = set_ptr->getSetElements();
+                        if (!set_elements.empty())
+                        {
+                            const auto & column = set_elements[0];
+                            for (size_t i = 0; i < column->size(); ++i)
+                            {
+                                Field field = (*column)[i];
+                                if (field.getType() == Field::Types::String)
+                                    values.push_back(field.safeGet<String>());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return values;
+}
+
+std::vector<PathComponentFilter> extractPathComponentFilters(const ActionsDAG::Node * predicate)
+{
+    std::vector<PathComponentFilter> filters;
+
+    if (!predicate)
+        return filters;
+
+    // Map to store filters by component index
+    std::map<size_t, std::vector<String>> filters_map;
+
+    // Traverse the DAG to find patterns like: arrayElement(splitByChar('/', _path), N) = 'value'
+    std::function<void(const ActionsDAG::Node *)> traverse = [&](const ActionsDAG::Node * node)
+    {
+        if (!node)
+            return;
+
+        // Look for arrayElement calls
+        if (node->type == ActionsDAG::ActionType::FUNCTION &&
+            node->function_base &&
+            node->function_base->getName() == "arrayElement" &&
+            node->children.size() == 2)
+        {
+            // Check if first child is splitByChar on _path
+            const auto * split_node = findSplitByCharOnPath(node->children[0]);
+            if (split_node)
+            {
+                // Extract the array index
+                auto index_opt = extractArrayElementIndex(node);
+                if (index_opt.has_value())
+                {
+                    // This node represents: splitByChar('/', _path)[N]
+                    // Now look for parent nodes that filter this value
+                    // We need to search the entire DAG for equals/in conditions on this node
+                    // For now, store the node and continue traversal
+                }
+            }
+        }
+
+        // Look for comparison functions that might filter arrayElement results
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+        {
+            const auto & func_name = node->function_base->getName();
+
+            if ((func_name == "equals" || func_name == "in") && node->children.size() >= 1)
+            {
+                // Check if any child is an arrayElement on splitByChar(_path)
+                // Need to unwrap materialize() calls that ClickHouse adds
+                for (const auto * child : node->children)
+                {
+                    // Unwrap materialize() if present
+                    const auto * unwrapped_child = unwrapMaterialize(child);
+
+                    if (unwrapped_child->type == ActionsDAG::ActionType::FUNCTION &&
+                        unwrapped_child->function_base &&
+                        unwrapped_child->function_base->getName() == "arrayElement" &&
+                        unwrapped_child->children.size() == 2)
+                    {
+                        const auto * split_node = findSplitByCharOnPath(unwrapped_child->children[0]);
+                        if (split_node)
+                        {
+                            auto index_opt = extractArrayElementIndex(unwrapped_child);
+                            if (index_opt.has_value())
+                            {
+                                // Pass the original child (with materialize) to extractFilterValues
+                                // since it needs to match against the node's children
+                                auto values = extractFilterValues(node, child);
+                                if (!values.empty())
+                                {
+                                    auto & filter_values = filters_map[index_opt.value()];
+                                    filter_values.insert(filter_values.end(), values.begin(), values.end());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recursively traverse children
+        for (const auto * child : node->children)
+            traverse(child);
+    };
+
+    traverse(predicate);
+
+    // Convert map to vector
+    for (const auto & [index, values] : filters_map)
+    {
+        if (!values.empty())
+        {
+            PathComponentFilter filter;
+            filter.component_index = index;
+            filter.allowed_values = values;
+            filters.push_back(filter);
+        }
+    }
+
+    return filters;
+}
+
+
+std::vector<std::string> expandGlobWithPrefixFilters(
+    const std::string & pattern,
+    const std::vector<PathComponentFilter> & filters)
+{
+    if (filters.empty())
+        return {pattern};
+
+    // Create a map for quick lookup
+    std::map<size_t, std::vector<String>> filters_map;
+    for (const auto & filter : filters)
+        filters_map[filter.component_index] = filter.allowed_values;
+
+    // Split pattern by '/'
+    std::vector<std::string> components;
+    size_t start = 0;
+    size_t end = pattern.find('/');
+
+    while (end != std::string::npos)
+    {
+        if (end > start)
+            components.push_back(pattern.substr(start, end - start));
+        else if (end == start)
+            components.push_back("");  // Leading slash case
+        start = end + 1;
+        end = pattern.find('/', start);
+    }
+    if (start < pattern.size())
+        components.push_back(pattern.substr(start));
+
+    // Debug: log the split components
+    LOG_DEBUG(&Poco::Logger::get("VirtualColumnUtils"), "Pattern '{}' split into {} components:", pattern, components.size());
+    for (size_t i = 0; i < components.size(); ++i)
+    {
+        LOG_DEBUG(&Poco::Logger::get("VirtualColumnUtils"), "  Component[{}]: '{}'", i, components[i]);
+    }
+
+    // Find which components to expand
+    std::vector<std::vector<std::string>> expanded_components(components.size());
+    for (size_t i = 0; i < components.size(); ++i)
+    {
+        const auto & component = components[i];
+
+        // Check if this component is a wildcard and we have filters for it
+        bool is_wildcard = (component == "*" || component == "**" ||
+                           component.find('*') != std::string::npos ||
+                           component.find('?') != std::string::npos ||
+                           component.find('{') != std::string::npos);
+
+        if (is_wildcard && filters_map.count(i))
+        {
+            // Replace with filter values
+            expanded_components[i] = filters_map[i];
+        }
+        else
+        {
+            // Keep as is
+            expanded_components[i] = {component};
+        }
+    }
+
+    // Generate Cartesian product
+    std::vector<std::string> result;
+    std::function<void(size_t, std::string)> generate = [&](size_t index, std::string current)
+    {
+        if (index == expanded_components.size())
+        {
+            result.push_back(current);
+            return;
+        }
+
+        for (const auto & value : expanded_components[index])
+        {
+            std::string next = current;
+            if (!next.empty() && !next.ends_with('/'))
+                next += '/';
+            next += value;
+            generate(index + 1, next);
+        }
+    };
+
+    generate(0, "");
+
+    return result.empty() ? std::vector<std::string>{pattern} : result;
 }
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
