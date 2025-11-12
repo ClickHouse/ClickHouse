@@ -701,7 +701,7 @@ void IMergeTreeDataPart::removeIfNeeded()
     if (is_removed)
         return;
 
-#ifndef DEBUG_OR_SANITIZER_BUILD
+#ifndef NDEBUG
     /// Let's check that this method not being called under merge mutate background executor mutex.
     /// getMaxThreads locks this mutex.
     if (auto context = storage.getContext())
