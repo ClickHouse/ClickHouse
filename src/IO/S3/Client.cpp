@@ -241,6 +241,7 @@ Client::Client(
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
+    , api_mode(other.api_mode)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
     , log(getLogger("S3Client"))
