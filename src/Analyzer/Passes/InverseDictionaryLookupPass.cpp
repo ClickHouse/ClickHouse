@@ -185,13 +185,12 @@ private:
 
         Side dict_side = Side::NONE;
         DictGetFunctionInfo dictget_function_info{};
-        QueryTreeNodePtr const_value_expr_node{};
 
-        if (tryParseDictFunctionCall(arguments[0], dictget_function_info) && tryGetConstantNode(arguments[1], const_value_expr_node))
+        if (tryParseDictFunctionCall(arguments[0], dictget_function_info) && arguments[1]->as<ConstantNode>())
         {
             dict_side = Side::LHS;
         }
-        else if (tryParseDictFunctionCall(arguments[1], dictget_function_info) && tryGetConstantNode(arguments[0], const_value_expr_node))
+        else if (tryParseDictFunctionCall(arguments[1], dictget_function_info) && arguments[0]->as<ConstantNode>())
         {
             dict_side = Side::RHS;
         }
@@ -255,13 +254,14 @@ private:
 
         auto attr_comparison_function_node = std::make_shared<FunctionNode>(attr_comparison_function_name);
         attr_comparison_function_node->markAsOperator();
+
         if (dict_side == Side::LHS)
         {
-            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, const_value_expr_node};
+            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, arguments[1]};
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = {const_value_expr_node, attr_col_node_casted};
+            attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node_casted};
         }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
