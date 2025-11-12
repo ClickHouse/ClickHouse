@@ -277,12 +277,12 @@ public:
         {
             auto & col_tuple = assert_cast<ColumnTuple &>(to);
 
-            this->data(place).result().insertResultInto(col_tuple.getColumn(0), this->result_type);
+            this->data(place).result().insertResultInto(col_tuple.getColumn(0), data_type_res);
             this->data(place).value().insertResultInto(col_tuple.getColumn(1), data_type_val);
         }
         else
         {
-            this->data(place).result().insertResultInto(to, this->result_type);
+            this->data(place).result().insertResultInto(to, data_type_res);
         }
     }
 };
