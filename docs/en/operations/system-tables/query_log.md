@@ -4,7 +4,6 @@ description: 'System table containing information about executed queries, for ex
 keywords: ['system table', 'query_log']
 slug: /operations/system-tables/query_log
 title: 'system.query_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -13,13 +12,17 @@ import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Stores metadata and statistics about executed queries, such as start time, duration, error messages, resource usage, and other execution details. It does not store the results of queries. 
+Contains information about executed queries, for example, start time, duration of processing, error messages.
 
-You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query_log) section of the server configuration.
+:::note
+This table does not contain the ingested data for `INSERT` queries.
+:::
+
+You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) section of the server configuration.
 
 You can disable queries logging by setting [log_queries = 0](/operations/settings/settings#log_queries). We do not recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
@@ -34,18 +37,18 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
-You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability) setting to reduce the number of queries, registered in the `query_log` table.
+You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_log` table.
 
-You can use the [log_formatted_queries](/operations/settings/settings#log_formatted_queries) setting to log formatted queries to the `formatted_query` column.
+You can use the [log_formatted_queries](/operations/settings/settings#log_formatted_queries)) setting to log formatted queries to the `formatted_query` column.
 
-## Columns {#columns}
+Columns:
 
 - `hostname` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Hostname of the server executing the query.
 - `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
-  - `'QueryStart' = 1` — Successful start of query execution.
-  - `'QueryFinish' = 2` — Successful end of query execution.
-  - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
-  - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
+    - `'QueryStart' = 1` — Successful start of query execution.
+    - `'QueryFinish' = 2` — Successful end of query execution.
+    - `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    - `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
 - `event_date` ([Date](../../sql-reference/data-types/date.md)) — Query starting date.
 - `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Query starting time.
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Query starting time with microseconds precision.
@@ -74,8 +77,8 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `exception` ([String](../../sql-reference/data-types/string.md)) — Exception message.
 - `stack_trace` ([String](../../sql-reference/data-types/string.md)) — [Stack trace](https://en.wikipedia.org/wiki/Stack_trace). An empty string, if the query was completed successfully.
 - `is_initial_query` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Query type. Possible values:
-  - 1 — Query was initiated by the client.
-  - 0 — Query was initiated by another query as part of distributed query execution.
+    - 1 — Query was initiated by the client.
+    - 0 — Query was initiated by another query as part of distributed query execution.
 - `user` ([String](../../sql-reference/data-types/string.md)) — Name of the user who initiated the current query.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — ID of the query.
 - `address` ([IPv6](../../sql-reference/data-types/ipv6.md)) — IP address that was used to make the query.
@@ -87,8 +90,8 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `initial_query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Initial query starting time (for distributed query execution).
 - `initial_query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Initial query starting time with microseconds precision (for distributed query execution).
 - `interface` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Interface that the query was initiated from. Possible values:
-  - 1 — TCP.
-  - 2 — HTTP.
+    - 1 — TCP.
+    - 2 — HTTP.
 - `os_user` ([String](../../sql-reference/data-types/string.md)) — Operating system username who runs [clickhouse-client](../../interfaces/cli.md).
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
@@ -99,9 +102,9 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `script_query_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The query number in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
 - `script_line_number` ([UInt32](../../sql-reference/data-types/int-uint.md)) — The line number of the query start in a script with multiple queries for [clickhouse-client](../../interfaces/cli.md).
 - `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
-  - 0 — The query was launched from the TCP interface.
-  - 1 — `GET` method was used.
-  - 2 — `POST` method was used.
+    - 0 — The query was launched from the TCP interface.
+    - 1 — `GET` method was used.
+    - 2 — `POST` method was used.
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — HTTP header `UserAgent` passed in the HTTP query.
 - `http_referer` ([String](../../sql-reference/data-types/string.md)) — HTTP header `Referer` passed in the HTTP query (contains an absolute or partial address of the page making the query).
 - `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP header `X-Forwarded-For` passed in the HTTP query.
@@ -121,25 +124,21 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `used_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `functions`, which were used during query execution.
 - `used_storages` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `storages`, which were used during query execution.
 - `used_table_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `table functions`, which were used during query execution.
-- `used_executable_user_defined_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `executable user defined functions`, which were used during query execution.
-- `used_sql_user_defined_functions` ([Array(String)](../../sql-reference/data-types/array.md)) — Canonical names of `sql user defined functions`, which were used during query execution.
 - `used_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges which were successfully checked during query execution.
 - `missing_privileges` ([Array(String)](../../sql-reference/data-types/array.md)) - Privileges that are missing during query execution.
 - `query_cache_usage` ([Enum8](../../sql-reference/data-types/enum.md)) — Usage of the [query cache](../query-cache.md) during query execution. Values:
-  - `'Unknown'` = Status unknown.
-  - `'None'` = The query result was neither written into nor read from the query cache.
-  - `'Write'` = The query result was written into the query cache.
-  - `'Read'` = The query result was read from the query cache.
+    - `'Unknown'` = Status unknown.
+    - `'None'` = The query result was neither written into nor read from the query cache.
+    - `'Write'` = The query result was written into the query cache.
+    - `'Read'` = The query result was read from the query cache.
 
-## Examples {#examples}
+**Example**
 
-**Basic example**
-
-```sql
+``` sql
 SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 hostname:                              clickhouse.eu-central1.internal
@@ -208,25 +207,9 @@ used_formats:                          []
 used_functions:                        []
 used_storages:                         []
 used_table_functions:                  []
-used_executable_user_defined_functions:[]
-used_sql_user_defined_functions:       []
 used_privileges:                       []
 missing_privileges:                    []
 query_cache_usage:                     None
-```
-
-**Cloud example**
-
-In ClickHouse Cloud, `system.query_log` is local to each node; to see all entries you must query via [`clusterAllReplicas`](/sql-reference/table-functions/cluster).
-
-For example, to aggregate query_log rows from every replica in the “default” cluster you can write:
-
-```sql
-SELECT * 
-FROM clusterAllReplicas('default', system.query_log)
-WHERE event_time >= now() - toIntervalHour(1)
-LIMIT 10
-SETTINGS skip_unavailable_shards = 1;
 ```
 
 **See Also**

@@ -1,11 +1,11 @@
-#include <Dictionaries/Embedded/RegionsNames.h>
+#include "RegionsNames.h"
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Poco/Exception.h>
 #include <Common/logger_useful.h>
-#include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
+#include "GeodataProviders/INamesProvider.h"
 
 
 namespace DB

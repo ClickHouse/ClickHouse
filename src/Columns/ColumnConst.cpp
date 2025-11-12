@@ -47,8 +47,6 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
 
 ColumnPtr ColumnConst::convertToFullColumn() const
 {
-    if (s == 1)
-        return data;
     return data->replicate(Offsets(1, s));
 }
 
@@ -113,7 +111,7 @@ ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-MutableColumns ColumnConst::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnConst::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector ({}) doesn't match size of column ({})",

@@ -287,7 +287,7 @@ struct ExistsExpressionData
 
         auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
-        auto function = makeASTOperator("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
     }
 };
@@ -366,14 +366,11 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
     for (auto & expr : elements)
     {
         auto name = expr->getAliasOrColumnName();
+
         if (!assigned_column_names.insert(name).second)
         {
-            /// We can't rename with aliases if it doesn't support alias (e.g. asterisk)
-            if (!dynamic_cast<ASTWithAlias *>(expr.get()))
-                continue;
-
             size_t i = 1;
-            while (all_column_names.contains(name + "_" + toString(i)))
+            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
@@ -1172,17 +1169,11 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     if (storage_snapshot)
     {
         const auto & virtuals = storage_snapshot->virtual_columns;
-        const auto & common_virtual_columns = IStorage::getCommonVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
             if (auto column = virtuals->tryGet(*it))
             {
                 source_columns.push_back(*column);
-                it = unknown_required_source_columns.erase(it);
-            }
-            else if (auto common_column = common_virtual_columns.tryGet(*it))
-            {
-                source_columns.push_back(*common_column);
                 it = unknown_required_source_columns.erase(it);
             }
             else
@@ -1397,11 +1388,6 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand ORDER BY ALL
     if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
-
-    if (select_query->limit_by_all)
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
-    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1664,7 +1650,7 @@ void TreeRewriter::normalize(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, QueryNormalizer::ExtractedSettings(settings), allow_self_aliases, is_create_parameterized_view);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);

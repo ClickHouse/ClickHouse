@@ -26,6 +26,7 @@
 #include <stdexcept>
 
 #include <boost/iostreams/device/file_descriptor.hpp>
+#include <boost/iostreams/stream.hpp>
 
 namespace
 {
@@ -344,8 +345,7 @@ public:
     {
         server_cb.userdata = this;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
-        server_cb.auth_password_function = authPasswordAdapter<ssh_session, const char *, const char *>;
-        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_PUBLICKEY);
+        ssh_set_auth_methods(session.getInternalPtr(), SSH_AUTH_METHOD_PUBLICKEY);
         server_cb.channel_open_request_session_function = channelOpenAdapter<ssh_session>;
 
         ssh_callbacks_init(&server_cb)
@@ -395,11 +395,11 @@ public:
             {
                 auto user_has_ssh_auth_type = [](auto user_authentication_type) { return user_authentication_type == AuthenticationType::SSH_KEY; };
                 auto user_auth_types = db_session_created->getAuthenticationTypes(user_name);
-
-                /// User {} doesn't have SSH_KEY authentication type, so we will try to authenticate it using a password.
                 if (auto result = std::ranges::find_if(user_auth_types, user_has_ssh_auth_type); result == user_auth_types.end())
-                    return SSH_AUTH_PARTIAL;
-
+                {
+                    LOG_WARNING(log, "User {} doesn't have SSH_KEY authentication type", user_name);
+                    return SSH_AUTH_DENIED;
+                }
                 return SSH_AUTH_SUCCESS;
             }
 
@@ -430,27 +430,6 @@ public:
     }
 
     GENERATE_ADAPTER_FUNCTION(SessionCallback, authPublickey, int)
-
-    int authPassword(ssh_session, const char * user, const char * password)
-    {
-        try
-        {
-            LOG_TRACE(log, "Authenticating with password");
-            auto db_session_created = std::make_unique<Session>(server_context, ClientInfo::Interface::LOCAL);
-            db_session_created->authenticate(BasicCredentials{user, password}, peer_address);
-            authenticated = true;
-            db_session = std::move(db_session_created);
-            return SSH_AUTH_SUCCESS;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-            ++auth_attempts;
-            return SSH_AUTH_DENIED;
-        }
-    }
-
-    GENERATE_ADAPTER_FUNCTION(SessionCallback, authPassword, int)
 
     ssh_server_callbacks_struct server_cb = {};
 };

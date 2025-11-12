@@ -397,10 +397,6 @@ private:
                 Session::setReceiveDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIORead(), log, request.getMethod(), request.getURI()));
             if (ResourceLink link = CurrentThread::getWriteResourceLink())
                 Session::setSendDataHooks(std::make_shared<ResourceGuardSessionDataHooks>(link, ResourceGuard::Metrics::getIOWrite(), log, request.getMethod(), request.getURI()));
-            if (auto throttler = CurrentThread::getReadThrottler())
-                Session::setReceiveThrottler(throttler);
-            if (auto throttler = CurrentThread::getWriteThrottler())
-                Session::setSendThrottler(throttler);
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
             result.exceptions(std::ios::badbit);
@@ -460,8 +456,6 @@ private:
             response_stream = nullptr;
             Session::setSendDataHooks();
             Session::setReceiveDataHooks();
-            Session::setSendThrottler();
-            Session::setReceiveThrottler();
 
             group->atConnectionDestroy();
 
@@ -686,7 +680,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            (*connection).reset();
+            connection->reset();
             throw;
         }
 

@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <IO/Operators.h>
-#include <Parsers/IAST_fwd.h>
+#include "Parsers/IAST_fwd.h"
 
 
 namespace DB
@@ -25,8 +25,6 @@ public:
 
     /// Remove 'FORMAT <fmt> and INTO OUTFILE <file>' if exists
     static bool resetOutputASTIfExist(IAST & ast);
-
-    bool hasOutputOptions() const;
 
 protected:
     /// NOTE: call this helper at the end of the clone() method of descendant class.
@@ -56,9 +54,10 @@ public:
     }
 
 protected:
-    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
-        ostr << ASTIDAndQueryNames::Query;
+        ostr << (settings.hilite ? hilite_keyword : "")
+            << ASTIDAndQueryNames::Query << (settings.hilite ? hilite_none : "");
     }
 };
 

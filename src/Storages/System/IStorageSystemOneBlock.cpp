@@ -26,7 +26,7 @@ public:
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot_,
         const ContextPtr & context_,
-        SharedHeader sample_block,
+        Block sample_block,
         std::shared_ptr<IStorageSystemOneBlock> storage_,
         std::vector<UInt8> columns_mask_)
         : SourceStepWithFilter(
@@ -73,15 +73,15 @@ void IStorageSystemOneBlock::read(
 
     auto reading = std::make_unique<ReadFromSystemOneBlock>(
         column_names, query_info, storage_snapshot,
-        std::move(context), std::make_shared<const Block>(std::move(sample_block)), std::move(this_ptr), std::move(columns_mask));
+        std::move(context), std::move(sample_block), std::move(this_ptr), std::move(columns_mask));
 
     query_plan.addStep(std::move(reading));
 }
 
 void ReadFromSystemOneBlock::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto sample_block = getOutputHeader();
-    MutableColumns res_columns = sample_block->cloneEmptyColumns();
+    const Block & sample_block = getOutputHeader();
+    MutableColumns res_columns = sample_block.cloneEmptyColumns();
     const ActionsDAG::Node * predicate = filter ? filter->getOutputs().at(0) : nullptr;
     storage->fillData(res_columns, context, predicate, std::move(columns_mask));
 
@@ -102,7 +102,7 @@ void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
     if (sample.columns() == 0)
         return;
 
-    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample, context);
+    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample);
 
     /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
     if (filter)
