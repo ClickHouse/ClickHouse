@@ -425,7 +425,6 @@ LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
 
 The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
 
-The dictionary key has the [UInt64](../../sql-reference/data-types/int-uint.md) type.
 This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
 
 Example: The table contains discounts for each advertiser in the format:
