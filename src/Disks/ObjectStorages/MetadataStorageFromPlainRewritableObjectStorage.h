@@ -36,6 +36,10 @@ public:
     MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_, size_t object_metadata_cache_size);
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
 
+    /// Will reload in-memory structure from scratch.
+    void dropCache() override;
+    void refresh(UInt64 not_sooner_than_milliseconds) override;
+
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
     bool existsFileOrDirectory(const std::string & path) const override;
@@ -50,8 +54,6 @@ public:
 
     Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
-
-    void refresh(UInt64 not_sooner_than_milliseconds) override;
 
 private:
     const std::string metadata_key_prefix;

@@ -254,16 +254,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     previous_refresh.restart();
 }
 
-void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
-{
-    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
-        return;
-
-    std::unique_lock lock(load_mutex, std::defer_lock);
-    if (lock.try_lock())
-        load(/*is_initial_load*/ false);
-}
-
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(
     ObjectStoragePtr object_storage_, String storage_path_prefix_, size_t object_metadata_cache_size)
     : MetadataStorageFromPlainObjectStorage(object_storage_, storage_path_prefix_, object_metadata_cache_size)
@@ -278,11 +268,28 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    load(/*is_initial_load*/ true);
+    load(/*is_initial_load=*/true);
 
     /// Use flat directory structure if the metadata is stored separately from the table data.
     auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), fs_tree);
     object_storage->setKeysGenerator(keys_gen);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
+{
+    std::unique_lock reload_lock(load_mutex);
+    std::unique_lock tx_lock(metadata_mutex);
+    load(/*is_initial_load=*/false);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
+{
+    if (!previous_refresh.compareAndRestart(0.001 * not_sooner_than_milliseconds))
+        return;
+
+    std::unique_lock lock(load_mutex, std::defer_lock);
+    if (lock.try_lock())
+        load(/*is_initial_load=*/false);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
