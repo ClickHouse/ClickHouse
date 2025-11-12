@@ -1,6 +1,6 @@
 log	Entry
 profile	Entry
-profile	Exit
 sleep	Entry
+profile	Exit
 log	Exit
 1
