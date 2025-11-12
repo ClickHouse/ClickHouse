@@ -74,24 +74,27 @@ std::optional<Field> convertFieldToTypeCheckEnum(
     }
 }
 
+/// rhs_collection can be:
+/// Array: [1, 2, 3], [(1, 2), (3, 4)]
+/// Tuple: (1, 2, 3), ((1, 2), (3, 4), (5, 6), (7, 8))
 template <typename Collection>
 ColumnsWithTypeAndName createBlockFromCollection(
-    const Collection & rhs_array, const DataTypes & rhs_types, const DataTypes & lhs_unpacked_types, GetSetElementParams params)
+    const Collection & rhs_collection, const DataTypes & rhs_types, const DataTypes & lhs_unpacked_types, GetSetElementParams params)
 {
-    assert(rhs_array.size() == rhs_types.size());
+    assert(rhs_collection.size() == rhs_types.size());
     size_t columns_size = lhs_unpacked_types.size();
     MutableColumns columns(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
     {
         columns[i] = lhs_unpacked_types[i]->createColumn();
-        columns[i]->reserve(rhs_array.size());
+        columns[i]->reserve(rhs_collection.size());
     }
 
     Row converted_rhs_element_unpacked;
 
-    for (size_t collection_index = 0; collection_index < rhs_array.size(); ++collection_index)
+    for (size_t collection_index = 0; collection_index < rhs_collection.size(); ++collection_index)
     {
-        const auto & rhs_element = rhs_array[collection_index];
+        const auto & rhs_element = rhs_collection[collection_index];
         if (columns_size == 1)
         {
             const DataTypePtr & data_type = rhs_types[collection_index];
