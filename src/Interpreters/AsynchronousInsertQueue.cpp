@@ -1,3 +1,4 @@
+#include <vector>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -669,7 +670,7 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
 }
 
-void AsynchronousInsertQueue::flush(const Strings & table_names)
+void AsynchronousInsertQueue::flush(const std::vector<std::pair<String, String>> & table_names)
 {
     if (table_names.empty())
     {
@@ -677,17 +678,9 @@ void AsynchronousInsertQueue::flush(const Strings & table_names)
         return;
     }
 
-    auto database_table_name_set = std::set<std::pair<String, String>>{};
-    for (const auto & full_table_name : table_names)
-    {
-        auto dot_pos = full_table_name.find('.');
-        if (dot_pos == String::npos)
-            database_table_name_set.emplace("", full_table_name);
-        else
-            database_table_name_set.emplace(full_table_name.substr(0, dot_pos), full_table_name.substr(dot_pos + 1));
-    }
-
     LOG_DEBUG(log, "Requested to flush asynchronous insert queue for tables: {}", fmt::join(table_names, ", "));
+
+    auto database_table_name_set = std::set<std::pair<String, String>>(table_names.begin(), table_names.end());
 
     auto affected_set = std::set<String>{};
     std::vector<Queue> queues_to_flush(pool_size);
@@ -703,7 +696,7 @@ void AsynchronousInsertQueue::flush(const Strings & table_names)
         for (auto it = queue.begin(); it != queue.end();)
         {
             const auto storage = it->second.key.getStorageID();
-            /// it is not strick match of database and table name
+            /// it is not strict match of database and table name
             /// async insert queue does not store database name always
             if (!database_table_name_set.contains({storage.database_name, storage.table_name})
                 && !database_table_name_set.contains({"", storage.table_name}))
@@ -715,7 +708,7 @@ void AsynchronousInsertQueue::flush(const Strings & table_names)
             affected_set.emplace(storage.getNameForLogs());
             queues_to_flush[i].emplace(it->first, std::move(it->second));
             shard.iterators.erase(it->second.key.hash);
-            it = queue_shards[i].queue.erase(it);
+            it = queue.erase(it);
         }
     }
 
@@ -735,13 +728,13 @@ void AsynchronousInsertQueue::flush(const Strings & table_names)
         }
     }
 
-    /// Note that jobs scheduled before the call of 'flushAll' are not counted here.
+    /// Note that jobs scheduled before the call of 'flush' are not counted here.
     LOG_DEBUG(log,
         "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries) for tables: {}",
         pool.active(), total_entries, total_bytes, total_queries, fmt::join(affected_set, ", "));
 
     /// Wait until all jobs are finished. That includes also jobs
-    /// that were scheduled before the call of 'flushAll'.
+    /// that were scheduled before the call of 'flush'.
     pool.wait();
 
     LOG_DEBUG(log, "Finished flushing of asynchronous insert queue for tables: {}", fmt::join(affected_set, ", "));

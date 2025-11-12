@@ -55,7 +55,7 @@ public:
 
     /// Force flush the whole queue.
     void flushAll();
-    void flush(const Strings & table_names);
+    void flush(const std::vector<std::pair<String, String>> & table_names);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);

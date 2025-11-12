@@ -465,7 +465,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 else
                     comma = true;
                 ostr << ' ';
-                print_identifier(cur_log);
+
+                if (!cur_log.first.empty())
+                    print_identifier(cur_log.first) << ".";
+                print_identifier(cur_log.second);
             }
             break;
         }

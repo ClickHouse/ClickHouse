@@ -720,7 +720,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserToken s_dot(TokenType::Dot);
             ParserIdentifier table_parser(true);
 
-
             do
             {
                 ASTPtr table_first;
@@ -732,14 +731,15 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 }
 
                 if (!s_dot.ignore(pos))
-                    res->tables.emplace_back(table_first->as<ASTIdentifier &>().full_name);
+                {
+                    res->tables.emplace_back(String{}, table_first->as<ASTIdentifier &>().full_name);
+                }
                 else
                 {
                     ASTPtr table_second;
                     if (!table_parser.parse(pos, table_second, expected))
                         return false;
-                    res->tables.emplace_back(
-                        fmt::format("{}.{}", table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name));
+                    res->tables.emplace_back(table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name);
                 }
 
 

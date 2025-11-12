@@ -176,7 +176,7 @@ public:
 
     std::vector<String> src_replicas;
 
-    Strings tables;
+    std::vector<std::pair<String, String>> tables;
 
     ServerType server_type;
 
