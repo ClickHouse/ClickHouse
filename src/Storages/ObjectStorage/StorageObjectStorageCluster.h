@@ -18,7 +18,8 @@ public:
         const ColumnsDescription & columns_in_table_or_function_definition,
         const ConstraintsDescription & constraints_,
         const ASTPtr & partition_by,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool is_table_function_ = false);
 
     std::string getName() const override;
 
@@ -42,11 +43,14 @@ private:
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context) override;
 
+    void updateConfigurationIfNeeded(ContextPtr context) override;
+
     const String engine_name;
     const StorageObjectStorageConfigurationPtr configuration;
     const ObjectStoragePtr object_storage;
     NamesAndTypesList virtual_columns;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    bool update_configuration_on_read_write;
 };
 
 }
