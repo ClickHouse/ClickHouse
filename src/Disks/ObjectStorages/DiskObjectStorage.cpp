@@ -640,11 +640,6 @@ bool DiskObjectStorage::supportsHardLinks() const
     return !isWriteOnce() && !object_storage->isPlain();
 }
 
-bool DiskObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
-{
-    return !isWriteOnce() && metadata_storage->supportsPartitionCommand(command);
-}
-
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
 {
     const auto config_prefix = "storage_configuration.disks." + name;
