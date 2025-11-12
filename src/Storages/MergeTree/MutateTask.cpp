@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <DataTypes/ObjectUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/logger_useful.h>
@@ -2238,8 +2237,6 @@ MutateTask::MutateTask(
     ctx->txn = txn;
     ctx->source_part = ctx->future_part->parts[0];
     ctx->need_prefix = need_prefix_;
-
-    extendObjectColumns(ctx->storage_columns, ctx->storage_snapshot->object_columns, /*with_subcolumns=*/ false);
 }
 
 
