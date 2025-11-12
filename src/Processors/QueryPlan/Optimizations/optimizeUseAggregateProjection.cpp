@@ -497,7 +497,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node &
     for (const auto * projection : agg_projections)
     {
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, context))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.projection = projection;
