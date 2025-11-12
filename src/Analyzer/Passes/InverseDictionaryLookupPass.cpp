@@ -100,16 +100,6 @@ bool tryParseDictFunctionCall(const QueryTreeNodePtr & node, DictGetFunctionInfo
     return true;
 }
 
-bool tryGetConstantNode(const QueryTreeNodePtr & node, QueryTreeNodePtr & out)
-{
-    if (node->as<ConstantNode>())
-    {
-        out = node;
-        return true;
-    }
-    return false;
-}
-
 bool isInMemoryLayout(const String & type_name)
 {
     static const std::unordered_set<String> supported_layouts = {
