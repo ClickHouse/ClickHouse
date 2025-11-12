@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Functions/FunctionFactory.h>
@@ -30,11 +31,13 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Core/Settings.h>
-#include <fmt/ranges.h>
 #include <Core/Joins.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
+
+#include <fmt/ranges.h>
 #include <iostream>
 #include <ranges>
-
 
 namespace DB
 {
@@ -53,6 +56,105 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
 }
+
+/// This is a small helper class which builds nested() functions from a few arrays by prefix name.
+struct ArraysToNested
+{
+    IdentifierView prefix_identitier;
+    const ContextPtr & context;
+    const bool allow_compound;
+
+    QueryTreeNodes nested_column_nodes;
+    DataTypes nested_types;
+    ColumnString::MutablePtr nested_names;
+
+    ArraysToNested(IdentifierView identifier, const ContextPtr & context_)
+        : prefix_identitier(std::move(identifier))
+        , context(context_)
+        , allow_compound(context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested])
+    {
+    }
+
+    IdentifierView tryMatchPrefixAndGetSuffix(const Identifier & full_identifier) const
+    {
+        IdentifierView suffix(full_identifier);
+        size_t prefix_size = prefix_identitier.getPartsSize();
+
+        for (const auto & part : prefix_identitier)
+        {
+            if (suffix.empty() || part != suffix.front())
+                break;
+
+            suffix.popFirst();
+        }
+
+        if (suffix.empty() || prefix_size + suffix.getPartsSize() != full_identifier.getPartsSize())
+            return {};
+
+        /// Ignore compound identifiers because of the compatibility setting.
+        if (!allow_compound && suffix.getPartsSize() > 1)
+            return {};
+
+        return suffix;
+    }
+
+    void tryAppendArray(IdentifierView suffix, QueryTreeNodePtr node, DataTypePtr type)
+    {
+        for (size_t i = 0; i < prefix_identitier.getPartsSize(); ++i)
+        {
+
+            const auto * column_type_array = typeid_cast<const DataTypeArray *>(type.get());
+            if (column_type_array)
+            type = column_type_array->getNestedType();
+            else
+            type = nullptr;
+        }
+
+        if (!type)
+            return;
+
+        if (!nested_names)
+            nested_names = ColumnString::create();
+
+        nested_column_nodes.push_back(std::move(node));
+        nested_types.push_back(std::move(type));
+        auto suffix_name = suffix.getFullName();
+        nested_names->insertData(suffix_name.data(), suffix_name.size());
+    }
+
+    QueryTreeNodePtr buildNestedFunction()
+    {
+
+        if (nested_types.empty())
+            return nullptr;
+
+        MutableColumnPtr nested_names_array = std::move(nested_names);
+        DataTypePtr nested_names_array_type = std::make_shared<DataTypeString>();
+        for (size_t i = 0; i < prefix_identitier.getPartsSize(); ++i)
+        {
+            auto array_size = nested_names_array->size();
+            auto offsets = ColumnArray::ColumnOffsets::create(1, array_size);
+            nested_names_array = ColumnArray::create(std::move(nested_names_array), std::move(offsets));
+            nested_names_array_type = std::make_shared<DataTypeArray>(std::move(nested_names_array_type));
+        }
+
+        auto nested_function_node = std::make_shared<FunctionNode>("nested");
+        auto & nested_function_node_arguments = nested_function_node->getArguments().getNodes();
+
+        auto nested_function_names_constant_node = std::make_shared<ConstantNode>(
+            std::move(nested_names_array),
+            std::move(nested_names_array_type));
+        nested_function_node_arguments.push_back(std::move(nested_function_names_constant_node));
+        nested_function_node_arguments.insert(nested_function_node_arguments.end(),
+            nested_column_nodes.begin(),
+            nested_column_nodes.end());
+
+        auto nested_function = FunctionFactory::instance().get(nested_function_node->getFunctionName(), context);
+        nested_function_node->resolveAsFunction(nested_function->build(nested_function_node->getArgumentColumns()));
+
+        return std::move(nested_function_node);
+    }
+};
 
 QueryTreeNodePtr IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(
     const QueryTreeNodePtr & resolved_identifier,
@@ -238,52 +340,75 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     auto expression_type = compound_expression->getResultType();
 
-    if (!expression_type->hasSubcolumn(nested_path.getFullName()))
+    if (expression_type->hasSubcolumn(nested_path.getFullName()))
+        return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(expression_type.get()))
     {
-        if (auto * column = compound_expression->as<ColumnNode>())
+        const auto & names = tuple_type->getElementNames();
+        if (!names.empty())
         {
-            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
+            ArraysToNested arrays_to_nested(nested_path, scope.context);
+
+            for (size_t i = 0; i < names.size(); ++i)
             {
-                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
-                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
-                {
-                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
-                    return constant_node_null;
-                }
+                Identifier column_identifier(names[i]);
+                auto suffix = arrays_to_nested.tryMatchPrefixAndGetSuffix(column_identifier);
+                if (suffix.empty())
+                    continue;
+
+                auto node = wrapExpressionNodeInSubcolumn(compound_expression, names[i], scope.context);
+                auto column_type = tuple_type->getElement(i);
+
+                arrays_to_nested.tryAppendArray(suffix, std::move(node), std::move(column_type));
             }
+
+            if (auto nested_function_node = arrays_to_nested.buildNestedFunction())
+                return nested_function_node;
         }
-
-        if (can_be_not_found)
-            return {};
-
-        std::unordered_set<Identifier> valid_identifiers;
-        TypoCorrection::collectCompoundExpressionValidIdentifiers(
-            expression_identifier,
-            expression_type,
-            compound_expression_identifier,
-            valid_identifiers);
-
-        auto hints = TypoCorrection::collectIdentifierTypoHints(expression_identifier, valid_identifiers);
-
-        String compound_expression_from_error_message;
-        if (!compound_expression_source.empty())
-        {
-            compound_expression_from_error_message += " from ";
-            compound_expression_from_error_message += compound_expression_source;
-        }
-
-        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
-            "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
-            expression_identifier,
-            nested_path,
-            expression_type->getName(),
-            compound_expression_from_error_message,
-            scope.scope_node->formatASTForErrorMessage(),
-            getHintsErrorMessageSuffix(hints));
     }
 
-    return wrapExpressionNodeInSubcolumn(compound_expression, std::string(nested_path.getFullName()), scope.context);
+    if (auto * column = compound_expression->as<ColumnNode>())
+    {
+        const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
+        if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
+        {
+            const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
+            if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
+            {
+                QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
+                return constant_node_null;
+            }
+        }
+    }
+
+    if (can_be_not_found)
+        return {};
+
+    std::unordered_set<Identifier> valid_identifiers;
+    TypoCorrection::collectCompoundExpressionValidIdentifiers(
+        expression_identifier,
+        expression_type,
+        compound_expression_identifier,
+        valid_identifiers);
+
+    auto hints = TypoCorrection::collectIdentifierTypoHints(expression_identifier, valid_identifiers);
+
+    String compound_expression_from_error_message;
+    if (!compound_expression_source.empty())
+    {
+        compound_expression_from_error_message += " from ";
+        compound_expression_from_error_message += compound_expression_source;
+    }
+
+    throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER,
+        "Identifier {} nested path {} cannot be resolved from type {}{}. In scope {}{}",
+        expression_identifier,
+        nested_path,
+        expression_type->getName(),
+        compound_expression_from_error_message,
+        scope.scope_node->formatASTForErrorMessage(),
+        getHintsErrorMessageSuffix(hints));
 }
 
 /** Resolve identifier from expression arguments.
@@ -576,11 +701,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
         /// For the identifier `x` and columns `x.a Array(String)` and `x.b Array(String)`
         /// we resolve `x` into Nested(a String, b String).
 
-        QueryTreeNodes nested_column_nodes;
-        DataTypes nested_types;
-        Array nested_names_array;
-
-        bool allow_compound = scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
+        ArraysToNested arrays_to_nested(identifier_without_column_qualifier, scope.context);
 
         for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
         {
@@ -588,30 +709,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
                 continue;
 
             Identifier column_identifier(column_name);
-            IdentifierView suffix(column_identifier);
-            size_t prefix_size = identifier_without_column_qualifier.getPartsSize();
-
-            for (const auto & part : identifier_without_column_qualifier.getParts())
-            {
-                if (suffix.empty() || part != suffix.front())
-                    break;
-
-                suffix.popFirst();
-            }
-
-            if (suffix.empty() || prefix_size + suffix.getPartsSize() != column_identifier.getPartsSize())
-                continue;
-
-            /// Ignore compound identifiers because of the compatibility setting.
-            if (!allow_compound && suffix.getPartsSize() > 1)
-                continue;
-
-            /// FIXME: we can resulve an identifier with a few components as well, e.g.
-            /// for `x.b.first Array(Array(String))` and `x.b.second Array(Array(String))`
-            /// identifier `x.b` can be resolved into `Array(Nested(first String), second String))`.
-            /// But for now, nested functions does not support the inner nesting.
-            /// So, we will get the incorrect result `Nested(first Array(String)), second Array(String))`.
-            if (prefix_size != 1)
+            auto suffix = arrays_to_nested.tryMatchPrefixAndGetSuffix(column_identifier);
+            if (suffix.empty())
                 continue;
 
             auto column_node_it = table_expression_data.column_name_to_column_node.find(column_name);
@@ -621,40 +720,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
             const auto & column_node = column_node_it->second;
             auto column_type = column_node->getColumnType();
 
-            for (size_t i = 0; i < prefix_size; ++i)
-            {
-
-                const auto * column_type_array = typeid_cast<const DataTypeArray *>(column_type.get());
-                if (column_type_array)
-                    column_type = column_type_array->getNestedType();
-                else
-                    column_type = nullptr;
-            }
-
-            if (!column_type)
-                continue;
-
-            nested_column_nodes.push_back(column_node);
-            nested_types.push_back(column_type);
-            nested_names_array.push_back(suffix.getFullName());
+            arrays_to_nested.tryAppendArray(suffix, column_node, std::move(column_type));
         }
 
-        if (!nested_types.empty())
+        if (auto nested_function_node = arrays_to_nested.buildNestedFunction())
         {
-            auto nested_function_node = std::make_shared<FunctionNode>("nested");
-            auto & nested_function_node_arguments = nested_function_node->getArguments().getNodes();
-
-            auto nested_function_names_array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
-            auto nested_function_names_constant_node = std::make_shared<ConstantNode>(std::move(nested_names_array),
-                std::move(nested_function_names_array_type));
-            nested_function_node_arguments.push_back(std::move(nested_function_names_constant_node));
-            nested_function_node_arguments.insert(nested_function_node_arguments.end(),
-                nested_column_nodes.begin(),
-                nested_column_nodes.end());
-
-            auto nested_function = FunctionFactory::instance().get(nested_function_node->getFunctionName(), scope.context);
-            nested_function_node->resolveAsFunction(nested_function->build(nested_function_node->getArgumentColumns()));
-
             clone_is_needed = false;
             result_expression = std::move(nested_function_node);
         }

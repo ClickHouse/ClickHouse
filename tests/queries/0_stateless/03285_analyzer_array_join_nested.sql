@@ -38,3 +38,8 @@ select y, y.b.first, y.b.second from tab array join x as y; -- { serverError UNK
 set analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested = 1;
 select x from tab;
 select y, y.b.first, y.b.second from tab array join x as y;
+
+select y, y.first, y.second from tab array join x.b as y;
+select y.b from tab array join x as y;
+select z.first, z.second from tab array join x as y array join y.b as z;
+select z.first, z.second from tab array join x array join x.b as z;
