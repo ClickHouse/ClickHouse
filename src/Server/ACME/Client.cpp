@@ -264,7 +264,6 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 auto path = fs::path(zookeeper_path) / acme_hostname / "challenges" / token;
 
                 zk->createOrUpdate(path, token, zkutil::CreateMode::Ephemeral);
-                zk->sync(path);
             };
 
             active_order = api->order(domains, order_callback);
@@ -495,7 +494,6 @@ std::string Client::requestChallenge(const std::string & uri)
     auto context = Context::getGlobalContextInstance();
     auto zk = context->getZooKeeper();
 
-    zk->sync(fs::path(zookeeper_path) / acme_hostname / "challenges");
     auto active_challenges = zk->getChildren(fs::path(zookeeper_path) / acme_hostname / "challenges");
 
     if (active_challenges.empty())

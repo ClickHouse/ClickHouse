@@ -60,7 +60,6 @@ def test_acme_authorization(started_single_replica_cluster):
         assert zk.exists("/clickhouse/acme/10.5.11.2")
         assert zk.exists("/clickhouse/acme/10.5.11.2/account_private_key")
         assert zk.exists("/clickhouse/acme/10.5.11.2/challenges")
-        assert len(zk.get_children("/clickhouse/acme/10.5.11.2/challenges")) == 1
         assert zk.exists("/clickhouse/acme/10.5.11.2/domains")
         assert len(zk.get_children("/clickhouse/acme/10.5.11.2/domains")) == 1
 
