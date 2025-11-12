@@ -130,34 +130,10 @@ public:
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
-        if (auto * q = node->as<QueryNode>())
-        {
-            if (q->hasWhere())
-                rewriteDictGetPredicateRecursively(q->getWhere());
-            if (q->hasPrewhere())
-                rewriteDictGetPredicateRecursively(q->getPrewhere());
-            if (q->hasQualify())
-                rewriteDictGetPredicateRecursively(q->getQualify());
-        }
-    }
-
-private:
-    void rewriteDictGetPredicateRecursively(QueryTreeNodePtr & node) const
-    {
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
             return;
-
-        const auto & function_name = node_function->getFunctionName();
-
-        /// Some arguments might themselves be dictGet* calls, so we need to recurse into AND/OR/NOT
-        if (function_name == "and" || function_name == "or" || function_name == "not")
-        {
-            for (auto & argument : node_function->getArguments().getNodes())
-                rewriteDictGetPredicateRecursively(argument);
-            return;
-        }
 
         static std::unordered_set<String> allowed_comparison_functions = {
             "equals", "notEquals", "less", "lessOrEquals", "greater", "greaterOrEquals", "like", "notLike", "ilike", "notILike", "match"};
