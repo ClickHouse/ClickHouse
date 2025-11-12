@@ -210,9 +210,6 @@ private:
             return;
         }
 
-        std::vector<NameAndTypePair> key_cols;
-        DataTypePtr dict_attr_col_type;
-
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
         const auto dict = helper.getDictionary(dictget_function_info.dict_name);
@@ -223,6 +220,9 @@ private:
 
         if (!isInMemoryLayout(dict_type_name))
             return;
+
+
+        std::vector<NameAndTypePair> key_cols;
 
         const auto & dict_structure = dict->getStructure();
 
@@ -246,8 +246,7 @@ private:
             dict_structure.hasAttribute(dictget_function_info.attr_col_name)
             && "Attribute not found in dictionary structure of dictionary");
 
-        dict_attr_col_type = dict_structure.getAttribute(dictget_function_info.attr_col_name).type;
-
+        DataTypePtr dict_attr_col_type = dict_structure.getAttribute(dictget_function_info.attr_col_name).type;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(dictget_function_info.dict_name));
