@@ -1243,6 +1243,8 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 
     size_t new_pos = offset;
 
+    /// FIXME: we should add here !use_external_buffer to this check,
+    /// but for some reason it leads to failing E2E tests.
     if (allow_seeks_after_first_read)
     {
         if (whence != SEEK_SET && whence != SEEK_CUR)
@@ -1279,6 +1281,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     implementation_buffer.reset();
     cache_file_reader.reset();
     initialized = false;
+    remote_file_reader.reset();
 
     LOG_TEST(log, "Reset state for seek to position {}", new_pos);
 
