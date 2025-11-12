@@ -478,11 +478,11 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
 }
-DataPartsLock::DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<void(DataPartsLock &)> && callback_)
+DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
     , lock(data_parts_mutex_)
     , lock_watch(Stopwatch(CLOCK_MONOTONIC))
-    , callback(std::move(callback_))
+    , data(data_)
 {
     ProfileEvents::increment(ProfileEvents::PartsLockWaitMicroseconds, wait_watch->elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::PartsLocks);
@@ -491,7 +491,11 @@ DataPartsLock::DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<
 
 DataPartsLock::~DataPartsLock()
 {
-    callback(*this);
+    if (data)
+    {
+        data->shared_parts_list.reset();
+        data->shared_ranges_in_parts.reset();
+    }
     if (lock_watch.has_value())
         ProfileEvents::increment(ProfileEvents::PartsLockHoldMicroseconds, lock_watch->elapsedMicroseconds());
 }
@@ -7024,32 +7028,46 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     return partition_id;
 }
 
-void MergeTreeData::recomputeSharedPartsList(DataPartsLock & lock)
-{
-    auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
-    shared_parts_list = std::make_shared<const DataPartsVector>(parts);
-    shared_ranges_in_parts = std::make_shared<const RangesInDataParts>(parts);
-}
-
-
 DataPartsVector MergeTreeData::getVisibleDataPartsVector(ContextPtr local_context) const
 {
     return getVisibleDataPartsVector(local_context->getCurrentTransaction());
 }
 
-std::shared_ptr<const DataPartsVector> MergeTreeData::getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsSharedLock & lock) const
+std::tuple<MergeTreeData::RangesInDataPartsPtr, MergeTreeData::DataPartsVectorPtr>
+MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context) const
 {
+    auto shared_lock_holder = std::make_optional<DataPartsSharedLock>(readLockParts());
+
     if (const auto * txn = local_context->getCurrentTransaction().get())
     {
         /// In case of transactions we cannot use shared version
         DataPartsVector res;
-        res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, lock);
+        res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, *shared_lock_holder);
         filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
-        return std::make_shared<const DataPartsVector>(res);
+
+        /// Avoid holding the lock while constructing RangesInDataParts (at this point it is safe to release the lock)
+        shared_lock_holder.reset();
+
+        return std::make_tuple(
+            std::make_shared<const RangesInDataParts>(res),
+            std::make_shared<const DataPartsVector>(std::move(res))
+        );
     }
     else
     {
-        return shared_parts_list;
+        if (!shared_parts_list)
+        {
+            auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *shared_lock_holder);
+            shared_lock_holder.reset();
+
+            DataPartsLock lock(data_parts_mutex, /*data_=*/ nullptr);
+            if (!shared_parts_list)
+            {
+                shared_ranges_in_parts = std::make_shared<const RangesInDataParts>(parts);
+                shared_parts_list = std::make_shared<const DataPartsVector>(std::move(parts));
+            }
+        }
+        return std::make_tuple(shared_ranges_in_parts, shared_parts_list);
     }
 }
 
@@ -9969,16 +9987,8 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     auto snapshot_data = std::make_unique<SnapshotData>();
     snapshot_data->storage = shared_from_this();
 
-    std::shared_ptr<const DataPartsVector> parts;
-    {
-        auto lock = readLockParts();
-        parts = getVisibleDataPartsVectorUnlocked(query_context, lock);
-        if (parts == shared_parts_list)
-            snapshot_data->parts = shared_ranges_in_parts;
-    }
-    /// Avoid holding the lock while constructing RangesInDataParts
-    if (snapshot_data->parts == nullptr)
-        snapshot_data->parts = std::make_shared<const RangesInDataParts>(*parts);
+    auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
+    snapshot_data->parts = shared_ranges_in_parts;
 
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
@@ -9986,8 +9996,8 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     IMutationsSnapshot::Params params
     {
         .metadata_version = metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = getMinMetadataVersion(*parts),
-        .min_part_data_versions = getMinDataVersionForEachPartition(*parts),
+        .min_part_metadata_version = getMinMetadataVersion(*query_parts),
+        .min_part_data_versions = getMinDataVersionForEachPartition(*query_parts),
         .max_mutation_versions = query_context->getPartitionIdToMaxBlock(getStorageID().uuid),
         .need_data_mutations = apply_mutations_on_fly,
         .need_alter_mutations = apply_mutations_on_fly || apply_patch_parts,

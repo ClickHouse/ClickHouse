@@ -95,7 +95,7 @@ namespace ErrorCodes
 
 struct DataPartsLock
 {
-    DataPartsLock(DB::SharedMutex & data_parts_mutex_, std::function<void(DataPartsLock &)> && callback_);
+    explicit DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_);
     ~DataPartsLock();
 
     DataPartsLock(const DataPartsLock &) = delete;
@@ -107,7 +107,7 @@ private:
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
     std::optional<Stopwatch> lock_watch;
-    std::function<void(DataPartsLock &)> callback;
+    const MergeTreeData * data;
 };
 
 struct DataPartsSharedLock
@@ -318,14 +318,10 @@ public:
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
+    using DataPartsVectorPtr = std::shared_ptr<const DataPartsVector>;
+    using RangesInDataPartsPtr = std::shared_ptr<const RangesInDataParts>;
 
-    DataPartsLock lockParts()
-    {
-        return DataPartsLock(data_parts_mutex, [this](DataPartsLock & lock)
-        {
-            recomputeSharedPartsList(lock);
-        });
-    }
+    DataPartsLock lockParts() { return DataPartsLock(data_parts_mutex, this); }
     DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }
 
     using OperationDataPartsLock = std::unique_lock<std::mutex>;
@@ -619,7 +615,7 @@ public:
 
         // shared_ptr because lifetime is as long as some query still reading it
         // const because we are sharing across multiple queries, we cannot have things mutating this.
-        std::shared_ptr<const RangesInDataParts> parts;
+        RangesInDataPartsPtr parts;
 
         MutationsSnapshotPtr mutations_snapshot;
     };
@@ -705,8 +701,8 @@ public:
 
     /// Returns parts that visible with current snapshot
     DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
-    /// If using a shared lock, it guarantees no mutation has happened, so we return a shared copy of parts list
-    std::shared_ptr<const DataPartsVector> getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsSharedLock & lock) const;
+    /// If using a shared lock (it guarantees no mutation has happened) and there is no transactions, we can return a shared copy of parts ranges
+    std::tuple<RangesInDataPartsPtr, DataPartsVectorPtr> getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context) const;
     /// Whereas if a unique lock is used, mutations could have happened, meaning shared part list *may* have been invalidated.
     DataPartsVector getVisibleDataPartsVectorUnlocked(ContextPtr local_context, const DataPartsLock & lock) const;
     DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
@@ -1374,6 +1370,7 @@ protected:
     friend class MergeTask;
     friend class IPartMetadataManager;
     friend class IMergedBlockOutputStream; // for access to log
+    friend struct DataPartsLock; // for access to shared_parts_list/shared_ranges_in_parts
 
     bool require_part_metadata;
 
@@ -1460,9 +1457,9 @@ protected:
     /// A readonly shared copy of the `data_parts_by_state_and_info`, so we don't need to copy it for every query
     /// Pointer may only be updated if you have a DataPartsLock
     /// Pointer may only be shared if you have a DataPartsSharedLock
-    std::shared_ptr<const DataPartsVector> shared_parts_list;
+    mutable DataPartsVectorPtr shared_parts_list;
     /// Same as above, but this time caching a copy of RangesInDataParts
-    std::shared_ptr<const RangesInDataParts> shared_ranges_in_parts;
+    mutable RangesInDataPartsPtr shared_ranges_in_parts;
 
     /// Mutex for critical sections which alter set of parts
     /// It is like truncate, drop/detach partition
@@ -1949,9 +1946,6 @@ private:
     createStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context, bool without_data) const;
 
     bool isReadonlySetting(const std::string & setting_name) const;
-
-    // Any time we update data_parts_indexes, at the end of the operation, we must reflect the change in shared_parts_list
-    void recomputeSharedPartsList(DataPartsLock & /*lock*/);
 
     /// Is the disk should be searched for orphaned parts (ones that belong to a table based on file names, but located
     ///   on disks that are not a part of storage policy of the table).
