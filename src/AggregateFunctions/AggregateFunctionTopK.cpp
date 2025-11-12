@@ -342,6 +342,12 @@ public:
         return is_weighted ? "topKWeighted" : "topK";
     }
 
+    void ensureCapacity(AggregateFunctionTopKGenericData::Set & set) const
+    {
+        if (unlikely(set.capacity() != reserved))
+            set.resize(reserved);
+    }
+
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
     {
         if (include_counts_)
@@ -412,8 +418,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+        ensureCapacity(set);
 
         if constexpr (is_plain_column)
         {
@@ -440,6 +445,7 @@ public:
             return;
 
         auto & set = this->data(place).value;
+        ensureCapacity(set);
 
         set.merge(this->data(rhs).value);
     }
