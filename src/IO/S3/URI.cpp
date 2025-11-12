@@ -60,7 +60,15 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     bool looks_like_presigned = false;
     for (const auto & [qk, qv] : original_uri.getQueryParameters())
     {
-        if (qk == "versionId" || qk == "AWSAccessKeyId" || qk == "Signature" || qk == "Expires" || qk.starts_with("X-Amz-"))
+        if (
+            qk == "versionId" ||
+            qk == "AWSAccessKeyId" ||
+            qk == "Signature" ||
+            qk == "Expires" ||
+            qk.starts_with("X-Amz-") ||
+            qk == "GoogleAccessId" ||
+            qk.starts_with("X-Goog-")
+        )
         {
             looks_like_presigned = true;
             break;
@@ -156,7 +164,7 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
     }
 
     /// If there is a '?' in the original string, but no actual query, it means
-    /// the user intended to use '?' as a wildcard in the path
+    /// the user intended to use '?' as a wildcard in the path. Preserve it (even if trailing)
     if (original_uri.getRawQuery().empty() && uri_str.find('?') != std::string::npos && !has_version_id && !looks_like_presigned)
     {
         key += "?";
