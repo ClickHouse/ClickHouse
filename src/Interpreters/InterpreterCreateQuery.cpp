@@ -141,6 +141,7 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsUInt64 max_subcolumns;
 }
 
 namespace ServerSetting
@@ -178,6 +179,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_TABLES;
     extern const int TOO_MANY_DATABASES;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int TOO_MANY_SUBCOLUMNS;
 }
 
 namespace fs = std::filesystem;
@@ -2008,6 +2010,24 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
+
+    if (res->storesDataOnDisk())
+    {
+        /// Check sub columns limit
+        size_t max_subcolumns = static_cast<unsigned>(getContext()->getSettingsRef()[Setting::max_subcolumns]);
+        auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+        NamesAndTypesList columns = properties.columns.get(get_column_options);
+
+        size_t subcolumn_count = 0;
+        for (const auto & column : columns)
+            if (column.isSubcolumn())
+                subcolumn_count++;
+
+        if (subcolumn_count > max_subcolumns)
+            throw Exception(ErrorCodes::TOO_MANY_SUBCOLUMNS,
+                                    "Too many subcolumns. The limit is set to {}, the number of subcolumns in the table is {}",
+                                    max_subcolumns, subcolumn_count);
+    }
 
     auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
     if (replicated_storage)

@@ -7044,6 +7044,9 @@ Possible values:
 - 0 — always,
 - negative integer - never.
 )", 0) \
+    DECLARE(UInt64, max_subcolumns, 10000, R"(
+Limit on the number of subcolumns for persistent tables.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
