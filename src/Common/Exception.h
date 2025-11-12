@@ -32,6 +32,7 @@ class AtomicLogger;
 
 /// This flag can be set for testing purposes - to check that no exceptions are thrown.
 extern bool terminate_on_any_exception;
+extern std::atomic_bool abort_on_logical_error;
 
 class Exception : public Poco::Exception
 {
@@ -374,5 +375,9 @@ T current_exception_cast()
         return nullptr;
     }
 }
+
+/// Return copy of a current exception if it is a Poco::Exception (DB::Exception), since this exception is mutable, and returning reference is unsafe.
+/// And a reference otherwise.
+std::exception_ptr copyMutableException(std::exception_ptr ptr);
 
 }

@@ -32,7 +32,10 @@
     M(BackupLogElement) \
     M(BlobStorageLogElement) \
     M(QueryMetricLogElement) \
-    M(DeadLetterQueueElement)
+    M(DeadLetterQueueElement) \
+    M(ZooKeeperConnectionLogElement) \
+    M(IcebergMetadataLogElement) \
+    M(DeltaMetadataLogElement) \
 
 #define SYSTEM_LOG_ELEMENTS_CLOUD(M) \
     M(DistributedCacheLogElement) \
@@ -64,6 +67,9 @@ public:
 
     virtual String getName() const = 0;
 
+    /// For implementations that buffer data in memory and flush it to the log periodically,
+    /// this method forces an immediate write to the log.
+    virtual void flushBufferToLog(std::chrono::system_clock::time_point /* current_time */) {}
     /// Return the index of the latest added log element. That index no less than the flashed index.
     /// The flashed index is the index of the last log element which has been flushed successfully.
     /// Thereby all the records whose index is less than the flashed index are flushed already.

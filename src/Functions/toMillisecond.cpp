@@ -18,7 +18,7 @@ Returns the millisecond component (0-999) of a `DateTime` or `DateTime64` value.
     {
         {"datetime", "Date with time to get the millisecond from.", {"DateTime", "DateTime64"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the millisecond in the minute (0 - 59) of the given `Date` or `DateTime`", {"UInt16"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the millisecond in the minute (0 - 59) of `datetime`.", {"UInt16"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toMillisecond(toDateTime64('2023-04-21 10:20:30.456', 3));

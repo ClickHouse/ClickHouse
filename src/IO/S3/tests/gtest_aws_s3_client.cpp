@@ -136,13 +136,13 @@ void testServerSideEncryption(
         region,
         remote_host_filter,
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {},
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
         uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
@@ -411,13 +411,13 @@ TEST(IOTestAwsS3Client, AssumeRole)
         region,
         remote_host_filter,
         s3_max_redirects,
-        s3_retry_attempts,
+        DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = s3_retry_attempts},
         s3_slow_all_threads_after_network_error,
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {},
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
         "http");
 
     client_configuration.endpointOverride = uri.endpoint;

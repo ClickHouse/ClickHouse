@@ -77,7 +77,32 @@ private:
 
 REGISTER_FUNCTION(GetSizeOfEnumType)
 {
-    factory.registerFunction<FunctionGetSizeOfEnumType>();
+    FunctionDocumentation::Description description_getSizeOfEnumType = R"(
+Returns the number of fields in the given [`Enum`](../../sql-reference/data-types/enum.md).
+)";
+    FunctionDocumentation::Syntax syntax_getSizeOfEnumType = "getSizeOfEnumType(x)";
+    FunctionDocumentation::Arguments arguments_getSizeOfEnumType = {
+        {"x", "Value of type `Enum`.", {"Enum"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_getSizeOfEnumType = {"Returns the number of fields with `Enum` input values.", {"UInt8/16"}};
+    FunctionDocumentation::Examples examples_getSizeOfEnumType = {
+    {
+        "Usage example",
+        R"(
+SELECT getSizeOfEnumType(CAST('a' AS Enum8('a' = 1, 'b' = 2))) AS x;
+        )",
+        R"(
+┌─x─┐
+│ 2 │
+└───┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_getSizeOfEnumType = {1, 1};
+    FunctionDocumentation::Category category_getSizeOfEnumType = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_getSizeOfEnumType = {description_getSizeOfEnumType, syntax_getSizeOfEnumType, arguments_getSizeOfEnumType, returned_value_getSizeOfEnumType, examples_getSizeOfEnumType, introduced_in_getSizeOfEnumType, category_getSizeOfEnumType};
+
+    factory.registerFunction<FunctionGetSizeOfEnumType>(documentation_getSizeOfEnumType);
 }
 
 }

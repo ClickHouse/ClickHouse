@@ -45,31 +45,46 @@ KeyPair & KeyPair::operator=(KeyPair && other) noexcept
 
 KeyPair KeyPair::fromFile(const std::string & path, const std::string & password)
 {
+    BIO_ptr file(BIO_new_file(path.c_str(), "r"), BIO_free);
+
+    if (!file)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
+
+    return KeyPair::fromBIO(std::move(file), password);
+}
+
+KeyPair KeyPair::fromPEMString(const std::string & pem, const std::string & password)
+{
+    std::string_view sv{pem};
+    return KeyPair::fromPEMString(sv, password);
+}
+
+KeyPair KeyPair::fromPEMString(const std::string_view & pem, const std::string & password)
+{
+    BIO_ptr pem_bio(BIO_new_mem_buf(pem.data(), pem.length()), BIO_free);
+
+    if (!pem_bio)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
+
+    return KeyPair::fromBIO(std::move(pem_bio), password);
+}
+
+KeyPair KeyPair::fromBIO(BIO_ptr bio, const std::string & password)
+{
     EVP_PKEY * key = nullptr;
 
     /// Try to load a private key.
-    {
-        BIO_ptr file(BIO_new_file(path.c_str(), "r"), BIO_free);
-
-        if (!file)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
-
-        key = PEM_read_bio_PrivateKey(file.get(), nullptr, nullptr, password.empty() ? nullptr : const_cast<char *>(password.c_str()));
-    }
+    key = PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, password.empty() ? nullptr : const_cast<char *>(password.c_str()));
 
     /// Maybe it is a public key.
     if (!key)
     {
-        BIO_ptr file(BIO_new_file(path.c_str(), "r"), BIO_free);
-
-        if (!file)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
-
-        key = PEM_read_bio_PUBKEY(file.get(), nullptr, nullptr, nullptr);
+        BIO_reset(bio.get());
+        key = PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr);
     }
 
     if (!key)
-        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to load key from a file: {}", getOpenSSLErrors());
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to load key: {}", getOpenSSLErrors());
 
     return KeyPair(key);
 }

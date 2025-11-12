@@ -786,6 +786,11 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </opentelemetry_span_log>
 
+    <iceberg_metadata_log>
+        <database>system</database>
+        <table>iceberg_metadata_log</table>
+        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
+    </iceberg_metadata_log>
 
     <!-- Crash log. Stores stack traces for fatal errors.
          This table is normally empty. -->

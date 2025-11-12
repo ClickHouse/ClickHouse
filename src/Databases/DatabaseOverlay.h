@@ -54,7 +54,7 @@ public:
 
     void drop(ContextPtr context) override;
 
-    void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
+    void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, bool validate_new_create_query) override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
 
@@ -66,9 +66,9 @@ public:
 
     void shutdown() override;
 
-    bool canContainMergeTreeTables() const override;
-    bool canContainDistributedTables() const override;
-    bool canContainRocksDBTables() const override;
+    /// Return false if at least one underlying database is not external, otherwise return true
+    bool isExternal() const override;
+
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
     void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;

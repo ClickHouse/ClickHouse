@@ -53,6 +53,8 @@ void MergeTreeSinkPatch::finishDelayedChunk()
 
 TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block)
 {
+    storage.throwLightweightUpdateIfNeeded(block.block.bytes());
+
     auto partition_id = getPartitionIdForPatch(block.partition);
     UInt64 block_number = update_holder.block_holder->block.number;
 

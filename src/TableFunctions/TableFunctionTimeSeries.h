@@ -31,7 +31,7 @@ private:
         bool is_insert_query) const override;
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    const char * getStorageTypeName() const override;
+    const char * getStorageEngineName() const override;
 
     StoragePtr getTargetTable(const ContextPtr & context) const;
 

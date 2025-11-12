@@ -18,7 +18,9 @@ def build_docker_deps(image_name: str, imagedir: str) -> None:
     dist_dir = str(subprocess.check_output(cmd, shell=True, encoding="utf-8").strip())
     pip_cmd = (
         "pip install pipdeptree 2>/dev/null 1>/dev/null && "
-        f"pipdeptree --freeze --warn silence --exclude pipdeptree --path {dist_dir}"
+        # Exclude not only pipdeptree itself, but also its dependencies
+        "pipdeptree --freeze --warn silence --exclude pipdeptree --exclude-dependencies "
+        f"--path {dist_dir}"
     )
     # /=/!d - remove dependencies without pin
     # \s - remove spaces

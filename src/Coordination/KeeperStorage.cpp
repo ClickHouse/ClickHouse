@@ -6,7 +6,9 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/SHA1Engine.h>
 
+#include <Common/HistogramMetrics.h>
 #include <Common/Base64.h>
+#include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/SipHash.h>
@@ -46,12 +48,19 @@ namespace ProfileEvents
     extern const Event KeeperProcessElapsedMicroseconds;
 }
 
+namespace HistogramMetrics
+{
+    extern Metric & KeeperServerPreprocessRequestDuration;
+    extern MetricFamily & KeeperServerProcessRequestDuration;
+}
+
 namespace DB
 {
 
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+    extern const CoordinationSettingsBool check_node_acl_on_remove;
 }
 
 namespace ErrorCodes
@@ -176,12 +185,12 @@ KeeperResponsesForSessions processWatchesImpl(
     Strings paths_to_check_for_list_watches;
     if (event_type == Coordination::Event::CREATED)
     {
-        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// Trigger list watches for parent
+        paths_to_check_for_list_watches.push_back(std::string{parent_path}); /// Trigger list watches for parent
     }
     else if (event_type == Coordination::Event::DELETED)
     {
         paths_to_check_for_list_watches.push_back(path); /// Trigger both list watches for this path
-        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// And for parent path
+        paths_to_check_for_list_watches.push_back(std::string{parent_path}); /// And for parent path
     }
     /// CHANGED event never trigger list watches
 
@@ -346,7 +355,6 @@ KeeperMemNode & KeeperMemNode::operator=(const KeeperMemNode & other)
     }
 
     children = other.children;
-
     return *this;
 }
 
@@ -405,7 +413,7 @@ void KeeperMemNode::setResponseStat(Coordination::Stat & response_stat) const
 
 uint64_t KeeperMemNode::sizeInBytes() const
 {
-    return sizeof(KeeperMemNode) + children.size() * sizeof(StringRef) + stats.data_size;
+    return sizeof(KeeperMemNode) + children.size() * sizeof(std::string_view) + stats.data_size;
 }
 
 void KeeperMemNode::setData(const String & new_data)
@@ -418,12 +426,12 @@ void KeeperMemNode::setData(const String & new_data)
     }
 }
 
-void KeeperMemNode::addChild(StringRef child_path)
+void KeeperMemNode::addChild(std::string_view child_path)
 {
     children.insert(child_path);
 }
 
-void KeeperMemNode::removeChild(StringRef child_path)
+void KeeperMemNode::removeChild(std::string_view child_path)
 {
     children.erase(child_path);
 }
@@ -452,6 +460,15 @@ void KeeperMemNode::shallowCopy(const KeeperMemNode & other)
     }
 
     cached_digest = other.cached_digest;
+}
+
+KeeperMemNode KeeperMemNode::copyFromSnapshotNode()
+{
+    KeeperMemNode node_copy;
+    node_copy.shallowCopy(*this);
+    node_copy.children = std::move(children);
+    children.clear();
+    return node_copy;
 }
 
 struct CreateNodeDelta
@@ -640,7 +657,7 @@ void KeeperStorage<Container>::initializeSystemNodes()
             /// Take child path from key owned by map.
             auto child_path = Coordination::getBaseNodeName(map_key->getKey());
             container.updateValue(
-                Coordination::parentNodePath(StringRef(path)),
+                Coordination::parentNodePath(path),
                 [child_path](auto & parent)
                 {
                     // don't update stats so digest is okay
@@ -666,7 +683,7 @@ template <class... Ts>
 Overloaded(Ts...) -> Overloaded<Ts...>;  /// NOLINT(misc-use-internal-linkage)
 
 template<typename Container>
-std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(StringRef path, bool should_lock_storage) const
+std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::tryGetNodeFromStorage(std::string_view path, bool should_lock_storage) const
 {
     std::shared_lock lock(storage.storage_mutex, std::defer_lock);
     if (should_lock_storage)
@@ -1054,9 +1071,9 @@ void KeeperStorage<Container>::UncommittedState::rollback(std::list<Delta> rollb
 }
 
 template<typename Container>
-std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::getNode(StringRef path, bool should_lock_storage) const
+std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedState::getNode(std::string_view path, bool should_lock_storage) const
 {
-    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
+    if (auto node_it = nodes.find(path); node_it != nodes.end())
         return node_it->second.node;
 
     std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path, should_lock_storage);
@@ -1071,18 +1088,9 @@ std::shared_ptr<typename Container::Node> KeeperStorage<Container>::UncommittedS
 }
 
 template<typename Container>
-const typename Container::Node * KeeperStorage<Container>::UncommittedState::getActualNodeView(StringRef path, const Node & storage_node) const
+Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(std::string_view path) const
 {
-    if (auto node_it = nodes.find(path.toView()); node_it != nodes.end())
-        return node_it->second.node.get();
-
-    return &storage_node;
-}
-
-template<typename Container>
-Coordination::ACLs KeeperStorage<Container>::UncommittedState::getACLs(StringRef path) const
-{
-    auto node_it = nodes.find(path.toView());
+    auto node_it = nodes.find(path);
     if (node_it == nodes.end())
     {
         std::shared_ptr<KeeperStorage::Node> node = tryGetNodeFromStorage(path);
@@ -1334,7 +1342,7 @@ bool KeeperStorage<Container>::createNode(
     }
     else
     {
-        auto [map_key, _] = container.insert(path, created_node);
+        auto [map_key, _] = container.insert(path, std::move(created_node));
         /// Take child path from key owned by map.
         auto child_path = Coordination::getBaseNodeName(map_key->getKey());
         container.updateValue(
@@ -1347,7 +1355,7 @@ bool KeeperStorage<Container>::createNode(
         );
 
         if (update_digest)
-            addDigest(map_key->getMapped()->value, map_key->getKey().toView());
+            addDigest(map_key->getMapped()->value, map_key->getKey());
     }
 
     if (stat.ephemeralOwner != 0)
@@ -1431,6 +1439,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(static_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
         case Coordination::OpNum::Check:
         case Coordination::OpNum::CheckNotExists:
+        case Coordination::OpNum::CheckStat:
             return function(static_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
         case Coordination::OpNum::Multi:
         case Coordination::OpNum::MultiRead:
@@ -1452,7 +1461,7 @@ namespace
 {
 
 template<typename Storage>
-Coordination::ACLs getNodeACLs(Storage & storage, StringRef path, bool is_local)
+Coordination::ACLs getNodeACLs(Storage & storage, std::string_view path, bool is_local)
 {
     if (is_local)
     {
@@ -1482,7 +1491,7 @@ void handleSystemNodeModification(const KeeperContext & keeper_context, std::str
 }
 
 template<typename Container>
-bool KeeperStorage<Container>::checkACL(StringRef path, int32_t permission, int64_t session_id, bool is_local)
+bool KeeperStorage<Container>::checkACL(std::string_view path, int32_t permission, int64_t session_id, bool is_local)
 {
     const auto node_acls = getNodeACLs(*this, path, is_local);
     if (node_acls.empty())
@@ -1643,7 +1652,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZNODEEXISTS}};
     }
 
-    if (Coordination::getBaseNodeName(path_created).size == 0)
+    if (Coordination::getBaseNodeName(path_created).empty())
         return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADARGUMENTS}};
 
     Coordination::ACLs node_acls;
@@ -1819,6 +1828,12 @@ processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & sto
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
+    if (auto check_node_acl = storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove];
+        check_node_acl && !storage.checkACL(zk_request.getPath(), Coordination::ACL::Delete, session_id, is_local))
+    {
+        return false;
+    }
+
     return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
@@ -1948,9 +1963,23 @@ class ToDeleteTreeCollector
     uint32_t nodes_observed = 1;  /// root node
 
     std::list<KeeperStorageBase::Delta> deltas;
-    using UncommittedChildren
+    using ProcessedUncommittedChildren
         = std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
+    struct PathCmp
+    {
+        auto operator()(const std::string_view a,
+                        const std::string_view b) const
+        {
+            size_t level_a = std::count(a.begin(), a.end(), '/');
+            size_t level_b = std::count(b.begin(), b.end(), '/');
+            return level_a < level_b || (level_a == level_b && a < b);
+        }
+
+        using is_transparent = void; // required to make find() work with different type than key_type
+    };
+
+    std::map<std::string_view, typename Storage::UncommittedState::UncommittedNode *, PathCmp> uncommitted_children;
 public:
     enum class CollectStatus
     {
@@ -1969,10 +1998,19 @@ public:
     {
     }
 
-    CollectStatus collect(StringRef root_path, const Storage::Node & root_node)
+    CollectStatus collect(std::string_view root_path, const Storage::Node & root_node)
     {
         if (checkLimits(root_node))
             return CollectStatus::LimitExceeded;
+
+        /// Collect uncommitted children of root node in a specialized structure so we avoid iterating all uncommitted
+        /// nodes for each child node.
+        auto & nodes = storage.uncommitted_state.nodes;
+        for (auto & [node_path, uncommitted_node] : nodes)
+        {
+            if (Coordination::matchPath(node_path, root_path) == Coordination::PathMatchResult::IS_CHILD)
+                uncommitted_children[node_path] = &uncommitted_node;
+        }
 
         addDelta(root_path, root_node.stats, storage.uncommitted_state.getACLs(root_path), std::string{root_node.getData()});
 
@@ -1984,18 +2022,18 @@ public:
             if (!storage.checkACL(current_path, Coordination::ACL::Delete, session_id, /*is_local=*/false))
                 return CollectStatus::NoAuth;
 
-            UncommittedChildren uncommitted_children;
-            if (auto status = visitUncommitted(current_path, uncommitted_children); status != CollectStatus::Ok)
+            ProcessedUncommittedChildren processed_uncommitted_children;
+            if (auto status = visitUncommitted(current_path, processed_uncommitted_children); status != CollectStatus::Ok)
                 return status;
 
             if constexpr (Storage::use_rocksdb)
             {
-                if (auto status = visitRocksDBNode(current_path, uncommitted_children); status != CollectStatus::Ok)
+                if (auto status = visitRocksDBNode(current_path, processed_uncommitted_children); status != CollectStatus::Ok)
                     return status;
             }
             else
             {
-                if (auto status = visitMemNode(current_path, uncommitted_children); status != CollectStatus::Ok)
+                if (auto status = visitMemNode(current_path, processed_uncommitted_children); status != CollectStatus::Ok)
                     return status;
             }
         }
@@ -2009,21 +2047,21 @@ public:
     }
 
 private:
-    CollectStatus visitRocksDBNode(StringRef current_path, const UncommittedChildren & uncommitted_children) requires Storage::use_rocksdb
+    CollectStatus visitRocksDBNode(std::string_view current_path, const ProcessedUncommittedChildren & processed_uncommitted_children) requires Storage::use_rocksdb
     {
-        std::filesystem::path current_path_fs(current_path.toString());
+        std::filesystem::path current_path_fs(current_path);
 
         std::vector<std::pair<std::string, typename Storage::Node>> children;
         {
             std::lock_guard lock(storage.storage_mutex);
-            children = storage.container.getChildren(current_path.toString(), /*read_meta*/ true, /*read_data=*/true);
+            children = storage.container.getChildren(current_path, /*read_meta*/ true, /*read_data=*/true);
         }
 
         for (auto && [child_name, child_node] : children)
         {
             auto child_path = (current_path_fs / child_name).generic_string();
 
-            if (uncommitted_children.contains(child_path))
+            if (processed_uncommitted_children.contains(child_path))
                 continue;
 
             if (checkLimits(child_node))
@@ -2035,21 +2073,21 @@ private:
         return CollectStatus::Ok;
     }
 
-    CollectStatus visitMemNode(StringRef current_path, const UncommittedChildren & uncommitted_children) requires (!Storage::use_rocksdb)
+    CollectStatus visitMemNode(std::string_view current_path, const ProcessedUncommittedChildren & processed_uncommitted_children) requires (!Storage::use_rocksdb)
     {
         std::lock_guard lock(storage.storage_mutex);
         auto node_it = storage.container.find(current_path);
         if (node_it == storage.container.end())
             return CollectStatus::Ok;
 
-        std::filesystem::path current_path_fs(current_path.toString());
+        std::filesystem::path current_path_fs(current_path);
         const auto & children = node_it->value.getChildren();
 
         for (const auto & child_name : children)
         {
-            auto child_path = (current_path_fs / child_name.toView()).generic_string();
+            auto child_path = (current_path_fs / child_name).generic_string();
 
-            if (uncommitted_children.contains(child_path))
+            if (processed_uncommitted_children.contains(child_path))
                 continue;
 
             auto child_it = storage.container.find(child_path);
@@ -2065,18 +2103,17 @@ private:
         return CollectStatus::Ok;
     }
 
-    CollectStatus visitUncommitted(const std::string & path, UncommittedChildren & uncommitted_children)
+    CollectStatus visitUncommitted(const std::string & path, ProcessedUncommittedChildren & processed_uncommitted_children)
     {
-        auto & nodes = storage.uncommitted_state.nodes;
-
-        for (auto & [node_path, uncommitted_node] : nodes)
+        for (auto nodes_it = uncommitted_children.upper_bound(path + "/");
+             nodes_it != uncommitted_children.end() && Coordination::parentNodePath(nodes_it->first) == path;
+             ++nodes_it)
         {
-            if (Coordination::parentNodePath(node_path) != path)
-                continue;
+            const auto & [node_path, uncommitted_node] = *nodes_it;
 
-            uncommitted_children.insert(node_path);
+            processed_uncommitted_children.insert(node_path);
 
-            const auto node_ptr = uncommitted_node.node;
+            const auto node_ptr = uncommitted_node->node;
 
             if (node_ptr == nullptr) /// node was deleted in previous step of multi transaction
                 continue;
@@ -2084,14 +2121,14 @@ private:
             if (checkLimits(*node_ptr))
                 return CollectStatus::LimitExceeded;
 
-            uncommitted_node.materializeACL(storage.acl_map);
-            addDelta(node_path, node_ptr->stats, *uncommitted_node.acls, std::string{node_ptr->getData()});
+            uncommitted_node->materializeACL(storage.acl_map);
+            addDelta(std::string{node_path}, node_ptr->stats, *uncommitted_node->acls, std::string{node_ptr->getData()});
         }
 
         return CollectStatus::Ok;
     }
 
-    void addDelta(StringRef path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
+    void addDelta(std::string_view path, const NodeStats & stats, Coordination::ACLs acls, std::string data)
     {
         deltas.emplace_front(std::string{path}, zxid, RemoveNodeDelta{/*version=*/-1, stats, std::move(acls), std::move(data)});
     }
@@ -2496,7 +2533,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
             bool is_ephemeral;
             if constexpr (!Storage::use_rocksdb)
             {
-                auto child_path = (std::filesystem::path(zk_request.path) / child.toView()).generic_string();
+                auto child_path = (std::filesystem::path(zk_request.path) / child).generic_string();
                 auto child_it = container.find(child_path);
                 if (child_it == container.end())
                     onStorageInconsistency("Failed to find a child");
@@ -2517,7 +2554,7 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperList
                 if constexpr (Storage::use_rocksdb)
                     response->names.push_back(child.first);
                 else
-                    response->names.push_back(child.toString());
+                    response->names.push_back(std::string{child});
             }
         }
 
@@ -2555,6 +2592,39 @@ bool checkAuth(const Coordination::ZooKeeperCheckRequest & zk_request, Storage &
         is_local);
 }
 
+namespace
+{
+
+bool checkNodeStat(const NodeStats & verifiable, const Coordination::Stat & validator)
+{
+    if (validator.czxid != -1 && validator.czxid != verifiable.czxid)
+        return false;
+    else if (validator.mzxid != -1 && validator.mzxid != verifiable.mzxid)
+        return false;
+    else if (validator.ctime != -1 && validator.ctime != verifiable.ctime())
+        return false;
+    else if (validator.mtime != -1 && validator.mtime != verifiable.mtime)
+        return false;
+    else if (validator.version != -1 && validator.version != verifiable.version)
+        return false;
+    else if (validator.cversion != -1 && validator.cversion != verifiable.cversion)
+        return false;
+    else if (validator.aversion != -1 && validator.aversion != verifiable.aversion)
+        return false;
+    else if (validator.ephemeralOwner != -1 && validator.ephemeralOwner != verifiable.ephemeralOwner())
+        return false;
+    else if (validator.dataLength != -1 && validator.dataLength != static_cast<int32_t>(verifiable.data_size))
+        return false;
+    else if (validator.numChildren != -1 && validator.numChildren != verifiable.numChildren())
+        return false;
+    else if (validator.pzxid != -1 && validator.pzxid != verifiable.pzxid)
+        return false;
+
+    return true;
+}
+
+}
+
 template <typename Storage>
 std::list<KeeperStorageBase::Delta> preprocess(
     const Coordination::ZooKeeperCheckRequest & zk_request,
@@ -2580,6 +2650,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
         if (zk_request.version != -1 && zk_request.version != node->stats.version)
             return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+
+        if (zk_request.getOpNum() == Coordination::OpNum::CheckStat && !checkNodeStat(node->stats, zk_request.stat_to_check.value()))
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
     }
 
     return {};
@@ -2588,9 +2661,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCheckResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCheckNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCheckResponse>();
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperCheckResponse>(zk_request.makeResponse());
 
     if constexpr (!local)
     {
@@ -2624,6 +2695,8 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperChec
         if (node_it == container.end())
             on_error(Coordination::Error::ZNONODE);
         else if (zk_request.version != -1 && zk_request.version != node_it->value.stats.version)
+            on_error(Coordination::Error::ZBADVERSION);
+        else if (zk_request.getOpNum() == Coordination::OpNum::CheckStat && !checkNodeStat(node_it->value.stats, zk_request.stat_to_check.value()))
             on_error(Coordination::Error::ZBADVERSION);
         else
             response->error = Coordination::Error::ZOK;
@@ -3048,8 +3121,12 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
 {
     Stopwatch watch;
     SCOPE_EXIT({
-        auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
+        watch.stop();
+
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        const auto elapsed_us = watch.elapsedMicroseconds();
+
+        if (elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3057,7 +3134,10 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
+
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed_us);
+
+        HistogramMetrics::observe(HistogramMetrics::KeeperServerPreprocessRequestDuration, elapsed_ms);
     });
 
     if (!initialized)
@@ -3172,12 +3252,12 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                     if (!node || node->stats.ephemeralOwner() != session_id)
                         continue;
 
-                    auto parent_node_path = Coordination::parentNodePath(ephemeral_path).toView();
+                    auto parent_node_path = Coordination::parentNodePath(ephemeral_path);
 
                     auto parent_update_it = parent_updates.find(parent_node_path);
                     if (parent_update_it == parent_updates.end())
                     {
-                        auto parent_node = uncommitted_state.getNode(StringRef{parent_node_path}, /*should_lock_storage=*/false);
+                        auto parent_node = uncommitted_state.getNode(parent_node_path, /*should_lock_storage=*/false);
                         std::tie(parent_update_it, std::ignore) = parent_updates.emplace(parent_node_path, *parent_node);
                     }
 
@@ -3256,8 +3336,12 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 {
     Stopwatch watch;
     SCOPE_EXIT({
-        auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
+        watch.stop();
+
+        const auto elapsed_us = watch.elapsedMicroseconds();
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+
+        if (elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3265,7 +3349,13 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
+
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed_us);
+
+        HistogramMetrics::observe(
+            HistogramMetrics::KeeperServerProcessRequestDuration,
+            {toOperationTypeMetricLabel(zk_request->getOpNum())},
+            elapsed_ms);
     });
 
     if (!initialized)

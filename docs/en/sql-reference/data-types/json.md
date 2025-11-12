@@ -5,6 +5,7 @@ sidebar_label: 'Object Data Type'
 sidebar_position: 26
 slug: /sql-reference/data-types/object-data-type
 title: 'Object Data Type '
+doc_type: 'reference'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';

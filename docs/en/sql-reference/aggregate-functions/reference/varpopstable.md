@@ -5,6 +5,7 @@ description: 'Returns the population variance. Unlike varPop , this function use
 sidebar_position: 211
 slug: /sql-reference/aggregate-functions/reference/varpopstable
 title: 'varPopStable'
+doc_type: 'reference'
 ---
 
 ## varPopStable {#varpopstable}

@@ -1,4 +1,5 @@
 #include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
@@ -128,6 +129,32 @@ RestCatalog::RestCatalog(
 
     config = loadConfig();
 }
+
+RestCatalog::RestCatalog(
+    const std::string & warehouse_,
+    const std::string & base_url_,
+    const std::string & onelake_tenant_id,
+    const std::string & onelake_client_id,
+    const std::string & onelake_client_secret,
+    const std::string & auth_scope_,
+    const std::string & oauth_server_uri_,
+    bool oauth_server_use_request_body_,
+    DB::ContextPtr context_)
+    : ICatalog(warehouse_)
+    , DB::WithContext(context_)
+    , base_url(correctAPIURI(base_url_))
+    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
+    , tenant_id(onelake_tenant_id)
+    , client_id(onelake_client_id)
+    , client_secret(onelake_client_secret)
+    , auth_scope(auth_scope_)
+    , oauth_server_uri(oauth_server_uri_)
+    , oauth_server_use_request_body(oauth_server_use_request_body_)
+{
+    update_token_if_expired = true;
+    config = loadConfig();
+}
+
 
 RestCatalog::Config RestCatalog::loadConfig()
 {
@@ -271,7 +298,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 {
     const auto & context = getContext();
 
-    Poco::URI url(base_url / endpoint);
+    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
 
@@ -510,7 +538,12 @@ DB::Names RestCatalog::parseTables(DB::ReadBuffer & buf, const std::string & bas
         for (size_t i = 0; i < identifiers_object->size(); ++i)
         {
             const auto current_table_json = identifiers_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-            const auto table_name = current_table_json->get("name").extract<String>();
+            /// If table has encoded sequence (like 'foo%2Fbar')
+            /// catalog returns decoded character instead of sequence ('foo/bar')
+            /// Here name encoded back to 'foo%2Fbar' format
+            const auto table_name_raw = current_table_json->get("name").extract<String>();
+            std::string table_name;
+            Poco::URI::encode(table_name_raw, "/", table_name);
 
             tables.push_back(base_namespace + "." + table_name);
             if (limit && tables.size() >= limit)
@@ -620,7 +653,7 @@ bool RestCatalog::getTableMetadataImpl(
     if (result.requiresSchema())
     {
         // int format_version = metadata_object->getValue<int>("format-version");
-        auto schema_processor = DB::IcebergSchemaProcessor();
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickhouseTableSchemaById(id);
         result.setSchema(*schema);
@@ -678,10 +711,11 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendPOSTRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body) const
+void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    request_body->stringify(oss);
+    if (request_body)
+        request_body->stringify(oss);
     const std::string body_str = DB::removeEscapedSlashes(oss.str());
 
     DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
@@ -689,15 +723,20 @@ void RestCatalog::sendPOSTRequest(const String & endpoint, Poco::JSON::Object::P
 
     const auto & context = getContext();
 
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [body_str](std::ostream & os)
+    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
+    if (!body_str.empty())
     {
-        os << body_str;
-    };
+        out_stream_callback = [body_str](std::ostream & os)
+        {
+            os << body_str;
+        };
+    }
 
-    Poco::URI url(endpoint);
+    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    Poco::URI url(endpoint, /* enable_url_encoding */ false);
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
-        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withMethod(method)
         .withSettings(context->getReadSettings())
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
@@ -707,7 +746,10 @@ void RestCatalog::sendPOSTRequest(const String & endpoint, Poco::JSON::Object::P
         .create(credentials);
 
     String response_str;
-    readJSONObjectPossiblyInvalid(response_str, *wb);
+    if (!ignore_result)
+        readJSONObjectPossiblyInvalid(response_str, *wb);
+    else
+        wb->ignoreAll();
 }
 
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
@@ -728,7 +770,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendPOSTRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body);
     }
     catch (...)
     {
@@ -766,7 +808,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendPOSTRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -831,13 +873,28 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
-        sendPOSTRequest(endpoint, request_body);
+        sendRequest(endpoint, request_body);
     }
     catch (const DB::HTTPException &)
     {
         return false;
     }
     return true;
+}
+
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
+{
+    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+
+    Poco::JSON::Object::Ptr request_body = nullptr;
+    try
+    {
+        sendRequest(endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to drop table {}", ex.displayText());
+    }
 }
 
 

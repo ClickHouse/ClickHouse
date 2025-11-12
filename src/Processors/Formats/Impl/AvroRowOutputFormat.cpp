@@ -616,7 +616,8 @@ void registerOutputFormatAvro(FormatFactory & factory)
     factory.registerOutputFormat("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
         return std::make_shared<AvroRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });

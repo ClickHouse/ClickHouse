@@ -70,11 +70,11 @@ void writeIPv4Text(const IPv4 & ip, WriteBuffer & buf)
 
 void writeIPv6Text(const IPv6 & ip, WriteBuffer & buf)
 {
-    char addr[IPV6_MAX_TEXT_LENGTH + 1] {};
+    char addr[IPV6_MAX_TEXT_LENGTH] {};
     char * paddr = addr;
 
     formatIPv6(reinterpret_cast<const unsigned char *>(&ip), paddr);
-    buf.write(addr, paddr - addr - 1);
+    buf.write(addr, paddr - addr);
 }
 
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
