@@ -232,6 +232,7 @@ private:
         }
         else if (dict_structure.key) /// composite key
         {
+            key_cols.reserve(dict_structure.key->size());
             for (const auto & id : *dict_structure.key)
             {
                 key_cols.emplace_back(id.name, id.type);
