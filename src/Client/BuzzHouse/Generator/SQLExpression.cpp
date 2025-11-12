@@ -1291,13 +1291,24 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
                + subquery_expr + binary_expr + array_tuple_expr + 1))
     {
-        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
+        const bool has_tuple = rg.nextBool();
+        ExprList * elist = has_tuple ? expr->mutable_comp_expr()->mutable_tuple() : expr->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 8));
+        const bool tuple_cols = has_tuple && rg.nextSmallNumber() < 5;
 
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
-            this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+            Expr * next = i == 0 ? elist->mutable_expr() : elist->add_extra_exprs();
+
+            if (tuple_cols)
+            {
+                generateColRef(rg, next);
+            }
+            else
+            {
+                generateExpression(rg, next);
+            }
             this->width++;
         }
         this->depth--;
