@@ -142,6 +142,71 @@ FROM t
 WHERE dictGetString('colors', 'name', color_id) ILIKE 'r%'
 ORDER BY color_id, payload;
 
+SELECT 'equals() - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id
+FROM t
+WHERE equals(dictGetString('colors','name', color_id), 'red')
+ORDER BY color_id;
+
+SELECT 'equals()';
+SELECT color_id
+FROM t
+WHERE equals(dictGetString('colors','name', color_id), 'red')
+ORDER BY color_id;
+
+SELECT 'notEquals - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors','name', color_id) != 'red'
+ORDER BY color_id, payload;
+
+SELECT 'notEquals';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors','name', color_id) != 'red'
+ORDER BY color_id, payload;
+
+SELECT 'NOT LIKE r% - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors','name', color_id) NOT LIKE 'r%'
+ORDER BY color_id, payload;
+
+SELECT 'NOT LIKE r%';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors','name', color_id) NOT LIKE 'r%'
+ORDER BY color_id, payload;
+
+SELECT 'NOT ILIKE r% - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors','name', color_id) NOT ILIKE 'r%'
+ORDER BY color_id, payload;
+
+SELECT 'NOT ILIKE r%';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors','name', color_id) NOT ILIKE 'r%'
+ORDER BY color_id, payload;
+
+SELECT 'match ^r - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+WHERE match(dictGetString('colors','name', color_id), '^r')
+ORDER BY color_id, payload;
+
+SELECT 'match ^r';
+SELECT color_id, payload
+FROM t
+WHERE match(dictGetString('colors','name', color_id), '^r')
+ORDER BY color_id, payload;
+
 SELECT 'NOT recursion - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
@@ -220,7 +285,143 @@ SELECT 'Empty result set';
 SELECT color_id
 FROM t
 WHERE dictGetString('colors', 'name', color_id) = 'nonexistent_color'
-ORDER BY color_id; 
+ORDER BY color_id;
+
+SELECT 'HAVING - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, count() AS c
+FROM t
+GROUP BY color_id
+HAVING dictGetString('colors','name', color_id) = 'red'
+ORDER BY color_id, c;
+
+SELECT 'HAVING';
+SELECT color_id, count() AS c
+FROM t
+GROUP BY color_id
+HAVING dictGetString('colors','name', color_id) = 'red'
+ORDER BY color_id, c;
+
+SELECT 'JOIN ON (INNER) - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT t1.color_id, t1.payload, t2.payload AS payload2
+FROM t AS t1
+INNER JOIN t AS t2
+  ON t1.color_id = t2.color_id
+ AND dictGetString('colors','name', t1.color_id) = 'red'
+ORDER BY t1.color_id, t1.payload, payload2;
+
+SELECT 'JOIN ON (INNER)';
+SELECT t1.color_id, t1.payload, t2.payload AS payload2
+FROM t AS t1
+INNER JOIN t AS t2
+  ON t1.color_id = t2.color_id
+ AND dictGetString('colors','name', t1.color_id) = 'red'
+ORDER BY t1.color_id, t1.payload, payload2;
+
+SELECT 'JOIN ON (LEFT) - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT t1.color_id, t1.payload, t2.payload AS payload2
+FROM t AS t1
+LEFT JOIN t AS t2
+  ON t1.color_id = t2.color_id
+ AND dictGetString('colors','name', t1.color_id) = 'red'
+ORDER BY t1.color_id, t1.payload, payload2;
+
+SELECT 'JOIN ON (LEFT)';
+SELECT t1.color_id, t1.payload, t2.payload AS payload2
+FROM t AS t1
+LEFT JOIN t AS t2
+  ON t1.color_id = t2.color_id
+ AND dictGetString('colors','name', t1.color_id) = 'red'
+ORDER BY t1.color_id, t1.payload, payload2;
+
+SELECT 'SELECT multiIf - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload,
+       multiIf(dictGetString('colors','name', color_id) = 'red', 'match', 'no_match') AS tag
+FROM t
+ORDER BY color_id, payload, tag;
+
+SELECT 'SELECT multiIf';
+SELECT color_id, payload,
+       multiIf(dictGetString('colors','name', color_id) = 'red', 'match', 'no_match') AS tag
+FROM t
+ORDER BY color_id, payload, tag;
+
+SELECT 'countIf - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT countIf(dictGetString('colors','name', color_id) = 'red') AS cnt
+FROM t;
+
+SELECT 'countIf';
+SELECT countIf(dictGetString('colors','name', color_id) = 'red') AS cnt
+FROM t;
+
+SELECT 'sumIf - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT sumIf(color_id, dictGetString('colors','name', color_id) = 'red') AS sum_id_match
+FROM t;
+
+SELECT 'sumIf';
+SELECT sumIf(color_id, dictGetString('colors','name', color_id) = 'red') AS sum_id_match
+FROM t;
+
+SELECT 'ORDER BY - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+ORDER BY (dictGetString('colors','name', color_id) = 'red') DESC, color_id, payload;
+
+SELECT 'ORDER BY';
+SELECT color_id, payload
+FROM t
+ORDER BY (dictGetString('colors','name', color_id) = 'red') DESC, color_id, payload;
+
+SELECT 'GROUP BY - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT (dictGetString('colors','name', color_id) = 'red') AS is_red, count() AS c
+FROM t
+GROUP BY (dictGetString('colors','name', color_id) = 'red')
+ORDER BY is_red, c;
+
+SELECT 'GROUP BY';
+SELECT (dictGetString('colors','name', color_id) = 'red') AS is_red, count() AS c
+FROM t
+GROUP BY (dictGetString('colors','name', color_id) = 'red')
+ORDER BY is_red, c;
+
+SELECT 'LIMIT BY - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id, payload
+FROM t
+ORDER BY color_id, payload
+LIMIT 1 BY (dictGetString('colors','name', color_id) = 'red');
+
+SELECT 'LIMIT BY';
+SELECT color_id, payload
+FROM t
+ORDER BY color_id, payload
+LIMIT 1 BY (dictGetString('colors','name', color_id) = 'red');
+
+SELECT 'WINDOW PARTITION BY - plan';
+EXPLAIN SYNTAX run_query_tree_passes=1
+SELECT color_id,
+       row_number() OVER (
+           PARTITION BY (dictGetString('colors','name', color_id) = 'red')
+           ORDER BY color_id
+       ) AS rn
+FROM t
+ORDER BY color_id, rn;
+
+SELECT 'WINDOW PARTITION BY';
+SELECT color_id,
+       row_number() OVER (
+           PARTITION BY (dictGetString('colors','name', color_id) = 'red')
+           ORDER BY color_id
+       ) AS rn
+FROM t
+ORDER BY color_id, rn;
 
 -- Negative: non-constant RHS, expect no rewrite
 SELECT 'Negative: non-constant RHS - plan';
