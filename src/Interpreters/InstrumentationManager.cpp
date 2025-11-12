@@ -1,4 +1,5 @@
 #include <chrono>
+#include <random>
 #include <Interpreters/InstrumentationManager.h>
 #include <xray/xray_interface.h>
 
@@ -326,40 +327,46 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 {
     using namespace std::chrono;
 
+    static thread_local std::random_device rd;
+    static thread_local std::mt19937 gen(rd());
+
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
 
     const auto & params = params_opt.value();
-    if (params.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
 
-    const auto & param = params[0];
-    std::optional<Float64> duration_ms;
+    auto get_value = [](auto param)
+    {
+        if (std::holds_alternative<Int64>(param))
+            return static_cast<Float64>(std::get<Int64>(param));
+        else if (std::holds_alternative<Float64>(param))
+            return std::get<Float64>(param);
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
+    };
 
-    if (std::holds_alternative<Int64>(param))
+    Float64 duration_ms = -1;
+
+    if (params.size() == 1)
     {
-        Int64 seconds = std::get<Int64>(param);
-        duration_ms = seconds * 1000;
-    }
-    else if (std::holds_alternative<Float64>(param))
-    {
-        Float64 seconds = std::get<Float64>(param);
-        duration_ms = seconds * 1000;
+        duration_ms = 1000 * get_value(params[0]);
     }
     else
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
+        auto min = get_value(params[0]);
+        auto max = get_value(params[1]);
+
+        std::uniform_real_distribution<> distrib(min, max);
+        duration_ms = 1000 * distrib(gen);
     }
 
     if (duration_ms < 0)
-    {
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Sleep duration must be non-negative");
-    }
 
-    LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms.value());
+    LOG_TRACE(logger, "Sleep ({}, function_id {}): sleeping for {} ms", instrumented_point.function_name, instrumented_point.function_id, duration_ms);
     auto now = std::chrono::system_clock::now();
-    std::this_thread::sleep_for(duration<Float64, std::milli>(duration_ms.value()));
+    std::this_thread::sleep_for(duration<Float64, std::milli>(duration_ms));
     auto element = createTraceLogElement(instrumented_point, entry_type, now);
     if (instrumented_point.context)
     {

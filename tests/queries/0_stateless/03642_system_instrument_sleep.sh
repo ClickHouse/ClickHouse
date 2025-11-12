@@ -26,3 +26,19 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM FLUSH LOGS system.query_log;
     SELECT query_duration_ms > 2000 FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type > 1 AND query_id = '$query_id';
 """
+
+$CLICKHOUSE_CLIENT -q """
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 0,1;
+"""
+
+query_id="${CLICKHOUSE_DATABASE}_sleep_random"
+
+for _ in $(seq 1 10); do
+    $CLICKHOUSE_CLIENT --query-id="$query_id" -q "SELECT 1 FORMAT Null;"
+done
+
+$CLICKHOUSE_CLIENT -q """
+    SYSTEM INSTRUMENT REMOVE ALL;
+    SYSTEM FLUSH LOGS system.query_log;
+    SELECT uniq(query_duration_ms/10) > 5 FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type > 1 AND query_id = '$query_id';
+"""

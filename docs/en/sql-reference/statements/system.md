@@ -255,10 +255,16 @@ SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` LOG EXIT 'this is a log print
 
 #### SLEEP {#instrument-add-sleep}
 
-Sleeps for a number of seconds either on `ENTRY` or `EXIT`.
+Sleeps for a number of fix amount of seconds either on `ENTRY` or `EXIT`:
 
 ```sql
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
+```
+
+or for a uniformly distributed random amount of seconds providing min and max separated by comma:
+
+```sql
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0,1
 ```
 
 #### PROFILE {#instrument-add-profile}
