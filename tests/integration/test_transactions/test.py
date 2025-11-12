@@ -111,12 +111,7 @@ def test_rollback_unfinished_on_restart1(start_cluster):
         "1_6_6_0\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
         "1_6_6_0_7\t0\ttid3\tcsn18446744073709551615_\ttid0\tcsn0_\n"
     )
-<<<<<<< HEAD
-    node.query("DROP TABLE mt SYNC")
-
-=======
     node.query("DROP TABLE IF EXISTS mt SYNC")
->>>>>>> origin/master
 
 def test_rollback_unfinished_on_restart2(start_cluster):
     node.query("DROP TABLE IF EXISTS mt2 SYNC")
@@ -200,9 +195,6 @@ def test_rollback_unfinished_on_restart2(start_cluster):
         "1_1_1_0\t0\ttid0\tcsn1_\ttid1\tcsn_1\n"
         "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0_\n"
     )
-<<<<<<< HEAD
-    node.query("DROP TABLE mt2 SYNC")
-=======
 
     node.query("DROP TABLE IF EXISTS mt2 SYNC")
 
@@ -228,4 +220,3 @@ def test_mutate_transaction_involved_parts(start_cluster):
     node.restart_clickhouse()
 
     node.query("DROP TABLE IF EXISTS mt3 SYNC")
->>>>>>> origin/master
