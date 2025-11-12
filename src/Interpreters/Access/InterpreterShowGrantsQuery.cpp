@@ -160,7 +160,10 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
     {
         grant_buf.restart();
         formatAST(*grant_query, grant_buf, false, true);
-        column->insert(grant_buf.str());
+        String formatted = grant_buf.str();
+        if (formatted.empty() || formatted.back() != ';')
+            formatted.push_back(';');
+        column->insert(formatted);
     }
 
     /// Prepare description of the result column.
