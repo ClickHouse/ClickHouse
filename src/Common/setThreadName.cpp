@@ -1,3 +1,4 @@
+#include <string_view>
 #include <unordered_map>
 #include "config.h"
 
@@ -34,7 +35,7 @@ template<std::size_t N>
 constexpr std::string_view as_string_view(char const (&s)[N])
 {
     static_assert(N <= THREAD_NAME_SIZE, "Thread name too long");
-    return std::string_view(s, N); // N includes null terminator
+    return std::string_view(s, N-1); // N-1 does not include null terminator
 }
 
 const static std::unordered_map<std::string_view, ThreadName> str_to_thread_name = []{
@@ -59,7 +60,7 @@ std::string_view toString(ThreadName name)
     }
 }
 
-ThreadName parseThreadName(const std::string & name)
+ThreadName parseThreadName(const std::string_view & name)
 {
     if (auto it = str_to_thread_name.find(name); it != str_to_thread_name.end())
         return it->second;
@@ -74,13 +75,15 @@ void setThreadName(ThreadName name)
 {
     thread_name = name;
 
-    auto thread_name_str = toString(name);
-    if (thread_name_str.size() > THREAD_NAME_SIZE)
+    auto thread_name_view = toString(name);
+    if (thread_name_view.size() > THREAD_NAME_SIZE)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be longer than 15 bytes");
-    if (thread_name_str.empty())
+    if (thread_name_view.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be empty");
-    if (thread_name_str.back() != '\0')
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name has to be null terminated string");
+
+    // copy string view to string to avoid tidy build error:
+    // `call may not be null terminated, provide size information to the callee to prevent potential issues`
+    auto thread_name_str = std::string(thread_name_view);
 
 #if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), thread_name_str.data());
@@ -120,7 +123,7 @@ ThreadName getThreadName()
             throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with prctl(PR_GET_NAME)");
 #endif
 
-    return parseThreadName(std::string{tmp_thread_name});
+    return parseThreadName(std::string_view{tmp_thread_name});
 }
 
 }

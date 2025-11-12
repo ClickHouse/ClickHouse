@@ -177,6 +177,4 @@ void setThreadName(ThreadName name);
 ThreadName getThreadName();
 
 std::string_view toString(ThreadName name);
-ThreadName parseThreadName(const std::string & name);
-
 }
