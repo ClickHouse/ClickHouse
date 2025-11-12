@@ -272,9 +272,6 @@
 [submodule "contrib/limonp"]
 	path = contrib/limonp
 	url = https://github.com/yanyiwu/limonp
-[submodule "contrib/cppjieba"]
-	path = contrib/cppjieba
-	url = https://github.com/yanyiwu/cppjieba
 [submodule "contrib/aws-crt-cpp"]
 	path = contrib/aws-crt-cpp
 	url = https://github.com/ClickHouse/aws-crt-cpp
@@ -396,6 +393,3 @@
 [submodule "contrib/darts-clone"]
 	path = contrib/darts-clone
 	url = https://github.com/s-yata/darts-clone
-[submodule "contrib/simdutf"]
-	path = contrib/simdutf
-	url = https://github.com/simdutf/simdutf
