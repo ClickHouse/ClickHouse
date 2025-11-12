@@ -436,12 +436,11 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        if (!this->data(rhs).value.size())
+        if (this->data(rhs).value.empty())
             return;
 
         auto & set = this->data(place).value;
-        if (set.capacity() != reserved)
-            set.resize(reserved);
+
         set.merge(this->data(rhs).value);
     }
 
