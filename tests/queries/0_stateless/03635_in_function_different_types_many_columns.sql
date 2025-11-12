@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-random-merge-tree-settings
 -- followup to 02882_primary_key_index_in_function_different_types
 
 DROP TABLE IF EXISTS test_table;
