@@ -2,9 +2,14 @@
 
 #include "config.h"
 
-#if USE_CPPJIEBA
+#if USE_JIEBA
 
-#include <cppjieba/Jieba.hpp>
+#    include <vector>
+
+namespace Jieba
+{
+class Jieba;
+}
 
 namespace DB
 {
@@ -15,18 +20,17 @@ enum class ChineseTokenizationGranularity
     Coarse
 };
 
-/// The wrapper around the cppjieba library to tokenize a Chinese text into tokens.
 class ChineseTokenizer
 {
 public:
     static ChineseTokenizer & instance();
+    ~ChineseTokenizer();
 
-    std::vector<cppjieba::Word> tokenize(std::string_view str, ChineseTokenizationGranularity granularity);
-
+    std::vector<std::string_view> tokenize(std::string_view str, ChineseTokenizationGranularity granularity);
 private:
     ChineseTokenizer();
 
-    std::unique_ptr<cppjieba::Jieba> jieba_instance;
+    std::unique_ptr<Jieba::Jieba> jieba;
 };
 
 }

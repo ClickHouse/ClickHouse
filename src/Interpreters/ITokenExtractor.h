@@ -23,7 +23,7 @@ public:
         Split,
         NoOp,
         SparseGram,
-#if USE_CPPJIEBA
+#if USE_JIEBA
         Chinese,
 #endif
     };
@@ -251,7 +251,7 @@ private:
     mutable size_t previous_len = 0;
 };
 
-#if USE_CPPJIEBA
+#if USE_JIEBA
 /// Parser extracting tokens for Chinese.
 struct ChineseTokenExtractor final : public ITokenExtractorHelper<ChineseTokenExtractor>
 {
@@ -264,14 +264,17 @@ struct ChineseTokenExtractor final : public ITokenExtractorHelper<ChineseTokenEx
     static const char * getName() { return "chinese"; }
     static const char * getExternalName() { return getName(); }
 
-    static constexpr std::string_view FINE_GRAINED = "fine-grained";
-    static constexpr std::string_view COARSE_GRAINED = "coarse-grained";
+    static constexpr std::string_view FINE_GRAINED = "fine_grained";
+    static constexpr std::string_view COARSE_GRAINED = "coarse_grained";
 
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
     bool supportsStringLike() const override { return false; }
 
     ChineseTokenizationGranularity granularity;
+private:
+    mutable std::vector<std::string_view> tokens;
+    mutable std::optional<std::vector<std::string_view>::iterator> token_iter;
 };
 #endif
 
@@ -303,14 +306,14 @@ void forEachTokenImpl(const TokenExtractorType & extractor, const char * __restr
     }
 }
 
-#if USE_CPPJIEBA
+#if USE_JIEBA
 template <typename Callback>
 void forEachChineseTokenImpl(const ChineseTokenExtractor & extractor, const char * __restrict data, size_t length, Callback && callback)
 {
     auto words = ChineseTokenizer::instance().tokenize({data, length}, extractor.granularity);
     for (const auto & word : words)
     {
-        if (callback(word.word.data(), word.word.size()))
+        if (callback(word.data(), word.size()))
             return;
     }
 }
@@ -360,7 +363,7 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
             forEachTokenImpl<is_padded>(sparse_gram_extractor, data, length, callback);
             return;
         }
-#if USE_CPPJIEBA
+#if USE_JIEBA
         case ITokenExtractor::Type::Chinese:
         {
             const auto & chinese_extractor = assert_cast<const ChineseTokenExtractor &>(extractor);

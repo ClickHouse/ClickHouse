@@ -396,3 +396,6 @@
 [submodule "contrib/darts-clone"]
 	path = contrib/darts-clone
 	url = https://github.com/s-yata/darts-clone
+[submodule "contrib/simdutf"]
+	path = contrib/simdutf
+	url = https://github.com/simdutf/simdutf

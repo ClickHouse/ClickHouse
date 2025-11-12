@@ -711,8 +711,8 @@ if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
 
-if (ENABLE_CPPJIEBA)
-    target_link_libraries(dbms PUBLIC ch_contrib::darts_clone)
+if (ENABLE_JIEBA)
+    target_link_libraries(dbms PUBLIC ch_contrib::jieba)
 endif()
 
 if (ENABLE_BUZZHOUSE)

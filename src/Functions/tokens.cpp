@@ -28,7 +28,7 @@ constexpr size_t arg_tokenizer = 1;
 constexpr size_t arg_ngrams = 2;
 constexpr size_t arg_separators = 2;
 
-#if USE_CPPJIEBA
+#if USE_JIEBA
 constexpr size_t arg_chinese_granularity = 2;
 #endif
 
@@ -100,7 +100,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
         return std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
 
-#if USE_CPPJIEBA
+#if USE_JIEBA
     if (tokenizer_arg == ChineseTokenExtractor::getExternalName())
     {
         ChineseTokenizationGranularity granularity = ChineseTokenizationGranularity::Coarse;
@@ -257,7 +257,7 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
-#if USE_CPPJIEBA
+#if USE_JIEBA
                 else if (tokenizer == ChineseTokenExtractor::getExternalName())
                     optional_args.emplace_back(
                         "chinese_granularity", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "String");

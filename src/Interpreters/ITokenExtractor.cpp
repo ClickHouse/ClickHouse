@@ -423,10 +423,25 @@ bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length
     }
 }
 
-#if USE_CPPJIEBA
-bool ChineseTokenExtractor::nextInString(const char * /*data*/, size_t /*length*/, size_t * __restrict /*pos*/, size_t * __restrict /*token_start*/, size_t * __restrict /*token_length*/) const
+#if USE_JIEBA
+bool ChineseTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method nextInString is not supported by ChineseTokenExtractor");
+    if (!token_iter)
+    {
+        tokens = ChineseTokenizer::instance().tokenize({data, length}, granularity);
+        token_iter = tokens.begin();
+    }
+
+    if (*token_iter == tokens.end())
+        return false;
+
+    auto token = **token_iter;
+
+    *token_start = token.data() - data;
+    *token_length = token.size();
+    *pos = *token_start;
+
+    return true;
 }
 
 bool ChineseTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*pos*/, String & /*token*/) const

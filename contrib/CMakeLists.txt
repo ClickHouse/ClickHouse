@@ -170,7 +170,7 @@ add_contrib (sqids-cpp-cmake sqids-cpp)
 option(ENABLE_JIEBA "Enable jieba support" ${ENABLE_LIBRARIES})
 if (ENABLE_JIEBA)
     add_contrib (darts-clone-cmake darts-clone)
-    add_contrib (clickhouse-jieba)
+    add_contrib (jieba)
 endif()
 
 option(USE_MONGODB "Enable MongoDB support" ${ENABLE_LIBRARIES})
