@@ -327,8 +327,8 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 {
     using namespace std::chrono;
 
-    static thread_local std::random_device rd;
-    static thread_local std::mt19937 gen(rd());
+    static thread_local std::random_device random_device;
+    static thread_local std::mt19937 generator(random_device());
 
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
@@ -358,7 +358,7 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
         auto max = get_value(params[1]);
 
         std::uniform_real_distribution<> distrib(min, max);
-        duration_ms = 1000 * distrib(gen);
+        duration_ms = 1000 * distrib(generator);
     }
 
     if (duration_ms < 0)
