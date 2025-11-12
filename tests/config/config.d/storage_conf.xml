@@ -163,6 +163,17 @@
                     </main>
                 </volumes>
             </local_cache_3>
+            <test_policy_with_disabled_merges>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                    <no_merge>
+                        <disk>local_disk</disk>
+                        <prefer_not_to_merge>true</prefer_not_to_merge>
+                    </no_merge>
+                </volumes>
+            </test_policy_with_disabled_merges>
         </policies>
     </storage_configuration>
 </clickhouse>

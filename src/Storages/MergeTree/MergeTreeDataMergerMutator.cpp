@@ -258,10 +258,11 @@ PartsRanges grabAllPossibleRanges(
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
     const std::optional<PartitionIdsHint> & partitions_hint,
-    LogSeriesLimiter & series_log)
+    LogSeriesLimiter & series_log,
+    bool ignore_prefer_not_to_merge = false)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
+    return parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log, ignore_prefer_not_to_merge);
 }
 
 std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
@@ -272,7 +273,7 @@ std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
     const std::string & partition_id)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
+    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id, /*ignore_prefer_not_to_merge=*/true);
 }
 
 MergeSelectorChoices chooseMergesFrom(
@@ -285,14 +286,15 @@ MergeSelectorChoices chooseMergesFrom(
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
     time_t current_time,
-    const LoggerPtr & log)
+    const LoggerPtr & log,
+    bool choose_ttl_only_drop_parts = false)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds);
 
     auto choices = selector.chooseMergesFrom(
         ranges, predicate, metadata_snapshot,
         data_settings, next_delete_times, next_recompress_times,
-        can_use_ttl_merges, current_time);
+        can_use_ttl_merges, current_time, choose_ttl_only_drop_parts);
 
     if (!choices.empty())
     {
@@ -421,34 +423,60 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
-    auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
+    // For background merges, try TTLDelete merges first to drop entire parts.
+    // (Should ignore storage policy merge restrictions)
+    if (!selector.aggressive && can_use_ttl_merges && metadata_snapshot->hasAnyTTL() && storage_policy->hasAnyVolumeWithDisabledMerges())
+    {
+        auto ttl_ranges = grabAllPossibleRanges(
+            parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log,
+            /*ignore_prefer_not_to_merge=*/true);
+
+        if (!ttl_ranges.empty())
+        {
+            ttl_ranges = splitByMergePredicate(std::move(ttl_ranges), merge_predicate, series_log);
+            if (!ttl_ranges.empty())
+            {
+                auto ttl_choices = chooseMergesFrom(
+                    selector, *merge_predicate, ttl_ranges, metadata_snapshot, settings,
+                    next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
+                    can_use_ttl_merges, current_time, log, /*choose_ttl_only_drop_parts=*/true);
+
+                if (!ttl_choices.empty())
+                {
+                    updateTTLMergeTimes(ttl_choices, settings, current_time);
+                    return ttl_choices;
+                }
+            }
+        }
+    }
+
+    // Then, try TTL merges and regular merges
+    // (Should ignore storage policy merge restrictions for aggressive mode (OPTIMIZE))
+    auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log, selector.aggressive);
+    if (!ranges.empty())
+    {
+        ranges = splitByMergePredicate(std::move(ranges), merge_predicate, series_log);
+        if (!ranges.empty())
+        {
+            auto regular_choices = chooseMergesFrom(
+                selector, *merge_predicate, ranges, metadata_snapshot, settings,
+                next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
+                can_use_ttl_merges, current_time, log);
+
+            if (!regular_choices.empty())
+            {
+                updateTTLMergeTimes(regular_choices, settings, current_time);
+                return regular_choices;
+            }
+        }
+    }
+
     if (ranges.empty())
     {
         return std::unexpected(SelectMergeFailure{
             .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
             .explanation = PreformattedMessage::create("There are no parts that can be merged. (Collector returned empty ranges set)"),
         });
-    }
-
-    ranges = splitByMergePredicate(std::move(ranges), merge_predicate, series_log);
-    if (ranges.empty())
-    {
-        return std::unexpected(SelectMergeFailure{
-            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-            .explanation = PreformattedMessage::create("No parts satisfy preconditions for merge"),
-        });
-    }
-
-    auto merge_choices = chooseMergesFrom(
-        selector, *merge_predicate,
-        ranges, metadata_snapshot, settings,
-        next_delete_ttl_merge_times_by_partition, next_recompress_ttl_merge_times_by_partition,
-        can_use_ttl_merges, current_time, log);
-
-    if (!merge_choices.empty())
-    {
-        updateTTLMergeTimes(merge_choices, settings, current_time);
-        return merge_choices;
     }
 
     const auto partitions_stats = calculateStatisticsForPartitions(ranges);

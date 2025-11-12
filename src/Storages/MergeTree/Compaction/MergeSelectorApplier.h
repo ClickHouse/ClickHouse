@@ -45,7 +45,8 @@ public:
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
-        time_t current_time) const;
+        time_t current_time,
+        bool choose_ttl_only_drop_parts = false) const;
 };
 
 }

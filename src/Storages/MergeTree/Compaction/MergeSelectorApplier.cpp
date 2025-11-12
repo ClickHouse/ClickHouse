@@ -44,6 +44,7 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
+    const bool choose_ttl_only_drop_parts;
 };
 
 MergeSelectorChoices pack(const ChooseContext & ctx, PartsRanges && ranges, MergeType type)
@@ -76,6 +77,9 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
         if (auto merge_ranges = drop_ttl_selector.select(ctx.ranges, max_sizes, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
+
+    if (ctx.choose_ttl_only_drop_parts)
+        return {};
 
     /// Delete rows - 2 priority
     if (!ctx.max_merge_sizes.empty() && !ctx.merge_tree_settings[MergeTreeSetting::ttl_only_drop_parts])
@@ -158,7 +162,8 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartitionIdToTTLs & next_delete_times,
     const PartitionIdToTTLs & next_recompress_times,
     bool can_use_ttl_merges,
-    time_t current_time) const
+    time_t current_time,
+    bool choose_ttl_only_drop_parts) const
 {
     ChooseContext ctx{
         .ranges = ranges,
@@ -171,10 +176,11 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
+        .choose_ttl_only_drop_parts = choose_ttl_only_drop_parts,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
-        if (auto choices = tryChooseTTLMerge(ctx); !choices.empty())
+        if (auto choices = tryChooseTTLMerge(ctx); !choices.empty() || choose_ttl_only_drop_parts)
             return choices;
 
     return tryChooseRegularMerge(ctx);
