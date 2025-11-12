@@ -219,8 +219,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
 static void appendAggregateFunctions(
     ActionsDAG & proj_dag,
     const AggregateDescriptions & aggregates,
-    const AggregateFunctionMatches & matched_aggregates,
-    const ContextPtr & context)
+    const AggregateFunctionMatches & matched_aggregates)
 {
     std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
 
@@ -243,7 +242,7 @@ static void appendAggregateFunctions(
             /// Cast to aggregate types specified in query if it's not
             /// strictly the same as the one specified in projection. This
             /// is required to generate correct results during finalization.
-            node = &proj_dag.addCast(*node, type, aggregate.column_name, context);
+            node = &proj_dag.addCast(*node, type, aggregate.column_name, nullptr);
         else if (node->result_name != aggregate.column_name)
             node = &proj_dag.addAlias(*node, aggregate.column_name);
 
@@ -256,8 +255,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
     const QueryDAG & query,
     const DAGIndex & query_index,
     const Names & keys,
-    const AggregateDescriptions & aggregates,
-    const ContextPtr & context)
+    const AggregateDescriptions & aggregates)
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
@@ -308,7 +306,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
         return {};
 
     auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
-    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates, context);
+    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
 
@@ -385,7 +383,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, context))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
 
@@ -436,7 +434,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         for (const auto * projection : agg_projections)
         {
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, context))
+            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
             {
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
                 candidate.projection = projection;
@@ -497,7 +495,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node &
     for (const auto * projection : agg_projections)
     {
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, context))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
             candidate.projection = projection;
