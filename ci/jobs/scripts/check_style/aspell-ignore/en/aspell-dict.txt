@@ -863,6 +863,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead

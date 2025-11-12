@@ -132,7 +132,6 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
 #include <filesystem>
-#include <re2/re2.h>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FunctionParameterValuesVisitor.h>

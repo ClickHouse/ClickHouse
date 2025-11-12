@@ -1,14 +1,15 @@
 #include <gtest/gtest.h>
 
-#include <atomic>
-#include <barrier>
-#include <memory>
-#include <random>
-#include <functional>
-
 #include <Common/Exception.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+
+#include <atomic>
+#include <barrier>
+#include <functional>
+#include <memory>
+#include <random>
+#include <thread>
 
 
 using namespace DB;
