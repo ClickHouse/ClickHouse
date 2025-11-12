@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"optimize_inverse_dictionary_lookup", true, true, "New setting"},
+            {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
