@@ -706,6 +706,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             break;
         }
 
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             Pos prev_token = pos;
@@ -725,19 +726,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 ASTPtr table_first;
                 if (!table_parser.parse(pos, table_first, expected))
                 {
-                    if (res->logs.empty())
+                    if (res->tables.empty())
                         break;
                     return false;
                 }
 
                 if (!s_dot.ignore(pos))
-                    res->logs.emplace_back(table_first->as<ASTIdentifier &>().full_name);
+                    res->tables.emplace_back(table_first->as<ASTIdentifier &>().full_name);
                 else
                 {
                     ASTPtr table_second;
                     if (!table_parser.parse(pos, table_second, expected))
                         return false;
-                    res->logs.emplace_back(
+                    res->tables.emplace_back(
                         fmt::format("{}.{}", table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name));
                 }
 

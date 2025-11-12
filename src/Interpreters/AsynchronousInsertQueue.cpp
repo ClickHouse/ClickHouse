@@ -182,6 +182,24 @@ bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other)
     return toTupleCmp() == other.toTupleCmp();
 }
 
+StorageID AsynchronousInsertQueue::InsertQuery::getStorageID() const
+{
+    if (!query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "InsertQuery AST is null");
+
+    auto * insert_query = query->as<ASTInsertQuery>();
+    if (!insert_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST is not of type ASTInsertQuery");
+
+    auto database = insert_query->getDatabase();
+    auto table = insert_query->getTable();
+
+    if (database.empty() && table.empty())
+        return StorageID::createEmpty();
+
+    return StorageID(database, table);
+}
+
 AsynchronousInsertQueue::InsertData::Entry::Entry(
     DataChunk && chunk_,
     String && query_id_,
@@ -649,6 +667,84 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
 
     if (settings[Setting::async_insert_busy_timeout_decrease_rate] <= 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
+}
+
+void AsynchronousInsertQueue::flush(const Strings & table_names)
+{
+    if (table_names.empty())
+    {
+        flushAll();
+        return;
+    }
+
+    auto database_table_name_set = std::set<std::pair<String, String>>{};
+    for (const auto & full_table_name : table_names)
+    {
+        auto dot_pos = full_table_name.find('.');
+        if (dot_pos == String::npos)
+            database_table_name_set.emplace("", full_table_name);
+        else
+            database_table_name_set.emplace(full_table_name.substr(0, dot_pos), full_table_name.substr(dot_pos + 1));
+    }
+
+    LOG_DEBUG(log, "Requested to flush asynchronous insert queue for tables: {}", fmt::join(table_names, ", "));
+
+    auto affected_set = std::set<String>{};
+    std::vector<Queue> queues_to_flush(pool_size);
+
+    std::lock_guard flush_lock(flush_mutex);
+
+    for (size_t i = 0; i < pool_size; ++i)
+    {
+        std::lock_guard lock(queue_shards[i].mutex);
+        auto & shard = queue_shards[i];
+        auto & queue = shard.queue;
+
+        for (auto it = queue.begin(); it != queue.end();)
+        {
+            const auto storage = it->second.key.getStorageID();
+            /// it is not strick match of database and table name
+            /// async insert queue does not store database name always
+            if (!database_table_name_set.contains({storage.database_name, storage.table_name})
+                && !database_table_name_set.contains({"", storage.table_name}))
+            {
+                ++it;
+                continue;
+            }
+
+            affected_set.emplace(storage.getNameForLogs());
+            queues_to_flush[i].emplace(it->first, std::move(it->second));
+            shard.iterators.erase(it->second.key.hash);
+            it = queue_shards[i].queue.erase(it);
+        }
+    }
+
+    size_t total_queries = 0;
+    size_t total_bytes = 0;
+    size_t total_entries = 0;
+
+    for (size_t i = 0; i < pool_size; ++i)
+    {
+        auto & queue = queues_to_flush[i];
+        total_queries += queue.size();
+        for (auto & [_, entry] : queue)
+        {
+            total_bytes += entry.data->size_in_bytes;
+            total_entries += entry.data->entries.size();
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+        }
+    }
+
+    /// Note that jobs scheduled before the call of 'flushAll' are not counted here.
+    LOG_DEBUG(log,
+        "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries) for tables: {}",
+        pool.active(), total_entries, total_bytes, total_queries, fmt::join(affected_set, ", "));
+
+    /// Wait until all jobs are finished. That includes also jobs
+    /// that were scheduled before the call of 'flushAll'.
+    pool.wait();
+
+    LOG_DEBUG(log, "Finished flushing of asynchronous insert queue for tables: {}", fmt::join(affected_set, ", "));
 }
 
 void AsynchronousInsertQueue::flushAll()
