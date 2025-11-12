@@ -1,9 +1,7 @@
 ---
-description: 'Calculates the `arg` and `val` value for a minimum `val` value. If there are multiple
-  rows with equal `val` being the maximum, which of the associated `arg` is returned
-  is not deterministic.'
-sidebar_position: 366
-slug: /sql-reference/aggregate-functions/reference/argmin
+description: 'Calculates the `arg` and `val` value for a minimum `val` value. If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.'
+sidebar_position: 111
+slug: /sql-reference/aggregate-functions/reference/argandmin
 title: 'argAndMin'
 doc_type: 'reference'
 ---
