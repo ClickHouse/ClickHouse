@@ -23,6 +23,7 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool optimize_inverse_dictionary_lookup;
+extern const SettingsBool rewrite_in_to_join;
 }
 
 namespace
@@ -225,7 +226,7 @@ public:
             attr_col_node_casted = createCastFunction(attr_col_node, dictget_function_info.return_type, getContext());
         }
 
-        auto attr_comparison_function_node = std::make_shared<FunctionNode>(attr_comparison_function_name);
+        auto attr_comparison_function_node = std::static_pointer_cast<FunctionNode>(node_function->clone());
         attr_comparison_function_node->markAsOperator();
 
         if (dict_side == Side::LHS)
