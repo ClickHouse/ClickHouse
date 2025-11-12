@@ -39,7 +39,6 @@ public:
     /** Useful to quickly get a list of partitions that contain parts that we may want to merge.
       * Used to reduce ZooKeeper requests during merge predicate construction for RMT.
       */
-
     PartitionIdsHint getPartitionsThatMayBeMerged(
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,

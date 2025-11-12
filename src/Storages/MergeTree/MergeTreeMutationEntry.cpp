@@ -69,7 +69,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     {
         auto out = disk->writeFile(std::filesystem::path(path_prefix) / file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
         *out << "format version: 1\n"
-             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
+            << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";

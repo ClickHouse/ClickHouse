@@ -700,15 +700,6 @@ public:
     /// If original part is not active or doesn't exist exception will be thrown.
     void swapActivePart(MergeTreeData::DataPartPtr part_copy, DataPartsLock &);
 
-    // /// Returns all parts in specified partition
-    // DataPartsVector getVisibleDataPartsVectorInPartition(MergeTreeTransaction * txn, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
-    // DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id, DataPartsLock & lock) const;
-    // DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
-    // DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const PartitionIds & partition_ids) const;
-
-    // DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
-    // DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, DataPartsLock * acquired_lock = nullptr) const;
-
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExistsUnlocked(const String & part_name, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;
     DataPartPtr getPartIfExistsUnlocked(const MergeTreePartInfo & part_info, const DataPartStates & valid_states, DataPartsLock & acquired_lock) const;

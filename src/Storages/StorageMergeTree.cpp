@@ -611,8 +611,6 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
 
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
-    auto partitions = getPartitionIdsAffectedByCommands(commands, query_context);
-
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See loadMutations().
     auto disk = getStoragePolicy()->getAnyDisk();
@@ -625,6 +623,7 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, Context
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
+    auto partitions = getPartitionIdsAffectedByCommands(commands, query_context);
     MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), std::move(partitions), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
@@ -1766,7 +1765,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (auto it = begin_it; it != end_it; ++it)
         {
             auto & entry = it->second;
-            if (!entry.tid.isPrehistoric() || unfinished_mutations.find(entry.file_name) != unfinished_mutations.end())
+            if (!entry.tid.isPrehistoric() || unfinished_mutations.contains(entry.file_name))
             {
                 break;
             }
