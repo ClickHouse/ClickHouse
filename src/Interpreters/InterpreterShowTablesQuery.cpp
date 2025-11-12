@@ -241,10 +241,6 @@ BlockIO InterpreterShowTablesQuery::execute()
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
         return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
     }
-    else
-    {
-        return executeQuery(rewritten_query, getContext(), QueryFlags{ .internal = true }).second;
-    }
 
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
