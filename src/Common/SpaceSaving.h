@@ -316,7 +316,7 @@ protected:
     {
         if (unlikely(counter_list.size() >= capacity() * 2))
         {
-            ::partial_sort(
+            ::nth_element(
                 counter_list.begin(),
                 counter_list.begin() + capacity(),
                 counter_list.end(),
