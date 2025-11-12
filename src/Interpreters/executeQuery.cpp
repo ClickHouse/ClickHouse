@@ -612,7 +612,7 @@ QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeline && q
         UInt64 result_rows;
         UInt64 result_bytes;
         query_pipeline.tryGetResultRowsAndBytes(result_rows, result_bytes);
-        result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes);
+        result_progress = std::make_optional<ResultProgress>(result_rows, result_bytes, 0);
     }
 
     /// Reset pipeline before fetching profile counters
@@ -644,7 +644,7 @@ void logQueryFinishImpl(
     if (QueryStatusPtr process_list_elem = context->getProcessListElement())
     {
         {
-            ResultProgress result_progress(0, 0);
+            ResultProgress result_progress(0, 0, 0);
 
             chassert((query_pipeline_finalized_info.result_progress != std::nullopt) == pulling_pipeline);
 
