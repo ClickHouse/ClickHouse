@@ -4705,6 +4705,13 @@ private:
             const auto * col = arguments.front().column.get();
 
             size_t tuple_size = to_element_types.size();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col->size());
+            }
+
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);

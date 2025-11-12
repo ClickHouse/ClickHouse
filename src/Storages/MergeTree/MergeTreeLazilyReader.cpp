@@ -159,6 +159,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             data_part_info,
             columns_for_reader,
             storage_snapshot,
+            storage.getSettings(),
             mark_ranges,
             /*virtual_fields=*/ {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,

@@ -232,7 +232,7 @@ BlockIO InterpreterShowTablesQuery::execute()
     }
     auto rewritten_query = getRewrittenQuery();
     String database = getContext()->resolveDatabase(query.getFrom());
-    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
@@ -240,6 +240,10 @@ BlockIO InterpreterShowTablesQuery::execute()
         /// HACK To always show them in explicit "SHOW TABLES" queries
         query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
         return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
+    }
+    else
+    {
+        return executeQuery(rewritten_query, getContext(), QueryFlags{ .internal = true }).second;
     }
 
     auto query_context = Context::createCopy(getContext());
