@@ -27,7 +27,7 @@ void UTFConvertingReadBuffer::detectAndProcessBOM()
 {
     if (!impl->hasPendingData())
     {
-        if(!impl->next())
+        if (!impl->next())
         {
             detected_encoding = Encoding::UTF8;
             return;
@@ -134,7 +134,7 @@ bool UTFConvertingReadBuffer::nextImpl()
     return true;
 }
 
-size_t UTFConvertingReadBuffer::convertUTF16ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity)
+size_t UTFConvertingReadBuffer::convertUTF16ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity) const
 {
 #if USE_ICU
     UErrorCode status = U_ZERO_ERROR;
@@ -159,7 +159,7 @@ size_t UTFConvertingReadBuffer::convertUTF16ToUTF8(const char * src, size_t src_
 #endif
 }
 
-size_t UTFConvertingReadBuffer::convertUTF32ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity)
+size_t UTFConvertingReadBuffer::convertUTF32ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity) const
 {
 #if USE_ICU
     UErrorCode status = U_ZERO_ERROR;

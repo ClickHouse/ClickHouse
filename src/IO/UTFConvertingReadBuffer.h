@@ -25,8 +25,8 @@ private:
     bool nextImpl() override;
 
     void detectAndProcessBOM();
-    size_t convertUTF16ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity);
-    size_t convertUTF32ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity);
+    size_t convertUTF16ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity) const;
+    size_t convertUTF32ToUTF8(const char * src, size_t src_size, char * dst, size_t dst_capacity) const;
 
     std::unique_ptr<ReadBuffer> impl;
     Encoding detected_encoding;
