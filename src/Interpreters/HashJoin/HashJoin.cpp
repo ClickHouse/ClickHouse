@@ -1517,7 +1517,6 @@ private:
                             else
                                 columns_keys_and_right[column]->insertFrom(*mapped_block.columns_info.columns[column], row);
                         }
-
                         ++rows_added;
                     }
                 }
