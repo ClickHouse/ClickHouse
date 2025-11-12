@@ -198,7 +198,9 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
             size_t it = 0;
-            const auto period = std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100);
+            /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
+            /// In two-level case we sample across 256 buckets, so we can use larger period.
+            const auto period = bucket == -1 ? std::min<size_t>(std::max<size_t>(table.size() / 100, 1), 100) : 100;
             table.forEachMapped(
                 [&](AggregateDataPtr place)
                 {
@@ -208,11 +210,11 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                         is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
                                         : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
                     }
-                    return it < 10000;
+                    return it < 100 * period;
                 });
             wbuf.finalize();
             if (it)
-                res += static_cast<size_t>((table.size() / (it / period)) * wb.count());
+                res += static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period));
         }
     };
 
@@ -1814,10 +1816,7 @@ bool Aggregator::executeOnBlock(Columns columns,
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         result.convertToTwoLevel();
-    }
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))
@@ -3629,10 +3628,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
-    {
-        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         result.convertToTwoLevel();
-    }
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))

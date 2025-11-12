@@ -233,15 +233,8 @@ std::pair<size_t, size_t> RuntimeDataflowStatisticsCacheUpdater::getCompressedCo
     CompressedWriteBuffer compressed_buf(null_buf);
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
-    // LOG_DEBUG(&Poco::Logger::get("debug"), "limit={}, column_to_write->size()={}", limit, column_to_write->size());
     NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
     compressed_buf.finalize();
-    // LOG_DEBUG(
-    //     &Poco::Logger::get("debug"),
-    //     "wbuf.count()={}, wb.count()={}, wbuf.count() / wb.count()={}",
-    //     wbuf.count(),
-    //     wb.count(),
-    //     static_cast<double>(wbuf.count()) / wb.count());
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
