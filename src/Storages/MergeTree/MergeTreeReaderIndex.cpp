@@ -98,14 +98,9 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
 
         if (index_read_result->skip_index_read_result->threshold_tracker && index_read_result->skip_index_read_result->threshold_tracker->isSet())
         {
-            /// TODO : assumes all index marks have been read.
-            Field value;
-            if (index_read_result->skip_index_read_result->threshold_tracker->getDirection() == 1) /// ASC
-                value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].min_value;
-            else
-                value = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[mark].max_value;
-
-            if (!index_read_result->skip_index_read_result->threshold_tracker->isValueInsideThreshold(value))
+            auto granule_num = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules_map[mark];
+            if (!index_read_result->skip_index_read_result->threshold_tracker->isValueInsideThreshold(
+                    index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[granule_num].min_or_max_value))
                 return true;
         }
     }

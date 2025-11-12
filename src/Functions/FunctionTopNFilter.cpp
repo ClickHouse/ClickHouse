@@ -22,16 +22,10 @@ class FunctionTopNFilter: public IFunction
 public:
     static constexpr auto name = "__topNFilter";
 
-    /// static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTopNFilter>(); }
-
     explicit FunctionTopNFilter(TopNThresholdTrackerPtr threshold_tracker_)
         : threshold_tracker(threshold_tracker_)
     {
-        String comparator = "less";
-        if (threshold_tracker->getDirection() == -1) /// DESC
-            comparator = "greater";
-        auto context = Context::getGlobalContextInstance();
-        compare_function = FunctionFactory::instance().get(comparator, context);
+        direction = threshold_tracker_->getDirection();
     }
 
     String getName() const override
@@ -68,17 +62,27 @@ public:
     {
         if (input_rows_count == 0) /// dry run?
             return ColumnUInt8::create();
-
         if (threshold_tracker && threshold_tracker->isSet())
         {
             auto current_threshold = threshold_tracker->getValue();
-
             auto data_type = arguments[0].type;
-            ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
 
-            ColumnsWithTypeAndName args{ arguments[0], {threshold_column, data_type, {}} };
-            auto elem_compare = compare_function->build(args);
-            return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, /* dry_run = */ false);
+            auto threshold_column = data_type->createColumn();
+            threshold_column->insert(current_threshold);
+
+            PaddedPODArray<Int8> compare_results;
+            compare_results.resize(input_rows_count);
+
+            auto filter = ColumnVector<UInt8>::create();
+            auto  & filter_data = filter->getData();
+            filter_data.resize(input_rows_count);
+
+            arguments[0].column->compareColumn(*threshold_column, 0, nullptr, compare_results, direction, 1);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                filter_data[i] = (compare_results[i] < 0); /// will handle both ASC and DESC
+            }
+            return filter;
         }
         else
         {
@@ -88,6 +92,7 @@ public:
 private:
     TopNThresholdTrackerPtr threshold_tracker;
     FunctionOverloadResolverPtr compare_function;
+    int direction;
 };
 
 FunctionOverloadResolverPtr createInternalFunctionTopNFilterResolver(TopNThresholdTrackerPtr threshold_tracker_)

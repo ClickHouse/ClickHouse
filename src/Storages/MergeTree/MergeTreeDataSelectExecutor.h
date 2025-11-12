@@ -103,6 +103,8 @@ public:
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         MergeTreeIndexPtr skip_index_minmax,
+        int direction,
+        bool access_by_mark,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,

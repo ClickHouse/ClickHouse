@@ -1105,13 +1105,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 auto min_max_granules = getMinMaxIndexGranules(part_with_ranges.data_part,
                                         part_with_ranges.ranges,
                                         skip_indexes.skip_index_for_top_n_filtering,
+                                        top_n_filter_info->direction,
+                                        false, /*access_by_mark*/
                                         reader_settings,
                                         mark_cache.get(),
                                         uncompressed_cache.get(),
                                         vector_similarity_index_cache.get());
 
                 std::vector<size_t> result;
-                min_max_granules->getTopN(top_n_filter_info->limit_n, result, top_n_filter_info->direction);
+                min_max_granules->getTopNMarks(top_n_filter_info->limit_n, result);
                 MarkRanges res;
                 for (auto range : result)
                     res.push_back({range, range + 1});
@@ -2233,6 +2235,8 @@ MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         MergeTreeIndexPtr skip_index_minmax,
+        int direction,
+        bool access_by_mark,
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
@@ -2263,7 +2267,7 @@ MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             reader_settings);
 
     auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
-                                    skip_index_minmax->index.sample_block);
+                                    skip_index_minmax->index.sample_block, direction, index_ranges.getNumberOfMarks(), access_by_mark);
     auto bulk_granules = std::dynamic_pointer_cast<IMergeTreeIndexBulkGranules>(min_max_granules);
 
     for (auto index_range : index_ranges)

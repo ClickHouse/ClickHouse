@@ -83,33 +83,31 @@ public:
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override; /// NOLINT
-
-    /// void getTopNGranules(MergeTreeIndexReader & reader, const MarkRanges & index_ranges, size_t n, bool asc, bool no_predicates) const;
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
 {
-    explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_);
+    explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_, int direction_, size_t size_hint_, bool store_map_ = false);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
-    void getTopN(size_t n, std::vector<size_t> & result, int direction);
+    void getTopNMarks(size_t n, std::vector<size_t> & result);
 
-    /// TODO : based on ASC or DESC, we need only either Min or Max of each granule?
     struct MinMaxGranule
     {
         size_t granule_num;
-        Field min_value;
-        Field max_value;
+        Field min_or_max_value;
     };
 
     std::vector<MinMaxGranule> granules;
+    std::unordered_map<size_t, size_t> granules_map;
 
-    Serializations serializations;
-    const String & index_name;
+private:
+    SerializationPtr serialization;
+    [[ maybe_unused]] const String & index_name;
     const Block & index_sample_block;
-    Field min_val;
-    Field max_val;
     FormatSettings format_settings;
+    int direction;
     bool empty = true;
+    bool store_map = false;
 };
 
 using MergeTreeIndexBulkGranulesMinMaxPtr = std::shared_ptr<MergeTreeIndexBulkGranulesMinMax>;
