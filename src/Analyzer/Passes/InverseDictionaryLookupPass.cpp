@@ -130,6 +130,9 @@ public:
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
             return;
 
+        if (getSettings()[Setting::rewrite_in_to_join])
+            return;
+
         auto * node_function = node->as<FunctionNode>();
 
         if (!node_function)
