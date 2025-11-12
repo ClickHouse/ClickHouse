@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -34,6 +35,8 @@ public:
 
     bool isVariadic() const override { return false; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
     bool isSuitableForConstantFolding() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
@@ -63,6 +66,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return DataTypeUInt8().createColumn();
+
         const auto * filter_name_column = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
         if (!filter_name_column)
             throw Exception(
@@ -79,7 +85,7 @@ public:
 
         /// If filter is not present all rows pass
         if (!filter)
-            return DataTypeUInt8().createColumnConst(input_rows_count, true);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found runtime filter '{}' in the current query context", filter_name);
 
         const auto & data_column = arguments[1];
 
