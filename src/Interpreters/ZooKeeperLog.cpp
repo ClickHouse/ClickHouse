@@ -18,6 +18,7 @@
 #include <Poco/Net/IPAddress.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/SystemTablesDataTypes.h>
 
 namespace DB
 {
@@ -68,60 +69,6 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
                 {"Finalize",        static_cast<Int8>(FINALIZE)},
             });
 
-    auto op_num_enum = std::make_shared<DataTypeEnum16>(
-        DataTypeEnum16::Values
-            {
-                {"Watch",               0},
-                {"Close",               static_cast<Int16>(Coordination::OpNum::Close)},
-                {"Error",               static_cast<Int16>(Coordination::OpNum::Error)},
-                {"Create",              static_cast<Int16>(Coordination::OpNum::Create)},
-                {"Remove",              static_cast<Int16>(Coordination::OpNum::Remove)},
-                {"Exists",              static_cast<Int16>(Coordination::OpNum::Exists)},
-                {"Reconfig",            static_cast<Int16>(Coordination::OpNum::Reconfig)},
-                {"Get",                 static_cast<Int16>(Coordination::OpNum::Get)},
-                {"Set",                 static_cast<Int16>(Coordination::OpNum::Set)},
-                {"GetACL",              static_cast<Int16>(Coordination::OpNum::GetACL)},
-                {"SetACL",              static_cast<Int16>(Coordination::OpNum::SetACL)},
-                {"SimpleList",          static_cast<Int16>(Coordination::OpNum::SimpleList)},
-                {"Sync",                static_cast<Int16>(Coordination::OpNum::Sync)},
-                {"Heartbeat",           static_cast<Int16>(Coordination::OpNum::Heartbeat)},
-                {"List",                static_cast<Int16>(Coordination::OpNum::List)},
-                {"Check",               static_cast<Int16>(Coordination::OpNum::Check)},
-                {"Multi",               static_cast<Int16>(Coordination::OpNum::Multi)},
-                {"MultiRead",           static_cast<Int16>(Coordination::OpNum::MultiRead)},
-                {"Auth",                static_cast<Int16>(Coordination::OpNum::Auth)},
-                {"SessionID",           static_cast<Int16>(Coordination::OpNum::SessionID)},
-                {"FilteredList",        static_cast<Int16>(Coordination::OpNum::FilteredList)},
-                {"CheckNotExists",      static_cast<Int16>(Coordination::OpNum::CheckNotExists)},
-                {"CreateIfNotExists",   static_cast<Int16>(Coordination::OpNum::CreateIfNotExists)},
-                {"RemoveRecursive",     static_cast<Int16>(Coordination::OpNum::RemoveRecursive)},
-            });
-
-    auto error_enum = getCoordinationErrorCodesEnumType();
-
-    auto watch_type_enum = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-            {
-                {"CREATED",                 static_cast<Int8>(Coordination::Event::CREATED)},
-                {"DELETED",                 static_cast<Int8>(Coordination::Event::DELETED)},
-                {"CHANGED",                 static_cast<Int8>(Coordination::Event::CHANGED)},
-                {"CHILD",                   static_cast<Int8>(Coordination::Event::CHILD)},
-                {"SESSION",                 static_cast<Int8>(Coordination::Event::SESSION)},
-                {"NOTWATCHING",             static_cast<Int8>(Coordination::Event::NOTWATCHING)},
-            });
-
-    auto watch_state_enum = std::make_shared<DataTypeEnum16>(
-        DataTypeEnum16::Values
-            {
-                {"EXPIRED_SESSION",         static_cast<Int16>(Coordination::State::EXPIRED_SESSION)},
-                {"AUTH_FAILED",             static_cast<Int16>(Coordination::State::AUTH_FAILED)},
-                {"CONNECTING",              static_cast<Int16>(Coordination::State::CONNECTING)},
-                {"ASSOCIATING",             static_cast<Int16>(Coordination::State::ASSOCIATING)},
-                {"CONNECTED",               static_cast<Int16>(Coordination::State::CONNECTED)},
-                {"READONLY",                static_cast<Int16>(Coordination::State::READONLY)},
-                {"NOTCONNECTED",            static_cast<Int16>(Coordination::State::NOTCONNECTED)},
-            });
-
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
@@ -137,7 +84,7 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
 
         {"xid", std::make_shared<DataTypeInt64>(), "The ID of the request within the session. This is usually a sequential request number. It is the same for the request row and the paired response/finalize row."},
         {"has_watch", std::make_shared<DataTypeUInt8>(), "The request whether the watch has been set."},
-        {"op_num", op_num_enum, "The type of request or response."},
+        {"op_num", Coordination::SystemTablesDataTypes::operationEnum(), "The type of request or response."},
         {"path", std::make_shared<DataTypeString>(), "The path to the ZooKeeper node specified in the request, or an empty string if the request not requires specifying a path."},
 
         {"data", std::make_shared<DataTypeString>(), "The data written to the ZooKeeper node (for the SET and CREATE requests — what the request wanted to write, for the response to the GET request — what was read) or an empty string."},
@@ -151,10 +98,10 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
         {"request_idx", std::make_shared<DataTypeUInt32>(), "The number of the request included in multi request (for multi request — 0, then in order from 1)."},
 
         {"zxid", std::make_shared<DataTypeInt64>(), "ZooKeeper transaction ID. The serial number issued by the ZooKeeper server in response to a successfully executed request (0 if the request was not executed/returned an error/the client does not know whether the request was executed)."},
-        {"error", std::make_shared<DataTypeNullable>(error_enum), "Error code. Can have many values, here are just some of them: ZOK — The request was executed successfully, ZCONNECTIONLOSS — The connection was lost, ZOPERATIONTIMEOUT — The request execution timeout has expired, ZSESSIONEXPIRED — The session has expired, NULL — The request is completed."},
+        {"error", std::make_shared<DataTypeNullable>(Coordination::SystemTablesDataTypes::errorCodeEnum()), "Error code. Can have many values, here are just some of them: ZOK — The request was executed successfully, ZCONNECTIONLOSS — The connection was lost, ZOPERATIONTIMEOUT — The request execution timeout has expired, ZSESSIONEXPIRED — The session has expired, NULL — The request is completed."},
 
-        {"watch_type", std::make_shared<DataTypeNullable>(watch_type_enum), "The type of the watch event (for responses with op_num = Watch), for the remaining responses: NULL."},
-        {"watch_state", std::make_shared<DataTypeNullable>(watch_state_enum), "The status of the watch event (for responses with op_num = Watch), for the remaining responses: NULL."},
+        {"watch_type", std::make_shared<DataTypeNullable>(Coordination::SystemTablesDataTypes::watchEventTypeEnum()), "The type of the watch event (for responses with op_num = Watch), for the remaining responses: NULL."},
+        {"watch_state", std::make_shared<DataTypeNullable>(Coordination::SystemTablesDataTypes::watchStateEnum()), "The status of the watch event (for responses with op_num = Watch), for the remaining responses: NULL."},
 
         {"path_created", std::make_shared<DataTypeString>(), "The path to the created ZooKeeper node (for responses to the CREATE request), may differ from the path if the node is created as a sequential."},
 

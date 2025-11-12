@@ -652,19 +652,17 @@ String JemallocDumpStats::run()
 
 String JemallocFlushProfile::run()
 {
-    return flushJemallocProfile("/tmp/jemalloc_keeper");
+    return std::string{Jemalloc::flushProfile("/tmp/jemalloc_keeper")};
 }
 
 String JemallocEnableProfile::run()
 {
-    setJemallocProfileActive(true);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 
 String JemallocDisableProfile::run()
 {
-    setJemallocProfileActive(false);
-    return "ok";
+    return "Commands for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler'";
 }
 #endif
 

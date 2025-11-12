@@ -51,6 +51,7 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
     {
         FunctionDocumentation::Description description = R"(
 Like [`floor`](#floor) but returns the smallest rounded number greater than or equal to `x`.
+If rounding causes an overflow (for example, `ceiling(255, -1)`), the result is undefined.
 )";
         FunctionDocumentation::Syntax syntax = "ceiling(x[, N])";
         FunctionDocumentation::Arguments arguments = {
@@ -113,6 +114,8 @@ Rounds a value to a specified number of decimal places `N`.
 
 The function returns the nearest number of the specified order.
 If the input value has equal distance to two neighboring numbers, the function uses banker's rounding for `Float*` inputs and rounds away from zero for the other number types (`Decimal*`).
+
+If rounding causes an overflow (for example, `round(255, -1)`), the result is undefined.
 )";
         FunctionDocumentation::Syntax syntax = "round(x[, N])";
         FunctionDocumentation::Arguments arguments = {

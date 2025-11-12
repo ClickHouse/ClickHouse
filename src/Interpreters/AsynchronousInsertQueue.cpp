@@ -10,6 +10,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromTrackedString.h>
 #include <IO/copyData.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
@@ -399,7 +400,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
     }
     preprocessInsertQuery(query, query_context);
 
-    String bytes;
+    TrackedString bytes;
     {
         /// Read at most 'async_insert_max_data_size' bytes of data.
         /// If limit is exceeded we will fallback to synchronous insert
@@ -424,7 +425,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         }
 
         {
-            WriteBufferFromString write_buf(bytes);
+            WriteBufferFromTrackedString write_buf(bytes);
             copyData(limit_buf, write_buf);
         }
 
@@ -782,12 +783,13 @@ catch (...)
     tryLogCurrentException("AsynchronousInsertQueue", "Failed to add elements to AsynchronousInsertLog");
 }
 
-void convertBlockToHeader(Block & block, const Block & header)
+void convertBlockToHeader(Block & block, const Block & header, const ContextPtr & context)
 {
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(block);
@@ -1010,7 +1012,7 @@ try
         if (key.data_kind == AsynchronousInsertQueueDataKind::Parsed)
             chunk = processEntriesWithParsing(key, data, *header, insert_context, log, add_entry_to_asynchronous_insert_log);
         else
-            chunk = processPreprocessedEntries(data, *header, add_entry_to_asynchronous_insert_log);
+            chunk = processPreprocessedEntries(data, *header, insert_context, add_entry_to_asynchronous_insert_log);
 
         ProfileEvents::increment(ProfileEvents::AsyncInsertRows, chunk.getNumRows());
 
@@ -1151,6 +1153,7 @@ template <typename LogFunc>
 Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     const InsertDataPtr & data,
     const Block & header,
+    const ContextPtr & context_,
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
@@ -1173,7 +1176,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         }
 
         if (!isCompatibleHeader(block_to_insert, header))
-            convertBlockToHeader(block_to_insert, header);
+            convertBlockToHeader(block_to_insert, header, context_);
 
         auto columns = block_to_insert.getColumns();
         for (size_t i = 0, s = columns.size(); i < s; ++i)

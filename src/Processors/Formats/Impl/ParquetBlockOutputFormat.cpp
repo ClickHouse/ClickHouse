@@ -111,9 +111,12 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
         options.write_batch_size = format_settings.parquet.write_batch_size;
         options.write_page_index = format_settings.parquet.write_page_index;
         options.write_bloom_filter = format_settings.parquet.write_bloom_filter;
+        options.write_checksums = format_settings.parquet.write_checksums;
         options.bloom_filter_bits_per_value = format_settings.parquet.bloom_filter_bits_per_value;
         options.bloom_filter_flush_threshold_bytes = format_settings.parquet.bloom_filter_flush_threshold_bytes;
         options.write_geometadata = format_settings.parquet.write_geometadata;
+        options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
+        options.use_dictionary_encoding = options.max_dictionary_size > 0;
 
         if (format_filter_info_ && format_filter_info_->column_mapper)
             schema = convertSchema(*header_, options, format_filter_info_->column_mapper->getStorageColumnEncoding());
@@ -365,7 +368,7 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
 
         auto result = parquet::arrow::FileWriter::Open(
             *arrow_table->schema(),
-            ArrowMemoryPool::instance(),
+            arrow::default_memory_pool(),
             sink,
             builder.build(),
             writer_props_builder.build());

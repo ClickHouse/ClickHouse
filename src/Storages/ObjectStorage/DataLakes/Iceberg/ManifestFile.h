@@ -5,7 +5,7 @@
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Core/Field.h>
@@ -61,12 +61,13 @@ struct ManifestFileEntry
     String file_path_key;
     // It's a processed file path to be used by Object Storage
     String file_path;
+    Int64 row_number;
 
     ManifestEntryStatus status;
     Int64 added_sequence_number;
 
     Int64 snapshot_id;
-    Int64 schema_id;
+    Int32 schema_id;
 
     DB::Row partition_key_value;
     PartitionSpecification common_partition_specification;
@@ -111,7 +112,7 @@ public:
         const String & manifest_file_name,
         Int32 format_version_,
         const String & common_path,
-        const DB::IcebergSchemaProcessor & schema_processor,
+        IcebergSchemaProcessor & schema_processor,
         Int64 inherited_sequence_number,
         Int64 inherited_snapshot_id,
         const std::string & table_location,

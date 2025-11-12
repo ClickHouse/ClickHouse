@@ -193,6 +193,9 @@ enum class SystemQueryTargetType : uint8_t
         }
         else
             return false;
+
+        if (database && ParserKeyword{Keyword::WITH_TABLES}.ignore(pos, expected))
+            res->with_tables = true;
     }
     else
         res->is_drop_whole_replica = true;
@@ -743,6 +746,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+#if USE_JEMALLOC
+        case Type::JEMALLOC_FLUSH_PROFILE:
+        {
+            Pos prev_token = pos;
+            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+            {
+                pos = prev_token;
+                if (!parseQueryWithOnCluster(res, pos, expected))
+                    return false;
+            }
+            break;
+        }
+#endif
 
         default:
         {

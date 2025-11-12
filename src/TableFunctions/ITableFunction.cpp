@@ -1,3 +1,4 @@
+#include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
@@ -39,10 +40,11 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
 
     if (const auto access_object = getSourceAccessObject())
     {
+        AccessType type_to_check = AccessType::READ;
         if (is_insert_query)
-            context->checkAccess(AccessType::WRITE, toStringSource(*access_object));
-        else
-            context->checkAccess(AccessType::READ, toStringSource(*access_object));
+            type_to_check = AccessType::WRITE;
+
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
     }
 
     auto table_function_properties = TableFunctionFactory::instance().tryGetProperties(getName());

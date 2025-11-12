@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <vector>
 
+
 namespace DB
 {
 
@@ -49,12 +50,6 @@ public:
 
     String getEngineName() const override { return "MySQL"; }
     UUID getUUID() const override { return db_uuid; }
-
-    bool canContainMergeTreeTables() const override { return false; }
-
-    bool canContainDistributedTables() const override { return false; }
-
-    bool canContainRocksDBTables() const override { return false; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
@@ -88,7 +83,7 @@ public:
 
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
-    void alterDatabaseComment(const AlterCommand & command) override;
+    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 

@@ -65,9 +65,6 @@ namespace DB::ErrorCodes
 namespace DB::Parquet
 {
 
-/// Thrift structs that Parquet uses for various metadata inside the parquet file.
-namespace parq = parquet::format;
-
 namespace
 {
 
@@ -390,7 +387,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
 
         case TypeIndex::DateTime64:
         {
-            parq::ConvertedType::type converted;
+            std::optional<parq::ConvertedType::type> converted;
             parq::TimeUnit unit;
             const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
             UInt32 scale = dt.getScale();
@@ -454,6 +451,15 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::LogicalType t;
             t.__set_JSON({});
             types(T::BYTE_ARRAY, C::JSON, t);
+            break;
+        }
+
+        case TypeIndex::UUID:
+        {
+            parq::UUIDType uuid;
+            parq::LogicalType t;
+            t.__set_UUID(uuid);
+            fixed_string(16, std::nullopt, t);
             break;
         }
 
@@ -647,7 +653,7 @@ void prepareColumnRecursive(
 {
     /// Remove const and sparse but leave LowCardinality as the encoder can directly use it for
     /// parquet dictionary-encoding.
-    column = column->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
+    column = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse()->convertToFullColumnIfConst();
 
     switch (type->getTypeId())
     {

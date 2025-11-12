@@ -3,6 +3,7 @@
 #include <vector>
 #include <boost/dynamic_bitset.hpp>
 #include <Processors/Chunk.h>
+#include <Common/PODArray_fwd.h>
 
 namespace DB
 {
@@ -13,7 +14,9 @@ class BlockMissingValues
 {
 public:
     using RowsBitMask = boost::dynamic_bitset<>; /// a bit per row for a column
+    BlockMissingValues() = default;
     explicit BlockMissingValues(size_t num_columns) : rows_mask_by_column_id(num_columns) {}
+    void init(size_t num_columns);
 
     /// Get mask for column, column_idx is index inside corresponding block
     const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
@@ -23,10 +26,11 @@ public:
     void setBit(size_t column_idx, size_t row_idx);
     /// Set bits for all rows in a single column.
     void setBits(size_t column_idx, size_t rows);
+    void setBitsFromNullMap(size_t column_idx, const PaddedPODArray<UInt8> & null_map);
 
     void clear();
     bool empty() const;
-    size_t size() const;
+    size_t getNumColumns() const;
 
 private:
     using RowsMaskByColumnId = std::vector<RowsBitMask>;

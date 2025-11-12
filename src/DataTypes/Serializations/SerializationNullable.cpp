@@ -125,14 +125,15 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnNullable & col = assert_cast<ColumnNullable &>(*mutable_column);
 
     settings.path.push_back(Substream::NullMap);
-    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
+    if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
     {
-        col.getNullMapColumnPtr() = cached_column;
+        /// Data was inserted from cache.
     }
     else if (auto * stream = settings.getter(settings.path))
     {
+        size_t prev_size = col.getNullMapColumnPtr()->size();
         SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
-        addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
     }
 
     settings.path.back() = Substream::NullableElements;
@@ -176,6 +177,16 @@ void SerializationNullable::serializeBinary(const IColumn & column, size_t row_n
     writeBinary(is_null, ostr);
     if (!is_null)
         nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
+}
+
+void SerializationNullable::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    bool is_null = col.isNullAt(row_num);
+    writeBinary(is_null, ostr);
+    if (!is_null)
+        nested->serializeForHashCalculation(col.getNestedColumn(), row_num, ostr);
 }
 
 template <typename ReturnType>
@@ -819,6 +830,16 @@ void SerializationNullable::serializeTextJSON(const IColumn & column, size_t row
         serializeNullJSON(ostr);
     else
         nested->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
+}
+
+void SerializationNullable::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        serializeNullJSON(ostr);
+    else
+        nested->serializeTextJSONPretty(col.getNestedColumn(), row_num, ostr, settings, indent);
 }
 
 void SerializationNullable::serializeNullJSON(DB::WriteBuffer & ostr)

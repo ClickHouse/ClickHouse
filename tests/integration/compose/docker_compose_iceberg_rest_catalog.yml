@@ -13,8 +13,8 @@ services:
       - AWS_REGION=us-east-1
     ports:
       - 8080:8080
-      - 10000:10000
-      - 10001:10001
+      - 10002:10000
+      - 10003:10001
     stop_grace_period: 5s
   rest:
     image: tabulario/iceberg-rest:1.6.0

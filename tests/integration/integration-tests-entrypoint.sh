@@ -10,28 +10,47 @@ if [[ ! -v MALLOC_CONF ]]; then
 fi
 
 PID=0
-if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
-    function handle_term()
-    {
-        echo "Sending TERM to $PID"
-        ps aux
-        kill -TERM "$PID"
-    }
-    trap handle_term TERM
-fi
+
+function handle_term()
+{
+    echo "Sending TERM to $PID"
+    ps aux
+    kill -TERM "$PID"
+}
+trap handle_term TERM
 
 echo "Runnig: $*"
 "$@" &
 PID=$!
-# This may be interrupted by SIGTERM that is received by this script
+# This will be interrupted by SIGTERM that is received by this script
 wait $PID
 server_exit_code=$?
 
-while kill -0 "$PID"; do
+function dump_stacktraces_on_shutdown()
+{
+    # 60 sec should be enough to finish the server
+    for _ in {1..60}; do
+        if ! kill -0 "$PID" 2>/dev/null; then
+            return
+        fi
+        sleep 1
+    done
+
+    if kill -0 "$PID"; then
+        echo "Attaching gdb to obtain thread stacktraces"
+        gdb -batch -ex 'thread apply all bt' -p "$PID" > /var/log/clickhouse-server/stdout.log
+    fi
+}
+dump_stacktraces_on_shutdown &
+
+while kill -0 "$PID" 2>/dev/null; do
     wait $PID
     server_exit_code=$?
 done
 echo "Server exited with $server_exit_code"
+
+# Wait dump_stacktraces_on_shutdown
+wait
 
 if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
     jemalloc_reports=/var/lib/clickhouse/jemalloc

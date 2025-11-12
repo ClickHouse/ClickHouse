@@ -3,9 +3,10 @@ numpy==1.26.4
 requests==2.32.4
 pandas==1.5.3
 scipy==1.12.0
-pyarrow==18.0.0
+pyarrow==22.0.0
 grpcio==1.60.0
 protobuf==4.25.8
+psutil
 
 # performance tests >>
 clickhouse_driver

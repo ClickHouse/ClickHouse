@@ -428,7 +428,7 @@ void ConfigProcessor::doIncludesRecursive(
     const LoggerPtr & log,
     Node * node,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
+    const Coordination::EventPtr & zk_changed_event,
     std::unordered_set<std::string> * contributing_zk_paths)
 {
     if (node->nodeType() == Node::TEXT_NODE)
@@ -721,7 +721,7 @@ XMLDocumentPtr ConfigProcessor::parseConfig(const std::string & config_path, Poc
 XMLDocumentPtr ConfigProcessor::processConfig(
     bool * has_zk_includes,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
+    const Coordination::EventPtr & zk_changed_event,
     bool is_config_changed)
 {
     if (is_config_changed)
@@ -868,7 +868,7 @@ void ConfigProcessor::processIncludes(
     std::unordered_set<std::string> * contributing_zk_paths,
     std::vector<std::string> * contributing_files,
     zkutil::ZooKeeperNodeCache * zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event)
+    const Coordination::EventPtr & zk_changed_event)
 {
     XMLDocumentPtr include_from;
     if (!include_from_path.empty())
@@ -899,8 +899,8 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfig(bool allow_zk_includes
 }
 
 ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
-    zkutil::ZooKeeperNodeCache & zk_node_cache,
-    const zkutil::EventPtr & zk_changed_event,
+    zkutil::ZooKeeperNodeCache * zk_node_cache,
+    const Coordination::EventPtr & zk_changed_event,
     bool fallback_to_preprocessed,
     bool is_config_changed)
 {
@@ -909,8 +909,9 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     bool processed_successfully = false;
     try
     {
-        zk_node_cache.sync();
-        config_xml = processConfig(&has_zk_includes, &zk_node_cache, zk_changed_event, is_config_changed);
+        if (zk_node_cache)
+            zk_node_cache->sync();
+        config_xml = processConfig(&has_zk_includes, zk_node_cache, zk_changed_event, is_config_changed);
         processed_successfully = true;
     }
     catch (const Poco::Exception & ex)
@@ -937,7 +938,7 @@ XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
     /// Create a copy of XML Document because hiding elements from preprocessed_xml document
     /// also influences on configuration which has a pointer to preprocessed_xml document.
 
-    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document;
+    XMLDocumentPtr xml_tree_copy = new Poco::XML::Document(name_pool);
 
     for (Node * node = xml_tree->firstChild(); node; node = node->nextSibling())
     {

@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -99,7 +100,7 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode)
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = *queries_headers.front();
@@ -132,7 +133,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
             columns[i] = &queries_headers[i]->getByPosition(column_number);
 
         ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
-        result_element = getLeastSuperColumn(columns);
+        result_element = getLeastSuperColumn(columns, use_variant_as_common_type);
     }
 
     return common_header;
@@ -141,7 +142,8 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    SharedHeaders & query_plans_headers)
+    SharedHeaders & query_plans_headers,
+    ContextPtr context)
 {
     size_t queries_size = query_plans.size();
     for (size_t i = 0; i < queries_size; ++i)
@@ -153,7 +155,11 @@ void addConvertingToCommonHeaderActionsIfNeeded(
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context,
+            false /*ignore_constant_values*/,
+            false /*add_cast_columns*/,
+            nullptr /*new_names*/);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
@@ -342,16 +348,14 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
     return false;
 }
 
-bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
 {
-    const auto & query_node_typed = query_node->as<const QueryNode &>();
-
-    std::vector<QueryTreeNodePtr> join_tree_nodes_to_process;
-    join_tree_nodes_to_process.push_back(query_node_typed.getJoinTree());
+    std::vector<const IQueryTreeNode *> join_tree_nodes_to_process;
+    join_tree_nodes_to_process.push_back(node);
 
     while (!join_tree_nodes_to_process.empty())
     {
-        auto join_tree_node_to_process = join_tree_nodes_to_process.back();
+        const auto * join_tree_node_to_process = join_tree_nodes_to_process.back();
         join_tree_nodes_to_process.pop_back();
 
         auto join_tree_node_type = join_tree_node_to_process->getNodeType();
@@ -366,41 +370,41 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
             }
             case QueryTreeNodeType::QUERY:
             {
-                auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
+                const auto & query_node_to_process = join_tree_node_to_process->as<QueryNode &>();
                 if (query_node_to_process.isGroupByWithTotals())
                     return true;
 
-                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree());
+                join_tree_nodes_to_process.push_back(query_node_to_process.getJoinTree().get());
                 break;
             }
             case QueryTreeNodeType::UNION:
             {
-                auto & union_node = join_tree_node_to_process->as<UnionNode &>();
-                auto & union_queries = union_node.getQueries().getNodes();
+                const auto & union_node = join_tree_node_to_process->as<UnionNode &>();
+                const auto & union_queries = union_node.getQueries().getNodes();
 
-                for (auto & union_query : union_queries)
-                    join_tree_nodes_to_process.push_back(union_query);
+                for (const auto & union_query : union_queries)
+                    join_tree_nodes_to_process.push_back(union_query.get());
                 break;
             }
             case QueryTreeNodeType::ARRAY_JOIN:
             {
-                auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
-                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
+                const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
+                join_tree_nodes_to_process.push_back(array_join_node.getTableExpression().get());
                 break;
             }
             case QueryTreeNodeType::CROSS_JOIN:
             {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                const auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
                 for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
+                    join_tree_nodes_to_process.push_back(expr.get());
 
                 break;
             }
             case QueryTreeNodeType::JOIN:
             {
-                auto & join_node = join_tree_node_to_process->as<JoinNode &>();
-                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression());
-                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression());
+                const auto & join_node = join_tree_node_to_process->as<JoinNode &>();
+                join_tree_nodes_to_process.push_back(join_node.getLeftTableExpression().get());
+                join_tree_nodes_to_process.push_back(join_node.getRightTableExpression().get());
                 break;
             }
             default:
@@ -416,9 +420,17 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
     return false;
 }
 
+bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_node)
+{
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    return queryTreeHasWithTotalsInAnySubqueryInJoinTree(query_node_typed.getJoinTree().get());
+}
+
+
 QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, const ContextPtr & context)
 {
     auto function_node = std::make_shared<FunctionNode>("and");
+    function_node->markAsOperator();
     auto and_function = FunctionFactory::instance().get("and", context);
     function_node->getArguments().getNodes() = condition_nodes;
     function_node->resolveAsFunction(and_function->build(function_node->getArgumentColumns()));
@@ -661,6 +673,27 @@ bool optimizePlanForExists(QueryPlan & query_plan)
         query_plan = query_plan.extractSubplan(node);
     }
     return false;
+}
+
+QueryPlanStepPtr projectOnlyUsedColumns(
+    const SharedHeader & stream_header,
+    const ColumnIdentifiers & used_column_identifiers)
+{
+    ActionsDAG project_only_used_columns_actions;
+
+    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & column : stream_header->getColumnsWithTypeAndName())
+    {
+        const auto * input_node = &project_only_used_columns_actions.addInput(column);
+        if (used_column_identifiers_set.contains(column.name))
+            outputs.push_back(input_node);
+    }
+
+    auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
+    step->setStepDescription("Project only used columns");
+    return step;
 }
 
 }

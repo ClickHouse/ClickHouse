@@ -10,7 +10,7 @@
     M(ErrorLogElement) \
     M(MetricLogElement) \
     M(TransposedMetricLogElement) \
-
+    M(AggregatedZooKeeperLogElement) \
 
 namespace DB
 {
@@ -28,6 +28,8 @@ public:
     void startCollect(const String & thread_name, size_t collect_interval_milliseconds_);
 
     void shutdown() final;
+
+    void flushBufferToLog(TimePoint current_time) final;
 
 protected:
     /// Stop background thread
