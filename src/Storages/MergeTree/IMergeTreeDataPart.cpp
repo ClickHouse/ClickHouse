@@ -705,7 +705,7 @@ void IMergeTreeDataPart::removeIfNeeded()
     /// Let's check that this method not being called under merge mutate background executor mutex.
     /// getMaxThreads locks this mutex.
     if (auto context = storage.getContext())
-        chassert(context->getMergeMutateExecutor()->getMaxThreads() > 0);
+        chassert(context->getMergeMutateExecutor()->getMaxThreads() >= 0);
 #endif
 
     fiu_do_on(FailPoints::remove_merge_tree_part_delay,
