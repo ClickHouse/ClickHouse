@@ -28,7 +28,7 @@ $CLICKHOUSE_CLIENT -q """
 """
 
 $CLICKHOUSE_CLIENT -q """
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 0,1;
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 0 1;
 """
 
 query_id="${CLICKHOUSE_DATABASE}_sleep_random"

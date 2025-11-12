@@ -1,10 +1,8 @@
-#include <chrono>
-#include <random>
 #include <Interpreters/InstrumentationManager.h>
-#include <xray/xray_interface.h>
 
 #if USE_XRAY
 
+#include <chrono>
 #include <filesystem>
 #include <print>
 #include <thread>
@@ -19,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
@@ -26,7 +25,9 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 #include <Poco/String.h>
+#include <pcg_random.hpp>
 
+#include <xray/xray_interface.h>
 #include <llvm/XRay/InstrumentationMap.h>
 
 namespace DB
@@ -327,8 +328,7 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 {
     using namespace std::chrono;
 
-    static thread_local std::random_device random_device;
-    static thread_local std::mt19937 generator(random_device());
+    static thread_local pcg64_fast random_generator{randomSeed()};
 
     const auto & params_opt = instrumented_point.parameters;
     if (!params_opt.has_value())
@@ -346,11 +346,11 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected numeric parameter (Int64 or Float64) for sleep, but got something else");
     };
 
-    Float64 duration_ms = -1;
+    Int64 duration_ms = -1;
 
     if (params.size() == 1)
     {
-        duration_ms = 1000 * get_value(params[0]);
+        duration_ms = static_cast<Int64>(1000 * get_value(params[0]));
     }
     else
     {
@@ -358,7 +358,7 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
         auto max = get_value(params[1]);
 
         std::uniform_real_distribution<> distrib(min, max);
-        duration_ms = 1000 * distrib(generator);
+        duration_ms = static_cast<Int64>(1000 * distrib(random_generator));
     }
 
     if (duration_ms < 0)

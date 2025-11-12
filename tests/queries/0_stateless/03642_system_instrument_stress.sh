@@ -28,6 +28,8 @@ statements=(
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'exit log'"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP ENTRY 0"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP EXIT 0"
+    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP ENTRY 0 0.01"
+    "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` SLEEP EXIT 0 0.01"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` PROFILE"
     "SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` PROFILE"
 )

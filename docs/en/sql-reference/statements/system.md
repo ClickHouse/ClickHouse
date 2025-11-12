@@ -261,10 +261,10 @@ Sleeps for a number of fix amount of seconds either on `ENTRY` or `EXIT`:
 SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0.5
 ```
 
-or for a uniformly distributed random amount of seconds providing min and max separated by comma:
+or for a uniformly distributed random amount of seconds providing min and max separated by a whitespace:
 
 ```sql
-SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0,1
+SYSTEM INSTRUMENT ADD `QueryMetricLog::startQuery` SLEEP ENTRY 0 1
 ```
 
 #### PROFILE {#instrument-add-profile}

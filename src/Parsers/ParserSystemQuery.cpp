@@ -811,11 +811,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
 
             res->instrumentation_parameters.emplace();
-            do
-            {
-                ASTPtr params_ast;
-                if (!ParserLiteral{}.parse(pos, params_ast, expected))
-                    return false;
+
+            ASTPtr params_ast;
+            while (ParserLiteral{}.parse(pos, params_ast, expected)) {
                 const auto & value = params_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
                 {
@@ -833,7 +831,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 {
                     res->instrumentation_parameters->emplace_back(value.safeGet<Float64>());
                 }
-            } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
+            }
+
+            if (res->instrumentation_parameters.value().empty())
+                return false;
 
             break;
         }
