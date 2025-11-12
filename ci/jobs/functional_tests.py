@@ -231,7 +231,14 @@ def main():
         config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
-    if args.path:
+    if is_bugfix_validation:
+        os.environ["GLOBAL_TAGS"] = "no-random-settings"
+        ch_path = temp_dir
+        if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
+            link_arch = "aarch64" if Utils.is_arm() else "amd64"
+            link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
+            Shell.run(f"wget -nv -P {temp_dir} {link_to_master_head_binary}", verbose=True, strict=True)
+    elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
         ch_path = str(Path(args.path).absolute())
     else:
@@ -334,22 +341,6 @@ def main():
 
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
-        elif is_bugfix_validation:
-            if Utils.is_arm():
-                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-            else:
-                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-            if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
-                print(
-                    f"NOTE: ClickHouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
-                )
-                if info.is_local_run:
-                    time.sleep(10)
-                commands.insert(
-                    0,
-                    f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
-                )
-            os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
         os.environ["MALLOC_CONF"] = (
             f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
