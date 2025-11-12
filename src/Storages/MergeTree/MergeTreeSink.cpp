@@ -82,6 +82,8 @@ void MergeTreeSink::onFinish()
     if (isCancelled())
         return;
 
+    LOG_TRACE(storage.log, "onFinish() called");
+
     if (insert_parts_buffered)
         flushPartsBuffer(false);
     else
@@ -245,6 +247,8 @@ void MergeTreeSink::consumePartsBuffered(BlocksWithPartition part_blocks, std::s
         return std::pair{addendum_rows, addendum_bytes};
     };
 
+    LOG_TRACE(storage.log, "Consuming chunk using parts buffer (parts = {})", part_blocks.size());
+
     for (auto & part_block : part_blocks)
     {
         chassert(part_block.offsets.empty() && part_block.tokens.empty());
@@ -257,6 +261,8 @@ void MergeTreeSink::consumePartsBuffered(BlocksWithPartition part_blocks, std::s
             (max_parts_buffer_bytes.value_or(0) && max_parts_buffer_bytes.value() < parts_buffer_bytes))
             flushPartsBuffer(true);
     }
+
+    LOG_TRACE(storage.log, "Consumed chunk using parts buffer");
 }
 
 void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
@@ -285,6 +291,8 @@ void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
         temp_part->prewarmCaches();
     };
 
+    LOG_TRACE(storage.log, "Flushing buffered parts from {} buckets (just one = {})", parts_buffer.size(), just_one_bucket);
+
     if (just_one_bucket)
     {
         auto heap_iter = --parts_heap.rbegin().base();
@@ -303,6 +311,8 @@ void MergeTreeSink::flushPartsBuffer(bool just_one_bucket)
         parts_heap.clear();
         parts_buffer_rows = parts_buffer_bytes = 0;
     }
+
+    LOG_TRACE(storage.log, "Buffered flush finished");
 }
 
 void MergeTreeSink::finishDelayedChunk()

@@ -45,7 +45,7 @@ FROM table_src;
 -- Check that too many parts are created indeed
 
 INSERT INTO table_dst
-    SETTINGS throw_on_max_partitions_per_insert_block=0
+    SETTINGS max_insert_threads=1, throw_on_max_partitions_per_insert_block=0
 SELECT *
 FROM table_src;
 
@@ -68,7 +68,7 @@ WHERE table = 'table_dst';
 -- Check that unnecessary parts are not created with the setting
 
 INSERT INTO table_dst
-    SETTINGS throw_on_max_partitions_per_insert_block=0, max_insert_parts_buffer_rows=0
+    SETTINGS max_insert_threads=1, throw_on_max_partitions_per_insert_block=0, max_insert_parts_buffer_rows=0
 SELECT *
 FROM table_src;
 
@@ -91,7 +91,7 @@ WHERE table = 'table_dst';
 -- Check that some additional parts are created when the buffer is small
 
 INSERT INTO table_dst
-    SETTINGS throw_on_max_partitions_per_insert_block=0, max_insert_parts_buffer_rows=1
+    SETTINGS max_insert_threads=1, throw_on_max_partitions_per_insert_block=0, max_insert_parts_buffer_rows=1
 SELECT *
 FROM table_src;
 
