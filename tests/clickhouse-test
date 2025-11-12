@@ -1170,6 +1170,8 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
+        "enable_lazy_columns_replication": lambda: random.randint(0, 1),
+        "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
@@ -1513,6 +1515,9 @@ class TestCase:
             )
         elif client_options:
             client_options += " --allow_repeated_settings"
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = (
+                self.base_client_options + client_options + " "
+            )
 
         return client_options + new_options
 
@@ -1894,6 +1899,7 @@ class TestCase:
         if (
             re.search(r"(^|\W)(Net|Errno|)Exception(\W|$)", stdout)
             and "X-ClickHouse-Exception-Code" not in stdout
+            and "X-ClickHouse-Exception-Tag" not in stdout
         ):
             description += "\n{}\n".format(trim_for_log(stdout, 100))
             if debug_log:
@@ -2018,11 +2024,17 @@ class TestCase:
             try:
                 clickhouse_execute(
                     args,
-                    f"INSERT INTO system.coverage_log SELECT now(), '{self.case}', coverageCurrent()",
+                    f"INSERT INTO system.coverage_log "
+                    f"WITH arrayDistinct(arrayFilter(x -> x != 0, coverageCurrent())) AS coverage_distinct "
+                    f"SELECT DISTINCT now(), '{self.case}', coverage_distinct, "
+                    f"arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) ",
                     retry_error_codes=True,
                 )
             except Exception as e:
                 print("Cannot insert coverage data: ", str(e))
+                traceback.print_exc()
+                sys.exit(1)
+
 
             # Check for dumped coverage files
 
@@ -2036,12 +2048,17 @@ class TestCase:
                             args,
                             "INSERT INTO system.coverage_log "
                             "SETTINGS async_insert=1, wait_for_async_insert=0, async_insert_busy_timeout_min_ms=200, async_insert_busy_timeout_max_ms=1000 "
-                            f"SELECT now(), '{self.case}', groupArray(data) FROM input('data UInt64') FORMAT RowBinary",
+                            f"WITH arrayDistinct(groupArray(data)) AS coverage_distinct "
+                            f"SELECT now(), '{self.case}', coverage_distinct, "
+                            f"arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) "
+                            f"FROM input('data UInt64') FORMAT RowBinary",
                             body=body,
                             retry_error_codes=True,
                         )
                     except Exception as e:
                         print("Cannot insert coverage data: ", str(e))
+                        traceback.print_exc()
+                        sys.exit(1)
 
                     # Remove the file even in case of exception to avoid accumulation and quadratic complexity.
                     try:
@@ -3608,7 +3625,8 @@ def main(args):
                 (
                     time DateTime,
                     test_name String,
-                    coverage Array(UInt64)
+                    coverage Array(UInt64),
+                    symbol Array(String)
                 ) ENGINE = MergeTree ORDER BY test_name
                 COMMENT 'Contains information about per-test coverage from the CI, but used only for exporting to the CI cluster';
             """,
@@ -3617,7 +3635,10 @@ def main(args):
         # Coverage collected at the system startup before running any tests:
         clickhouse_execute(
             args,
-            "INSERT INTO system.coverage_log SELECT now(), '', coverageCurrent()",
+            "INSERT INTO system.coverage_log "
+            "WITH arrayDistinct(arrayFilter(x -> x != 0, coverageCurrent())) AS coverage_distinct "
+            "SELECT DISTINCT now(), '', coverage_distinct, "
+            "arrayMap(x -> demangle(addressToSymbol(x)), coverage_distinct) ",
         )
 
     total_tests_run = 0

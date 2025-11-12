@@ -711,6 +711,11 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
+
+        /// We need to propagate settings related to drop size limits,
+        ///  otherwise we will not be able to drop large inner tables.
+        drop_context->setSettings(current_context->getSettingsRef());
+
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);

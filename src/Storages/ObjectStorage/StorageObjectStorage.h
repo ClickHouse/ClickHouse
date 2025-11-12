@@ -36,10 +36,6 @@ struct IPartitionStrategy;
 class StorageObjectStorage : public IStorage
 {
 public:
-    using ObjectInfo = RelativePathWithMetadata;
-    using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-    using ObjectInfos = std::vector<ObjectInfoPtr>;
-
     StorageObjectStorage(
         StorageObjectStorageConfigurationPtr configuration_,
         ObjectStoragePtr object_storage_,
@@ -95,6 +91,8 @@ public:
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+
+    bool isObjectStorage() const override { return true; }
 
     bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
 

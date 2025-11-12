@@ -100,6 +100,10 @@
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
     M(TextIndexDictionaryBlockCacheHits, "Number of times a text index dictionary block has been found in the cache.", ValueType::Number) \
     M(TextIndexDictionaryBlockCacheMisses, "Number of times a text index dictionary block has not been found in the cache.", ValueType::Number) \
+    M(TextIndexHeaderCacheHits, "Number of times a header has been found in the cache.", ValueType::Number) \
+    M(TextIndexHeaderCacheMisses, "Number of times a header has not been found in the cache.", ValueType::Number) \
+    M(TextIndexPostingsCacheHits, "Number of times a text index posting list has been found in the cache.", ValueType::Number) \
+    M(TextIndexPostingsCacheMisses, "Number of times a a text index posting list has not been found in the cache.", ValueType::Number) \
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
@@ -636,7 +640,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
-    M(S3GetObjectAttributes, "Number of S3 API GetObjectAttributes calls.", ValueType::Number) \
+    M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
     M(S3UploadPart, "Number of S3 API UploadPart calls.", ValueType::Number) \
@@ -649,7 +653,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.", ValueType::Number) \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.", ValueType::Number) \
     M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.", ValueType::Number) \
-    M(DiskS3GetObjectAttributes, "Number of DiskS3 API GetObjectAttributes calls.", ValueType::Number) \
+    M(DiskS3GetObjectTagging, "Number of DiskS3 API GetObjectTagging calls.", ValueType::Number) \
     M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.", ValueType::Number) \
     M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.", ValueType::Number) \

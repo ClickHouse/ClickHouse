@@ -1138,7 +1138,8 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         ActionsDAG::makeConvertingActions(
             input_columns,
             output_columns,
-            ActionsDAG::MatchColumnsMode::Position
+            ActionsDAG::MatchColumnsMode::Position,
+            getContext()
         );
     }
 }
@@ -1730,6 +1731,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
+    if (create.temporary && create.replace_table)
+    {
+        chassert(!ddl_guard);
+        return doCreateOrReplaceTemporaryTable(create, properties, mode);
+    }
+
     if (create.replace_table
         || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
     {
@@ -2146,7 +2153,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         /// Try fill temporary table
         BlockIO fill_io = fillTableIfNeeded(create);
-        executeTrivialBlockIO(fill_io, getContext());
+        /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
+        /// passing this callback allows tcp sessions to send progress, stats and logs.
+        /// It prevents getting socket timeout as well.
+        bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
+        executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
         /// Replace target table with created one
         ASTRenameQuery::Element elem
@@ -2213,12 +2224,39 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     }
 }
 
+BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
+                                                                const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
+{
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+
+    String temporary_table_name = create.getTable();
+    auto creator = [&](const StorageID & table_id)
+    {
+        auto res = StorageFactory::instance().get(create,
+            database->getTableDataPath(table_id.getTableName()),
+            getContext(),
+            getContext()->getGlobalContext(),
+            properties.columns,
+            properties.constraints,
+            mode,
+            is_restore_from_backup);
+        validateVirtualColumns(*res);
+        checkForUnsupportedColumns(*res, mode);
+        return res;
+    };
+
+    auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
+    /// addOrUpdateExternalTable will replace existing temporary table with the same name.
+    /// It is thread-safe because of internal locking in Context class.
+    getContext()->getSessionContext()->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
+    /// Note, until BlockIO will be "executed" - the table is empty, so it is not atomic, but this is OK, since concurrent access from the same session to a temporary table is not possible
+    return fillTableIfNeeded(create);
+}
+
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
-    if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    if (create.isCreateQueryWithImmediateInsertSelect())
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};

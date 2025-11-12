@@ -1,3 +1,4 @@
+#include <Disks/DiskType.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -1580,7 +1581,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     auto virtual_columns_block = getBlockWithVirtualsForFilter(metadata_snapshot, {parts[0]});
 
     auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(
-        filter_actions_dag.getOutputs().at(0), nullptr, /*allow_partial_result=*/false);
+        filter_actions_dag.getOutputs().at(0), nullptr, local_context, /*allow_partial_result=*/false);
     if (!filter_dag)
         return {};
 
@@ -1611,7 +1612,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     size_t res = 0;
     for (const auto & part : parts)
     {
-        if ((part_values.empty() || part_values.find(part.data_part->name) != part_values.end())
+        if ((part_values.empty() || part_values.contains(part.data_part->name))
             && !partition_pruner.canBePruned(*part.data_part))
             res += part.data_part->rows_count;
     }
@@ -5981,14 +5982,49 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
 
-        auto disk_without_partition_command_support_it = std::find_if(
-            disks.begin(), disks.end(), [&command](const auto & disk_ptr) { return !disk_ptr->supportsPartitionCommand(command); });
-        if (disk_without_partition_command_support_it != disks.end())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Partition operation ALTER TABLE {} is not supported for disk '{}'",
-                command.typeToString(),
-                (*disk_without_partition_command_support_it)->getName());
+        for (const auto & disk : disks)
+        {
+            const auto data_source_description = disk->getDataSourceDescription();
+            bool can_execute_alter_on_disk = true;
+
+            switch (data_source_description.metadata_type)
+            {
+                case MetadataStorageType::Plain:
+                {
+                    can_execute_alter_on_disk = false;
+                    break;
+                }
+                case MetadataStorageType::PlainRewritable:
+                {
+                    const static auto supported_commands = {
+                        PartitionCommand::DROP_PARTITION,
+                        PartitionCommand::DROP_DETACHED_PARTITION,
+                        PartitionCommand::ATTACH_PARTITION,
+                        PartitionCommand::MOVE_PARTITION,
+                        PartitionCommand::REPLACE_PARTITION,
+                    };
+
+                    can_execute_alter_on_disk = std::ranges::contains(supported_commands, command.type);
+                    break;
+                }
+                case MetadataStorageType::StaticWeb:
+                {
+                    can_execute_alter_on_disk = false;
+                    break;
+                }
+                case MetadataStorageType::None:
+                case MetadataStorageType::Local:
+                case MetadataStorageType::Keeper:
+                case MetadataStorageType::Memory:
+                {
+                    can_execute_alter_on_disk = true;
+                    break;
+                }
+            }
+
+            if (!can_execute_alter_on_disk)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Partition operation ALTER TABLE {} is not supported for disk '{}'", command.typeToString(), disk->getName());
+        }
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
@@ -8234,7 +8270,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()->at(0);
+                auto index = part->getIndex();
+                const auto & primary_key_column = *index->at(0);
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, primary_key_column[0]);
             }
@@ -8245,7 +8282,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         {
             for (const auto & part : real_parts)
             {
-                const auto & primary_key_column = *part->getIndex()->at(0);
+                auto index = part->getIndex();
+                const auto & primary_key_column = *index->at(0);
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, primary_key_column[primary_key_column.size() - 1]);
             }
@@ -8398,7 +8436,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         auto callback = [&](const auto & substream_path)
         {
             String stream_name;
-            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
 
             if (settings[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > settings[MergeTreeSetting::max_file_name_length])
                 stream_name = sipHash128String(full_stream_name);
@@ -9555,7 +9593,7 @@ bool MergeTreeData::insertQueryIdOrThrow(const String & query_id, size_t max_que
 
 bool MergeTreeData::insertQueryIdOrThrowNoLock(const String & query_id, size_t max_queries) const
 {
-    if (query_id_set.find(query_id) != query_id_set.end())
+    if (query_id_set.contains(query_id))
         return false;
     if (query_id_set.size() >= max_queries)
         throw Exception(
@@ -9575,7 +9613,7 @@ void MergeTreeData::removeQueryId(const String & query_id) const
 
 void MergeTreeData::removeQueryIdNoLock(const String & query_id) const
 {
-    if (query_id_set.find(query_id) == query_id_set.end())
+    if (!query_id_set.contains(query_id))
         LOG_WARNING(log, "We have query_id removed but it's not recorded. This is a bug");
     else
         query_id_set.erase(query_id);
@@ -9662,7 +9700,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         auto it = disk_occupation.find(name);
                         if (it != disk_occupation.end())
                         {
-                            if (submerging_big_parts_from_partition.find(part->name) == submerging_big_parts_from_partition.end())
+                            if (!submerging_big_parts_from_partition.contains(part->name))
                             {
                                 it->second += part->getBytesOnDisk();
                                 disk_parts_for_logging[name].push_back(formatReadableSizeWithBinarySuffix(part->getBytesOnDisk()));
@@ -9684,7 +9722,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             for (const auto & [name, emerging_part] : currently_emerging_big_parts)
             {
                 // It's possible that the emerging big parts are committed and get added twice. Thus a set is used to deduplicate.
-                if (committed_big_parts_from_partition.find(name) == committed_big_parts_from_partition.end()
+                if (!committed_big_parts_from_partition.contains(name)
                     && part_info.getPartitionId() == emerging_part.partition_id)
                 {
                     auto it = disk_occupation.find(emerging_part.disk_name);
