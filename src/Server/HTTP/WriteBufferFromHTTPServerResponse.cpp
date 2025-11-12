@@ -13,6 +13,8 @@
 #include <DataTypes/IDataType.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <fmt/core.h>
 #include <cstddef>
@@ -148,13 +150,25 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 }
 
 
-void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
+void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, ContextPtr context)
 {
     std::lock_guard lock(mutex);
 
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
         return;
+
+    if (progress.memory_usage)
+    {
+        /// When the query is finished the memory_usage will be in progress and it will match the query_log
+        accumulated_progress.memory_usage = 0;
+    }
+    else
+    {
+        QueryStatusPtr process_list_elem = context->getProcessListElement();
+        if (process_list_elem)
+            accumulated_progress.memory_usage = process_list_elem->getInfo().memory_usage;
+    }
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))

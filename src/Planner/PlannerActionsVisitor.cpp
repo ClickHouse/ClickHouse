@@ -963,7 +963,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     {
         set_element_types = {in_first_argument->getResultType()};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-        if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+
+        /// Do not unpack if empty tuple or single element tuple
+        if (left_tuple_type && left_tuple_type->getElements().size() > 1)
             set_element_types = left_tuple_type->getElements();
 
         set_element_types
