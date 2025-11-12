@@ -1718,9 +1718,8 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (auto it = begin_it; it != end_it; ++it)
         {
             auto & entry = it->second;
-            if (unfinished_mutations.find(entry.file_name) != unfinished_mutations.end())
+            if (!entry.tid.isPrehistoric() || unfinished_mutations.find(entry.file_name) != unfinished_mutations.end())
             {
-                end_it = it;
                 break;
             }
 
@@ -1729,7 +1728,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
                 entry.is_done = true;
                 decrementMutationsCounters(mutation_counters, *entry.commands);
             }
-
             ++done_count;
         }
 
