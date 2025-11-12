@@ -21,7 +21,7 @@ Columns:
 - `handler` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Handler type.
 - `entry_type` ([Enum('Entry' = 0, 'Exit' = 1, 'EntryAndExit' = 2)](../../sql-reference/data-types/enum.md)) — Entry type: `Entry`, `Exit` or `EntryAndExit`.
 - `symbol` ([LowCardinality(String)](../../sql-reference/data-types/string.md)) — Complete and demangled symbol.
-- `parameters` ([Dynamic](../../sql-reference/data-types/dynamic.md)) — Parameters for the handler call.
+- `parameters` ([Array(Dynamic)](../../sql-reference/data-types/array.md)) — Parameters for the handler call.
 
 **Example**
 
@@ -38,7 +38,7 @@ function_name: QueryMetricLog::startQuery
 handler:       log
 entry_type:    Entry
 symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-parameters:    test
+parameters:    ['test']
 
 Row 2:
 ──────
@@ -48,7 +48,7 @@ function_name: QueryMetricLog::startQuery
 handler:       profile
 entry_type:    EntryAndExit
 symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-parameters:    ᴺᵁᴸᴸ
+parameters:    []
 
 Row 3:
 ──────
@@ -58,7 +58,7 @@ function_name: QueryMetricLog::startQuery
 handler:       sleep
 entry_type:    Exit
 symbol:        DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
-parameters:    0.3
+parameters:    [0.3]
 
 3 rows in set. Elapsed: 0.302 sec.
 ```
