@@ -76,6 +76,10 @@ private:
         return 1ULL << (sizeof(UInt64) * 8 - std::countl_zero(x * alpha_map_elements_per_counter));
     }
 
+    /// Limit the max alpha value to avoid overflow with merges or topKWeighted with huge weights
+    /// Better to have a less precise value than an overflow (which will lead to incorrect results)
+    static constexpr UInt64 MAX_ALPHA_VALUE = UInt64{UINT32_MAX};
+
 public:
     using Self = SpaceSaving;
 
@@ -114,7 +118,7 @@ public:
         // greater() taking error into account
         bool operator> (const Counter & b) const
         {
-            return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && error < b.error);
+            return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
         }
 
         TKey key;
@@ -123,7 +127,11 @@ public:
         UInt64 error;
     };
 
-    explicit SpaceSaving(size_t c = 10) : alpha_map(nextAlphaSize(c)), m_capacity(c) {}
+    explicit SpaceSaving(size_t c = 0)
+    {
+        if (c != 0)
+            resize(c);
+    }
 
     ~SpaceSaving() { destroyElements(); }
 
@@ -146,9 +154,13 @@ public:
 
     void resize(size_t new_capacity)
     {
-        counter_list.reserve(new_capacity * 2);
-        alpha_map.resize(nextAlphaSize(new_capacity * 2));
-        m_capacity = new_capacity;
+        if (m_capacity != new_capacity)
+        {
+            chassert(empty());
+            counter_list.reserve(new_capacity * 2);
+            alpha_map.resize(nextAlphaSize(new_capacity * 2), 0);
+            m_capacity = new_capacity;
+        }
     }
 
     void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
@@ -156,7 +168,7 @@ public:
         // Increase weight of a key that already exists
         auto hash = counter_map.hash(key);
 
-        if (auto * counter = findCounter(key, hash); counter)
+        if (auto * counter = findCounter(key, hash))
         {
             counter->count += increment;
             counter->error += error;
@@ -170,7 +182,7 @@ public:
             return;
         }
 
-        const size_t alpha_mask = alpha_map.size() - 1;
+        const UInt64 alpha_mask = alpha_map.size() - 1;
         auto & alpha = alpha_map[hash & alpha_mask];
         push(Counter{arena.emplace(key), alpha + increment, alpha + error, hash});
     }
@@ -183,6 +195,12 @@ public:
     {
         if (rhs.empty())
             return;
+
+        if (empty())
+        {
+            *this = rhs;
+            return;
+        }
 
         UInt64 m1 = 0;
         UInt64 m2 = 0;
@@ -229,12 +247,13 @@ public:
             }
         }
 
-        for (size_t i = 0, max_size = std::max(alpha_map.size(), rhs.alpha_map.size()); i < max_size; ++i)
+        if (alpha_map.size() == rhs.alpha_map.size())
         {
-            alpha_map[i] = std::max(alpha_map[i], rhs.alpha_map[i]);
+            for (size_t i = 0; i < alpha_map.size(); i++)
+                alpha_map[i] = std::min(alpha_map[i] + rhs.alpha_map[i], MAX_ALPHA_VALUE);
         }
 
-        truncateIfNeeded();
+        truncateIfNeeded(true);
     }
 
     std::vector<Counter> topK(size_t k) const
@@ -309,10 +328,10 @@ protected:
         size_t pos = counter_list.size();
         counter_map.insertIfNotPresent(counter.key, counter.hash, pos);
         counter_list.push_back(std::move(counter));
-        truncateIfNeeded();
+        truncateIfNeeded(false);
     }
 
-    ALWAYS_INLINE void truncateIfNeeded()
+    ALWAYS_INLINE void truncateIfNeeded(bool force_counter_map_rebuild)
     {
         if (unlikely(counter_list.size() >= capacity() * 2))
         {
@@ -322,22 +341,24 @@ protected:
                 counter_list.end(),
                 [](const auto & l, const auto & r) { return l > r; });
 
-            const size_t alpha_mask = alpha_map.size() - 1;
+            const UInt64 alpha_mask = alpha_map.size() - 1;
             for (size_t i = m_capacity; i < counter_list.size(); ++i)
             {
+                size_t pos = counter_list[i].hash & alpha_mask;
+                alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
-                alpha_map[counter_list[i].hash & alpha_mask]
-                    = std::max(alpha_map[counter_list[i].hash & alpha_mask], counter_list[i].count);
             }
 
             counter_list.resize(m_capacity);
+            force_counter_map_rebuild = true;
+        }
 
+        if (force_counter_map_rebuild)
+        {
             /// Rebuild the counter map
             counter_map.clear();
             for (size_t i = 0; i < counter_list.size(); ++i)
-            {
                 counter_map.insertIfNotPresent(counter_list[i].key, counter_list[i].hash, i);
-            }
         }
     }
 
@@ -361,14 +382,37 @@ private:
         return &counter_list[it->getMapped()];
     }
 
+    SpaceSaving & operator=(const SpaceSaving & rhs)
+    {
+        if (&rhs == this)
+            return *this;
+
+        destroyElements();
+        resize(rhs.capacity());
+        if constexpr (std::is_same<TKey, StringRef>::value)
+        {
+            for (auto & counter : rhs.counter_list)
+                push(Counter{arena.emplace(counter.key), counter.hash, counter.error});
+            alpha_map = rhs.alpha_map;
+        }
+        else
+        {
+            counter_list = rhs.counter_list;
+            alpha_map = rhs.alpha_map;
+            truncateIfNeeded(true);
+        }
+
+        return *this;
+    }
+
 
     using CounterMap = HashMapWithStackMemory<TKey, size_t, Hash, 4>;
 
-    CounterMap counter_map;
-    std::vector<Counter, AllocatorWithMemoryTracking<Counter>> counter_list;
-    std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map;
-    SpaceSavingArena<TKey> arena;
-    size_t m_capacity;
+    CounterMap counter_map{};
+    std::vector<Counter, AllocatorWithMemoryTracking<Counter>> counter_list{};
+    std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map{};
+    SpaceSavingArena<TKey> arena{};
+    size_t m_capacity = 0;
 };
 
 }
