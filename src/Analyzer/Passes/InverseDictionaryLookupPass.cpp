@@ -242,7 +242,7 @@ private:
             return;
         }
 
-        assert(
+        chassert(
             dict_structure.hasAttribute(dictget_function_info.attr_col_name)
             && "Attribute not found in dictionary structure of dictionary");
 
