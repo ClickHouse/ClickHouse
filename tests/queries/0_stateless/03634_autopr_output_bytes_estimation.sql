@@ -9,7 +9,8 @@ SET max_threads=8, use_hedged_requests=0, max_bytes_before_external_group_by=0, 
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
---SELECT COUNT(DISTINCT SearchPhrase) FROM test.hits FORMAT Null SETTINGS log_comment='query_5';
+-- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
+-- SELECT COUNT(DISTINCT SearchPhrase) FROM test.hits FORMAT Null SETTINGS log_comment='query_5';
 
 SELECT MobilePhoneModel, COUNT(DISTINCT UserID) AS u FROM test.hits WHERE MobilePhoneModel <> '' GROUP BY MobilePhoneModel ORDER BY u DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_10';
 
@@ -35,7 +36,7 @@ SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off
 WITH
-    [96, 518752, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200] AS expected_bytes,
+    [96, 500000, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM

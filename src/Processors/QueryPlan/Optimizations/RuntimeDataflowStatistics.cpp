@@ -98,23 +98,27 @@ void RuntimeDataflowStatisticsCacheUpdater::recordOutputChunk(const Chunk & chun
 
     Stopwatch watch;
 
-    const auto source_bytes = chunk.bytes();
-    size_t key_columns_compressed_size = 0;
-    const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
-    if (curr % 50 == 0 && curr < 150 && chunk.hasRows())
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
+    auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
+    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
+    if (chunk.hasRows() && counter % 50 == 0 && counter < 150)
     {
         chassert(chunk.getNumColumns() == header.columns());
         for (size_t i = 0; i < chunk.getNumColumns(); ++i)
-            key_columns_compressed_size += getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+        {
+            auto [sample, compressed] = getCompressedColumnSize({chunk.getColumns()[i], header.getByPosition(i).type, ""});
+            sample_bytes += sample;
+            compressed_bytes += compressed;
+        }
     }
 
-    auto & statistics = output_bytes_statistics[OutputStatisticsType::OutputChunk];
     std::lock_guard lock(statistics.mutex);
-    statistics.bytes += source_bytes;
-    if (key_columns_compressed_size)
+    statistics.bytes += chunk.bytes();
+    if (compressed_bytes)
     {
-        statistics.sample_bytes += source_bytes;
-        statistics.compressed_bytes += key_columns_compressed_size;
+        statistics.sample_bytes += sample_bytes;
+        statistics.compressed_bytes += compressed_bytes;
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
@@ -151,31 +155,43 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(const Aggr
 
     Stopwatch watch;
 
-    auto getKeyColumnsSize = [&](bool compressed)
+    auto getKeyColumnsSize = [&](bool compress)
     {
-        size_t total_size = 0;
+        size_t sample_bytes = 0;
+        size_t compressed_bytes = 0;
         for (size_t i = 0; i < aggregator.getParams().keys_size; ++i)
         {
             const auto & key_column_name = aggregator.getParams().keys[i];
             const auto & column = block.getByName(key_column_name);
-            total_size += compressed ? getCompressedColumnSize(column) : column.column->byteSize();
+            if (compress)
+            {
+                auto [sample, compressed] = getCompressedColumnSize(column);
+                sample_bytes += sample;
+                compressed_bytes += compressed;
+            }
+            else
+            {
+                sample_bytes += column.column->byteSize();
+                compressed_bytes += column.column->byteSize();
+            }
         }
-        return total_size;
+        return std::make_pair(sample_bytes, compressed_bytes);
     };
 
-    const auto source_bytes = getKeyColumnsSize(/*compressed=*/false);
-    size_t key_columns_compressed_size = 0;
-    const auto curr = cnt.fetch_add(1, std::memory_order_relaxed);
-    if (curr % 1 == 0 && curr < 15000000000 && block.rows())
-        key_columns_compressed_size = getKeyColumnsSize(/*compressed=*/true);
-
+    const auto block_bytes = getKeyColumnsSize(/*compressed=*/false).first;
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationKeys];
+    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
+    if (block.rows() && counter % 50 == 0 && counter < 150)
+        std::tie(sample_bytes, compressed_bytes) = getKeyColumnsSize(/*compressed=*/true);
+
     std::lock_guard lock(statistics.mutex);
-    statistics.bytes += source_bytes;
-    if (key_columns_compressed_size)
+    statistics.bytes += block_bytes;
+    if (compressed_bytes)
     {
-        statistics.sample_bytes += source_bytes;
-        statistics.compressed_bytes += key_columns_compressed_size;
+        statistics.sample_bytes += sample_bytes;
+        statistics.compressed_bytes += compressed_bytes;
     }
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
@@ -211,14 +227,22 @@ void RuntimeDataflowStatisticsCacheUpdater::recordInputColumns(
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
-size_t RuntimeDataflowStatisticsCacheUpdater::getCompressedColumnSize(const ColumnWithTypeAndName & column)
+std::pair<size_t, size_t> RuntimeDataflowStatisticsCacheUpdater::getCompressedColumnSize(const ColumnWithTypeAndName & column)
 {
-    NullWriteBuffer wb;
-    CompressedWriteBuffer wbuf(wb);
+    NullWriteBuffer null_buf;
+    CompressedWriteBuffer compressed_buf(null_buf);
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
-    NativeWriter::writeData(*serialization, column_to_write, wbuf, std::nullopt, 0, column_to_write->size(), DBMS_TCP_PROTOCOL_VERSION);
-    wbuf.finalize();
-    return wb.count();
+    const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
+    // LOG_DEBUG(&Poco::Logger::get("debug"), "limit={}, column_to_write->size()={}", limit, column_to_write->size());
+    NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
+    compressed_buf.finalize();
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"),
+    //     "wbuf.count()={}, wb.count()={}, wbuf.count() / wb.count()={}",
+    //     wbuf.count(),
+    //     wb.count(),
+    //     static_cast<double>(wbuf.count()) / wb.count());
+    return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()

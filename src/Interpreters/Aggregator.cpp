@@ -1814,7 +1814,10 @@ bool Aggregator::executeOnBlock(Columns columns,
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         result.convertToTwoLevel();
+    }
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))
@@ -3626,7 +3629,10 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
+    {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         result.convertToTwoLevel();
+    }
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))
