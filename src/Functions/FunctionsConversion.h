@@ -2910,7 +2910,8 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createWithOverflow
+        if (context && datetime_overflow_behavior == default_date_time_overflow_behavior)
             context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         if (isDynamic(from_type))
@@ -4187,7 +4188,8 @@ private:
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = function_date_time_overflow_behavior;
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createFunctionBaseCast
+        if (context && function_date_time_overflow_behavior == default_date_time_overflow_behavior)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -4703,6 +4705,13 @@ private:
             const auto * col = arguments.front().column.get();
 
             size_t tuple_size = to_element_types.size();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col->size());
+            }
+
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);

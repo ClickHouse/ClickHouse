@@ -15,6 +15,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/QueryProcessingStage.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -34,6 +35,7 @@
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Server/TCPServer.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
@@ -737,6 +739,23 @@ void TCPHandler::runImpl()
                         getFormatSettings(query_state->query_context));
                 });
 
+            query_state->query_context->setInteractiveCancelCallback(
+                [this, &query_state]()
+                {
+                    std::lock_guard lock(callback_mutex);
+
+                    if (!query_state->need_receive_data_for_input)
+                        receivePacketsExpectCancel(*query_state);
+
+                    if (query_state->stop_read_return_partial_result)
+                        return true;
+
+                    sendProgress(*query_state);
+                    sendSelectProfileEvents(*query_state);
+                    sendLogs(*query_state);
+                    return false;
+                });
+
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
@@ -764,23 +783,9 @@ void TCPHandler::runImpl()
                     CompletedPipelineExecutor executor(query_state->io.pipeline);
 
                     /// Should not check for cancel in case of input.
-                    if (!query_state->need_receive_data_for_input)
+                    if (auto callback = query_state->query_context->getInteractiveCancelCallback();
+                        !query_state->need_receive_data_for_input && callback)
                     {
-                        auto callback = [this, &query_state]()
-                        {
-                            std::lock_guard lock(callback_mutex);
-
-                            receivePacketsExpectCancel(*query_state);
-
-                            if (query_state->stop_read_return_partial_result)
-                                return true;
-
-                            sendProgress(*query_state);
-                            sendSelectProfileEvents(*query_state);
-                            sendLogs(*query_state);
-                            return false;
-                        };
-
                         executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
                     }
 
@@ -800,6 +805,15 @@ void TCPHandler::runImpl()
             else
             {
                 query_state->io.onFinish();
+
+                // Send final progress if query had completed pipeline which was executed separately
+                // in a such case those completed pipeline uses cancellation callback for sending intermediate progress.
+                if (auto * create_query = query_state->parsed_query->as<ASTCreateQuery>();
+                    create_query && create_query->isCreateQueryWithImmediateInsertSelect())
+                {
+                    sendProgress(*query_state);
+                    sendSelectProfileEvents(*query_state);
+                }
             }
 
             /// Do it before sending end of stream, to have a chance to show log message in client.
@@ -2297,6 +2311,12 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         && !passed_settings[Setting::allow_experimental_analyzer].changed)
         passed_settings.set("allow_experimental_analyzer", false);
 
+    if (state->stage == QueryProcessingStage::WithMergeableState
+        && VersionNumber(client_info.connection_client_version_major, client_info.connection_client_version_minor, client_info.connection_client_version_patch)
+            < VersionNumber(25, 10, 0)
+    )
+        passed_settings.set("optimize_const_name_size", -1);
+
     auto settings_changes = passed_settings.changes();
     query_kind = state->query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
@@ -2418,7 +2438,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
         else
         {
             NamesAndTypesList columns = block.getNamesAndTypesList();
-            auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription{columns}, {});
+            auto temporary_table = TemporaryTableHolder(state.query_context, ColumnsDescription(columns, /*with_subcolumns=*/false), {});
             storage = temporary_table.getTable();
             state.query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
         }

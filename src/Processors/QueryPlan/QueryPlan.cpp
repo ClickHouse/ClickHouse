@@ -235,21 +235,40 @@ static void explainStep(const IQueryPlanStep & step, JSONBuilder::JSONMap & map,
             map.add("Description", description);
     }
 
+    const auto dump_column = [](JSONBuilder::JSONArray & header_array, const ColumnWithTypeAndName & column)
+    {
+        auto column_map = std::make_unique<JSONBuilder::JSONMap>();
+        column_map->add("Name", column.name);
+        if (column.type)
+            column_map->add("Type", column.type->getName());
+        header_array.add(std::move(column_map));
+    };
+
     if (options.header && step.hasOutputHeader())
     {
         auto header_array = std::make_unique<JSONBuilder::JSONArray>();
 
         for (const auto & output_column : *step.getOutputHeader())
-        {
-            auto column_map = std::make_unique<JSONBuilder::JSONMap>();
-            column_map->add("Name", output_column.name);
-            if (output_column.type)
-                column_map->add("Type", output_column.type->getName());
-
-            header_array->add(std::move(column_map));
-        }
+            dump_column(*header_array, output_column);
 
         map.add("Header", std::move(header_array));
+    }
+
+    if (options.input_headers && !step.getInputHeaders().empty())
+    {
+        auto input_headers_array = std::make_unique<JSONBuilder::JSONArray>();
+
+        for (const auto & input_header : step.getInputHeaders())
+        {
+            auto header_array = std::make_unique<JSONBuilder::JSONArray>();
+
+            for (const auto & input_column : *input_header)
+                dump_column(*header_array, input_column);
+
+            input_headers_array->add(std::move(header_array));
+        }
+
+        map.add("Input Headers", std::move(input_headers_array));
     }
 
     if (options.actions)
@@ -339,6 +358,13 @@ static void explainStep(
 
     settings.out.write('\n');
 
+    const auto dump_column = [&out = settings.out](const ColumnWithTypeAndName & column)
+    {
+        column.dumpNameAndType(out);
+        if (column.column && isColumnLazy(*column.column.get()))
+            out << " (Lazy)";
+    };
+
     if (options.header)
     {
         settings.out << prefix;
@@ -355,16 +381,53 @@ static void explainStep(
             for (const auto & elem : *step.getOutputHeader())
             {
                 if (!first)
-                    settings.out << "\n" << prefix << "        ";
+                    settings.out << '\n' << prefix << "        ";
 
                 first = false;
-                elem.dumpNameAndType(settings.out);
-                if (elem.column && isColumnLazy(*elem.column.get()))
-                    settings.out << " (Lazy)";
+                dump_column(elem);
             }
         }
         settings.out.write('\n');
+    }
 
+    if (options.input_headers)
+    {
+        const std::string_view input_headers_title = "Input headers: ";
+        const std::string_view input_header_indent = "               ";
+        settings.out << prefix << input_headers_title;
+
+        bool first_input_header = true;
+        size_t input_header_index = 0;
+
+        if (step.getInputHeaders().empty())
+        {
+            settings.out << "No input headers";
+        }
+        else
+        {
+            for (const auto & input_header : step.getInputHeaders())
+            {
+                if (!first_input_header)
+                    settings.out << '\n' << prefix << input_header_indent;
+                first_input_header = false;
+
+                settings.out << fmt::format("#{}", input_header_index);
+                ++input_header_index;
+
+                if (input_header->empty())
+                {
+                    settings.out << " Empty header";
+                    continue;
+                }
+
+                for (const auto & elem : *input_header)
+                {
+                    settings.out << '\n' << prefix << input_header_indent;
+                    dump_column(elem);
+                }
+            }
+        }
+        settings.out.write('\n');
     }
 
     if (options.sorting)
@@ -773,7 +836,10 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
     if (!blocksHaveEqualStructure(*header, *plan_header))
     {
         auto converting_dag = ActionsDAG::makeConvertingActions(
-            plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+            plan_header->getColumnsWithTypeAndName(),
+            header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
 
         auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
         plan->addStep(std::move(expression));

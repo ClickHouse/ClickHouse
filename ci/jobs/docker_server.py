@@ -73,20 +73,6 @@ def parse_args() -> argparse.Namespace:
         description="A program to build clickhouse-server image, both alpine and "
         "ubuntu versions",
     )
-    # TODO: Not supported. remove?
-    # parser.add_argument(
-    #     "--version",
-    #     type=version_arg,
-    #     default=get_version_from_repo(git=git).string,
-    #     help="a version to build, automaticaly got from version_helper, accepts either "
-    #     "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
-    # )
-    # parser.add_argument(
-    #     "--sha",
-    #     type=str,
-    #     default="",
-    #     help="sha of the commit to use packages from",
-    # )
     parser.add_argument(
         "--tag-type",
         type=str,
@@ -346,18 +332,15 @@ def main():
 
     if not info.is_local_run:
         assert not args.image_path and not args.image_repo
-        if "server image" in info.job_name:
-            image_path = "docker/server"
-            image_repo = "clickhouse/clickhouse-server"
-        elif "keeper image" in info.job_name:
-            image_path = "docker/keeper"
-            image_repo = "clickhouse/clickhouse-keeper"
-        else:
-            assert False, f"Unexpected job name [{info.job_name}]"
+
+    if "server image" in info.job_name:
+        image_path = args.image_path or "docker/server"
+        image_repo = args.image_repo or "clickhouse/clickhouse-server"
+    elif "keeper image" in info.job_name:
+        image_path = args.image_path or "docker/keeper"
+        image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
     else:
-        assert args.image_path and args.image_repo
-        image_path = args.image_path
-        image_repo = args.image_repo
+        assert False, f"Unexpected job name [{info.job_name}]"
 
     push = args.push
     del args.image_path
@@ -402,14 +385,6 @@ def main():
             assert not args.allow_build_reuse
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
             print(f"Bucket prefix is set: Fetching packages from [{repo_urls}]")
-        # TODO: not supported, remove?
-        # elif args.sha:
-        #     version = args.version
-        #     repo_urls[arch] = (
-        #         f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-        #         f"{version.major}.{version.minor}/{args.sha}/{build_name}"
-        #     )
-        #     print(f"Fetching packages from [{repo_urls}]")
         else:
             assert (
                 False

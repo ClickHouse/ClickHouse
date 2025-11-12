@@ -411,11 +411,8 @@ ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
-    std::string creation_args;
-    creation_args += fmt::format("'{}'", config.database_name);
-    creation_args += fmt::format(", '{}'", config.backup_info.toString());
-
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({})", backQuoteIfNeed(getDatabaseName()), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
+        backQuoteIfNeed(getDatabaseName()), quoteString(config.database_name), quoteString(config.backup_info.toString()));
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,

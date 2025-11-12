@@ -1,10 +1,9 @@
 
+SET use_skip_indexes_on_data_read = 0; -- for correct row count estimation in join order planning
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS sales;
 
 SET enable_analyzer = 1;
--- Force using skip indexes in planning to make test deterministic with `query_plan_join_swap_table` setting.
-SET use_skip_indexes_on_data_read = 0;
 
 CREATE TABLE sales (
     id Int32,

@@ -1,8 +1,8 @@
 import re
 from pathlib import Path
 
-from praktika.info import Info
-from praktika.utils import Shell
+from ci.praktika.info import Info
+from ci.praktika.utils import Shell
 
 
 class CHVersion:
