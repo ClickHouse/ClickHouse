@@ -71,6 +71,23 @@ public:
             ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars(), input_rows_count);
             return col_res;
         }
+        if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
+        {
+            size_t tuple_size = col_tuple->tupleSize();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col_tuple->size());
+            }
+
+            Columns tuple_columns(tuple_size);
+            for (size_t i = 0; i < tuple_size; ++i)
+            {
+                tuple_columns[i] = col_tuple->getColumnPtr(tuple_size - i - 1);
+            }
+            return ColumnTuple::create(tuple_columns);
+        }
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
