@@ -27,8 +27,11 @@ void UTFConvertingReadBuffer::detectAndProcessBOM()
 {
     if (!impl->hasPendingData())
     {
-        detected_encoding = Encoding::UTF8;
-        return;
+        if(!impl->next())
+        {
+            detected_encoding = Encoding::UTF8;
+            return;
+        }
     }
 
     const char * pos = impl->position();
@@ -127,6 +130,7 @@ bool UTFConvertingReadBuffer::nextImpl()
     impl->ignore(src_size);
 
     working_buffer = Buffer(memory.data(), memory.data() + bytes_written);
+    pos = working_buffer.begin();
     return true;
 }
 
