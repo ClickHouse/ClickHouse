@@ -246,12 +246,9 @@ void buildSortingDAG(QueryPlan::Node & node, std::optional<ActionsDAG> & dag, Fi
     }
 
 
-    if (node.children.size() == 2)
+    if (typeid_cast<JoinStep *>(step) || typeid_cast<FilledJoinStep *>(step))
     {
-        if (typeid_cast<JoinStep *>(step) || typeid_cast<FilledJoinStep *>(step))
-        {
-            limit = 0;
-        }
+        limit = 0;
     }
 
     if (node.children.empty())
@@ -1030,11 +1027,29 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
         {
             apply_virtual_row = order_info.virtual_row_conversion != std::nullopt;
 
+            bool uses_virtual_row = false;
+            if (order_info.virtual_row_conversion)
+                uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
+
+            if (!uses_virtual_row)
+            {
+                /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
+                /// Without it, the sorting step after join cannot correctly determine
+                /// which input stream to read from when most rows are filtered out,
+                /// potentially reading excessive amount of data.
+                for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
+                {
+                    const auto & table_join = join_step->getJoin()->getTableJoin();
+                    auto strictness = table_join.strictness();
+                    if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
+                        return nullptr;
+                }
+            }
+
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit,
-                std::move(order_info.virtual_row_conversion));
+                order_info.input_order->limit);
 
             if (!can_read)
                 return nullptr;
@@ -1120,8 +1135,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
             bool can_read = reading->requestReadingInOrder(
                 order_info.input_order->used_prefix_of_sorting_key_size,
                 order_info.input_order->direction,
-                order_info.input_order->limit,
-                {});
+                order_info.input_order->limit);
             if (!can_read)
                 return {};
         }
@@ -1232,7 +1246,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         if (!reading->requestReadingInOrder(
             order_info.input_order->used_prefix_of_sorting_key_size,
             order_info.input_order->direction,
-            order_info.input_order->limit, {}))
+            order_info.input_order->limit))
             return {};
 
         return order_info;
@@ -1521,7 +1535,7 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
-        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, {});
+        bool can_read = read_from_merge_tree->requestReadingInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit);
         if (!can_read)
             return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
