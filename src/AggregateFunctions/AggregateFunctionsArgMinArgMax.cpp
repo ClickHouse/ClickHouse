@@ -403,9 +403,7 @@ createAggregateFunctionArgMinMax(const std::string & name, const DataTypes & arg
         WhichDataType which(value_type);
 #define DISPATCH(TYPE) \
     if (which.idx == TypeIndex::TYPE) \
-        return AggregateFunctionPtr( \
-            new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<TYPE>>, isMin, returnBoth>( \
-                argument_types)); /// NOLINT
+            return AggregateFunctionPtr(new AggregateFunctionArgMinMax<AggregateFunctionArgMinMaxDataGeneric<SingleValueDataFixed<TYPE>>, isMin, returnBoth>(argument_types)); /// NOLINT
         FOR_SINGLE_VALUE_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
 
