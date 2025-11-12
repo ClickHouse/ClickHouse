@@ -484,8 +484,9 @@ def test_mv_generates_several_blocks(parser):
                     FROM table_a_b
                     FULL OUTER JOIN table_for_join_with AS r
                     ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                ) SETTINGS join_algorithm='hash'
-                WHERE c_dst != {expected_first_dst};
+                )
+                WHERE c_dst != {expected_first_dst}
+                SETTINGS join_algorithm='hash';
 
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT 'DEBUG first join chj count', count() FROM (
@@ -493,8 +494,9 @@ def test_mv_generates_several_blocks(parser):
                     FROM table_a_b
                     FULL OUTER JOIN table_for_join_with AS r
                     ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                ) SETTINGS join_algorithm='parallel_hash'
-                WHERE c_dst != {expected_first_dst};
+                )
+                WHERE c_dst != {expected_first_dst}
+                SETTINGS join_algorithm='parallel_hash';
 
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT a_src, a_join, r.b AS b
@@ -563,8 +565,9 @@ def test_mv_generates_several_blocks(parser):
                     FROM table_a_b
                     FULL OUTER JOIN table_for_join_with AS r
                     ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                ) SETTINGS join_algorithm='hash'
-                WHERE c_dst != {expected_second_dst};
+                )
+                WHERE c_dst != {expected_second_dst}
+                SETTINGS join_algorithm='hash';
 
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT 'DEBUG second join chj count', count() FROM (
@@ -572,8 +575,9 @@ def test_mv_generates_several_blocks(parser):
                     FROM table_a_b
                     FULL OUTER JOIN table_for_join_with AS r
                     ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                ) SETTINGS join_algorithm='parallel_hash'
-                WHERE c_dst != {expected_second_dst};
+                )
+                WHERE c_dst != {expected_second_dst}
+                SETTINGS join_algorithm='parallel_hash';
 
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT a_src, a_join, r.b AS b
