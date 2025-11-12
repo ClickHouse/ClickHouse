@@ -94,6 +94,12 @@ public:
 
         /// Add dimension as penultimate argument and reference vector as last argument
         auto dimension_constant = std::make_shared<ConstantNode>(qbit->getDimension());
+
+        /// If the precision node was nullable, the result needs to be nullable too. As this pass removes precision_node, we force
+        /// the nullability on the dimension constant (if former was the case) to preserve the nullability of the result
+        if (precision_node->getResultType()->isNullable() || precision_node->getResultType()->isLowCardinalityNullable())
+            dimension_constant->convertToNullable();
+
         new_args.push_back(dimension_constant);
         new_args.push_back(ref_vec_node);
 
@@ -107,8 +113,11 @@ public:
         if (!function_node->getResultType()->equals(*original_result_type))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "{} query tree node does not have valid source node after running L2DistanceTransposedPartialReadsPass",
-                node->getNodeTypeName());
+                "{} query tree node does not have a valid source node after running L2DistanceTransposedPartialReadsPass. Before: {}, "
+                "after: {}",
+                node->getNodeTypeName(),
+                original_result_type->getName(),
+                function_node->getResultType()->getName());
     }
 };
 

@@ -96,6 +96,7 @@ private:
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     blob.Details.ETag.ToString(),
+                    {},
                     {}}));
         }
 
@@ -162,7 +163,7 @@ bool AzureObjectStorage::exists(const StoredObject & object) const
     }
 }
 
-ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+ObjectStorageIteratorPtr AzureObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
 {
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
@@ -200,6 +201,7 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
                         std::chrono::duration_cast<std::chrono::seconds>(
                             static_cast<std::chrono::system_clock::time_point>(blob.Details.LastModified).time_since_epoch()).count()),
                     blob.Details.ETag.ToString(),
+                    {},
                     {}}));
         }
 
@@ -354,7 +356,39 @@ void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::st
     setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
 }
 
-ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) const
+static void setAzureBlobTag(
+    const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+    const Strings & blob_names,
+    const String & tag_key,
+    const String & tag_value)
+{
+    auto log = getLogger("setAzureBlobTag");
+    for (const auto & blob_name : blob_names)
+    {
+        auto blob_client = client_ptr->GetBlobClient(blob_name);
+        auto get_response = blob_client.GetTags();
+        auto& tags = get_response.Value;
+        const auto tag_iter = tags.find(tag_key);
+        if (tag_iter != tags.end() && tag_iter->second == tag_value)
+        {
+            LOG_TRACE(log, "Azure blob {} skipped as it already had the tag {}={}", blob_name, tag_key, tag_value);
+            continue;
+        }
+
+        tags[tag_key] = tag_value;
+        blob_client.SetTags(tags);
+        LOG_TRACE(log, "Tags of Azure blob {} updated", blob_name);
+    }
+}
+
+void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value)
+{
+    auto client_ptr = client.get();
+    Strings blob_names = collectRemotePaths(objects);
+    setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
+}
+
+ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
     auto blob_client = client_ptr->GetBlobClient(path);
@@ -376,10 +410,10 @@ ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path) c
     return result;
 }
 
-std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path) const
+std::optional<ObjectMetadata> AzureObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
 try
 {
-    return getObjectMetadata(path);
+    return getObjectMetadata(path, with_tags);
 }
 catch (const Azure::Storage::StorageException & e)
 {
@@ -397,7 +431,7 @@ void AzureObjectStorage::copyObject( /// NOLINT
 {
     auto settings_ptr = settings.get();
     auto client_ptr = client.get();
-    auto object_metadata = getObjectMetadata(object_from.remote_path);
+    auto object_metadata = getObjectMetadata(object_from.remote_path, false);
 
     ProfileEvents::increment(ProfileEvents::AzureCopyObject);
     if (client_ptr->IsClientForDisk())

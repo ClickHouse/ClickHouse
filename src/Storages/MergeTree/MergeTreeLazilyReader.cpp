@@ -159,6 +159,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             data_part_info,
             columns_for_reader,
             storage_snapshot,
+            storage.getSettings(),
             mark_ranges,
             /*virtual_fields=*/ {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
@@ -198,7 +199,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             reader->performRequiredConversions(columns_to_read);
 
             for (auto & col : columns_to_read)
-                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
+                col = removeSpecialRepresentations(col->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < columns_size; ++i)
                 lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);

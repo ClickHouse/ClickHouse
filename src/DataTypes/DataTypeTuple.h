@@ -75,6 +75,9 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     void forEachChild(const ChildCallback & callback) const override;
+
+private:
+    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
 };
 
 }

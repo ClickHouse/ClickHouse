@@ -1,3 +1,5 @@
+SET enable_lazy_columns_replication=0;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
