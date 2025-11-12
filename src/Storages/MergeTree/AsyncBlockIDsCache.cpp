@@ -4,7 +4,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Interpreters/Context.h>
 
 #include <unordered_set>
 
