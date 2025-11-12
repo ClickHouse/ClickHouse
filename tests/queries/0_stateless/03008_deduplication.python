@@ -477,6 +477,14 @@ def test_mv_generates_several_blocks(parser):
                 ORDER BY a_src, a_join, b
                 LIMIT {args.debug_limit};
 
+                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
+                SELECT a_src, a_join, b, count()
+                FROM table_when_b_even_and_joined
+                WHERE c_dst != {expected_first_dst}
+                GROUP BY a_src, a_join, b
+                ORDER BY a_src, a_join, b
+                LIMIT {args.debug_limit};
+
                 -- Join outputs (hash vs parallel_hash)
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT 'DEBUG first join hash count', count() FROM (
@@ -497,6 +505,34 @@ def test_mv_generates_several_blocks(parser):
                 )
                 WHERE c_dst != {expected_first_dst}
                 SETTINGS join_algorithm='parallel_hash';
+
+                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
+                SELECT a_src, a_join, b, count()
+                FROM (
+                    SELECT a_src, a_join, r.b AS b
+                    FROM table_a_b
+                    FULL OUTER JOIN table_for_join_with AS r
+                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
+                )
+                WHERE c_dst != {expected_first_dst}
+                GROUP BY a_src, a_join, b
+                ORDER BY a_src, a_join, b
+                LIMIT {args.debug_limit}
+                SETTINGS join_algorithm='hash', join_use_nulls=1;
+
+                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
+                SELECT a_src, a_join, b, count()
+                FROM (
+                    SELECT a_src, a_join, r.b AS b
+                    FROM table_a_b
+                    FULL OUTER JOIN table_for_join_with AS r
+                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
+                )
+                WHERE c_dst != {expected_first_dst}
+                GROUP BY a_src, a_join, b
+                ORDER BY a_src, a_join, b
+                LIMIT {args.debug_limit}
+                SETTINGS join_algorithm='parallel_hash', join_use_nulls=1;
 
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT a_src, a_join, r.b AS b
@@ -558,6 +594,14 @@ def test_mv_generates_several_blocks(parser):
                 ORDER BY a_src, a_join, b
                 LIMIT {args.debug_limit};
 
+                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
+                SELECT a_src, a_join, b, count()
+                FROM table_when_b_even_and_joined
+                WHERE c_dst != {expected_second_dst}
+                GROUP BY a_src, a_join, b
+                ORDER BY a_src, a_join, b
+                LIMIT {args.debug_limit};
+
                 -- Join outputs (hash vs parallel_hash)
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT 'DEBUG second join hash count', count() FROM (
@@ -578,6 +622,34 @@ def test_mv_generates_several_blocks(parser):
                 )
                 WHERE c_dst != {expected_second_dst}
                 SETTINGS join_algorithm='parallel_hash';
+
+                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
+                SELECT a_src, a_join, b, count()
+                FROM (
+                    SELECT a_src, a_join, r.b AS b
+                    FROM table_a_b
+                    FULL OUTER JOIN table_for_join_with AS r
+                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
+                )
+                WHERE c_dst != {expected_second_dst}
+                GROUP BY a_src, a_join, b
+                ORDER BY a_src, a_join, b
+                LIMIT {args.debug_limit}
+                SETTINGS join_algorithm='hash', join_use_nulls=1;
+
+                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
+                SELECT a_src, a_join, b, count()
+                FROM (
+                    SELECT a_src, a_join, r.b AS b
+                    FROM table_a_b
+                    FULL OUTER JOIN table_for_join_with AS r
+                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
+                )
+                WHERE c_dst != {expected_second_dst}
+                GROUP BY a_src, a_join, b
+                ORDER BY a_src, a_join, b
+                LIMIT {args.debug_limit}
+                SETTINGS join_algorithm='parallel_hash', join_use_nulls=1;
 
                 WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
                 SELECT a_src, a_join, r.b AS b
