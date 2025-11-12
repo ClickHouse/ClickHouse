@@ -196,16 +196,22 @@ void MergeTreeSink::finishDelayedChunk()
         partition.temp_part->finalize();
 
         auto & part = partition.temp_part->part;
-        const String block_id = part->getNewPartBlockID(partition.block_dedup_token);
         bool added = commitPart(part, partition.block_dedup_token);
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
+            auto block_id = String{};
+            if (context->getSettingsRef()[Setting::insert_deduplicate] && storage.getDeduplicationLog())
+                block_id = part->getNewPartBlockID(partition.block_dedup_token);
+
             partition.temp_part->prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), {block_id});
+            PartLog::addNewPart(
+                storage.getContext(),
+                PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
+                {block_id});
             StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
@@ -221,7 +227,7 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
     return storage.writer.writeTempPart(block, metadata_snapshot, context);
 }
 
-bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String & block_id)
+bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String & deduplication_token)
 {
     bool added = false;
 
@@ -236,6 +242,7 @@ bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String 
 
         if (context->getSettingsRef()[Setting::insert_deduplicate] && deduplication_log)
         {
+            const String block_id = part->getNewPartBlockID(deduplication_token);
             auto res = deduplication_log->addPart(block_id, part->info);
             if (!res.second)
             {
