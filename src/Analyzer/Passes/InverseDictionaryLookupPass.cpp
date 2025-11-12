@@ -14,6 +14,7 @@
 #include <Functions/FunctionsExternalDictionaries.h>
 
 #include <Core/Settings.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -29,26 +30,17 @@ namespace
 
 struct DictGetFunctionInfo
 {
-    String dict_name;
-    String attr_col_name;
+    ConstantNodePtr dict_name_node;
+    ConstantNodePtr attr_col_name_node;
     QueryTreeNodePtr key_expr_node;
 
     /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc.
     DataTypePtr return_type;
 };
 
-bool tryGetStringLiteral(const QueryTreeNodePtr & node, String & out)
+bool isConstantString(const ConstantNodePtr & node)
 {
-    if (const auto * constant_node = node->as<ConstantNode>())
-    {
-        const auto & value = constant_node->getValue();
-        if (value.getType() == Field::Types::String)
-        {
-            out = value.safeGet<String>();
-            return true;
-        }
-    }
-    return false;
+    return node && node->getValue().getType() == Field::Types::String;
 }
 
 
@@ -88,13 +80,15 @@ bool tryParseDictFunctionCall(const QueryTreeNodePtr & node, DictGetFunctionInfo
     if (arguments.size() != 3)
         return false;
 
-    String dict_name;
-    String attr_col_name;
-    if (!tryGetStringLiteral(arguments[0], dict_name) || !tryGetStringLiteral(arguments[1], attr_col_name))
+    out.dict_name_node = typeid_cast<ConstantNodePtr>(arguments[0]);
+    out.attr_col_name_node = typeid_cast<ConstantNodePtr>(arguments[1]);
+    if (!out.dict_name_node || !out.attr_col_name_node)
         return false;
 
-    out.dict_name = std::move(dict_name);
-    out.attr_col_name = std::move(attr_col_name);
+    /// Check if both constants hold String values
+    if (!isConstantString(out.dict_name_node) || !isConstantString(out.attr_col_name_node))
+        return false;
+
     out.key_expr_node = arguments[2];
     out.return_type = function_node->getResultType();
     return true;
@@ -201,7 +195,8 @@ private:
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
-        const auto dict = helper.getDictionary(dictget_function_info.dict_name);
+        const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
+        const auto dict = helper.getDictionary(dict_name);
         if (!dict)
             return;
 
@@ -232,17 +227,16 @@ private:
             return;
         }
 
-        chassert(
-            dict_structure.hasAttribute(dictget_function_info.attr_col_name)
-            && "Attribute not found in dictionary structure of dictionary");
+        const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
+        chassert(dict_structure.hasAttribute(attr_col_name) && "Attribute not found in dictionary structure of dictionary");
 
-        DataTypePtr dict_attr_col_type = dict_structure.getAttribute(dictget_function_info.attr_col_name).type;
+        DataTypePtr dict_attr_col_type = dict_structure.getAttribute(attr_col_name).type;
 
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
-        dict_table_function->getArguments().getNodes().push_back(std::make_shared<ConstantNode>(dictget_function_info.dict_name));
+        dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
         resolveNode(dict_table_function, getContext());
 
-        NameAndTypePair attr_col{dictget_function_info.attr_col_name, dict_attr_col_type};
+        NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
 
         /// Needed for dictGet functions like `dictGetString`, `dictGetInt32`, etc.
