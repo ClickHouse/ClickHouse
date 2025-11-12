@@ -35,7 +35,7 @@ struct DictGetFunctionInfo
     ConstantNodePtr attr_col_name_node;
     QueryTreeNodePtr key_expr_node;
 
-    /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc.
+    /// Necessary for type casting for functions like `dictGetString`, `dictGetInt32`, etc
     DataTypePtr return_type;
 };
 
