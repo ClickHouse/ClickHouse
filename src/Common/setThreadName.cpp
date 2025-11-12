@@ -34,7 +34,7 @@ template<std::size_t N>
 constexpr std::string_view as_string_view(char const (&s)[N])
 {
     static_assert(N <= THREAD_NAME_SIZE, "Thread name too long");
-    return std::string_view(s, N-1);
+    return std::string_view(s, N); // N includes null terminator
 }
 
 const static std::unordered_map<std::string_view, ThreadName> str_to_thread_name = []{
@@ -75,9 +75,12 @@ void setThreadName(ThreadName name)
     thread_name = name;
 
     auto thread_name_str = toString(name);
-    if (thread_name_str.size() > THREAD_NAME_SIZE - 1)
+    if (thread_name_str.size() > THREAD_NAME_SIZE)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be longer than 15 bytes");
-
+    if (thread_name_str.empty())
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be empty");
+    if (thread_name_str.back() != '\0')
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name has to be null terminated string");
 
 #if defined(OS_FREEBSD)
     pthread_set_name_np(pthread_self(), thread_name_str.data());
