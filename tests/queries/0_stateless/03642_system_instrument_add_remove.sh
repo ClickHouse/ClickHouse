@@ -24,8 +24,8 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'my log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
-    SELECT '-- Adding the same one produces an error';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'another log in finishQuery'; -- { serverError BAD_ARGUMENTS }
+    SELECT '-- Adding the same one again';
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::finishQuery\` LOG ENTRY 'another log in finishQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
     SELECT '-- Add another one';

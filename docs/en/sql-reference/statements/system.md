@@ -232,7 +232,9 @@ address at the prolog and epilog of those functions that are longer than 200 ins
 
 ### SYSTEM INSTRUMENT ADD {#instrument-add}
 
-Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table.
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table. More than one handler can be added for the same function.
+The functions to be instrumented can be collected from [`system.symbols`](../../operations/system-tables/symbols.md) system table.
+
 There are three different kind of handlers to add to functions:
 
 **Syntax**
@@ -240,7 +242,7 @@ There are three different kind of handlers to add to functions:
 SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
 ```
 
-where `FUNCTION` is any C++ function such as `QueryMetricLog::startQuery` and the handler one of the following
+where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
 
 #### LOG {#instrument-add-log}
 

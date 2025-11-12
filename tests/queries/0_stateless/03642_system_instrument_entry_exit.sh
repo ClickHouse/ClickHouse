@@ -6,6 +6,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+query_id="${CLICKHOUSE_DATABASE}_entry_exit"
+
 function cleanup()
 {
     $CLICKHOUSE_CLIENT -q "SYSTEM INSTRUMENT REMOVE ALL;"
@@ -17,11 +19,10 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'this is an entry log';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG EXIT 'this is an exit log';
-    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 3;
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` PROFILE;
+    SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` SLEEP ENTRY 3;
 """
 
-query_id="${CLICKHOUSE_DATABASE}_entry_exit"
 $CLICKHOUSE_CLIENT --query-id=$query_id -q "SELECT 1 FORMAT Null;"
 
 # The symbols for LOG EXIT don't include `QueryMetricLog::startQuery`, but the caller 'DB::logQueryStart'.

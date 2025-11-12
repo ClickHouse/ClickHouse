@@ -46,7 +46,6 @@ auto logger = getLogger("InstrumentationManager");
 
 InstrumentationManager::InstrumentationManager()
 {
-    /// The order in which handlers are registered is important because they will be executed in that same order.
     registerHandler(LOG_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { log(entry_type, ip); });
     registerHandler(PROFILE_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { profile(entry_type, ip); });
     registerHandler(SLEEP_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { sleep(entry_type, ip); });
@@ -60,7 +59,7 @@ InstrumentationManager & InstrumentationManager::instance()
 
 void InstrumentationManager::registerHandler(const String & name, XRayHandlerFunction handler)
 {
-    handler_name_to_function.emplace_back(std::make_pair(name, handler));
+    handler_name_to_function.emplace(name, handler);
 }
 
 void InstrumentationManager::ensureInitialization()
@@ -147,13 +146,6 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
             "and making sure they are not decorated with '[[clang::xray_never_instrument]]'", function_name);
 
     std::lock_guard lock(shared_mutex);
-    auto it = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{function_id, entry_type, handler_name_lower});
-    if (it != instrumented_points.get<InstrumentedPointKey>().end())
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Handler of this type is already installed for function_id '{}', function name '{}'",
-            function_id, function_name);
-    }
-
     patchFunctionIfNeeded(function_id);
 
     InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
@@ -175,24 +167,13 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     }
     else
     {
-        std::optional<InstrumentedPointKey> function_key;
-        InstrumentedPointInfo instrumented_info;
-        for (const auto & info : instrumented_points)
-        {
-            if (info.id == std::get<UInt64>(id))
-            {
-                function_key = InstrumentedPointKeyExtractor()(info);
-                instrumented_info = info;
-                break;
-            }
-        }
-
-        if (!function_key.has_value())
+        const auto it = instrumented_points.get<Id>().find(std::get<UInt64>(id));
+        if (it == instrumented_points.get<Id>().end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<UInt64>(id));
 
-        LOG_DEBUG(logger, "Removing instrumented function {}", instrumented_info.toString());
-        unpatchFunctionIfNeeded(function_key->function_id);
-        instrumented_points.get<InstrumentedPointKey>().erase(function_key.value());
+        LOG_DEBUG(logger, "Removing instrumented function {}", it->toString());
+        unpatchFunctionIfNeeded(it->function_id);
+        instrumented_points.erase(it);
     }
 }
 
@@ -233,27 +214,27 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
     if (entry_type == XRayEntryType::TAIL)
         entry_type = XRayEntryType::EXIT;
 
-    for (const auto & [handler_name, handler_function] : handler_name_to_function)
+    std::vector<InstrumentedPointInfo> func_ips;
+    SharedLockGuard lock(shared_mutex);
+    for (auto it = instrumented_points.get<FunctionId>().find(func_id); it != instrumented_points.get<FunctionId>().end(); ++it)
+        func_ips.emplace_back(*it);
+    lock.unlock();
+
+    for (const auto & info : func_ips)
     {
-        SharedLockGuard lock(shared_mutex);
-        auto ip_info = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{func_id, entry_type, handler_name});
+        if (info.entry_type.has_value() && info.entry_type.value() != entry_type)
+            continue;
 
-        /// If the key couldn't be found for entry/exit type, let's try without any entry type for those handlers that don't need it.
-        if (ip_info == instrumented_points.get<InstrumentedPointKey>().end())
-            ip_info = instrumented_points.get<InstrumentedPointKey>().find(InstrumentedPointKey{func_id, std::nullopt, handler_name});
-
-        if (ip_info != instrumented_points.get<InstrumentedPointKey>().end())
+        try
         {
-            auto info = *ip_info;
-            lock.unlock();
-            try
-            {
-                handler_function(entry_type, info);
-            }
-            catch (const std::exception & e)
-            {
-                LOG_ERROR(logger, "Exception in handler '{}': {}", info.handler_name, e.what());
-            }
+            auto handler_function = handler_name_to_function.find(info.handler_name);
+            if (handler_function == handler_name_to_function.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Handler {} not found when trying to run instrumentation point {}", info.handler_name, info.toString());
+            handler_function->second(entry_type, info);
+        }
+        catch (const std::exception & e)
+        {
+            LOG_ERROR(logger, "Exception in handler '{}': {}", info.handler_name, e.what());
         }
     }
 }
