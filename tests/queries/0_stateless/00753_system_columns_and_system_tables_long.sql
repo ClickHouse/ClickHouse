@@ -13,7 +13,7 @@ CREATE TABLE check_system_tables
     ORDER BY name1
     PARTITION BY name2
     SAMPLE BY name1
-    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'default';
+    SETTINGS min_bytes_for_wide_part = 0, compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic', auto_statistics_types = '';
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()
@@ -38,7 +38,7 @@ CREATE TABLE check_system_tables
   ) ENGINE = VersionedCollapsingMergeTree(sign, version)
     PARTITION BY date
     ORDER BY date
-    SETTINGS compress_marks=false, compress_primary_key=false;
+    SETTINGS compress_marks=false, compress_primary_key=false, auto_statistics_types = '';
 
 SELECT name, partition_key, sorting_key, primary_key, sampling_key
 FROM system.tables WHERE name = 'check_system_tables' AND database = currentDatabase()

@@ -549,7 +549,7 @@ static void buildORCSearchArgumentImpl(
                 }
             }
 
-            String column_name = getColumnNameFromKeyCondition(key_condition, curr.key_column);
+            String column_name = getColumnNameFromKeyCondition(key_condition, curr.getKeyColumn());
             const auto * orc_type = getORCTypeByName(schema, column_name, format_settings.orc.case_insensitive_column_matching);
             if (!orc_type)
             {
@@ -1386,7 +1386,7 @@ static ColumnWithTypeAndName readColumnWithEncodedStringOrFixedStringData(
             }
         }
 
-        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column));
+        return ColumnLowCardinality::create(std::move(dictionary_column), std::move(new_index_column), /*is_shared=*/false);
     };
 
     MutableColumnPtr internal_column;

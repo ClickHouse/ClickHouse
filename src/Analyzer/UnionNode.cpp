@@ -18,6 +18,7 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 
 #include <DataTypes/getLeastSupertype.h>
 
@@ -37,6 +38,11 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
@@ -110,7 +116,9 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
         for (size_t projection_index = 0; projection_index < projections_size; ++projection_index)
             projection_column_types[projection_index] = projections[projection_index][column_index].type;
 
-        auto result_type = getLeastSupertype(projection_column_types);
+        auto result_type = getContext()->getSettingsRef()[Setting::use_variant_as_common_type]
+            ? getLeastSupertypeOrVariant(projection_column_types)
+            : getLeastSupertype(projection_column_types);
         result_columns.emplace_back(projections.front()[column_index].name, std::move(result_type));
     }
 

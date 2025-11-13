@@ -40,14 +40,13 @@ SELECT numericIndexedVectorBuild(mapFromArrays([1, 2, 3], [10, 20, 30])) AS res,
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise addition between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The function returns a new numericIndexedVector.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseAdd(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"numeric", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns a new NumericIndexedVector object.", {"numericIndexedVector"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples = {
         {
             "Usage example",
@@ -75,12 +74,11 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise subtraction between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The function returns a new numericIndexedVector.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseSubtract(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*"}}
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples = {
@@ -110,11 +108,10 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise multiplication between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The function returns a new numericIndexedVector.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseMultiply(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
+            {"v1", "", {"numericIndexedVector"}},
             {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
@@ -143,12 +140,11 @@ SELECT
     {
         FunctionDocumentation::Description description = R"(
 Performs pointwise division between a numericIndexedVector and either another numericIndexedVector or a numeric constant.
-The function returns a new numericIndexedVector.
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseDivide(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*"}}
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples = {
@@ -182,8 +178,8 @@ The result is a numericIndexedVector containing the indices where the values are
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*"}}
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples = {
@@ -216,8 +212,8 @@ The result is a numericIndexedVector containing the indices where the values are
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseNotEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"numeric", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples = {
@@ -251,8 +247,8 @@ The result is a numericIndexedVector containing the indices where the first vect
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLess(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*"}}
+            {"v1", "", {"numericIndexedVector"}},
+            {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
         FunctionDocumentation::Examples examples = {
@@ -286,7 +282,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseLessEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
+            {"v1", "", {"numericIndexedVector"}},
             {"v2", "A numeric constant or numericIndexedVector object", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
@@ -321,7 +317,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseGreater(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
+            {"v1", "", {"numericIndexedVector"}},
             {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
@@ -356,7 +352,7 @@ The result is a numericIndexedVector containing the indices where the first vect
         )";
         FunctionDocumentation::Syntax syntax = "numericIndexedVectorPointwiseGreaterEqual(v1, v2)";
         FunctionDocumentation::Arguments arguments = {
-            {"v1", "A numericIndexedVector object.", {"numericIndexedVector"}},
+            {"v1", "", {"numericIndexedVector"}},
             {"v2", "A numeric constant or numericIndexedVector object.", {"(U)Int*", "Float*", "numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a new numericIndexedVector object.", {"numericIndexedVector"}};
@@ -388,10 +384,10 @@ SELECT
         FunctionDocumentation::Description description = R"(
 Retrieves the value corresponding to a specified index from a numericIndexedVector.
         )";
-        FunctionDocumentation::Syntax syntax = "numericIndexedVectorGetValue(numericIndexedVector, index)";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorGetValue(v, i)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}},
-            {"index", "The index for which the value is to be retrieved.", {"(U)Int*"}}
+            {"v", "", {"numericIndexedVector"}},
+            {"i", "The index for which the value is to be retrieved.", {"(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"A numeric value with the same type as the value type of NumericIndexedVector.", {"(U)Int*", "Float*"}};
         FunctionDocumentation::Examples examples = {
@@ -417,9 +413,9 @@ SELECT numericIndexedVectorGetValue(numericIndexedVectorBuild(mapFromArrays([1, 
         FunctionDocumentation::Description description = R"(
 Returns the cardinality (number of unique indexes) of the numericIndexedVector.
         )";
-        FunctionDocumentation::Syntax syntax = "numericIndexedVectorCardinality(numericIndexedVector)";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorCardinality(v)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}}
+            {"v", "", {"numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of unique indexes.", {"UInt64"}};
         FunctionDocumentation::Examples examples = {
@@ -445,11 +441,11 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
         FunctionDocumentation::Description description = R"(
 Returns the sum of all values in the numericIndexedVector.
         )";
-        FunctionDocumentation::Syntax syntax = "numericIndexedVectorAllValueSum(numericIndexedVector)";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorAllValueSum(v)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}}
+            {"v", "", {"numericIndexedVector"}}
         };
-        FunctionDocumentation::ReturnedValue returned_value = {"Returns the sum of all values.", {"Float64"}};
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the sum.", {"Float64"}};
         FunctionDocumentation::Examples examples = {
         {
             "Usage example",
@@ -474,9 +470,9 @@ SELECT numericIndexedVectorAllValueSum(numericIndexedVectorBuild(mapFromArrays([
 Returns internal information of the numericIndexedVector in JSON format.
 This function is primarily used for debugging purposes.
         )";
-        FunctionDocumentation::Syntax syntax = "numericIndexedVectorShortDebugString(numericIndexedVector)";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorShortDebugString(v)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}}
+            {"v", "", {"numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a JSON string containing debug information.", {"String"}};
         FunctionDocumentation::Examples examples = {
@@ -502,9 +498,9 @@ res: {"vector_type":"BSI","index_type":"char8_t","value_type":"char8_t","integer
         FunctionDocumentation::Description description = R"(
 Converts a numericIndexedVector to a map.
         )";
-        FunctionDocumentation::Syntax syntax = "numericIndexedVectorToMap(numericIndexedVector)";
+        FunctionDocumentation::Syntax syntax = "numericIndexedVectorToMap(v)";
         FunctionDocumentation::Arguments arguments = {
-            {"numericIndexedVector", "A numericIndexedVector object.", {"numericIndexedVector"}}
+            {"v", "", {"numericIndexedVector"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a map with index-value pairs.", {"Map"}};
         FunctionDocumentation::Examples examples = {

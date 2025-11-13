@@ -700,7 +700,7 @@ class Utils:
             os.path.relpath(file) if os.path.isabs(file) else file for file in files
         ]
         for file in files:
-            assert Path(file).is_file(), f"File does not exist [{file}]"
+            assert Path(file).exists(), f"Path does not exist [{file}]"
 
         with tempfile.NamedTemporaryFile() as f:
             f.write("\n".join(files).encode())
@@ -771,6 +771,20 @@ class Utils:
                 verbose=True,
                 strict=not no_strict,
             )
+        elif path.endswith(".gz"):
+            path_to = path_to or path.removesuffix(".gz")
+
+            # Ensure gzip is installed
+            if not Shell.check("which gzip", verbose=True, strict=not no_strict):
+                print("ERROR: gzip is not installed. Cannot decompress artifact.")
+                return False
+
+            # Perform decompression (decompress to stdout and redirect to file)
+            res = Shell.check(
+                f"gzip --decompress --stdout {quote(path)} > {quote(path_to)}",
+                verbose=True,
+                strict=not no_strict,
+            )
         else:
             raise NotImplementedError(
                 f"Decompression for file type not supported: {path}"
@@ -830,6 +844,7 @@ class TeePopen:
         log_file: Union[str, Path] = "",
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
+        timeout_shell_cleanup: Optional[str] = None,
         preserve_stdio: bool = False,
     ):
         self.command = command
@@ -838,6 +853,7 @@ class TeePopen:
         self.env = env or os.environ.copy()
         self.process = None  # type: Optional[subprocess.Popen]
         self.timeout = timeout
+        self.timeout_shell_cleanup = timeout_shell_cleanup
         self.timeout_exceeded = False
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
@@ -848,18 +864,26 @@ class TeePopen:
         if self.timeout is None:
             return
         time.sleep(self.timeout)
-        print(
-            f"WARNING: Timeout exceeded [{self.timeout}], send SIGTERM to [{self.process.pid}] and give a chance for graceful termination"
-        )
-        self.send_signal(signal.SIGTERM)
-        time_wait = 0
-        self.terminated_by_sigterm = True
+        print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
         self.timeout_exceeded = True
+
+        if self.timeout_shell_cleanup:
+            Shell.check(self.timeout_shell_cleanup, verbose=True)
+            return
+
+        self.send_signal(signal.SIGTERM)
+        print(f"Send SIGTERM to [{self.process.pid}]")
+        time_wait = 0
+
         while self.process.poll() is None and time_wait < 100:
             print("wait...")
             wait = 5
             time.sleep(wait)
             time_wait += wait
+
+        self.terminated_by_sigterm = True
+
+        print(f"Graceful termination timeout, send SIGKILL to [{self.process.pid}]")
         while self.process.poll() is None:
             print(f"WARNING: Still running, send SIGKILL to [{self.process.pid}]")
             self.send_signal(signal.SIGKILL)

@@ -66,7 +66,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
     extern const int NOT_IMPLEMENTED;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 }
 
@@ -381,11 +380,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
-        command.statistics_decl = command_ast->statistics_decl->clone();
         command.type = AlterCommand::DROP_STATISTICS;
-        const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
 
-        command.statistics_columns = ast_stat_decl.getColumnNames();
+        if (command_ast->statistics_decl)
+        {
+            command.statistics_decl = command_ast->statistics_decl->clone();
+
+            const auto & ast_stat_decl = command_ast->statistics_decl->as<ASTStatisticsDeclaration &>();
+            command.statistics_columns = ast_stat_decl.getColumnNames();
+        }
+
         command.if_exists = command_ast->if_exists;
         command.clear = command_ast->clear_statistics;
 
@@ -1461,13 +1465,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             validateDataType(command.data_type, DataTypeValidationSettings(context->getSettingsRef()));
             checkAllTypesAreAllowedInTable(NamesAndTypesList{{command.column_name, command.data_type}});
 
-            /// FIXME: Adding a new column of type Object(JSON) is broken.
-            /// Looks like there is something around default expression for this column (method `getDefault` is not implemented for the data type Object).
-            /// But after ALTER TABLE ADD COLUMN we need to fill existing rows with something (exactly the default value).
-            /// So we don't allow to do it for now.
-            if (command.data_type->hasDynamicSubcolumnsDeprecated())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Adding a new column of a type which has dynamic subcolumns to an existing table is not allowed. It has known bugs");
-
             if (virtuals->tryGet(column_name, VirtualsKind::Persistent))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Cannot add column {}: this column name is reserved for persistent virtual column", backQuote(column_name));
@@ -1551,14 +1548,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
-
-                bool new_type_has_deprecated_object = command.data_type->hasDynamicSubcolumnsDeprecated();
-
-                if (new_type_has_deprecated_object)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The change of data type {} of column {} to {} is not allowed. It has known bugs",
-                        old_data_type->getName(), backQuote(column_name), command.data_type->getName());
             }
 
             if (command.isRemovingProperty())

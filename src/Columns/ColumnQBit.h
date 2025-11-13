@@ -18,8 +18,8 @@ namespace DB
   * rather than by vector element. For example, with Float32 vectors, there are 32 groups (one for each bit),
   * and each group contains the corresponding bit from all vector elements.
   *
-  * This column is designed to store the output of the transposeBits() function, which converts
-  * regular arrays into this bit-transposed format. Currently supported numeric types include:
+  * This column is designed to store the output of the transposeBits() function calls, which convert one float within
+  * a regular array into this bit-transposed format. Currently supported numeric types include:
   * - Float64 (64 bit groups)
   * - Float32 (32 bit groups)
   * - BFloat16 (16 bit groups)
@@ -86,7 +86,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override;
 
     StringRef getDataAt(size_t n) const override { return tuple->getDataAt(n); }
     void insertData(const char * pos, size_t length) override { tuple->insertData(pos, length); }

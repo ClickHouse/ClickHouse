@@ -44,39 +44,9 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init")
 endif ()
 
-# Take care to add prlimit in command line before ccache, or else ccache thinks that
-# prlimit is compiler, and clang++ is its input file, and refuses to work with
-# multiple inputs, e.g in ccache log:
-# [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
-#
-# [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
-#
-# Another way would be to use --ccache-skip option before clang++-11 to make
-# ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 5G
-    set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*2)
-    set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 1000 seconds
-    set (RLIMIT_CPU 1000)
-
-    # Sanitizers are too heavy. Some architectures too.
-    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        # Twice as large
-        set (RLIMIT_DATA 10000000000)
-        set (RLIMIT_AS 20000000000)
-        set (RLIMIT_CPU 2000)
-    endif()
-
-    # For some files currently building RISCV64/LOONGARCH64 might be too slow.
-    # TODO: Improve compilation times per file
-    if (ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        set (RLIMIT_CPU 1800)
-    endif()
-
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
+    enable_heavy_build_check_if_needed()
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -220,6 +190,7 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
+option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
@@ -310,6 +281,9 @@ endif()
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
 set (DEBUG_INFO_FLAGS "-g")
+if (DISABLE_ALL_DEBUG_SYMBOLS)
+    set (DEBUG_INFO_FLAGS "-g0")
+endif()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)

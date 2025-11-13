@@ -215,6 +215,8 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
     bool is_null_map_subcolumn = subcolumn_nested_name == "null";
     if (is_null_map_subcolumn)
     {
+        if (!subcolumn_type->canBeInsideNullable())
+            return nullptr;
         res->type = std::make_shared<DataTypeUInt8>();
     }
     else if (!subcolumn_nested_name.empty())

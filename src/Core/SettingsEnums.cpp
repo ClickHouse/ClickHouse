@@ -305,7 +305,8 @@ IMPLEMENT_SETTING_ENUM(
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
-     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -331,13 +332,13 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeSerializationInfoVersion::DEFAULT},
+    {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeStringSerializationVersion::DEFAULT},
+    {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
      {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -367,6 +368,12 @@ IMPLEMENT_SETTING_ENUM(
     {{"any", SearchOrphanedPartsDisks::ANY},
      {"local", SearchOrphanedPartsDisks::LOCAL},
      {"none", SearchOrphanedPartsDisks::NONE}})
+
+IMPLEMENT_SETTING_ENUM(
+    DecorrelationJoinKind,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"left", DecorrelationJoinKind::LEFT},
+     {"right", DecorrelationJoinKind::RIGHT}})
 
 IMPLEMENT_SETTING_ENUM(
     IcebergMetadataLogLevel,

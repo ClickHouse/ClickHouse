@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
@@ -142,13 +143,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatForErrorMessage());
-    }
-
+        return;
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
     {

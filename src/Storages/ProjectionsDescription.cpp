@@ -231,9 +231,16 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
     bool can_hold_parent_part_offset = !(columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"));
 
     StoragePtr storage = std::make_shared<StorageProjectionSource>(columns);
+
+    auto mut_context = Context::createCopy(query_context);
+    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
+    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
+    /// resolution that is neither guaranteed nor sensible here.
+    mut_context->setSetting("enable_positional_arguments", Field(0));
+
     InterpreterSelectQuery select(
         result.query_ast,
-        query_context,
+        mut_context,
         storage,
         {},
         /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
@@ -443,6 +450,11 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
     mut_context->setSetting("aggregate_functions_null_for_empty", Field(0));
     mut_context->setSetting("transform_null_in", Field(0));
 
+    /// Disable positional arguments. Positional references are unsafe/unsupported in this context (e.g., within
+    /// internal queries like those used for Projection definitions), as they rely on a fixed column order and alias
+    /// resolution that is neither guaranteed nor sensible here.
+    mut_context->setSetting("enable_positional_arguments", Field(0));
+
     ASTPtr query_ast_copy = nullptr;
     /// Respect the _row_exists column.
     if (block.has(RowExistsColumn::name))
@@ -454,7 +466,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context, 
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+            makeASTOperator("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets

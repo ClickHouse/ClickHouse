@@ -22,68 +22,10 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-/// This function compares the authorization methods used to access AzureBlobStorage
-/// It takes 2 variables of variant type as input and checks if they are the same type and value
-static bool compareAuthMethod (AzureBlobStorage::AuthMethod auth_method_a, AzureBlobStorage::AuthMethod auth_method_b)
-{
-    const auto * conn_string_a = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_a);
-    const auto * conn_string_b = std::get_if<AzureBlobStorage::ConnectionString>(&auth_method_b);
-
-    if (conn_string_a && conn_string_b)
-    {
-        return *conn_string_a == *conn_string_b;
-    }
-
-    const auto * shared_key_a = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_a);
-    const auto * shared_key_b = std::get_if<std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>>(&auth_method_b);
-
-    if (shared_key_a && shared_key_b)
-    {
-        return (shared_key_a->get()->AccountName == shared_key_b->get()->AccountName);
-    }
-
-    try
-    {
-        const auto * workload_identity_a = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_a);
-        const auto * workload_identity_b = std::get_if<std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>>(&auth_method_b);
-
-        if (workload_identity_a && workload_identity_b)
-        {
-            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-            return workload_identity_a->get()->GetToken(tokenRequestContext, {}).Token == workload_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
-        }
-
-        const auto * managed_identity_a = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_a);
-        const auto * managed_identity_b = std::get_if<std::shared_ptr<Azure::Identity::ManagedIdentityCredential>>(&auth_method_b);
-
-        if (managed_identity_a && managed_identity_b)
-        {
-            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-            return managed_identity_a->get()->GetToken(tokenRequestContext, {}).Token == managed_identity_b->get()->GetToken(tokenRequestContext, {}).Token;
-        }
-
-        const auto * static_credential_a = std::get_if<std::shared_ptr<AzureBlobStorage::StaticCredential>>(&auth_method_a);
-        const auto * static_credential_b = std::get_if<std::shared_ptr<AzureBlobStorage::StaticCredential>>(&auth_method_b);
-
-        if (static_credential_a && static_credential_b)
-        {
-            Azure::Core::Credentials::TokenRequestContext tokenRequestContext;
-            auto az_context = Azure::Core::Context();
-            return static_credential_a->get()->GetToken(tokenRequestContext, az_context).Token == static_credential_b->get()->GetToken(tokenRequestContext, az_context).Token;
-        }
-    }
-    catch (const Azure::Core::Credentials::AuthenticationException & e)
-    {
-        /// This is added to catch exception from GetToken. We want to log & fail silently i.e return false so that we can fallback to read & copy (i.e not native copy)
-        LOG_DEBUG(getLogger("compareAuthMethod"), "Exception caught while comparing credentials, error = {}", e.what());
-        return false;
-    }
-    return false;
 }
 
 BackupReaderAzureBlobStorage::BackupReaderAzureBlobStorage(
@@ -126,7 +68,7 @@ bool BackupReaderAzureBlobStorage::fileExists(const String & file_name)
 UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
     return object_metadata.size_bytes;
 }
 
@@ -167,7 +109,6 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 settings,
                 read_settings,
                 std::optional<ObjectAttributes>(),
-                compareAuthMethod(connection_params.auth_method, destination_disk->getObjectStorage()->getAzureBlobStorageAuthMethod()),
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"));
 
             return file_size;
@@ -234,7 +175,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
         /// In this case we can't use the native copy.
         if (auto src_blob_path = src_disk->getBlobPath(src_path); src_blob_path.size() == 2)
         {
-            LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorag", src_path, src_disk->getName());
+            LOG_TRACE(log, "Copying file {} from disk {} to AzureBlobStorage", src_path, src_disk->getName());
             copyAzureBlobStorageFile(
                 src_disk->getObjectStorage()->getAzureBlobStorageClient(),
                 client,
@@ -247,7 +188,6 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                 settings,
                 read_settings,
                 std::optional<ObjectAttributes>(),
-                compareAuthMethod(src_disk->getObjectStorage()->getAzureBlobStorageAuthMethod(), connection_params.auth_method),
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
             return; /// copied!
         }
@@ -272,7 +212,6 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        settings,
        read_settings,
        std::optional<ObjectAttributes>(),
-       true,
        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
 }
 
@@ -305,7 +244,7 @@ bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
 UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
     return object_metadata.size_bytes;
 }
 

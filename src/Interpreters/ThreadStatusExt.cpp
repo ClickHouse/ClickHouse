@@ -533,7 +533,7 @@ void ThreadStatus::initPerformanceCounters()
         }
     }
     if (taskstats)
-        taskstats->reset();
+        (*taskstats).reset();
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -592,7 +592,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 {
     *last_rusage = RUsageCounters::current();
     if (taskstats)
-        taskstats->reset();
+        (*taskstats).reset();
 }
 
 void ThreadStatus::initGlobalProfiler([[maybe_unused]] UInt64 global_profiler_real_time_period, [[maybe_unused]] UInt64 global_profiler_cpu_time_period)

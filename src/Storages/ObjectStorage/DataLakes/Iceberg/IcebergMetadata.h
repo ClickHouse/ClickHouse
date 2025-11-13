@@ -77,6 +77,7 @@ public:
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
+    bool supportsParallelInsert() const override { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
@@ -147,6 +148,7 @@ private:
     const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     DB::Iceberg::PersistentTableComponents persistent_components;
+    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 };
 }
 

@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnsNumber.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 
 namespace ProfileEvents
 {
@@ -33,6 +34,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         columns_,
         /*virtual_fields=*/ {},
         main_reader_->storage_snapshot,
+        main_reader_->storage_settings,
         Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
@@ -97,6 +99,18 @@ void MergeTreeReaderTextIndex::updateAllIndexRanges()
     }
 }
 
+void MergeTreeReaderTextIndex::prefetchBeginOfRange(Priority priority)
+{
+    if (all_index_ranges.empty())
+        return;
+
+    size_t from_mark = all_index_ranges.front().begin;
+    size_t to_mark = all_index_ranges.back().end;
+
+    index_reader->adjustRightMark(to_mark);
+    index_reader->prefetchBeginOfRange(from_mark, priority);
+}
+
 bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last_mark)
 {
     chassert(index_reader);
@@ -155,6 +169,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     {
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
     }
+    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
 
     if (res_columns.empty())
     {
@@ -169,7 +184,10 @@ size_t MergeTreeReaderTextIndex::readRows(
     while (read_rows < max_rows_to_read)
     {
         size_t index_mark = from_mark / granularity;
-        size_t rows_to_read = data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark);
+        /// When the number of rows in a part is smaller than `index_granularity`,
+        /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
+        /// contains no more data rows than actually exist in the part
+        size_t rows_to_read = std::min(data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark), data_part_info_for_read->getRowCount());
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
@@ -192,7 +210,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         }
         else
         {
-            readPostingsIfNeeded(granule);
+            readPostingsIfNeeded(granule, index_mark);
 
             const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
             size_t mark_at_index_granule = index_mark * granularity;
@@ -230,7 +248,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
+void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t index_mark)
 {
     if (!granule.need_read_postings)
         return;
@@ -238,27 +256,45 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     const auto & granule_text = assert_cast<const MergeTreeIndexGranuleText &>(*granule.granule);
     const auto & remaining_tokens = granule_text.getRemainingTokens();
 
+    auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
+    auto * data_buffer = postings_stream->getDataBuffer();
+    auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
+
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const String & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
+    const String & index_name = index.index->getFileName();
+    const auto get_postings = [&](const TokenPostingsInfo::FuturePostings future_postings, std::string_view token)
+    {
+        const auto load_postings = [&]() -> PostingListPtr
+        {
+            ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
+            compressed_buffer->seek(future_postings.offset_in_file, 0);
+            return PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
+        };
+
+        if (condition_text.usePostingsCache())
+            condition_text.postingsCache()->getOrSet(
+                TextIndexPostingsCache::hash(data_path, index_name, index_mark, future_postings.cardinality, future_postings.offset_in_file, token),
+                load_postings);
+
+        return load_postings();
+    };
+
+    PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
     {
         if (postings.hasEmbeddedPostings())
         {
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
-            granule.postings.emplace(token, &postings.getEmbeddedPostings());
-            continue;
+            posting_list = postings.getEmbeddedPostings();
+        }
+        else
+        {
+            const auto & future_postings = postings.getFuturePostings();
+            posting_list = get_postings(future_postings, token.toView());
         }
 
-        ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
-        const auto & future_postings = postings.getFuturePostings();
-
-        auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
-        auto * data_buffer = postings_stream->getDataBuffer();
-        auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
-
-        compressed_buffer->seek(future_postings.offset_in_file, 0);
-        auto read_postings = PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
-
-        auto & postings_holder = granule.postings_holders.emplace_back(std::move(read_postings));
-        granule.postings.emplace(token, &postings_holder);
+        granule.postings.emplace(token, std::move(posting_list));
     }
 
     granule.need_read_postings = false;
@@ -284,8 +320,7 @@ void applyPostingsAny(
         if (it == postings_map.end())
             continue;
 
-        const PostingList & posting = *it->second;
-        union_posting |= (posting & range_posting);
+        union_posting |= (*it->second & range_posting);
     }
 
     const size_t cardinality = union_posting.cardinality();
@@ -317,7 +352,7 @@ void applyPostingsAll(
     if (postings_map.size() > std::numeric_limits<UInt16>::max())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many tokens ({}) for All search mode", postings_map.size());
 
-    std::vector<const PostingList *> token_postings;
+    std::vector<PostingListPtr> token_postings;
 
     for (const auto & token : search_tokens)
     {
@@ -331,7 +366,7 @@ void applyPostingsAll(
     PostingList intersection_posting;
     intersection_posting.addRange(granule_offset, granule_offset + num_rows);
 
-    for (const PostingList * posting : token_postings)
+    for (const PostingListPtr & posting : token_postings)
     {
         intersection_posting &= (*posting);
 

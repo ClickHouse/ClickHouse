@@ -38,6 +38,9 @@ struct BlockIO
     /// Set is_all_data_sent in system.processes for this query.
     void setAllDataSent() const;
 
+    /// Release query slot early to allow client to reuse it for his next query.
+    void releaseQuerySlot() const;
+
 private:
     void reset();
 };

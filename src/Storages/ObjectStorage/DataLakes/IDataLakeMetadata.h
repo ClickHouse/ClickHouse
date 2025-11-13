@@ -76,6 +76,7 @@ public:
     virtual void update(const ContextPtr &) { }
 
     virtual bool supportsWrites() const { return false; }
+    virtual bool supportsParallelInsert() const { return false; }
 
     virtual void modifyFormatSettings(FormatSettings &, const Context &) const {}
 

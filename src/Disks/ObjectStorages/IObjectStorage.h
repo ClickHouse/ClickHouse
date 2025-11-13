@@ -39,6 +39,7 @@
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <azure/identity/client_secret_credential.hpp>
 
 namespace DB::AzureBlobStorage
 {
@@ -69,6 +70,7 @@ using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
+    std::shared_ptr<Azure::Identity::ClientSecretCredential>,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
@@ -89,8 +91,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 class ReadBufferFromFileBase;
@@ -103,6 +104,7 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
     std::string etag;
+    ObjectAttributes tags;
     ObjectAttributes attributes;
 };
 
@@ -113,8 +115,6 @@ struct RelativePathWithMetadata
     String relative_path;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// Delta lake related object metadata.
-    std::optional<DataLakeObjectMetadata> data_lake_metadata;
 
     RelativePathWithMetadata() = default;
 
@@ -125,15 +125,10 @@ struct RelativePathWithMetadata
 
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
-    virtual ~RelativePathWithMetadata() = default;
+    ~RelativePathWithMetadata() = default;
 
-    virtual std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
-    virtual std::string getPath() const { return relative_path; }
-    virtual bool isArchive() const { return false; }
-    virtual std::string getPathToArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual size_t fileSizeInArchive() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not an archive"); }
-    virtual std::string getPathOrPathToArchiveIfArchive() const;
-    virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
+    std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
+    std::string getPath() const { return relative_path; }
 };
 
 struct ObjectKeyWithMetadata
@@ -147,6 +142,12 @@ struct ObjectKeyWithMetadata
         : key(std::move(key_))
         , metadata(std::move(metadata_))
     {}
+};
+
+struct SmallObjectDataWithMetadata
+{
+    std::string data;
+    ObjectMetadata metadata;
 };
 
 using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
@@ -194,20 +195,35 @@ public:
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
-    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const;
 
-    /// Get object metadata if supported. It should be possible to receive
-    /// at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+    /// Get object metadata if supported. It should be possible to receive at least size of object
+    virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {}) const = 0;
+
+    /// Read small object into memory and return it as string
+    /// Also contain consistent object metadata if available in this object storage.
+    /// if size of object is larger than max_size_bytes throws exception
+    ///
+    /// NOTE: This method exists because it's impossible to get object metadata in generic way
+    /// from readObject. ReadObject returns ReadBufferFromFileBase and most of implementations
+    /// issue first request to object store only in first call of read/next method.
+    ///
+    /// WARN: Don't use this method for large objects, it will eat all memory.
+    /// That is the reason why max_size_bytes is explicit and 0-value will not help to bypass this check.
+    virtual SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT

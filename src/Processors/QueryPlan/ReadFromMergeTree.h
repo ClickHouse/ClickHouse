@@ -53,6 +53,22 @@ struct UsefulSkipIndexes
     std::vector<std::vector<size_t>> per_part_index_orders;
 };
 
+/// Contains parts each from different projection index
+using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
+
+struct ProjectionIndexReadInfo
+{
+    ProjectionDescriptionRawPtr projection;
+    PrewhereInfoPtr prewhere_info;
+};
+using ProjectionIndexReadInfos = std::vector<ProjectionIndexReadInfo>;
+
+struct ProjectionIndexReadDescription
+{
+    ProjectionIndexReadRangesByIndex read_ranges;
+    ProjectionIndexReadInfos read_infos;
+};
+
 struct MergeTreeIndexBuildContext;
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
@@ -125,6 +141,11 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
+
+        AnalysisResult() = default;
+
+        AnalysisResult(const AnalysisResult &) = default;
+        AnalysisResult(AnalysisResult &&) noexcept = default;
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
         void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
@@ -263,9 +284,13 @@ public:
 
     /// Adds virtual columns for reading from text index.
     /// Removes physical text columns that were eliminated by direct read from text index.
-    void replaceColumnsForTextSearch(const IndexReadColumns & added_columns, const Names & removed_columns);
+    void createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns);
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
+
+    const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
+    ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
 private:
     MergeTreeReaderSettings reader_settings;
@@ -398,6 +423,8 @@ private:
     ExpressionActionsPtr virtual_row_conversion;
 
     std::optional<size_t> number_of_current_replica;
+
+    ProjectionIndexReadDescription projection_index_read_desc;
 };
 
 }

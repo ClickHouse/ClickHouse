@@ -19,7 +19,7 @@ This table logs every metadata file read from Delta Lake tables. It helps users 
 
 :::note
 This table is primarily intended for debugging purposes.
-:::note
+:::
 
 ## Columns {#columns}
 | Name           | Type      | Description                                                                                   |

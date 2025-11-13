@@ -322,7 +322,7 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(), ctx.out);
+    writeStringBinary(columns_description.toString(false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);

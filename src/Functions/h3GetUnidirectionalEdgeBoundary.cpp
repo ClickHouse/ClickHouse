@@ -103,7 +103,32 @@ public:
 
 REGISTER_FUNCTION(H3GetUnidirectionalEdgeBoundary)
 {
-    factory.registerFunction<FunctionH3GetUnidirectionalEdgeBoundary>();
+    FunctionDocumentation::Description description = R"(
+Returns the coordinates defining the unidirectional edge [H3](#h3-index).
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetUnidirectionalEdgeBoundary(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge.",
+        {"Array(Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get boundary coordinates of a unidirectional edge",
+            "SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary",
+            R"(
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetUnidirectionalEdgeBoundary>(documentation);
 }
 
 }

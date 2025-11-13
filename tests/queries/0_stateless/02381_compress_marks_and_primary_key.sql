@@ -3,12 +3,12 @@
 SET optimize_trivial_insert_select = 1;
 
 drop table if exists test_02381;
-create table test_02381(a UInt64, b UInt64) ENGINE = MergeTree order by (a, b) SETTINGS compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'default';
+create table test_02381(a UInt64, b UInt64) ENGINE = MergeTree order by (a, b) SETTINGS compress_marks = false, compress_primary_key = false, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic', auto_statistics_types = '';
 insert into test_02381 select number, number * 10 from system.numbers limit 1000000;
 
 drop table if exists test_02381_compress;
 create table test_02381_compress(a UInt64, b UInt64) ENGINE = MergeTree order by (a, b)
-    SETTINGS compress_marks = true, compress_primary_key = true, marks_compression_codec = 'ZSTD(3)', primary_key_compression_codec = 'ZSTD(3)', marks_compress_block_size = 65536, primary_key_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'default';
+    SETTINGS compress_marks = true, compress_primary_key = true, marks_compression_codec = 'ZSTD(3)', primary_key_compression_codec = 'ZSTD(3)', marks_compress_block_size = 65536, primary_key_compress_block_size = 65536, ratio_of_defaults_for_sparse_serialization = 1, serialization_info_version = 'basic', auto_statistics_types = '';
 insert into test_02381_compress select number, number * 10 from system.numbers limit 1000000;
 
 select * from test_02381_compress where a = 1000 limit 1;
@@ -41,7 +41,7 @@ drop table if exists test_02381_compress;
 
 -- Test compact part
 drop table if exists test_02381_compact;
-create table test_02381_compact (a UInt64, b String) ENGINE = MergeTree order by (a, b);
+create table test_02381_compact (a UInt64, b String) ENGINE = MergeTree order by (a, b) SETTINGS auto_statistics_types = '';
 
 insert into test_02381_compact values (1, 'Hello');
 alter table test_02381_compact modify setting compress_marks = true, compress_primary_key = true;

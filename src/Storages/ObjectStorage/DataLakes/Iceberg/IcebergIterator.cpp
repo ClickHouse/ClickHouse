@@ -26,13 +26,13 @@
 
 #include <IO/CompressedReadBufferWrapper.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -281,39 +281,7 @@ IcebergIterator::IcebergIterator(
           data_snapshot_,
           persistent_components_)
     , blocking_queue(100)
-    , producer_task(local_context_->getSchedulePool().createTask(
-          "IcebergMetaReaderThread",
-          [this]
-          {
-              while (!blocking_queue.isFinished())
-              {
-                  std::optional<ManifestFileEntry> entry;
-                  try
-                  {
-                      entry = data_files_iterator.next();
-                  }
-                  catch (...)
-                  {
-                      std::lock_guard lock(exception_mutex);
-                      if (!exception)
-                      {
-                          exception = std::current_exception();
-                      }
-                      blocking_queue.finish();
-                      break;
-                  }
-                  if (!entry.has_value())
-                      break;
-                  while (!blocking_queue.push(std::move(entry.value())))
-                  {
-                      if (blocking_queue.isFinished())
-                      {
-                          break;
-                      }
-                  }
-              }
-              blocking_queue.finish();
-          }))
+    , producer_task(std::nullopt)
     , callback(std::move(callback_))
 {
     auto delete_file = deletes_iterator.next();
@@ -331,8 +299,38 @@ IcebergIterator::IcebergIterator(
     }
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
-
-    producer_task->activateAndSchedule();
+    producer_task.emplace(
+        [this]()
+        {
+            while (!blocking_queue.isFinished())
+            {
+                std::optional<ManifestFileEntry> entry;
+                try
+                {
+                    entry = data_files_iterator.next();
+                }
+                catch (...)
+                {
+                    std::lock_guard lock(exception_mutex);
+                    if (!exception)
+                    {
+                        exception = std::current_exception();
+                    }
+                    blocking_queue.finish();
+                    break;
+                }
+                if (!entry.has_value())
+                    break;
+                while (!blocking_queue.push(std::move(entry.value())))
+                {
+                    if (blocking_queue.isFinished())
+                    {
+                        break;
+                    }
+                }
+            }
+            blocking_queue.finish();
+        });
 }
 
 ObjectInfoPtr IcebergIterator::next(size_t)
@@ -341,7 +339,8 @@ ObjectInfoPtr IcebergIterator::next(size_t)
     Iceberg::ManifestFileEntry manifest_file_entry;
     if (blocking_queue.pop(manifest_file_entry))
     {
-        IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry);
+        IcebergDataObjectInfoPtr object_info
+            = std::make_shared<IcebergDataObjectInfo>(manifest_file_entry, table_state_snapshot->schema_id);
         for (const auto & position_delete : defineDeletesSpan(manifest_file_entry, position_deletes_files, false))
         {
             object_info->addPositionDeleteObject(position_delete);
@@ -350,7 +349,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
-        object_info->schema_id_relevant_to_iterator = table_state_snapshot->schema_id;
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
@@ -376,7 +374,10 @@ size_t IcebergIterator::estimatedKeysCount()
 IcebergIterator::~IcebergIterator()
 {
     blocking_queue.finish();
-    producer_task->deactivate();
+    if (producer_task)
+    {
+        producer_task->join();
+    }
 }
 }
 

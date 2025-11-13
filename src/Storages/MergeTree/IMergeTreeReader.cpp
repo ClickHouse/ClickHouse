@@ -33,6 +33,7 @@ IMergeTreeReader::IMergeTreeReader(
     const NamesAndTypesList & columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
@@ -46,6 +47,7 @@ IMergeTreeReader::IMergeTreeReader(
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
+    , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
@@ -206,6 +208,7 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
         /// Default/materialized expression can contain experimental/suspicious types that can be disabled in current context.
         /// We should not perform any checks during reading from an existing table.
         enableAllExperimentalSettings(context_copy);
+        context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
         auto dag = DB::evaluateMissingDefaults(
             additional_columns, full_requested_columns,
             storage_snapshot->metadata->getColumns(),
@@ -464,6 +467,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -477,6 +481,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -490,6 +495,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
@@ -504,6 +510,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             read_info,
             columns_to_read,
             storage_snapshot,
+            storage_settings,
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
@@ -518,6 +525,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             read_info,
             columns_to_read,
             storage_snapshot,
+            storage_settings,
             mark_ranges,
             virtual_fields,
             uncompressed_cache,

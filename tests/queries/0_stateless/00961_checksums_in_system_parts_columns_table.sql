@@ -10,8 +10,9 @@ CREATE TABLE test_00961 (d Date, a String, b UInt8, x String, y Int8, z UInt32)
     compress_primary_key = 0,
     index_granularity_bytes = '10Mi',
     ratio_of_defaults_for_sparse_serialization = 1,
-    serialization_info_version = 'default',
-    replace_long_file_name_to_hash = 0;
+    serialization_info_version = 'basic',
+    replace_long_file_name_to_hash = 0,
+    auto_statistics_types = '';
 
 INSERT INTO test_00961 VALUES ('2000-01-01', 'Hello, world!', 123, 'xxx yyy', -123, 123456789);
 

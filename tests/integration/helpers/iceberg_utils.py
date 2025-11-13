@@ -21,6 +21,7 @@ from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
     LocalDownloader,
+    S3Downloader,
     prepare_s3_bucket,
 )
 
@@ -113,6 +114,7 @@ def started_cluster():
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
+        cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
 
         yield cluster
 
@@ -363,17 +365,18 @@ def create_iceberg_table(
     partition_by="",
     if_not_exists=False,
     compression_method=None,
+    run_on_cluster=False,
     format="Parquet",
     **kwargs,
 ):
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster = run_on_cluster, **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster=run_on_cluster, **kwargs),
         )
 
 
@@ -438,6 +441,10 @@ def default_download_directory(
 ):
     if storage_type == "local":
         return started_cluster.default_local_downloader.download_directory(
+            local_path, remote_path, **kwargs
+        )
+    elif storage_type == "s3":
+        return started_cluster.default_s3_downloader.download_directory(
             local_path, remote_path, **kwargs
         )
     else:

@@ -126,8 +126,12 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
+    LOG_DEBUG(log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
+        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function, is_datalake_query, columns_in_table_or_function_definition.toString(true));
+
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
+        LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
     }
@@ -263,7 +267,7 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const

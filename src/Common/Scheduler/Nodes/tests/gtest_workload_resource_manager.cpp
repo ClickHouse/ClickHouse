@@ -18,6 +18,7 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <base/scope_guard.h>
 
@@ -1271,6 +1272,23 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
     }
 
     t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    // Only max_cpu_share is set, max_cpus is unset
+    t.query("CREATE WORKLOAD all SETTINGS max_cpu_share = 0.5");
+    ClassifierPtr c = t.manager->acquire("all");
+
+    // The expected hard cap is max_cpu_share * getNumberOfCPUCoresToUse()
+    WorkloadSettings settings = c->getWorkloadSettings("cpu");
+    double expected_cap = 0.5 * getNumberOfCPUCoresToUse();
+    double actual_cap = settings.max_cpus;
+
+    EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
 auto getAcquired()
