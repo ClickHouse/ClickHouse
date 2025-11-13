@@ -14,4 +14,3 @@ Test 7: Verify no final zero chunk on exception with gzip compression
 No final zero chunk on exception with compression: OK
 Test 8: Verify final zero chunk IS present on successful query with compression
 Final zero chunk present on success: OK
-

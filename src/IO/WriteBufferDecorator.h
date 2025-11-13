@@ -55,13 +55,13 @@ public:
 
     WriteBuffer * getNestedBuffer() { return out; }
 
-protected:
     /// Do some finalization before finalization of underlying buffer.
     virtual void finalizeBefore() {}
 
     /// Do some finalization after finalization of underlying buffer.
     virtual void finalizeAfter() {}
 
+protected:
     std::unique_ptr<WriteBuffer> owning_holder;
     WriteBuffer * out;
 };

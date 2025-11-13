@@ -1,8 +1,8 @@
-#include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
+#include <IO/WriteBufferDecorator.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
@@ -195,10 +195,9 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 {
     std::lock_guard lock(mutex);
 
-    // Always set exception_code so finalizeImpl() can check it
-    exception_code = code;
-
-    if (!headers_started_sending)
+    if (headers_started_sending)
+        exception_code = code;
+    else
         response.set("X-ClickHouse-Exception-Code", toString<int>(code));
 
     if (code == ErrorCodes::REQUIRED_PASSWORD)
@@ -209,26 +208,15 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
-    int exception_code_copy = 0;
     {
         std::lock_guard lock(mutex);
         startSendHeaders();
         finishSendHeaders();
-        exception_code_copy = exception_code;
     }
 
     if (!is_http_method_head)
     {
-        // We intentionally call WriteBufferFromPocoSocket::finalizeImpl() instead of
-        // HTTPWriteBuffer::finalizeImpl() because HTTPWriteBuffer unconditionally sends
-        // the final zero chunk. We need to conditionally send it based on exception_code.
-        WriteBufferFromPocoSocket::finalizeImpl(); // NOLINT(bugprone-parent-virtual-call)
-
-        // Only send the final zero chunk if no exception occurred
-        // When an exception occurs, we intentionally break the HTTP protocol
-        // by not sending the final chunk to signal an error to the client
-        if (isChunked() && !exception_code_copy)
-            socketSendBytes("0\r\n\r\n", 5);
+        HTTPWriteBuffer::finalizeImpl();
     }
 }
 
@@ -395,7 +383,21 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
             {
+                /// Some compression buffers (like ZlibDeflatingWriteBuffer) can be flushed properly only by finalizing them.
+                /// We want to flush the compression buffer without finalizing the underlying buffer,
+                /// so we will not send the final chunk in HTTP and indicate an error by breaking the protocol (there's no other way).
+                /// So we finalize the decorator in this hacky way in order to flush it without actually finalizing
                 compression_buffer->next();
+                if (auto * decorator = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(compression_buffer))
+                {
+                    decorator->finalizeBefore();
+                    decorator->next();
+                    decorator->finalizeAfter();
+                }
+                else
+                {
+                    LOG_INFO(getLogger("WriteBufferFromHTTPServerResponse"), "Not finalizing buffer of type {}", demangle(typeid(*compression_buffer).name()));
+                }
             }
             next();
 
