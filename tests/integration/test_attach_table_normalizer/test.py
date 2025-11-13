@@ -32,6 +32,7 @@ def test_attach_substr(started_cluster):
 
     # Replace substring to substr
     replace_text_in_metadata(node, metadata_path, "substring", "substr")
+    node.query("SYSTEM DROP DISK METADATA CACHE disk_db_remote")
 
     new_data = read_metadata(node, metadata_path)
     assert new_data.find("substr(s, 1, 2)") != -1
