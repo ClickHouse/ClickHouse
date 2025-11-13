@@ -1,7 +1,6 @@
-1
+\N
 \N
 1
-\N
 1
 1
 1
@@ -12,6 +11,28 @@
 1
 1
 1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+Array(Tuple(String, Tuple(String, Tuple(UInt8, Array(String)))))
 1
 1
 0
+1
+0
+0
+1
+Tests regarding transform_null_in = true setting
+1
+1
+1
+1
+1
