@@ -110,16 +110,16 @@
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Server/CloudPlacementInfo.h>
+#include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
-#include <Server/KeeperReadinessHandler.h>
 #include <Server/ArrowFlightHandler.h>
-#include <Server/HTTP/HTTPServer.h>
-#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -144,6 +144,7 @@
 #    include <Server/SSH/SSHPtyHandlerFactory.h>
 #    include <Common/LibSSHInitializer.h>
 #    include <Common/LibSSHLogger.h>
+#    include <Server/ACME/Client.h>
 #endif
 
 #if USE_GRPC
@@ -2279,10 +2280,10 @@ try
             global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
 
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
             NamedCollectionFactory::instance().reloadFromConfig(*config);
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
@@ -2469,6 +2470,13 @@ try
             LOG_INFO(log, "Listening for {}", server.getDescription());
         }
     }
+
+#if USE_SSL
+    /// ACME client is necessary for CertificateReloader to work in case Let's Encrypt is configured,
+    /// but can not start before Keeper server can be initialized (in case of embedded Keeper).
+    /// Let's try deferring until servers are started.
+    ACME::Client::instance().initialize(config());
+#endif
 
     const auto & cache_disk_name = server_settings[ServerSetting::temporary_data_in_cache].value;
 
@@ -2756,6 +2764,7 @@ try
                              "to configuration file.)");
 
 #if USE_SSL
+        ACME::Client::instance().initialize(config());
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
@@ -2875,6 +2884,13 @@ try
         systemdNotify("READY=1\n");
 #endif
 
+        auto stop_acme_instance = []{
+#if USE_SSL
+            /// Stop ACME tasks.
+            ACME::Client::instance().shutdown();
+#endif
+        };
+
         SCOPE_EXIT_SAFE({
             if (config().has("logger.shutdown_level") && !config().getString("logger.shutdown_level").empty())
             {
@@ -2894,6 +2910,8 @@ try
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
+
+            stop_acme_instance();
 
             is_cancelled = true;
 

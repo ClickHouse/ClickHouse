@@ -114,7 +114,7 @@ NameAndTypePair MergeTreeReaderCompact::getColumnConvertedToSubcolumnOfNested(co
 
     if (!storage_columns_with_collected_nested)
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects();
+        auto options = GetColumnsOptions(GetColumnsOptions::All);
         auto storage_columns_list = Nested::collect(storage_snapshot->getColumns(options));
         storage_columns_with_collected_nested = ColumnsDescription(std::move(storage_columns_list));
     }
