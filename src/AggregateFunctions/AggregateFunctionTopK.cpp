@@ -385,34 +385,11 @@ public:
         this->data(place).value.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         auto & set = this->data(place).value;
-        set.clear();
-
-        // Specialized here because there's no deserialiser for StringRef
-        size_t size = 0;
-        readVarUInt(size, buf);
-        if (unlikely(size > TOP_K_MAX_SIZE))
-            throw Exception(
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                "Too large size ({}) for aggregate function '{}' state (maximum is {})",
-                size,
-                getName(),
-                TOP_K_MAX_SIZE);
-        set.resize(std::min(size + 1, size_t(reserved)));
-        for (size_t i = 0; i < size; ++i)
-        {
-            auto ref = readStringBinaryInto(*arena, buf);
-            UInt64 count;
-            UInt64 error;
-            readVarUInt(count, buf);
-            readVarUInt(error, buf);
-            set.insert(ref, count, error);
-            arena->rollback(ref.size);
-        }
-
-        set.readAlphaMap(buf);
+        ensureCapacity(set);
+        set.read(buf);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

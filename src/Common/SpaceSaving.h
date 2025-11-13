@@ -21,6 +21,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
 /*
  * Arena interface to allow specialized storage of keys.
  * POD keys do not require additional storage, so this interface is empty.
@@ -105,10 +111,14 @@ public:
             writeVarUInt(error, wb);
         }
 
-        void read(ReadBuffer & rb)
+        void read(ReadBuffer & rb, SpaceSavingArena<TKey> & space_arena)
         {
             if constexpr (std::is_same_v<TKey, StringRef>)
-                readBinary(key, rb);
+            {
+                String skey;
+                readBinary(skey, rb);
+                key = space_arena.emplace(skey);
+            }
             else
                 readBinaryLittleEndian(key, rb);
             readVarUInt(count, rb);
@@ -158,7 +168,7 @@ public:
         {
             chassert(empty());
             counter_list.reserve(new_capacity * 2);
-            alpha_map.resize(nextAlphaSize(new_capacity * 2), 0);
+            alpha_map.resize(nextAlphaSize(new_capacity), 0);
             m_capacity = new_capacity;
         }
     }
@@ -294,14 +304,23 @@ public:
 
     void read(ReadBuffer & rb)
     {
-        destroyElements();
+        if (!empty())
+        {
+            size_t capacity = m_capacity;
+            destroyElements();
+            resize(capacity);
+        }
+
         size_t count = 0;
         readVarUInt(count, rb);
+        if (count > m_capacity)
+            throw DB::Exception(
+                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Found too large when reading counters (Passed: {}. Maximum: {})", count, m_capacity);
 
         for (size_t i = 0; i < count; ++i)
         {
             auto counter = Counter();
-            counter.read(rb);
+            counter.read(rb, arena);
             counter.hash = counter_map.hash(counter.key);
             push(std::move(counter));
         }
@@ -313,11 +332,20 @@ public:
     {
         size_t alpha_size = 0;
         readVarUInt(alpha_size, rb);
+
+        size_t expected_capacity = alpha_map.size();
+        if (alpha_size != expected_capacity)
+            throw DB::Exception(
+                DB::ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "Found incorrect alpha vector size (Passed: {}. Expected: {})",
+                alpha_size,
+                expected_capacity);
+
         for (size_t i = 0; i < alpha_size; ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
-            alpha_map.push_back(alpha);
+            alpha_map[i] = alpha;
         }
     }
 
