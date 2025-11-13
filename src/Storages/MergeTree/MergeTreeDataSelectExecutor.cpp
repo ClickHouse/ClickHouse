@@ -953,8 +953,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
                     auto min_max_granules = getMinMaxIndexGranules(ranges.data_part,
-                                        ranges.ranges,
                                         skip_indexes.skip_index_for_top_n_filtering,
+                                        ranges.ranges,
                                         top_n_filter_info->direction,
                                         false, /*access_by_mark*/
                                         reader_settings,
@@ -962,13 +962,16 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                                         uncompressed_cache.get(),
                                         vector_similarity_index_cache.get());
 
-                    std::vector<size_t> result;
-                    min_max_granules->getTopNMarks(top_n_filter_info->limit_n, result);
-                    MarkRanges res;
-                    for (auto range : result)
-                        res.push_back({range, range + 1});
-                    std::sort(res.begin(), res.end());
-                    ranges.ranges = res;
+                    if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
+		    {
+                        std::vector<size_t> result;
+                        min_max_granules->getTopNMarks(top_n_filter_info->limit_n, result);
+                        MarkRanges res;
+                        for (auto range : result)
+                            res.push_back({range, range + 1});
+                        std::sort(res.begin(), res.end());
+                        ranges.ranges = res;
+		    }
                     top_n_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                 }
                 sum_marks_after_top_n.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -2245,8 +2248,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 MergeTreeIndexBulkGranulesMinMaxPtr
 MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
         MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
         MergeTreeIndexPtr skip_index_minmax,
+        const MarkRanges & ranges,
         int direction,
         bool access_by_mark,
         const MergeTreeReaderSettings & reader_settings,
@@ -2254,7 +2257,11 @@ MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    /// TODO - make sure it is a minmax index and index is materialized for part
+    if (!skip_index_minmax->getDeserializedFormat(part->checksums, skip_index_minmax->getFileName()))
+    {
+        return nullptr;
+    }
+
     auto index_granularity = skip_index_minmax->index.granularity;
     size_t marks_count = part->index_granularity->getMarksCountWithoutFinal();
     size_t index_marks_count = (marks_count + index_granularity - 1) / index_granularity;

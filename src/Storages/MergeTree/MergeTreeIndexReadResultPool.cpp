@@ -104,8 +104,8 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     {
         res->min_max_index_for_top_n = MergeTreeDataSelectExecutor::getMinMaxIndexGranules(
             part.data_part,
-            ranges,
             skip_indexes.skip_index_for_top_n_filtering,
+            ranges,
             skip_indexes.threshold_tracker->getDirection(),
             true,/*access_by_mark*/
             reader_settings,

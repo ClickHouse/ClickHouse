@@ -101,8 +101,8 @@ public:
 
     static MergeTreeIndexBulkGranulesMinMaxPtr getMinMaxIndexGranules(
         MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
         MergeTreeIndexPtr skip_index_minmax,
+        const MarkRanges & ranges,
         int direction,
         bool access_by_mark,
         const MergeTreeReaderSettings & reader_settings,

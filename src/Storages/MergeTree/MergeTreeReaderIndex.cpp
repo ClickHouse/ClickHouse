@@ -89,19 +89,23 @@ size_t MergeTreeReaderIndex::readRows(
 
 bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
 {
-    if (index_read_result->skip_index_read_result)
+    auto skip_index_read_result = index_read_result->skip_index_read_result;
+    if (skip_index_read_result)
     {
-        chassert(mark < index_read_result->skip_index_read_result->granules_selected.size());
+        chassert(mark < skip_index_read_result->granules_selected.size());
 
-        if (!index_read_result->skip_index_read_result->granules_selected.at(mark))
+        if (!skip_index_read_result->granules_selected.at(mark))
             return true;
 
-        if (index_read_result->skip_index_read_result->threshold_tracker && index_read_result->skip_index_read_result->threshold_tracker->isSet())
+        if (skip_index_read_result->threshold_tracker && skip_index_read_result->threshold_tracker->isSet())
         {
-            auto granule_num = index_read_result->skip_index_read_result->min_max_index_for_top_n->granules_map[mark];
-            if (!index_read_result->skip_index_read_result->threshold_tracker->isValueInsideThreshold(
-                    index_read_result->skip_index_read_result->min_max_index_for_top_n->granules[granule_num].min_or_max_value))
-                return true;
+            if (skip_index_read_result->min_max_index_for_top_n) /// index may not have been materialized for this part
+	    {
+                auto granule_num = skip_index_read_result->min_max_index_for_top_n->granules_map[mark];
+                if (skip_index_read_result->threshold_tracker->isValueInsideThreshold(
+                        skip_index_read_result->min_max_index_for_top_n->granules[granule_num].min_or_max_value))
+                    return true;
+	    }
         }
     }
     if (index_read_result->projection_index_read_result)
