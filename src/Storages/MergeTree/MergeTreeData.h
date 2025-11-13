@@ -1447,7 +1447,7 @@ protected:
     >;
 
     /// Current set of data parts.
-    /// On updates shared_parts_list/shared_ranges_in_parts should be reseted (will be updated in getPossiblySharedVisibleDataPartsRanges())
+    /// On updates shared_parts_list/shared_ranges_in_parts should be reset (will be updated in getPossiblySharedVisibleDataPartsRanges())
     mutable DB::SharedMutex data_parts_mutex;
 
     DataPartsIndexes data_parts_indexes;
