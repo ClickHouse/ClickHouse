@@ -2443,7 +2443,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 
         auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
         {
-            return createInternalCast({from, {}}, to, CastType::accurate, {});
+            return createInternalCast({from, {}}, to, CastType::accurate, {}, nullptr);
         };
 
         func_cast = get_cast_func();

@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include <Common/setThreadName.h>
 
 #if USE_PARQUET
 
@@ -491,7 +492,7 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, "ParquetEncoder");
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER);
 
                 threadFunction();
             }
