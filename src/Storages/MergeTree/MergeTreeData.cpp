@@ -2532,7 +2532,7 @@ try
             else
             {
                 Transaction transaction(*this, nullptr);
-                preparePartForCommit(res.part, lock, transaction, false, false);
+                preparePartForCommit(res.part, transaction, lock, false, false);
                 transaction.commit(lock);
 
                 bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
@@ -4841,7 +4841,7 @@ void MergeTreeData::checkPartDuplicate(MutableDataPartPtr & part, Transaction & 
     }
 }
 
-void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, DataPartsLock &, Transaction & out_transaction, bool need_rename, bool rename_in_transaction)
+void MergeTreeData::preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock &, bool need_rename, bool rename_in_transaction)
 {
     part->is_temp = false;
     part->setState(DataPartState::PreActive);
@@ -4892,7 +4892,7 @@ bool MergeTreeData::addTempPart(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, lock, out_transaction, /* need_rename = */false);
+    preparePartForCommit(part, out_transaction, lock, /* need_rename = */false);
 
     if (out_covered_parts)
     {
@@ -4949,7 +4949,7 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
 
     /// All checks are passed. Now we can rename the part on disk.
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
-    preparePartForCommit(part, lock, out_transaction, /* need_rename= */ true, rename_in_transaction);
+    preparePartForCommit(part, out_transaction, lock, /* need_rename= */ true, rename_in_transaction);
 
     if (out_covered_parts)
     {
