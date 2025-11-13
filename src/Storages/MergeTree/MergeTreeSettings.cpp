@@ -254,22 +254,23 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "default", R"(
+    DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
+    Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
+    )", 0) \
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
 
     Possible values:
-    - `DEFAULT`
+    - `basic` - Basic format.
+    - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
+    This makes settings like `string_serialization_version` effective.
 
-    - `WITH_TYPES`
-      Write new format with `types_serialization_versions` field, allowing per-type serialization versions.
-      This makes settings like `string_serialization_version` effective.
-
-    During rolling upgrades, set this to `DEFAULT` so that new servers produce
+    During rolling upgrades, set this to `basic` so that new servers produce
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "default", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
@@ -282,8 +283,8 @@ namespace ErrorCodes
 
     Possible values:
 
-    - `DEFAULT` — Use the standard serialization format with inline sizes.
-    - `WITH_SIZE_STREAM` — Use a separate size stream for top-level `String` columns.
+    - `single_stream` — Use the standard serialization format with inline sizes.
+    - `with_size_stream` — Use a separate size stream for top-level `String` columns.
     )", 0) \
     DECLARE(MergeTreeObjectSerializationVersion, object_serialization_version, "v2", R"(
     Serialization version for JSON data type. Required for compatibility.
@@ -331,7 +332,7 @@ namespace ErrorCodes
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
 
-    For example column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
+    For example, column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
     - `t.a` for String data of tuple element `a`
     - `t.b` for UInt32 data of tuple element `b`
     - `t.c.size0` for array sizes of tuple element `c`
@@ -342,6 +343,13 @@ namespace ErrorCodes
     the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
     substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
     we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
+    )", 0) \
+    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_wide_part, Field("auto"), R"(
+    The maximum number of dynamic subcolumns that can be created in every column in the Wide data part after merge.
+    It allows to reduce number of files created in Wide data part regardless of dynamic parameters specified in the data type.
+
+    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
+    after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
     \
     /** Merge selector settings. */ \

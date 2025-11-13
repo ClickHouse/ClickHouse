@@ -939,7 +939,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         modified_query_info.planner_context->getOrCreateTableExpressionData(replacement_table_expression);
 
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
-            .withExtendedObjects()
             .withSubcolumns(storage_snapshot_->storage.supportsSubcolumns());
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
@@ -1350,7 +1349,7 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
             ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_table")
         };
         // Extract predicate part, that could be evaluated only with _database and _table columns
-        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block);
+        auto table_filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample_block, query_context);
         if (table_filter_dag)
         {
             auto filter_expression = VirtualColumnUtils::buildFilterExpression(std::move(*table_filter_dag), query_context);
@@ -1593,7 +1592,8 @@ void ReadFromMerge::convertAndFilterSourceStream(
     auto convert_actions_dag = ActionsDAG::makeConvertingActions(
         current_step_columns,
         converted_columns,
-        ActionsDAG::MatchColumnsMode::Position);
+        ActionsDAG::MatchColumnsMode::Position,
+        local_context);
 
     auto expression_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(convert_actions_dag));
     child.plan.addStep(std::move(expression_step));

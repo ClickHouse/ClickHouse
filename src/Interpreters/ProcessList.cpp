@@ -421,8 +421,6 @@ ProcessListEntry::~ProcessListEntry()
     /// If there are no more queries for the user, then we will reset memory tracker.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
-
-    /// NOTE: Do not reset parent.total_network_throttler, it MUST account for periods of inactivity for correct work.
 }
 
 

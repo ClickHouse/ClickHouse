@@ -265,7 +265,7 @@ void SerializationString::enumerateStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             enumerateStreamsWithoutSize(settings, callback, data);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -283,7 +283,7 @@ void SerializationString::serializeBinaryBulkWithMultipleStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             ISerialization::serializeBinaryBulkWithMultipleStreams(column, offset, limit, settings, state);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -302,7 +302,7 @@ void SerializationString::deserializeBinaryBulkWithMultipleStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -735,7 +735,7 @@ void SerializationString::deserializeBinaryBulkStatePrefix(
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
         state = cached_state;
-        if (version == MergeTreeStringSerializationVersion::DEFAULT)
+        if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
         {
             auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithoutSizeStream>(state);
             string_state->need_string_data = true;
@@ -743,7 +743,7 @@ void SerializationString::deserializeBinaryBulkStatePrefix(
     }
     else
     {
-        if (version == MergeTreeStringSerializationVersion::DEFAULT)
+        if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
         {
             auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
             string_state->need_string_data = true;

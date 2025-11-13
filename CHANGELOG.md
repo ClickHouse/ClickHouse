@@ -20,7 +20,7 @@
 
 # 2025 Changelog
 
-### <a id="2510"></a> ClickHouse release 25.10, 2025-10-30
+### <a id="2510"></a> ClickHouse release 25.10, 2025-10-31
 
 #### Backward Incompatible Change
 * Changed default `schema_inference_make_columns_nullable` setting to respect column `Nullable`-ness information from Parquet/ORC/Arrow metadata, instead of making everything Nullable. No change for text formats. [#71499](https://github.com/ClickHouse/ClickHouse/pull/71499) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -42,7 +42,6 @@
 * Full support of operator `IS NOT DISTINCT FROM` (`<=>`). [#88155](https://github.com/ClickHouse/ClickHouse/pull/88155) ([simonmichal](https://github.com/simonmichal)).
 * Added an ability to automatically create statistics on all suitable columns in `MergeTree` tables. Added table-level setting `auto_statistics_types` which stores comma-separated types of statistics to create (e.g. `auto_statistics_types = 'minmax, uniq, countmin'`). [#87241](https://github.com/ClickHouse/ClickHouse/pull/87241) ([Anton Popov](https://github.com/CurtizJ)).
 * A new bloom filter index for text, `sparse_gram`. [#79985](https://github.com/ClickHouse/ClickHouse/pull/79985) ([scanhex12](https://github.com/scanhex12)).
-* Allow accessing ClickHouse Cloud instances using Cloud credentials with `--login`. [#82753](https://github.com/ClickHouse/ClickHouse/pull/82753) ([Krishna Mannem](https://github.com/kcmannem)).
 * A new `conv` function for converting numbers between bases, currently supports bases from `2-36`. [#83058](https://github.com/ClickHouse/ClickHouse/pull/83058) ([hp](https://github.com/hp77-creator)).
 * Added `LIMIT BY ALL` syntax support. Similar to `GROUP BY ALL` and `ORDER BY ALL`, `LIMIT BY ALL` automatically expands to use all non-aggregate expressions from the SELECT clause as LIMIT BY keys. For example, `SELECT id, name, count(*) FROM table GROUP BY id LIMIT 1 BY ALL` is equivalent to `SELECT id, name, count(*) FROM table GROUP BY id LIMIT 1 BY id, name`. This feature simplifies queries when you want to limit by all selected non-aggregate columns without explicitly listing them. Closes [#59152](https://github.com/ClickHouse/ClickHouse/issues/59152). [#84079](https://github.com/ClickHouse/ClickHouse/pull/84079) ([Surya Kant Ranjan](https://github.com/iit2009046)).
 * Add support for querying Apache Paimon in ClickHouse. This integration would enable ClickHouse users to directly interact with Paimon's data lake storage. [#84423](https://github.com/ClickHouse/ClickHouse/pull/84423) ([JIaQi](https://github.com/JiaQiTang98)).
