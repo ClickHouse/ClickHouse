@@ -3311,7 +3311,7 @@ std::shared_ptr<ParallelReadingExtension> ReadFromMergeTree::getParallelReadingE
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount());
 }
 
-void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns, bool ignore_prewhere)
+void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & skip_indexes, const IndexReadColumns & added_columns, const Names & removed_columns)
 {
     index_read_tasks.clear();
 
@@ -3381,7 +3381,7 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
             storage_snapshot->getSampleBlockForColumns(all_column_names),
             lazily_read_info,
             query_info.row_level_filter,
-            ignore_prewhere ? nullptr : query_info.prewhere_info));
+            query_info.prewhere_info));
     }
 
     if (analyzed_result_ptr)
