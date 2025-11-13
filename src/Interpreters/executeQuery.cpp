@@ -123,6 +123,7 @@ namespace Setting
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
@@ -558,7 +559,7 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
 
 static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pulling_pipeline, const ProgressCallback & progress_callback, QueryStatusPtr process_list_elem)
 {
-    ResultProgress res(0, 0);
+    ResultProgress res(0, 0, 0);
 
     if (pulling_pipeline)
     {
@@ -570,6 +571,10 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
         res.result_rows = progress_out.written_rows;
         res.result_bytes = progress_out.written_bytes;
     }
+
+    /// Report same memory_usage in X-ClickHouse-Summary as in query_log
+    if (process_list_elem)
+        res.memory_usage = std::max<Int64>(process_list_elem->getInfo().peak_memory_usage, 0);
 
     if (progress_callback)
     {
@@ -2171,7 +2176,7 @@ void executeQuery(
         std::rethrow_exception(exception_ptr);
 }
 
-void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel)
 {
     try
     {
@@ -2182,7 +2187,15 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
 
         streams.pipeline.setProgressCallback(context->getProgressCallback());
+
         CompletedPipelineExecutor executor(streams.pipeline);
+
+        if (auto callback = context->getInteractiveCancelCallback(); callback && with_interactive_cancel)
+        {
+            auto interactive_delay = context->getSettingsRef()[Setting::interactive_delay];
+            executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+        }
+
         executor.execute();
     }
     catch (...)

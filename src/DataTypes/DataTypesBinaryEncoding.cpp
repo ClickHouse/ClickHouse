@@ -46,7 +46,6 @@ namespace ErrorCodes
 
 namespace
 {
-
 /// Max array size that is allowed for any nested elements during data type decoding.
 /// It prevents from allocating too large arrays if the data is corrupted.
 constexpr size_t MAX_ARRAY_SIZE = 1000000;
@@ -238,9 +237,6 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::LowCardinality;
         case TypeIndex::Map:
             return BinaryTypeIndex::Map;
-        case TypeIndex::ObjectDeprecated:
-            /// Object type will be deprecated and replaced by new implementation. No need to support it here.
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type Object is not supported");
         case TypeIndex::IPv4:
             return BinaryTypeIndex::IPv4;
         case TypeIndex::IPv6:
@@ -317,6 +313,11 @@ DataTypePtr decodeDecimal(ReadBuffer & buf)
     return std::make_shared<DataTypeDecimal<T>>(precision, scale);
 }
 
+
+template <bool encode_for_hash_calculation>
+void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf);
+
+template <bool encode_for_hash_calculation>
 void encodeAggregateFunction(const String & function_name, const Array & parameters, const DataTypes & arguments_types, WriteBuffer & buf)
 {
     writeStringBinary(function_name, buf);
@@ -325,7 +326,7 @@ void encodeAggregateFunction(const String & function_name, const Array & paramet
         encodeField(param, buf);
     writeVarUInt(arguments_types.size(), buf);
     for (const auto & argument_type : arguments_types)
-        encodeDataType(argument_type, buf);
+        encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
 }
 
 std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadBuffer & buf)
@@ -356,9 +357,8 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
     return {function, parameters, arguments_types};
 }
 
-}
-
-void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
+template <bool encode_for_hash_calculation>
+void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
 {
     /// First, write the BinaryTypeIndex byte.
     auto binary_type_index = getBinaryTypeIndex(type);
@@ -432,7 +432,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
-            encodeDataType(array_type.getNestedType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(array_type.getNestedType(), buf);
             break;
         }
         case BinaryTypeIndex::NamedTuple:
@@ -444,7 +444,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             for (size_t i = 0; i != types.size(); ++i)
             {
                 writeStringBinary(names[i], buf);
-                encodeDataType(types[i], buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(types[i], buf);
             }
             break;
         }
@@ -454,13 +454,13 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             const auto & element_types = tuple_type.getElements();
             writeVarUInt(element_types.size(), buf);
             for (const auto & element_type : element_types)
-                encodeDataType(element_type, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(element_type, buf);
             break;
         }
         case BinaryTypeIndex::QBit:
         {
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
-            encodeDataType(qbit_type.getElementType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
             break;
         }
@@ -473,7 +473,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Nullable:
         {
             const auto & nullable_type = assert_cast<const DataTypeNullable &>(*type);
-            encodeDataType(nullable_type.getNestedType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(nullable_type.getNestedType(), buf);
             break;
         }
         case BinaryTypeIndex::Function:
@@ -483,21 +483,21 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             const auto & return_type = function_type.getReturnType();
             writeVarUInt(arguments_types.size(), buf);
             for (const auto & argument_type : arguments_types)
-                encodeDataType(argument_type, buf);
-            encodeDataType(return_type, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(argument_type, buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(return_type, buf);
             break;
         }
         case BinaryTypeIndex::LowCardinality:
         {
             const auto & low_cardinality_type = assert_cast<const DataTypeLowCardinality &>(*type);
-            encodeDataType(low_cardinality_type.getDictionaryType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(low_cardinality_type.getDictionaryType(), buf);
             break;
         }
         case BinaryTypeIndex::Map:
         {
             const auto & map_type = assert_cast<const DataTypeMap &>(*type);
-            encodeDataType(map_type.getKeyType(), buf);
-            encodeDataType(map_type.getValueType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(map_type.getKeyType(), buf);
+            encodeDataTypeImpl<encode_for_hash_calculation>(map_type.getValueType(), buf);
             break;
         }
         case BinaryTypeIndex::Variant:
@@ -506,11 +506,15 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             const auto & variants = variant_type.getVariants();
             writeVarUInt(variants.size(), buf);
             for (const auto & variant : variants)
-                encodeDataType(variant, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(variant, buf);
             break;
         }
         case BinaryTypeIndex::Dynamic:
         {
+            /// Skip serialization of max_types parameter for hash calculation.
+            if constexpr (encode_for_hash_calculation)
+                break;
+
             const auto & dynamic_type = assert_cast<const DataTypeDynamic &>(*type);
             /// Maximum number of dynamic types is 254, we can write it as 1 byte.
             writeBinary(UInt8(dynamic_type.getMaxDynamicTypes()), buf);
@@ -520,13 +524,13 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & aggregate_function_type = assert_cast<const DataTypeAggregateFunction &>(*type);
             writeVarUInt(aggregate_function_type.getVersion(), buf);
-            encodeAggregateFunction(aggregate_function_type.getFunctionName(), aggregate_function_type.getParameters(), aggregate_function_type.getArgumentsDataTypes(), buf);
+            encodeAggregateFunction<encode_for_hash_calculation>(aggregate_function_type.getFunctionName(), aggregate_function_type.getParameters(), aggregate_function_type.getArgumentsDataTypes(), buf);
             break;
         }
         case BinaryTypeIndex::SimpleAggregateFunction:
         {
             const auto & simple_aggregate_function_type = assert_cast<const DataTypeCustomSimpleAggregateFunction &>(*type->getCustomName());
-            encodeAggregateFunction(simple_aggregate_function_type.getFunctionName(), simple_aggregate_function_type.getParameters(), simple_aggregate_function_type.getArgumentsDataTypes(), buf);
+            encodeAggregateFunction<encode_for_hash_calculation>(simple_aggregate_function_type.getFunctionName(), simple_aggregate_function_type.getParameters(), simple_aggregate_function_type.getArgumentsDataTypes(), buf);
             break;
         }
         case BinaryTypeIndex::Nested:
@@ -538,7 +542,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             for (size_t i = 0; i != elements.size(); ++i)
             {
                 writeStringBinary(names[i], buf);
-                encodeDataType(elements[i], buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(elements[i], buf);
             }
             break;
         }
@@ -550,6 +554,11 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         }
         case BinaryTypeIndex::JSON:
         {
+            /// Skip serialization of JSON parameters for hash calculation.
+            /// We want JSON hashes of values with different parameters but same data to be the same.
+            if constexpr (encode_for_hash_calculation)
+                break;
+
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
             /// Write version of the serialization because we can add new arguments in the JSON type.
             writeBinary(TYPE_JSON_SERIALIZATION_VERSION, buf);
@@ -560,7 +569,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
             for (const auto & [path, path_type] : typed_paths)
             {
                 writeStringBinary(path, buf);
-                encodeDataType(path_type, buf);
+                encodeDataTypeImpl<encode_for_hash_calculation>(path_type, buf);
             }
             const auto & paths_to_skip = object_type.getPathsToSkip();
             writeVarUInt(paths_to_skip.size(), buf);
@@ -577,10 +586,22 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
     }
 }
 
+}
+
+void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
+{
+    encodeDataTypeImpl<false>(type, buf);
+}
+
+void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf)
+{
+    encodeDataTypeImpl<true>(type, buf);
+}
+
 String encodeDataType(const DataTypePtr & type)
 {
     WriteBufferFromOwnString buf;
-    encodeDataType(type, buf);
+    encodeDataTypeImpl<false>(type, buf);
     return buf.str();
 }
 
