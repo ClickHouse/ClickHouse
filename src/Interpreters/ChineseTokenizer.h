@@ -4,6 +4,7 @@
 
 #if USE_JIEBA
 
+#    include <memory>
 #    include <vector>
 
 namespace Jieba
