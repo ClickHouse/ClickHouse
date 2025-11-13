@@ -645,8 +645,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             else if (nopt2 < 8)
             {
                 ExprList * elist2 = ein->mutable_exprs();
+                const uint32_t nclauses2
+                    = rg.nextSmallNumber() < 9 ? nclauses : std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
 
-                for (uint32_t i = 0; i < nclauses; i++)
+                for (uint32_t i = 0; i < nclauses2; i++)
                 {
                     this->generateExpression(rg, i == 0 ? elist2->mutable_expr() : elist2->add_extra_exprs());
                 }
