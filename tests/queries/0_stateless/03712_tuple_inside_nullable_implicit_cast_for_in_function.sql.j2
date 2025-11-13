@@ -127,4 +127,38 @@ SELECT (1, 2) IN CAST(NULL, 'Nullable(Tuple(Int64, Int64))');
 
 SELECT (1, 2) IN CAST(NULL, 'Nullable(String)');
 
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)];
+
+SELECT CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') IN [NULL, (1, 2)];
+
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, (1, 2));
+
+SELECT CAST((1, 2), 'Nullable(Tuple(Int64, Int64))') IN (NULL, (1, 2));
+
+SELECT CAST((NULL, 3), 'Nullable(Tuple(Nullable(Int32), Int32))') IN [(NULL, 3), (1, 3), NULL];
+
+SELECT CAST(NULL, 'Nullable(Tuple(Nullable(Int32), Int32))') IN [(NULL, 3), (1, 3), NULL];
+
+SELECT CAST((NULL, 3), 'Nullable(Tuple(Nullable(Int32), Int32))') IN ((NULL, 3), (1, 3), NULL);
+
+SELECT CAST(NULL, 'Nullable(Tuple(Nullable(Int32), Int32))') IN ((NULL, 3), (1, 3), NULL);
+
+SELECT CAST((1, 3), 'Nullable(Tuple(Int32, Int32))') IN [(NULL, 3), (1, 3), NULL];
+
+SELECT CAST(NULL, 'Nullable(Tuple(Int32, Int32))') IN [(NULL, 3), (1, 3), NULL];
+
+SELECT CAST((1, 3), 'Nullable(Tuple(Int32, Int32))') IN ((NULL, 3), (1, 3), NULL);
+
+SELECT CAST(NULL, 'Nullable(Tuple(Int32, Int32))') IN ((NULL, 3), (1, 3), NULL);
+
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] SETTINGS enable_analyzer = 1;
+
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN [('a', 1), ('c', 1), NULL] SETTINGS enable_analyzer = 1;
+
+SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) SETTINGS enable_analyzer = 1;
+
+SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) SETTINGS enable_analyzer = 1;
+
+SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+
 {% endfor -%}
