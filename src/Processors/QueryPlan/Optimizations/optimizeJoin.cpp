@@ -892,10 +892,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
             const auto & right_header = *right_header_ptr;
 
             ActionsDAG::NodeRawConstPtrs required_output_nodes;
-            for (const auto & action : join_operator.expression)
-                required_output_nodes.push_back(action.getNode());
-            for (const auto & action : join_operator.residual_filter)
-                required_output_nodes.push_back(action.getNode());
 
             /// input pos -> new input node
             std::unordered_map<size_t, const ActionsDAG::Node *> current_step_type_changes;
@@ -931,6 +927,11 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
                 /// add input (possibly which changed type) to required output
                 required_output_nodes.push_back(out_node);
             }
+
+            for (const auto & action : join_operator.expression)
+                required_output_nodes.push_back(action.getNode());
+            for (const auto & action : join_operator.residual_filter)
+                required_output_nodes.push_back(action.getNode());
 
             if (entry_idx == sequence.size() - 1)
             {

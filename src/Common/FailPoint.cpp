@@ -114,12 +114,12 @@ static struct InitFiu
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
     ONCE(backup_add_empty_memory_table) \
-    REGULAR(refresh_task_delay_update_coordination_state_running) \
+    REGULAR(refresh_task_stop_racing_for_running_refresh) \
     REGULAR(sleep_in_logs_flush) \
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
-    ONCE(database_replicated_drop_after_removing_keeper_failed) \
+    ONCE(database_replicated_drop_after_removing_keeper_failed)
 
 
 namespace FailPoints

@@ -403,7 +403,18 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     else
     {
         /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
-        execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens.value());
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        {
+            /// The sparse gram token extractor stores an internal state which modified during the execution.
+            /// This leads to an error while executing this function multi-threaded because that state is not protected.
+            /// To avoid this case, a clone of the sparse gram token extractor will be used.
+            auto sparse_gram_extractor = token_extractor->clone();
+            execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_gram_extractor.get(), search_tokens.value());
+        }
+        else
+        {
+            execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens.value());
+        }
     }
 
     return col_result;

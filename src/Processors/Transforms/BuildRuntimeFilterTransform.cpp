@@ -28,7 +28,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
-        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {});
+        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 }
 
 

@@ -16,10 +16,15 @@ setup_settings = {
     'stay_alive': True,
     'with_remote_database_disk': False,
 }
-node_25_4 = cluster.add_instance("node_25_4", image="clickhouse/clickhouse-server", tag="25.4", with_installed_binary=True, **setup_settings)
-node_25_6 = cluster.add_instance("node_25_6", image="clickhouse/clickhouse-server", tag="25.6", with_installed_binary=True, **setup_settings)
-node_25_8 = cluster.add_instance("node_25_8", image="clickhouse/clickhouse-server", tag="25.8", with_installed_binary=True, **setup_settings)
-node_25_10 = cluster.add_instance("node_25_10", image="clickhouse/clickhouse-server", tag="25.10", with_installed_binary=True, **setup_settings)
+
+main_configs_to_replace = {
+    'main_configs' : ["configs/storage_conf.xml", "configs/remove_masking_rules.xml"]
+}
+
+node_25_4 = cluster.add_instance("node_25_4", image="clickhouse/clickhouse-server", tag="25.4", with_installed_binary=True, **setup_settings | main_configs_to_replace)
+node_25_6 = cluster.add_instance("node_25_6", image="clickhouse/clickhouse-server", tag="25.6", with_installed_binary=True, **setup_settings | main_configs_to_replace)
+node_25_8 = cluster.add_instance("node_25_8", image="clickhouse/clickhouse-server", tag="25.8", with_installed_binary=True, **setup_settings | main_configs_to_replace)
+node_25_10 = cluster.add_instance("node_25_10", image="clickhouse/clickhouse-server", tag="25.10", with_installed_binary=True, **setup_settings | main_configs_to_replace)
 node_master = cluster.add_instance("node_master", **setup_settings)
 
 logger = logging.getLogger(__name__)
