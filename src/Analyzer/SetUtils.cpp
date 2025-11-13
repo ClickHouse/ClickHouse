@@ -300,7 +300,7 @@ bool hasTupleInCollection(const Field & rhs, const WhichDataType & rhs_which_typ
 
 }
 
-/// lhs IN rhs
+/// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.
 /// Whereas, if `transform_null_in` is false, we pretend NULLs are not present in rhs at all (at level 1 or at level 2 for Tuple).
