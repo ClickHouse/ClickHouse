@@ -1798,16 +1798,14 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
     }
     catch (const DB::Exception & e)
     {
-        String id_str;
+        String id;
         if (query.instrumentation_point_id.has_value())
         {
             String id;
             if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
-                id = "ALL";
+                id = " and ALL ids";
             else
-                id = std::to_string(std::get<UInt64>(query.instrumentation_point_id.value()));
-
-            id_str = fmt::format(" and id '{}'", id);
+                id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point_id.value()));
         }
 
         String entry_type;
