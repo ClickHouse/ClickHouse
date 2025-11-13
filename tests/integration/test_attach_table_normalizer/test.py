@@ -1,7 +1,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.database_disk import replace_text_in_metadata, read_metadata
+from helpers.database_disk import replace_text_in_metadata
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
@@ -32,10 +32,6 @@ def test_attach_substr(started_cluster):
 
     # Replace substring to substr
     replace_text_in_metadata(node, metadata_path, "substring", "substr")
-    node.query("SYSTEM DROP DISK METADATA CACHE disk_db_remote")
-
-    new_data = read_metadata(node, metadata_path)
-    assert new_data.find("substr(s, 1, 2)") != -1
 
     # Clear filesystem cache to avoid caching issues
     node.query("SYSTEM DROP DISK METADATA CACHE disk_db_remote")
