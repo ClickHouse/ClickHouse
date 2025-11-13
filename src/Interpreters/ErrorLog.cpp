@@ -77,7 +77,7 @@ ColumnsDescription ErrorLogElement::getColumnsDescription()
                 "Remote exception (i.e. received during one of the distributed queries)."
             },
             {
-                "query_id",
+                "last_error_query_id",
                 std::make_shared<DataTypeString>(),
                 parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
                 "Id of a query that caused the last error (if available)."
@@ -100,11 +100,11 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(code);
     columns[column_idx++]->insert(ErrorCodes::getName(code));
-    columns[column_idx++]->insert(error_time_ms / 1000);
-    columns[column_idx++]->insert(error_message);
+    columns[column_idx++]->insert(last_error_time_ms / 1000);
+    columns[column_idx++]->insert(last_error_message);
     columns[column_idx++]->insert(value);
     columns[column_idx++]->insert(remote);
-    columns[column_idx++]->insert(query_id);
+    columns[column_idx++]->insert(last_error_query_id);
 
     std::vector<UInt64> error_trace_array;
     error_trace_array.reserve(error_trace.size());
@@ -136,11 +136,11 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement local_elem {
                 .event_time=event_time,
                 .code=code,
-                .error_time_ms=error.local.error_time_ms,
-                .error_message=error.local.message,
+                .last_error_time_ms=error.local.error_time_ms,
+                .last_error_message=error.local.message,
                 .value=error.local.count - previous_values.at(code).local,
                 .remote=false,
-                .query_id=error.local.query_id,
+                .last_error_query_id=error.local.query_id,
                 .error_trace=error.local.trace
             };
             this->add(std::move(local_elem));
@@ -151,11 +151,11 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement remote_elem {
                 .event_time=event_time,
                 .code=code,
-                .error_time_ms=error.remote.error_time_ms,
-                .error_message=error.remote.message,
+                .last_error_time_ms=error.remote.error_time_ms,
+                .last_error_message=error.remote.message,
                 .value=error.remote.count - previous_values.at(code).remote,
                 .remote=true,
-                .query_id=error.remote.query_id,
+                .last_error_query_id=error.remote.query_id,
                 .error_trace=error.remote.trace
             };
             add(std::move(remote_elem));

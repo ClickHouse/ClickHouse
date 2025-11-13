@@ -23,10 +23,9 @@ Columns:
 - `last_error_message` ([String](../../sql-reference/data-types/string.md)) — Message for the last error.
 - `value` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The number of times this error happened.
 - `remote` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Remote exception (i.e. received during one of the distributed queries).
-- `query_id` ([String](../../sql-reference/data-types/string.md)) — Id of a query that caused the last error (if available).
+- `last_error_query_id` ([String](../../sql-reference/data-types/string.md)) — Id of a query that caused the last error (if available).
 - `last_error_trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A stack trace that represents a list of physical addresses where the called methods are stored.
-- `last_error_symbols` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains demangled symbol names, corresponding to the `last_error_trace`, will be populated in future versions.
-- `last_error_lines` ([Array(LowCardinality(String))](../../sql-reference/data-types/array.md)), If the symbolization is enabled, contains strings with file names with line numbers, corresponding to the `last_error_trace`, will be populated in future versions.
+
 
 **Example**
 
@@ -46,10 +45,8 @@ last_error_time:     2025-11-11 11:35:28
 last_error_message:  Unknown table expression identifier 'system.table_not_exist' in scope SELECT * FROM system.table_not_exist
 value:               1
 remote:              0
-query_id:            77ad9ece-3db7-4236-9b5a-f789bce4aa2e
+last_error_query_id: 77ad9ece-3db7-4236-9b5a-f789bce4aa2e
 last_error_trace:    [100506790044914,100506534488542,100506409937998,100506409936517,100506425182891,100506618154123,100506617994473,100506617990486,100506617988112,100506618341386,100506630272160,100506630266232,100506630276900,100506629795243,100506633519500,100506633495783,100506692143858,100506692248921,100506790779783,100506790781278,100506790390399,100506790380047,123814948752036,123814949330028]
-last_errors_symbols: []
-last_error_lines:    []
 ```
 
 **See also**
