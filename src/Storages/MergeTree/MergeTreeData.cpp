@@ -7038,6 +7038,7 @@ std::tuple<RangesInDataPartsPtr, MergeTreeData::DataPartsVectorPtr>
 MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context) const
 {
     auto shared_lock_holder = std::make_optional<DataPartsSharedLock>(readLockParts());
+    std::optional<DataPartsLock> lock_holder;
 
     if (const auto * txn = local_context->getCurrentTransaction().get())
     {
@@ -7063,7 +7064,7 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
 
             /// Convert read to write lock, and re-check the shared_parts_list
             shared_lock_holder.reset();
-            DataPartsLock lock(data_parts_mutex, /*data_=*/ nullptr);
+            lock_holder.emplace(data_parts_mutex, /*data_=*/ nullptr);
 
             if (!shared_parts_list)
             {
