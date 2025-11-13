@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <base/sleep.h>
+#include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -480,7 +481,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromPartOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_type->createColumn(), part_type, "_part")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (!dag)
         return;
 
@@ -508,7 +509,7 @@ void MergeTreeDataSelectExecutor::buildKeyConditionFromTotalOffset(
         = {ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_offset"),
            ColumnWithTypeAndName(part_offset_type->createColumn(), part_offset_type, "_part_starting_offset")};
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (!dag)
         return;
 
@@ -555,7 +556,7 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
         return {};
 
     auto sample = data.getHeaderWithVirtualsForFilter(metadata_snapshot);
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (!dag)
         return {};
 
@@ -969,7 +970,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
 
                         process_part(part_index);
                     },

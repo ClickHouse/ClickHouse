@@ -5,7 +5,9 @@ import re
 import time
 from pathlib import Path
 
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -20,18 +22,36 @@ class JobStages(metaclass=MetaClasses.WithIter):
     TEST = "test"
     CHECK_ERRORS = "check_errors"
     COLLECT_LOGS = "collect_logs"
+    COLLECT_COVERAGE = "collect_coverage"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
-    parser.add_argument("--ch-path", help="Path to clickhouse binary", default=temp_dir)
     parser.add_argument(
         "--options",
         help="Comma separated option(s): parallel|non-parallel|BATCH_NUM/BTATCH_TOT|..",
         default="",
     )
     parser.add_argument("--param", help="Optional job start stage", default=None)
-    parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument(
+        "--test",
+        help="Optional. Test name patterns (space-separated)",
+        default=[],
+        nargs="+",
+        action="extend",
+    )
+    parser.add_argument(
+        "--count",
+        help="Optional. Number of times to repeat each test",
+        default=None,
+        type=int,
+    )
+    parser.add_argument(
+        "--path",
+        help="Optional. Path to custom clickhouse binary",
+        type=str,
+        default="",
+    )
     return parser.parse_args()
 
 
@@ -72,8 +92,6 @@ def run_tests(
         extra_args += (
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
         )
-    else:
-        extra_args += " --report-coverage"
     if "--no-shard" not in extra_args:
         extra_args += " --shard"
     if "--no-zookeeper" not in extra_args:
@@ -82,7 +100,7 @@ def run_tests(
     command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs 1 \
                 {extra_args} \
-                --queries ./tests/queries -- '{test}' | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries -- '{' '.join(test)}' | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -137,6 +155,7 @@ def main():
     is_shared_catalog = False
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
+    is_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -149,7 +168,9 @@ def main():
             print(f"NOTE: Enabled config option [{OPTIONS_TO_INSTALL_ARGUMENTS[to]}]")
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
         elif to.startswith("amd_") or to.startswith("arm_") or "flaky" in to:
-            pass
+            if "coverage" in to:
+                print("Enable Coverage")
+                is_coverage = True
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
             print(
                 f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
@@ -158,6 +179,9 @@ def main():
             assert False, f"Unknown option [{to}]"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
+            if to in ("parallel", "sequential") and args.test:
+                # skip setting up parallel/sequential if specific tests are provided
+                continue
             runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
 
         if "flaky" in to:
@@ -176,7 +200,7 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
-    if is_database_replicated or is_shared_catalog or is_parallel_replicas:
+    if is_shared_catalog or is_parallel_replicas:
         pass
     else:
         if "binary" in args.options and len(test_options) < 3:
@@ -184,6 +208,10 @@ def main():
             nproc = int(Utils.cpu_count() * 1.2)
         elif is_database_replicated:
             nproc = int(Utils.cpu_count() * 0.4)
+        elif is_coverage:
+            cidb_cluster = CIDBCluster()
+            assert cidb_cluster.is_ready()
+            nproc = 1
         else:
             pass
 
@@ -203,19 +231,55 @@ def main():
         config_installs_args += " --encrypted-storage"
         runner_options += f" --encrypted-storage"
 
-    ch_path = args.ch_path
+    if is_bugfix_validation:
+        os.environ["GLOBAL_TAGS"] = "no-random-settings"
+        ch_path = temp_dir
+        if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
+            link_arch = "aarch64" if Utils.is_arm() else "amd64"
+            link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
+            Shell.run(f"wget -nv -P {temp_dir} {link_to_master_head_binary}", verbose=True, strict=True)
+    elif args.path:
+        assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
+        ch_path = str(Path(args.path).absolute())
+    else:
+        paths_to_check = [
+            f"{temp_dir}/clickhouse",  # it's set for CI runs, but we need to check it
+            f"{Utils.cwd()}/build/programs/clickhouse",
+            f"{Utils.cwd()}/clickhouse",
+        ]
+        for path in paths_to_check:
+            if Path(path).is_file():
+                ch_path = str(Path(path).parent.absolute())
+                break
+        else:
+            raise FileNotFoundError(
+                "Clickhouse binary not found in any of the paths: "
+                + ", ".join(paths_to_check)
+                + ". You can also specify path to binary via --path argument"
+            )
 
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
+    if not is_coverage:
+        stages.remove(JobStages.COLLECT_COVERAGE)
+    else:
+        stages.remove(JobStages.COLLECT_LOGS)
+    if not is_bugfix_validation and not info.is_local_run:
+        stages.remove(JobStages.CHECK_ERRORS)
+    if info.is_local_run:
+        if JobStages.COLLECT_LOGS in stages:
+            stages.remove(JobStages.COLLECT_LOGS)
+        if JobStages.COLLECT_COVERAGE in stages:
+            stages.remove(JobStages.COLLECT_COVERAGE)
 
-    tests = []
+    tests = args.test
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
             assert (
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
-            tests = [args.test]
+            tests = args.test
         else:
             tests = get_changed_tests(info)
         if tests:
@@ -277,28 +341,13 @@ def main():
 
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
-        elif is_bugfix_validation:
-            if Utils.is_arm():
-                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/aarch64/clickhouse"
-            else:
-                link_to_master_head_binary = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
-            if not info.is_local_run or not (Path(temp_dir) / "clickhouse").exists():
-                print(
-                    f"NOTE: ClickHouse binary will be downloaded to [{temp_dir}] from [{link_to_master_head_binary}]"
-                )
-                if info.is_local_run:
-                    time.sleep(10)
-                commands.insert(
-                    0,
-                    f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
-                )
-            os.environ["GLOBAL_TAGS"] = "no-random-settings"
 
         os.environ["MALLOC_CONF"] = (
             f"prof_active:true,prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
-        commands.append(configure_log_export)
+        if not is_coverage:
+            commands.append(configure_log_export)
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
@@ -355,17 +404,20 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        if not is_flaky_check and not is_bugfix_validation:
+        if not tests:
             run_tests(
                 batch_num=batch_num,
                 batch_total=total_batches,
-                test=args.test,
+                test="",
                 extra_args=runner_options,
             )
         else:
-            run_specific_tests(
-                tests=tests, runs=50 if is_flaky_check else 1, extra_args=runner_options
-            )
+            runs = 1
+            if args.count:
+                runs = args.count
+            elif is_flaky_check:
+                runs = 50
+            run_specific_tests(tests=tests, runs=runs, extra_args=runner_options)
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -396,7 +448,25 @@ def main():
 
     CH.terminate()
 
-    if test_result and JobStages.CHECK_ERRORS in stages and not is_bugfix_validation:
+    if (
+        test_result
+        and not test_result.is_error()
+        and JobStages.COLLECT_COVERAGE in stages
+    ):
+        print("Collect coverage")
+        os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+        results.append(
+            Result.from_commands_run(
+                name="Collect coverage",
+                command=lambda: CoverageExporter(
+                    src=CH,
+                    dest=cidb_cluster,
+                    job_name=info.job_name,
+                ).do(),
+            )
+        )
+
+    if test_result and JobStages.CHECK_ERRORS in stages:
         # must not be performed for a test validation - test must fail and log errors are not respected
         print("Check fatal errors")
         sw_ = Utils.Stopwatch()
@@ -429,6 +499,7 @@ def main():
         if test_result and CH.extra_tests_results:
             test_result.extend_sub_results(CH.extra_tests_results)
 
+    # check if ci pipeline must be blocked on test failures
     force_ok_exit = False
     if "parallel" in test_options and test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])

@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Some CMakeLists.txt in contrib/ are not being good citizens and change cmake cache variables
+# globally. This policy prevents such *cache* variable assignments from altering *normal* variables
+# that we've set.
+#
+# Example: suppose our root CMakeLists.txt assigns a normal variable:
+#   set(CMAKE_CXX_STANDARD 23)
+# then llvm-project assigns cache variable with the same name:
+#   set(CMAKE_CXX_STANDARD 17 CACHE STRING "...")
+# The latter assignment doesn't affect the normal variable, so llvm-project effectively uses C++23.
+#
+# Without this policy, the behavior is nonlocal and brittle: if the cache variable doesn't exists,
+# the normal variable is unset; otherwise it's left alone. So the effective value would depend e.g.
+# on the order in which contrib/ libraries are traversed.
+set (CMAKE_POLICY_DEFAULT_CMP0126 NEW)
+
 project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
@@ -44,39 +59,9 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init")
 endif ()
 
-# Take care to add prlimit in command line before ccache, or else ccache thinks that
-# prlimit is compiler, and clang++ is its input file, and refuses to work with
-# multiple inputs, e.g in ccache log:
-# [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
-#
-# [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
-#
-# Another way would be to use --ccache-skip option before clang++-11 to make
-# ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 5G
-    set (RLIMIT_DATA 5000000000)
-    # set VIRT (RLIMIT_AS) to 10G (DATA*2)
-    set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 1000 seconds
-    set (RLIMIT_CPU 1000)
-
-    # Sanitizers are too heavy. Some architectures too.
-    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        # Twice as large
-        set (RLIMIT_DATA 10000000000)
-        set (RLIMIT_AS 20000000000)
-        set (RLIMIT_CPU 2000)
-    endif()
-
-    # For some files currently building RISCV64/LOONGARCH64 might be too slow.
-    # TODO: Improve compilation times per file
-    if (ARCH_RISCV64 OR ARCH_LOONGARCH64)
-        set (RLIMIT_CPU 1800)
-    endif()
-
-    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
+    enable_heavy_build_check_if_needed()
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")

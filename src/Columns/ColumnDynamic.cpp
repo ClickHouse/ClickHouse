@@ -1256,7 +1256,7 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
@@ -1329,8 +1329,8 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     DataTypePtr result_variant_type;
     Statistics new_statistics(Statistics::Source::MERGE);
-    /// Reset max_dynamic_types to global_max_dynamic_types.
-    max_dynamic_types = global_max_dynamic_types;
+    /// Reset max_dynamic_types to global_max_dynamic_types or max_dynamic_subcolumns if set.
+    max_dynamic_types = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_types) : global_max_dynamic_types;
     /// Check if the number of all dynamic types exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
     {
@@ -1402,7 +1402,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

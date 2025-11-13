@@ -59,6 +59,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"enable_add_distinct_to_in_subqueries", trueOrFalseSetting},
        {"enable_analyzer", trueOrFalseSetting},
        {"enable_join_runtime_filters", trueOrFalseSetting},
+       {"enable_lazy_columns_replication", trueOrFalseSetting},
        {"enable_optimize_predicate_expression", trueOrFalseSetting},
        {"enable_optimize_predicate_expression_to_final_subquery", trueOrFalseSetting},
        {"enable_parallel_replicas", trueOrFalseSetting},
@@ -181,7 +182,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"query_plan_filter_push_down", trueOrFalseSetting},
        {"query_plan_optimize_join_order_limit",
         CHSetting(
-            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 64)); },
+            [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 64)); },
             {"0", "1", "2", "4", "16", "64"},
             false)},
        {"query_plan_join_shard_by_pk_ranges", trueOrFalseSetting},
@@ -244,7 +245,6 @@ std::unordered_map<String, CHSetting> performanceSettings
             {},
             false)},
        {"text_index_use_bloom_filter", trueOrFalseSetting},
-       {"transform_null_in", trueOrFalseSetting},
        {"use_concurrency_control", trueOrFalseSetting},
        {"use_iceberg_partition_pruning", trueOrFalseSetting},
        {"use_index_for_in_with_subqueries", trueOrFalseSetting},
@@ -271,6 +271,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"allow_get_client_http_header", trueOrFalseSettingNoOracle},
     {"allow_introspection_functions", trueOrFalseSetting},
     {"allow_special_bool_values_inside_variant", trueOrFalseSettingNoOracle},
+    {"allow_special_serialization_kinds_in_output_formats", trueOrFalseSetting},
     {"alter_move_to_space_execute_async", trueOrFalseSettingNoOracle},
     {"alter_partition_verbose_result", trueOrFalseSettingNoOracle},
     {"alter_sync", CHSetting(zeroOneTwo, {}, false)},
@@ -374,7 +375,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     /// {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     /// {"describe_compact_output", trueOrFalseSettingNoOracle},
-    {"describe_extend_object_types", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
     {"distinct_overflow_mode", overflowSetting},
@@ -618,7 +618,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_udf_queries", trueOrFalseSettingNoOracle},
     {"implicit_select", trueOrFalseSettingNoOracle},
-    {"implicit_transaction", trueOrFalseSettingNoOracle},
     {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
     {"input_format_allow_errors_ratio", CHSetting(probRange, {}, false)},
     {"input_format_allow_seeks", trueOrFalseSettingNoOracle},
@@ -680,6 +679,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"input_format_parquet_enable_json_parsing", trueOrFalseSettingNoOracle},
     {"input_format_parquet_enable_row_group_prefetch", trueOrFalseSettingNoOracle},
     {"input_format_parquet_verify_checksums", trueOrFalseSettingNoOracle},
+    {"input_format_parquet_local_time_as_utc", trueOrFalseSettingNoOracle},
     {"input_format_parquet_filter_push_down", trueOrFalseSetting},
     {"input_format_parquet_preserve_order", trueOrFalseSettingNoOracle},
     {"input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference", trueOrFalseSettingNoOracle},
@@ -844,19 +844,21 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"mysql_map_string_to_text_in_show_columns", trueOrFalseSettingNoOracle},
     {"normalize_function_names", trueOrFalseSetting},
     {"opentelemetry_trace_cpu_scheduling", trueOrFalseSettingNoOracle},
+    {"optimize_const_name_size",
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(-100, 100)); }, {}, false)},
     {"optimize_count_from_files", trueOrFalseSetting},
     {"optimize_extract_common_expressions", trueOrFalseSetting},
     {"optimize_min_equality_disjunction_chain_length",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 10)); }, {"0", "1", "5", "10"}, false)},
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {"0", "1", "5", "10"}, false)},
     {"optimize_min_inequality_conjunction_chain_length",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 10)); }, {"0", "1", "5", "10"}, false)},
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 10)); }, {"0", "1", "5", "10"}, false)},
     {"optimize_on_insert", trueOrFalseSetting},
     {"optimize_or_like_chain", trueOrFalseSetting},
     {"optimize_skip_unused_shards_limit",
      CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 30)); }, {"0", "1", "5", "10"}, false)},
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 30)); }, {"0", "1", "5", "10"}, false)},
     {"optimize_throw_if_noop", trueOrFalseSettingNoOracle},
     {"optimize_time_filter_with_preimage", trueOrFalseSetting},
     {"optimize_trivial_insert_select", trueOrFalseSetting},
@@ -1067,7 +1069,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3queue_enable_logging_to_s3queue_log", trueOrFalseSettingNoOracle},
     {"schema_inference_cache_require_modification_time_for_url", trueOrFalseSettingNoOracle},
     {"schema_inference_make_columns_nullable",
-     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 3)); }, {}, false)},
+     CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); }, {}, false)},
     {"schema_inference_make_json_columns_nullable", trueOrFalseSettingNoOracle},
     {"schema_inference_use_cache_for_file", trueOrFalseSettingNoOracle},
     {"schema_inference_use_cache_for_s3", trueOrFalseSettingNoOracle},
@@ -1151,6 +1153,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          false)},
     {"trace_profile_events", trueOrFalseSettingNoOracle},
     {"transfer_overflow_mode", overflowSetting},
+    {"transform_null_in", trueOrFalseSettingNoOracle},
     {"traverse_shadow_remote_data_paths", trueOrFalseSettingNoOracle},
     {"type_json_skip_duplicated_paths", trueOrFalseSettingNoOracle},
     {"union_default_mode", setSetting},
@@ -1178,6 +1181,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_roaring_bitmap_iceberg_positional_deletes", trueOrFalseSetting},
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
+    {"use_text_index_dictionary_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
@@ -1244,6 +1248,10 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     {
         serverSettings.emplace(std::move(setting));
     }
+    if (fc.allow_transactions)
+    {
+        serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
+    }
 
     /// When measuring performance use bigger block sizes
     /// Number of rows values
@@ -1263,6 +1271,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_joined_block_size_rows",
           "max_limit_for_vector_search_queries",
           "max_number_of_partitions_for_independent_aggregation",
+          "max_projection_rows_to_use_projection_index",
           "max_rows_to_transfer",
           "merge_tree_max_rows_to_use_cache",
           "merge_tree_min_read_task_size",
@@ -1274,6 +1283,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "min_insert_block_size_rows_for_materialized_views",
           "min_joined_block_size_rows",
           "min_outstreams_per_resize_after_split",
+          "min_table_rows_to_use_projection_index",
           "output_format_parquet_batch_size",
           "output_format_parquet_data_page_size",
           "output_format_parquet_row_group_size",
@@ -1412,7 +1422,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     /// Set hot settings
     for (const auto & entry : fc.hot_settings)
     {
-        if (serverSettings.find(entry) == serverSettings.end())
+        if (!serverSettings.contains(entry))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server setting: {}", entry);
         }
@@ -1482,7 +1492,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"input_format_max_rows_to_read_for_schema_inference", CHSetting(rowsRange, {}, false)},
          {"input_format_max_bytes_to_read_for_schema_inference", CHSetting(bytesRange, {}, false)},
          {"input_format_msgpack_number_of_columns",
-          CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<int32_t>(0, 20)); }, {}, false)},
+          CHSetting([](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.randomInt<uint32_t>(0, 20)); }, {}, false)},
          /// {"input_format_native_decode_types_in_binary_format", trueOrFalseSettingNoOracle}, may block the client
          {"input_format_orc_row_batch_size", CHSetting(rowsRange, {}, false)},
          {"input_format_tsv_crlf_end_of_line", trueOrFalseSettingNoOracle},

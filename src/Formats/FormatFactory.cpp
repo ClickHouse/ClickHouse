@@ -34,7 +34,6 @@ namespace Setting
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
-    extern const SettingsBool allow_experimental_object_type;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsBool log_queries;
@@ -64,7 +63,7 @@ namespace ErrorCodes
 
 bool FormatFactory::exists(const String & name) const
 {
-    return dict.find(boost::to_lower_copy(name)) != dict.end();
+    return dict.contains(boost::to_lower_copy(name));
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -175,7 +174,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.validate_types_from_metadata = settings[Setting::input_format_json_validate_types_from_metadata];
     format_settings.json.validate_utf8 = settings[Setting::output_format_json_validate_utf8];
     format_settings.json_object_each_row.column_for_object_name = settings[Setting::format_json_object_each_row_column_for_object_name];
-    format_settings.json.allow_deprecated_object_type = context->getSettingsRef()[Setting::allow_experimental_object_type];
     format_settings.json.compact_allow_variable_number_of_columns = settings[Setting::input_format_json_compact_allow_variable_number_of_columns];
     format_settings.json.try_infer_objects_as_tuples = settings[Setting::input_format_json_try_infer_named_tuples_from_objects];
     format_settings.json.throw_on_bad_escape_sequence = settings[Setting::input_format_json_throw_on_bad_escape_sequence];
@@ -229,6 +227,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.local_read_min_bytes_for_seek = settings[Setting::input_format_parquet_local_file_min_bytes_for_seek];
     format_settings.parquet.enable_row_group_prefetch = settings[Setting::input_format_parquet_enable_row_group_prefetch];
     format_settings.parquet.verify_checksums = settings[Setting::input_format_parquet_verify_checksums];
+    format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     format_settings.pretty.charset = settings[Setting::output_format_pretty_grid_charset].toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
@@ -291,6 +290,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.with_names_use_header = settings[Setting::input_format_with_names_use_header];
     format_settings.with_types_use_header = settings[Setting::input_format_with_types_use_header];
     format_settings.write_statistics = settings[Setting::output_format_write_statistics];
+    format_settings.into_outfile_create_parent_directories = settings[Setting::into_outfile_create_parent_directories];
     format_settings.arrow.low_cardinality_as_dictionary = settings[Setting::output_format_arrow_low_cardinality_as_dictionary];
     format_settings.arrow.use_signed_indexes_for_dictionary = settings[Setting::output_format_arrow_use_signed_indexes_for_dictionary];
     format_settings.arrow.use_64_bit_indexes_for_dictionary = settings[Setting::output_format_arrow_use_64_bit_indexes_for_dictionary];
@@ -555,7 +555,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         /// TODO: Consider using parser_shared_resources->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
-            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
+            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::PARALLEL_READ),
             max_download_threads,
             settings[Setting::max_download_buffer_size],
             file_size);
