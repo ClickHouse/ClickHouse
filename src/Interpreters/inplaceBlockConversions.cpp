@@ -428,8 +428,8 @@ void fillMissingColumns(
             num_dimensions = getNumberOfDimensions(*array_type);
             current_offsets.resize(num_dimensions);
 
-            auto serialization_info = requested_column->type->getSerializationInfo(*res_columns[i]);
-            auto serialization = IDataType::getSerialization(*requested_column, *serialization_info);
+            auto serialization_info = res_columns[i] ? requested_column->type->getSerializationInfo(*res_columns[i]) : nullptr;
+            auto serialization = serialization_info ? IDataType::getSerialization(*requested_column, *serialization_info) : IDataType::getSerialization(*requested_column);
             serialization->enumerateStreams([&](const auto & subpath)
             {
                 if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
@@ -459,8 +459,8 @@ void fillMissingColumns(
         if (!current_offsets.empty())
         {
             Names tuple_elements;
-            auto serialization_info = requested_column->type->getSerializationInfo(*res_columns[i]);
-            auto serialization = IDataType::getSerialization(*requested_column, *serialization_info);
+            auto serialization_info = res_columns[i] ? requested_column->type->getSerializationInfo(*res_columns[i]) : nullptr;
+            auto serialization = serialization_info ? IDataType::getSerialization(*requested_column, *serialization_info) : IDataType::getSerialization(*requested_column);
 
             /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
             IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
