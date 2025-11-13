@@ -1279,7 +1279,6 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     implementation_buffer.reset();
     cache_file_reader.reset();
     initialized = false;
-    remote_file_reader.reset();
 
     LOG_TEST(log, "Reset state for seek to position {}", new_pos);
 
