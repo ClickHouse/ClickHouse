@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop table if exists `test_table with spaces`;
 
 create table if not exists `test_table with spaces`
@@ -24,7 +26,9 @@ select '`test_table with spaces`', count() from `test_table with spaces`;
 drop table `test_table with spaces`;
 
 
-create database if not exists `this.is.a.valid.databasename`;
+drop database if exists `this.is.a.valid.databasename`;
+create database `this.is.a.valid.databasename`;
+
 drop table if exists `this.is.a.valid.databasename`.`test_table with spaces`;
 create table `this.is.a.valid.databasename`.`test_table with spaces`
 (
