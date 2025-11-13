@@ -31,7 +31,7 @@ namespace
 
 size_t getCompoundTypeDepth(const IDataType & type)
 {
-    size_t result = 0;
+    size_t depth = 0;
 
     const IDataType * current_type = &type;
 
@@ -48,12 +48,12 @@ size_t getCompoundTypeDepth(const IDataType & type)
         if (which_type.isArray())
         {
             current_type = assert_cast<const DataTypeArray &>(*current_type).getNestedType().get();
-            ++result;
+            ++depth;
         }
         else if (which_type.isTuple())
         {
             const auto & tuple_elements = assert_cast<const DataTypeTuple &>(*current_type).getElements();
-            ++result;
+            ++depth;
             if (tuple_elements.empty())
                 break;
             current_type = tuple_elements.front().get();
@@ -64,7 +64,7 @@ size_t getCompoundTypeDepth(const IDataType & type)
         }
     }
 
-    return result;
+    return depth;
 }
 
 std::optional<Field> convertFieldToTypeCheckEnum(
@@ -95,10 +95,10 @@ ColumnsWithTypeAndName createBlockFromCollection(
 {
     chassert(rhs_collection.size() == rhs_types.size());
 
-    size_t columns_size = lhs_unpacked_types.size();
+    size_t num_elements = lhs_unpacked_types.size();
 
     /// Fast path
-    if (columns_size == 1)
+    if (num_elements == 1)
     {
         MutableColumnPtr column = lhs_unpacked_types[0]->createColumn();
         column->reserve(rhs_collection.size());
@@ -138,8 +138,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
     }
 
-    MutableColumns columns(columns_size);
-    for (size_t i = 0; i < columns_size; ++i)
+    MutableColumns columns(num_elements);
+    for (size_t i = 0; i < num_elements; ++i)
     {
         columns[i] = lhs_unpacked_types[i]->createColumn();
         columns[i]->reserve(rhs_collection.size());
@@ -182,9 +182,9 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
         size_t tuple_size = rhs_element_as_tuple.size();
 
-        if (tuple_size != columns_size)
+        if (tuple_size != num_elements)
             throw Exception(
-                ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}", tuple_size, columns_size);
+                ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}", tuple_size, num_elements);
 
         if (converted_rhs_element_unpacked.empty())
             converted_rhs_element_unpacked.resize(tuple_size);
@@ -210,8 +210,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
     if (!construct_nullable_tuple_column_later)
     {
-        ColumnsWithTypeAndName res(columns_size);
-        for (size_t i = 0; i < columns_size; ++i)
+        ColumnsWithTypeAndName res(num_elements);
+        for (size_t i = 0; i < num_elements; ++i)
         {
             res[i].type = lhs_unpacked_types[i];
             res[i].column = std::move(columns[i]);
@@ -231,7 +231,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
     auto & null_map = column_nullable.getNullMapColumn();
 
     /// Track current position in the pre-built columns so that elements are in the same order in the final column as in rhs_collection
-    size_t non_null_index = 0;
+    size_t non_null_pos = 0;
 
     for (size_t collection_index = 0; collection_index < rhs_collection.size(); ++collection_index)
     {
@@ -244,12 +244,12 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
         else
         {
-            for (size_t i = 0; i < columns_size; ++i)
+            for (size_t i = 0; i < num_elements; ++i)
             {
-                nested_tuple_column.getColumn(i).insertFrom(*columns[i], non_null_index);
+                nested_tuple_column.getColumn(i).insertFrom(*columns[i], non_null_pos);
             }
             null_map.insertDefault();
-            ++non_null_index;
+            ++non_null_pos;
         }
     }
 
@@ -322,20 +322,20 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     }
 
 
-    auto buildFromArray = [&](const Field & value, const DataTypePtr & type)
+    auto buildFromArray = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        const auto & arr = value.safeGet<Array>();
-        DataTypes rhs_types(arr.size(), array_type->getNestedType());
-        return createBlockFromCollection(arr, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
+        const auto & rhs_array = rhs_value.safeGet<Array>();
+        DataTypes rhs_types(rhs_array.size(), array_type->getNestedType());
+        return createBlockFromCollection(rhs_array, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
     };
 
-    auto buildFromTuple = [&](const Field & value, const DataTypePtr & type)
+    auto buildFromTuple = [&](const Field & rhs_value, const DataTypePtr & type)
     {
         const auto * tuple_type = assert_cast<const DataTypeTuple *>(type.get());
-        const auto & elems = value.safeGet<Tuple>();
+        const auto & rhs_tuple = rhs_value.safeGet<Tuple>();
         const auto & rhs_types = tuple_type->getElements();
-        return createBlockFromCollection(elems, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
+        return createBlockFromCollection(rhs_tuple, rhs_types, lhs_unpacked_types, lhs_is_nullable, params);
     };
 
 
