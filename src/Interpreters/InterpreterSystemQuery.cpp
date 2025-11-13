@@ -1323,6 +1323,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     String create_query = fmt::format("CREATE DATABASE `{}` ENGINE=Atomic", restoring_database_name);
 
     auto create_ctx = Context::createCopy(Context::getGlobalContextInstance());
+    create_ctx->makeQueryContext();
     create_ctx->setCurrentQueryId({});
     executeQuery(create_query, create_ctx, QueryFlags{.internal = true});
 
@@ -1588,6 +1589,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             String restoring_database_name = RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX + getRandomASCIIString(32);
             SCOPE_EXIT({
                 auto drop_ctx = Context::createCopy(Context::getGlobalContextInstance());
+                drop_ctx->makeQueryContext();
                 drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
                 String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", restoring_database_name);
                 executeQuery(drop_query, drop_ctx);
