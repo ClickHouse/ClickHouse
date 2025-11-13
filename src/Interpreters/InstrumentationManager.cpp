@@ -7,6 +7,7 @@
 #include <print>
 #include <thread>
 #include <sched.h>
+#include <stack>
 #include <unistd.h>
 #include <variant>
 
@@ -421,7 +422,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
     /// point ID to know for sure whether this execution is tight to the stored element or not.
     /// We also remove the element once we realize it's from a different generation, but it's not cleared until then.
-    static thread_local std::unordered_map<Int32, TraceLogElement> active_elements;
+    static thread_local std::unordered_map<Int32, std::stack<TraceLogElement>> active_elements;
 
     auto now = std::chrono::system_clock::now();
 
@@ -435,14 +436,14 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
             if (auto log = instrumented_point.context->getTraceLog())
                 log->add(element);
         }
-        active_elements[instrumented_point.function_id] = std::move(element);
+        active_elements[instrumented_point.function_id].push(std::move(element));
     }
     else if (entry_type == XRayEntryType::EXIT)
     {
         auto it = active_elements.find(instrumented_point.function_id);
         if (it != active_elements.end())
         {
-            auto & element = it->second;
+            auto & element = it->second.top();
 
             if (element.instrumented_point_id != instrumented_point.id)
             {
@@ -467,7 +468,11 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
                 if (auto log = instrumented_point.context->getTraceLog())
                     log->add(std::move(element));
             }
-            active_elements.erase(it);
+
+            it->second.pop();
+
+            if (it->second.empty())
+                active_elements.erase(it);
         }
     }
 }

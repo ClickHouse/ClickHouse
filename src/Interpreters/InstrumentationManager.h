@@ -51,7 +51,7 @@ public:
 
         String toString() const
         {
-            String entry_type_str = !entry_type.has_value() ? "none" : (entry_type.value() == XRayEntryType::ENTRY ? "entry" : "exit");
+            String entry_type_str = !entry_type.has_value() ? "EntryAndExit" : (entry_type.value() == XRayEntryType::ENTRY ? "Entry" : "Exit");
             String parameters_str;
             if (parameters.has_value())
             {

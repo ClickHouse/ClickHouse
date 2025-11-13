@@ -232,7 +232,7 @@ address at the prolog and epilog of those functions that are longer than 200 ins
 
 ### SYSTEM INSTRUMENT ADD {#instrument-add}
 
-Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table. More than one handler can be added for the same function.
+Adds a new instrumentation point. Functions instrumented can be inspected in the [`system.instrumentation`](../../operations/system-tables/instrumentation.md) system table. More than one handler can be added for the same function, and they will be executed in the same order the instrumentation is added.
 The functions to be instrumented can be collected from [`system.symbols`](../../operations/system-tables/symbols.md) system table.
 
 There are three different kind of handlers to add to functions:
