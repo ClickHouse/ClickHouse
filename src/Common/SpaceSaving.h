@@ -230,7 +230,6 @@ public:
             }
         }
 
-        // The list is sorted in descending order, we have to scan in reverse
         for (const auto & counter : rhs.counter_list)
         {
             size_t hash = counter.hash;
@@ -371,6 +370,7 @@ private:
         counter_map.clear();
         counter_list.clear();
         alpha_map.clear();
+        m_capacity = 0;
     }
 
     ALWAYS_INLINE Counter * findCounter(const TKey & key, size_t hash)
@@ -387,20 +387,20 @@ private:
         if (&rhs == this)
             return *this;
 
-        destroyElements();
+        if (!empty())
+            destroyElements();
         resize(rhs.capacity());
-        if constexpr (std::is_same<TKey, StringRef>::value)
+
+        counter_list = rhs.counter_list;
+        alpha_map = rhs.alpha_map;
+
+        if constexpr (std::is_same_v<TKey, StringRef>)
         {
-            for (auto & counter : rhs.counter_list)
-                push(Counter{arena.emplace(counter.key), counter.hash, counter.error});
-            alpha_map = rhs.alpha_map;
+            /// Need to copy the keys into our own arena
+            for (auto & counter : counter_list)
+                counter.key = arena.emplace(counter.key);
         }
-        else
-        {
-            counter_list = rhs.counter_list;
-            alpha_map = rhs.alpha_map;
-            truncateIfNeeded(true);
-        }
+        truncateIfNeeded(true);
 
         return *this;
     }
