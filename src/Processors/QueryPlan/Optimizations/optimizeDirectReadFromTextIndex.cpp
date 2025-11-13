@@ -100,7 +100,7 @@ public:
 
     /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
-    /// Returns a pair of (added columns by index name, removed columns)
+    /// Returns a tuple of (added columns by index name, removed columns, the column name of prehwere may be modified)
     std::tuple<IndexReadColumns, Names, String> replace(const String & origin_prewhere_column_name)
     {
         IndexReadColumns added_columns;
