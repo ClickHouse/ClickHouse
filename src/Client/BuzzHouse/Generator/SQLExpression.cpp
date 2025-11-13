@@ -1479,9 +1479,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCdictGet);
         sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + d.getFullName(true) + "'");
         flatTableColumnPath(
-            flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
-            d.cols,
-            [](const SQLColumn &) { return true; });
+            flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, d.cols, [](const SQLColumn &) { return true; });
         sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(this->table_entries).columnPathRef("'"));
         this->table_entries.clear();
         this->depth++;
