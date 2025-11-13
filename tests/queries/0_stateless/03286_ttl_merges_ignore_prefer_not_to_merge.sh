@@ -63,7 +63,7 @@ $ch "ALTER TABLE test_03286_ttl_disabled_merges REMOVE TTL SETTINGS mutations_sy
 # Make part with partially expired TTL for rows
 $ch "INSERT INTO test_03286_ttl_disabled_merges SELECT number, 2, now() - INTERVAL 4 MONTH FROM numbers(1000)"
 $ch "INSERT INTO test_03286_ttl_disabled_merges SELECT number, 2, now() - INTERVAL 2 MONTH FROM numbers(1000)"
-$ch "OPTIMIZE TABLE test_03286_ttl_disabled_merges FINAL SETTINGS optimize_throw_if_noop=true"
+$ch "OPTIMIZE TABLE test_03286_ttl_disabled_merges FINAL"
 
 wait_for_number_of_parts 'test_03286_ttl_disabled_merges' 1 100
 
@@ -76,5 +76,5 @@ SETTINGS mutations_sync = 1, materialize_ttl_after_modify = 1;
 EOF
 
 $ch "SELECT count() FROM test_03286_ttl_disabled_merges"
-$ch "OPTIMIZE TABLE test_03286_ttl_disabled_merges FINAL SETTINGS optimize_throw_if_noop=true"
+$ch "OPTIMIZE TABLE test_03286_ttl_disabled_merges FINAL"
 $ch "SELECT count() FROM test_03286_ttl_disabled_merges"
