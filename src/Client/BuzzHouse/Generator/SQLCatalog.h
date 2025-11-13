@@ -212,7 +212,7 @@ public:
     IntegrationCall integration = IntegrationCall::None;
 
     SQLBase() = default;
-    SQLBase(const String && p)
+    explicit SQLBase(const String && p)
         : prefix(p)
     {
     }
@@ -512,7 +512,7 @@ public:
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
 
-    String columnPathRef(const String quote = "`") const;
+    String columnPathRef(const String & quote = "`") const;
 };
 
 }

@@ -384,7 +384,7 @@ size_t SQLTable::numberOfInsertableColumns() const
     return res;
 }
 
-String ColumnPathChain::columnPathRef(String quote) const
+String ColumnPathChain::columnPathRef(const String & quote) const
 {
     String res = quote;
 
