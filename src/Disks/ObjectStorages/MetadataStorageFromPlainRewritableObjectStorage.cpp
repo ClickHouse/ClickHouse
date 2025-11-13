@@ -53,7 +53,7 @@ constexpr auto ROOT_FOLDER_TOKEN = "__root";
 }
 
 
-void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
+void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
 {
     ThreadPool & pool = getIOThreadPool().get();
     ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
@@ -146,13 +146,16 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
             /// randomlygenerated
             auto remote_path = rel_path.parent_path();
 
-            if (auto directory_info = fs_tree->lookupDirectoryIfNotChanged(remote_path, file->metadata->etag))
+            if (do_not_load_unchanged_directories)
             {
-                /// Already loaded.
-                std::lock_guard guard(remote_layout_mutex);
-                auto & [local_path, remote_info] = directory_info.value();
-                remote_layout[local_path] = std::move(remote_info);
-                continue;
+                if (auto directory_info = fs_tree->lookupDirectoryIfNotChanged(remote_path, file->metadata->etag))
+                {
+                    /// Already loaded.
+                    std::lock_guard guard(remote_layout_mutex);
+                    auto & [local_path, remote_info] = directory_info.value();
+                    remote_layout[local_path] = std::move(remote_info);
+                    continue;
+                }
             }
 
             runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
@@ -268,7 +271,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
             "MetadataStorageFromPlainRewritableObjectStorage is not compatible with write-once storage '{}'",
             object_storage->getName());
 
-    load(/*is_initial_load=*/true);
+    load(/*is_initial_load=*/true, /*do_not_load_unchanged_directories=*/false);
 
     /// Use flat directory structure if the metadata is stored separately from the table data.
     auto keys_gen = std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), fs_tree);
@@ -279,7 +282,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 {
     std::unique_lock reload_lock(load_mutex);
     std::unique_lock tx_lock(metadata_mutex);
-    load(/*is_initial_load=*/false);
+    load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/false);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
@@ -289,7 +292,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_
 
     std::unique_lock lock(load_mutex, std::defer_lock);
     if (lock.try_lock())
-        load(/*is_initial_load=*/false);
+        load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/true);
 }
 
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const

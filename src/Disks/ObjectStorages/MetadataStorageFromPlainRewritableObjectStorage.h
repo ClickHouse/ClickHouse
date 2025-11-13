@@ -60,7 +60,7 @@ private:
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     AtomicStopwatch previous_refresh;
 
-    void load(bool is_initial_load);
+    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
     std::mutex load_mutex;
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
