@@ -172,16 +172,23 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
+    try
+    {
+        if (current_writer)
+        {
+            current_writer->finalize();
+            current_writer->sync();
+        }
+    } catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        current_writer = nullptr;
+    }
+
     current_log_number++;
     auto new_path = getLogPath(logs_dir, current_log_number);
     MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
     existing_logs.emplace(current_log_number, log_description);
-
-    if (current_writer)
-    {
-        current_writer->finalize();
-        current_writer->sync();
-    }
 
     current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 }
