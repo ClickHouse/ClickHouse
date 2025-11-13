@@ -119,7 +119,7 @@ private:
         InstrumentedPointInfo,
         boost::multi_index::indexed_by<
             boost::multi_index::ordered_unique<boost::multi_index::tag<Id>, boost::multi_index::member<InstrumentedPointInfo, UInt64, &InstrumentedPointInfo::id>>,
-            boost::multi_index::ordered_non_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<InstrumentedPointInfo, Int32, &InstrumentedPointInfo::function_id>>
+            boost::multi_index::hashed_non_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<InstrumentedPointInfo, Int32, &InstrumentedPointInfo::function_id>>
         >>;
 
     InstrumentationManager();
