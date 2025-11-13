@@ -963,7 +963,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                                         vector_similarity_index_cache.get());
 
                     if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
-		    {
+                    {
                         std::vector<size_t> result;
                         min_max_granules->getTopNMarks(top_n_filter_info->limit_n, result);
                         MarkRanges res;
@@ -971,7 +971,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             res.push_back({range, range + 1});
                         std::sort(res.begin(), res.end());
                         ranges.ranges = res;
-		    }
+                    }
                     top_n_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
                 }
                 sum_marks_after_top_n.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
