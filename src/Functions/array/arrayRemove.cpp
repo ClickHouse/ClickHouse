@@ -1,12 +1,9 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Common/HashTable/HashTable.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypesNumber.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -14,8 +11,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/array/arrayRemove.h>
-
-#include <Interpreters/castColumn.h>
 
 namespace DB
 {
