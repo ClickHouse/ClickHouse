@@ -243,8 +243,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         return RelationStats{
             .estimated_rows = analyzed_result->selected_rows,
-            .table_name = table_display_name,
-            .is_exact_upper_bound = true
+            .table_name = table_display_name
         };
     }
 
@@ -253,36 +252,6 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         UInt64 estimated_rows = reading->getStorage()->totalRows({}).value_or(0);
         String table_display_name = reading->getStorage()->getName();
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
-    }
-
-    if (const auto * reading = typeid_cast<const ReadFromPreparedSource *>(step))
-    {
-        if (reading->isEmpty())
-        {
-            return RelationStats {
-                .estimated_rows = 0,
-                .table_name = reading->getName(),
-                .is_exact_upper_bound = true
-
-            };
-        }
-        return {};
-    }
-
-    if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
-    {
-        if (!reading->getContext() || !reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])
-            return {};
-
-        // TODO(mfilitov): maybe change to storage.totalRows
-        auto limit = reading->getLimit();
-        String table_display_name = reading->getStorage()->getName();
-        
-        return RelationStats{
-            .estimated_rows = limit, 
-            .table_name = table_display_name,
-            .is_exact_upper_bound = true
-        };
     }
 
     if (node.children.size() != 1)
@@ -1107,6 +1076,41 @@ bool canOptimizeJoinWithEmptyInput(
     return false;
 }
 
+/// Quick check if a node will definitely produce zero rows
+/// This is a lightweight check that avoids expensive estimateReadRowsCount
+/// It only checks for obvious cases without analyzing indexes
+static bool isDefinitelyEmpty(QueryPlan::Node & node)
+{
+    IQueryPlanStep * step = node.step.get();
+    
+    if (const auto * reading = typeid_cast<const ReadFromPreparedSource *>(step))
+        return reading->isEmpty();
+    
+    if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
+    {
+        auto analyzed_result = reading->getAnalyzedResult();
+        if (!analyzed_result)
+            analyzed_result = reading->selectRangesToRead();
+
+        if (analyzed_result && analyzed_result->selected_rows == 0)
+            return true;
+        // If not analyzed yet or has rows, return false
+        return false;
+    }
+    
+    /// can directly check limit
+    if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
+    {
+        auto limit = reading->getLimit();
+        return limit.has_value() && limit.value() == 0;
+    }
+    
+    if (node.children.size() == 1)
+        return isDefinitelyEmpty(*node.children[0]);
+    
+    return false;
+}
+
 bool tryOptimizeJoinWithEmptyInput(
     JoinStepLogical * join_step,
     QueryPlan::Node & node,
@@ -1114,31 +1118,18 @@ bool tryOptimizeJoinWithEmptyInput(
     JoinStrictness strictness)
 {
     // TODO(mfilitov): check side only if required by the join and strictness type
-    auto left_stats = estimateReadRowsCount(*node.children[0]);
-    auto right_stats = estimateReadRowsCount(*node.children[1]);
+    auto left_empty = isDefinitelyEmpty(*node.children[0]);
+    auto right_empty = isDefinitelyEmpty(*node.children[1]);
 
-    bool left_is_empty = left_stats.estimated_rows 
-        && left_stats.estimated_rows.value() == 0
-        && left_stats.is_exact_upper_bound; 
-    
-    bool right_is_empty = right_stats.estimated_rows 
-        && right_stats.estimated_rows.value() == 0
-        && right_stats.is_exact_upper_bound ;
+    if (!left_empty && !right_empty)
+        return false;
 
-    LOG_TRACE(getLogger("optimizeJoin"), 
-        "Empty input optimization for {} {}: left rows = {} (exact={}), right rows = {} (exact={})",
-        toString(kind), toString(strictness),
-        left_stats.estimated_rows ? toString(left_stats.estimated_rows.value()) : "unknown",
-        left_stats.is_exact_upper_bound,
-        right_stats.estimated_rows ? toString(right_stats.estimated_rows.value()) : "unknown",
-        right_stats.is_exact_upper_bound);
-
-    if (canOptimizeJoinWithEmptyInput(kind, strictness, left_is_empty, right_is_empty))
+    if (canOptimizeJoinWithEmptyInput(kind, strictness, left_empty, right_empty))
     {
         LOG_DEBUG(getLogger("optimizeJoin"), 
             "Replacing {} {} with ReadNothingStep because one side is empty",
             toString(kind), toString(strictness));
-        
+
         auto read_nothing_step = std::make_unique<ReadNothingStep>(join_step->getOutputHeader());
         node.step = std::move(read_nothing_step);
         node.children.clear();
