@@ -144,7 +144,8 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     for (const auto & key : domains_keys)
         served_domains.push_back(config.getString("acme.domains." + key));
 
-    chassert(!served_domains.empty());
+    if (served_domains.empty())
+        LOG_FATAL(log, "List of domains handled by ACME client is empty, please check configuration.");
 
     domains = served_domains;
     refresh_certificates_task_interval = config.getInt("acme.refresh_certificates_task_interval", /* one hour */ 1000 * 60 * 60);
