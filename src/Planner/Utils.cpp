@@ -142,7 +142,8 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    SharedHeaders & query_plans_headers)
+    SharedHeaders & query_plans_headers,
+    ContextPtr context)
 {
     size_t queries_size = query_plans.size();
     for (size_t i = 0; i < queries_size; ++i)
@@ -154,7 +155,11 @@ void addConvertingToCommonHeaderActionsIfNeeded(
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context,
+            false /*ignore_constant_values*/,
+            false /*add_cast_columns*/,
+            nullptr /*new_names*/);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
