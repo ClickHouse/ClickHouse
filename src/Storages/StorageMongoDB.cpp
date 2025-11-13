@@ -124,10 +124,14 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
                 "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
-            String escaped_password;
-            Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
+            {
+                String escaped_user;
+                String escaped_password;
+                Poco::URI::encode(user, "!?#/'\",;:$&()[]*+=@", escaped_user);
+                Poco::URI::encode(named_collection->get<String>("password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
+                auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+            }
             configuration.uri = std::make_unique<mongocxx::uri>(fmt::format("mongodb://{}{}:{}/{}?{}",
                                                           auth_string,
                                                           named_collection->get<String>("host"),
@@ -154,10 +158,14 @@ static MongoDBConfiguration getConfigurationImpl(const StorageID * table_id, AST
 
             String user = checkAndGetLiteralArgument<String>(engine_args[3], "user");
             String auth_string;
-            String escaped_password;
-            Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
             if (!user.empty())
-                auth_string = fmt::format("{}:{}@", user, escaped_password);
+            {
+                String escaped_user;
+                String escaped_password;
+                Poco::URI::encode(user, "!?#/'\",;:$&()[]*+=@", escaped_user);
+                Poco::URI::encode(checkAndGetLiteralArgument<String>(engine_args[4], "password"), "!?#/'\",;:$&()[]*+=@", escaped_password);
+                auth_string = fmt::format("{}:{}@", escaped_user, escaped_password);
+            }
 
             auto host_port = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
             auto database_name = checkAndGetLiteralArgument<String>(engine_args[1], "database");
