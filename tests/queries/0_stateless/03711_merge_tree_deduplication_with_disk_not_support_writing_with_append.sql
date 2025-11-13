@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-fasttest
+-- Tags: long, no-replicated-database, no-fasttest
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
 -- Suppress error logs because `temporary_directories_lifetime` is 1 seconds (the default value is 1 day).
