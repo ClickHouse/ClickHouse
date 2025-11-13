@@ -80,10 +80,9 @@ ColumnPtr FunctionArrayRemove::executeImpl(
 
     const auto & arr_data_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
     const auto & elem_type = arguments[1].type;
-    bool elem_is_const_null = elem_type->onlyNull();
 
     ColumnPtr filter_col;
-    if (elem_is_const_null)
+    if (elem_type->onlyNull())
     {
         if (!canContainNull(*arr_data_type))
         {
