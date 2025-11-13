@@ -1,6 +1,5 @@
 #include <memory>
 #include <Dictionaries/FlatDictionary.h>
-
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -464,7 +463,7 @@ void FlatDictionary::updateData()
             if (!block.rows())
                 continue;
 
-            removeSpecialColumnRepresentations(block);
+            convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)

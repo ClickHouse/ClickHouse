@@ -19,14 +19,6 @@ namespace CurrentMetrics
     extern const Metric BackgroundMergesAndMutationsPoolSize;
 }
 
-namespace ProfileEvents
-{
-    extern const Event CommonBackgroundExecutorTaskExecuteStepMicroseconds;
-    extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
-    extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
-    extern const Event CommonBackgroundExecutorWaitMicroseconds;
-}
-
 std::random_device device;
 
 class FakeExecutableTask : public IExecutableTask
@@ -119,16 +111,12 @@ TEST(Executor, Simple)
         1, // threads
         100, // max_tasks
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
-        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     String schedule; // mutex is not required because we have a single worker
     String expected_schedule = "ABCDEABCDABCDBCDCDD";
-    std::barrier<std::__empty_completion> barrier(2);
+    std::barrier barrier(2);
     auto task = [&] (const String & name, size_t)
     {
         schedule += name;
@@ -166,11 +154,7 @@ TEST(Executor, RemoveTasks)
         tasks_kinds,
         tasks_kinds * batch,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
-        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     for (size_t i = 0; i < batch; ++i)
@@ -211,14 +195,10 @@ TEST(Executor, RemoveTasksStress)
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
-        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
-    std::barrier<std::__empty_completion> barrier(schedulers_count + removers_count);
+    std::barrier barrier(schedulers_count + removers_count);
 
     auto scheduler_routine = [&] ()
     {
@@ -266,16 +246,12 @@ TEST(Executor, UpdatePolicy)
         1, // threads
         100, // max_tasks
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
-        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
+        CurrentMetrics::BackgroundMergesAndMutationsPoolSize
     );
 
     String schedule; // mutex is not required because we have a single worker
     String expected_schedule = "ABCDEDDDDDCCBACBACB";
-    std::barrier<std::__empty_completion> barrier(2);
+    std::barrier barrier(2);
     auto task = [&] (const String & name, size_t)
     {
         schedule += name;

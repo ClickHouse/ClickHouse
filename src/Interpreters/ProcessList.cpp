@@ -12,11 +12,8 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
-#include <Common/Scheduler/IResourceManager.h>
 #include <Common/logger_useful.h>
 #include <chrono>
-#include <memory>
 
 
 namespace CurrentMetrics
@@ -50,10 +47,8 @@ namespace Setting
     extern const SettingsBool replace_running_query;
     extern const SettingsMilliseconds replace_running_query_max_wait_ms;
     extern const SettingsString temporary_files_codec;
-    extern const SettingsUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
-    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
 }
 
 namespace ErrorCodes
@@ -99,6 +94,7 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
+
 ProcessList::EntryPtr ProcessList::insert(
     const String & query_,
     UInt64 normalized_query_hash,
@@ -117,24 +113,10 @@ ProcessList::EntryPtr ProcessList::insert(
     bool is_unlimited_query = isUnlimitedQuery(ast);
     std::shared_ptr<QueryStatus> query;
 
-    // Acquire a query slot from resource scheduler if necessary.
-    // NOTE: There is a separate independent limit for the whole server `max_concurrent_queries`.
-    // NOTE: If that limit is exhausted, the query will be later blocked and wait while holding a query slot.
-    QuerySlotPtr query_slot;
-    if (!is_unlimited_query)
-    {
-        String query_resource_name = query_context->getWorkloadEntityStorage().getQueryResourceName();
-        if (!query_resource_name.empty())
-        {
-            if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link);
-        }
-    }
-
     {
         LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
         auto & lock = locker.getUnderlyingLock();
-        IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
+        IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
         UInt64 waiting_queries = waiting_queries_amount.load();
@@ -281,8 +263,7 @@ ProcessList::EntryPtr ProcessList::insert(
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
                 {
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
-                    .compression_codec = settings[Setting::temporary_files_codec],
-                    .buffer_size = settings[Setting::temporary_files_buffer_size],
+                    .compression_codec = settings[Setting::temporary_files_codec]
                 };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
@@ -318,10 +299,7 @@ ProcessList::EntryPtr ProcessList::insert(
             query_,
             normalized_query_hash,
             client_info,
-            priorities.insert(
-                settings[Setting::priority],
-                std::chrono::milliseconds(settings[Setting::low_priority_query_wait_time_ms].totalMilliseconds())),
-            std::move(query_slot),
+            priorities.insert(settings[Setting::priority]),
             std::move(thread_group),
             query_kind,
             settings,
@@ -418,9 +396,13 @@ ProcessListEntry::~ProcessListEntry()
 
     parent.have_space.notify_all();
 
-    /// If there are no more queries for the user, then we will reset memory tracker.
+    /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
+
+    /// Reset throttler, similarly (see above).
+    if (parent.processes.empty())
+        parent.total_network_throttler.reset();
 }
 
 
@@ -430,7 +412,6 @@ QueryStatus::QueryStatus(
     UInt64 normalized_query_hash_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
-    QuerySlotPtr && query_slot_,
     ThreadGroupPtr && thread_group_,
     IAST::QueryKind query_kind_,
     const Settings & query_settings_,
@@ -439,7 +420,6 @@ QueryStatus::QueryStatus(
     , query(query_)
     , normalized_query_hash(normalized_query_hash_)
     , client_info(client_info_)
-    , query_slot(std::move(query_slot_))
     , thread_group(std::move(thread_group_))
     , watch(CLOCK_MONOTONIC, watch_start_nanoseconds, true)
     , priority_handle(std::move(priority_handle_))
@@ -826,8 +806,7 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
         TemporaryDataOnDiskSettings temporary_data_on_disk_settings
         {
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
-            .compression_codec = settings[Setting::temporary_files_codec],
-            .buffer_size = settings[Setting::temporary_files_buffer_size],
+            .compression_codec = settings[Setting::temporary_files_codec]
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
-#include <IO/SnappyReadBuffer.h>
+#include "SnappyReadBuffer.h"
 
 namespace DB
 {

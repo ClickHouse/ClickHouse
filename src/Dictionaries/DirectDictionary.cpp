@@ -1,9 +1,8 @@
-#include <Dictionaries/DirectDictionary.h>
+#include "DirectDictionary.h"
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Common/HashTable/HashMap.h>
-#include <Interpreters/Context.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
@@ -95,12 +94,12 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t rows_num = 0;
     while (executor.pull(block))
     {
-        if (block.empty())
+        if (!block)
             continue;
 
         ++block_num;
         rows_num += block.rows();
-        removeSpecialColumnRepresentations(block);
+        convertToFullIfSparse(block);
 
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
@@ -331,7 +330,7 @@ class SourceFromQueryPipeline : public ISource
 {
 public:
     explicit SourceFromQueryPipeline(QueryPipeline pipeline_)
-        : ISource(pipeline_.getSharedHeader())
+        : ISource(pipeline_.getHeader())
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
     {

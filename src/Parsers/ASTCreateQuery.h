@@ -97,6 +97,7 @@ public:
     bool if_not_exists{false};
     bool is_ordinary_view{false};
     bool is_materialized_view{false};
+    bool is_live_view{false};
     bool is_window_view{false};
     bool is_time_series_table{false}; /// CREATE TABLE ... ENGINE=TimeSeries() ...
     bool is_populate{false};
@@ -151,11 +152,9 @@ public:
         return removeOnCluster<ASTCreateQuery>(clone(), params.default_database);
     }
 
-    bool isView() const { return is_ordinary_view || is_materialized_view || is_window_view; }
+    bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
     bool isParameterizedView() const;
-
-    NameToNameMap getQueryParameters() const;
 
     bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
 

@@ -1,4 +1,4 @@
-#include <IO/CachedInMemoryReadBufferFromFile.h>
+#include "CachedInMemoryReadBufferFromFile.h"
 #include <IO/SwapHelper.h>
 #include <base/scope_guard.h>
 #include <Common/logger_useful.h>
@@ -22,7 +22,8 @@ namespace ErrorCodes
 CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     PageCacheKey cache_key_, PageCachePtr cache_, std::unique_ptr<ReadBufferFromFileBase> in_, const ReadSettings & settings_)
     : ReadBufferFromFileBase(0, nullptr, 0, in_->getFileSize()), cache_key(cache_key_), cache(cache_)
-    , settings(settings_)
+    , block_size(cache->defaultBlockSize())
+    , lookahead_blocks(std::max(cache->defaultLookaheadBlocks(), size_t(1))), settings(settings_)
     , in(std::move(in_)), read_until_position(file_size.value())
     , inner_read_until_position(read_until_position)
 {
@@ -41,9 +42,9 @@ String CachedInMemoryReadBufferFromFile::getInfoForLog()
 
 bool CachedInMemoryReadBufferFromFile::isSeekCheap()
 {
-    /// Seek is cheap in the sense that seek()+nextImpl() is never much slower than ignore()+nextImpl()
-    /// (which is what the caller cares about).
-    return true;
+    /// If working buffer is empty then the next nextImpl() call will have to send a new read
+    /// request anyway, seeking doesn't make it more expensive.
+    return available() == 0 || last_read_hit_cache;
 }
 
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
@@ -108,8 +109,6 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     if (file_offset_of_buffer_end >= read_until_position)
         return false;
 
-    size_t block_size = settings.page_cache_block_size;
-
     if (chunk != nullptr && file_offset_of_buffer_end >= cache_key.offset + block_size)
     {
         chassert(file_offset_of_buffer_end == cache_key.offset + block_size);
@@ -142,12 +141,8 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// nontrivial seek or setReadUntilPosition call).
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
-                    size_t lookahead_bytes = block_size * std::max<size_t>(1, settings.page_cache_lookahead_blocks);
-                    size_t lookahead_block_end = std::min({
-                        file_size.value(),
-                        (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes,
-                        (read_until_position + block_size - 1) / block_size * block_size});
-
+                    size_t lookahead_bytes = block_size * lookahead_blocks;
+                    size_t lookahead_block_end = std::min(file_size.value(), (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes);
                     if (inner_read_until_position < cache_key.offset + cache_key.size ||
                         inner_read_until_position > lookahead_block_end)
                     {
@@ -211,23 +206,6 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
     ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, size);
 
     return true;
-}
-
-bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*size*/)
-{
-    /// Usually this is called immediately after seek()ing to `offset`.
-
-    if (!working_buffer.empty())
-    {
-        chassert(chunk);
-        return chunk->key.offset <= offset && chunk->key.offset + chunk->key.size > offset;
-    }
-
-    size_t block_size = settings.page_cache_block_size;
-    auto old_offset = std::exchange(cache_key.offset, offset / block_size * block_size);
-    auto old_size = std::exchange(cache_key.size, std::min(block_size, file_size.value() - cache_key.offset));
-    SCOPE_EXIT(cache_key.offset = old_offset; cache_key.size = old_size;);
-    return cache->contains(cache_key, settings.page_cache_inject_eviction);
 }
 
 }

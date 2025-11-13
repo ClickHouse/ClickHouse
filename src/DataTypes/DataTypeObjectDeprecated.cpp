@@ -7,7 +7,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <IO/Operators.h>
-#include <Common/SipHash.h>
 
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -47,12 +46,6 @@ String DataTypeObjectDeprecated::doGetName() const
     else
         out << "Object(" << quote << schema_format << ")";
     return out.str();
-}
-
-void DataTypeObjectDeprecated::updateHashImpl(SipHash & hash) const
-{
-    hash.update(schema_format);
-    hash.update(is_nullable);
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

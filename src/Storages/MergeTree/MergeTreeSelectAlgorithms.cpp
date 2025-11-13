@@ -1,7 +1,5 @@
 #include <Storages/MergeTree/MergeTreeSelectAlgorithms.h>
 
-#include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
-
 namespace DB
 {
 
@@ -53,26 +51,6 @@ MergeTreeInReverseOrderSelectAlgorithm::readFromTask(MergeTreeReadTask & task)
     res = std::move(chunks.back());
     chunks.pop_back();
     return res;
-}
-
-MergeTreeReadTaskPtr MergeTreeProjectionIndexSelectAlgorithm::getNewTask(IMergeTreeReadPool & pool, MergeTreeReadTask * /* previous_task */)
-{
-    /// There is no part to read
-    if (!part)
-        return nullptr;
-
-    if (auto * projection_index_read_pool = dynamic_cast<MergeTreeReadPoolProjectionIndex *>(&pool))
-    {
-        auto task = projection_index_read_pool->getTask(*std::exchange(part, nullptr));
-        return task;
-    }
-    else
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "MergeTreeProjectionIndexSelectAlgorithm requires read pool ProjectionIndex, got: {}",
-            pool.getName());
-    }
 }
 
 }
