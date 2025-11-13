@@ -2038,7 +2038,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
     PartFilterCounters & counters,
     QueryStatusPtr query_status)
 {
-    RangesInDataParts prev_parts;
+    RangesInDataParts res_parts;
 
     for (const auto & prev_part : parts)
     {
@@ -2082,9 +2082,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        prev_parts.push_back(prev_part);
+        res_parts.push_back(prev_part);
     }
-    return prev_parts;
+    return res_parts;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
