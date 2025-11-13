@@ -136,7 +136,7 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
         on_execute(transaction);
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -223,9 +223,8 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
-
     }
 
     void finalize(StoredObjects & to_remove) override
@@ -326,7 +325,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -450,7 +449,7 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -526,9 +525,8 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
             tx->moveFile(path_from, path_to);
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
-
     }
 
     void finalize(StoredObjects & to_remove) override
@@ -598,11 +596,11 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & to_remove) override
     {
         LOG_DEBUG(getLogger("DiskObjectStorageTransaction"), "Undoing WriteFileObjectStorageOperation for path {}, key {}", object->local_path, object->remote_path);
         /// If the file was created, we need to remove it
-        object_storage.removeObjectIfExists(*object);
+        to_remove.push_back(*object);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
@@ -656,9 +654,9 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         tx->createMetadataFile(to_path, created_objects);
     }
 
-    void undo() override
+    void undo(StoredObjects & to_remove) override
     {
-         destination_object_storage.removeObjectsIfExist(created_objects);
+        to_remove.append_range(created_objects);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
@@ -709,9 +707,8 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
     }
 
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
-        // no op
     }
 
     void finalize(StoredObjects & to_remove) override
@@ -754,9 +751,9 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         tx->createMetadataFile(path, /*objects=*/{object});
     }
 
-    void undo() override
+    void undo(StoredObjects & to_remove) override
     {
-        object_storage.removeObjectIfExists(object);
+        to_remove.push_back(object);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
@@ -1137,20 +1134,7 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
             ex.addMessage(fmt::format("While executing operation #{}", i));
 
             if (needRollbackBlobs(options))
-            {
-                for (int64_t j = i; j >= 0; --j)
-                {
-                    try
-                    {
-                        operations_to_execute[j]->undo();
-                    }
-                    catch (Exception & rollback_ex)
-                    {
-                        rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
-                        throw;
-                    }
-                }
-            }
+                undo();
 
             throw;
         }
@@ -1240,18 +1224,17 @@ void DiskObjectStorageTransaction::undo() noexcept
         return;
     }
 
+    StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute | std::views::reverse)
+        operation->undo(objects_to_remove);
+
+    try
     {
-        try
-        {
-            operation->undo();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                        getLogger("DiskObjectStorageTransaction"),
-                        fmt::format("An error occurred while undoing transaction's operation #({})", operation->getInfoForLog()));
-        }
+        object_storage.removeObjectsIfExist(objects_to_remove);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), "An error occurred during transaction cleanup");
     }
 
     operations_to_execute.clear();
