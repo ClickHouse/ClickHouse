@@ -1,0 +1,116 @@
+enable_analyzer = 1
+basic_subquery_tuple_transform_null_in_0
+2001	2
+basic_subquery_tuple_transform_null_in_1
+2001	2
+rhs_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+4	(2002,4)
+rhs_nullable_tuple_table_transform_null_in_0
+2	(2001,2)
+4	(2002,4)
+rhs_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+4	(2002,4)
+rhs_nullable_tuple_table_transform_null_in_1
+2	(2001,2)
+4	(2002,4)
+lhs_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+4	(2002,4)
+lhs_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+4	(2002,4)
+both_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+both_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+3	\N
+5	\N
+rhs_nullable_tuple_join_subquery_transform_null_in_0
+2	(2001,2)
+rhs_nullable_tuple_join_subquery_transform_null_in_1
+2	(2001,2)
+4	\N
+nullable_tuple_union_all_subquery_transform_null_in_0
+2	(2001,2)
+3	(2001,3)
+5	(2002,4)
+nullable_tuple_union_all_subquery_transform_null_in_1
+2	(2001,2)
+3	(2001,3)
+4	\N
+5	(2002,4)
+nullable_tuple_union_distinct_subquery_transform_null_in_0
+2	(2001,2)
+3	(2001,3)
+5	(2002,4)
+nullable_tuple_union_distinct_subquery_transform_null_in_1
+2	(2001,2)
+3	(2001,3)
+4	\N
+5	(2002,4)
+mixed_width_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+3	(2001,3)
+mixed_width_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+3	(2001,3)
+enable_analyzer = 0
+basic_subquery_tuple_transform_null_in_0
+2001	2
+basic_subquery_tuple_transform_null_in_1
+2001	2
+rhs_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+4	(2002,4)
+rhs_nullable_tuple_table_transform_null_in_0
+2	(2001,2)
+4	(2002,4)
+rhs_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+4	(2002,4)
+rhs_nullable_tuple_table_transform_null_in_1
+2	(2001,2)
+4	(2002,4)
+lhs_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+4	(2002,4)
+lhs_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+4	(2002,4)
+both_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+both_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+3	\N
+5	\N
+rhs_nullable_tuple_join_subquery_transform_null_in_0
+2	(2001,2)
+rhs_nullable_tuple_join_subquery_transform_null_in_1
+2	(2001,2)
+4	\N
+nullable_tuple_union_all_subquery_transform_null_in_0
+2	(2001,2)
+3	(2001,3)
+5	(2002,4)
+nullable_tuple_union_all_subquery_transform_null_in_1
+2	(2001,2)
+3	(2001,3)
+4	\N
+5	(2002,4)
+nullable_tuple_union_distinct_subquery_transform_null_in_0
+2	(2001,2)
+3	(2001,3)
+5	(2002,4)
+nullable_tuple_union_distinct_subquery_transform_null_in_1
+2	(2001,2)
+3	(2001,3)
+4	\N
+5	(2002,4)
+mixed_width_nullable_tuple_subquery_transform_null_in_0
+2	(2001,2)
+3	(2001,3)
+mixed_width_nullable_tuple_subquery_transform_null_in_1
+2	(2001,2)
+3	(2001,3)
