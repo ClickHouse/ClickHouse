@@ -6,6 +6,7 @@
 #include <Common/quoteString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
+#include <xray/xray_interface.h>
 
 namespace DB
 {
@@ -499,13 +500,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
             if (instrumentation_parameters && !instrumentation_parameters->empty())
             {
-                bool comma = false;
+                bool first = false;
                 for (const auto & param : *instrumentation_parameters)
                 {
-                    if (comma)
-                        ostr << ',';
+                    if (!first)
+                        ostr << ' ';
                     else
-                        comma = true;
+                        first = true;
                     std::visit([&](const auto & value)
                     {
                         using T = std::decay_t<decltype(value)>;
