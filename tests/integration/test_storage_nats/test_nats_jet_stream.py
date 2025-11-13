@@ -1058,7 +1058,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
                         nats_num_consumers = '5',
                         nats_row_delimiter = '\\n';
             """
-    )
+    ))
     assert "Table `cs` doesn't exist" in instance.query_and_get_error("SHOW TABLE test.cs;")
 
 
