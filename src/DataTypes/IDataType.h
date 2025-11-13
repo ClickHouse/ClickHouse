@@ -331,9 +331,6 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
-    /// Checks for deprecated Object type usage recursively: Object, Array(Object), Tuple(..., Object, ...)
-    virtual bool hasDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicSubcolumns() const;
     /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
@@ -454,7 +451,6 @@ struct WhichDataType
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
-    constexpr bool isObjectDeprecated() const { return idx == TypeIndex::ObjectDeprecated; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
@@ -535,7 +531,6 @@ bool isTuple(TYPE data_type); \
 bool isQBit(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
-bool isObjectDeprecated(TYPE data_type); \
 bool isVariant(TYPE data_type); \
 bool isDynamic(TYPE data_type); \
 bool isObject(TYPE data_type); \

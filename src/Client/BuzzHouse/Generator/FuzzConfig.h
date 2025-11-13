@@ -48,7 +48,8 @@ const constexpr uint64_t allow_bool = (UINT64_C(1) << 0), allow_unsigned_int = (
                          set_any_datetime_precision = (UINT64_C(1) << 26), set_no_decimal_limit = (UINT64_C(1) << 27),
                          allow_fixed_strings = (UINT64_C(1) << 28), allow_time = (UINT64_C(1) << 29), allow_time64 = (UINT64_C(1) << 30),
                          allow_int16 = (UINT64_C(1) << 31), allow_float64 = (UINT64_C(1) << 32), allow_bfloat16 = (UINT64_C(1) << 33),
-                         allow_qbit = (UINT64_C(1) << 34);
+                         allow_qbit = (UINT64_C(1) << 34), allow_aggregate = (UINT64_C(1) << 35),
+                         allow_simple_aggregate = (UINT64_C(1) << 36);
 
 const constexpr uint64_t allow_replacing_mergetree
     = (UINT64_C(1) << 0),
@@ -259,14 +260,14 @@ public:
     String host = "localhost", keeper_map_path_prefix;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, compare_success_results = false, measure_performance = false,
          allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
-         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
-         allow_async_requests = false;
+         enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true, allow_async_requests = false,
+         truncate_output = false, allow_transactions = true;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, port = 9000, secure_port = 9440, http_port = 8123, http_secure_port = 8443,
              use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
-             max_string_length = 1009;
+             max_string_length = 1009, max_parallel_queries = 5, max_number_alters = 4;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",
