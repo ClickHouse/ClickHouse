@@ -178,11 +178,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 {
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
-    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
-    const RangesInDataParts ranges = snapshot_data.parts ? *snapshot_data.parts : RangesInDataParts();
-
     auto step = readFromParts(
-        ranges,
+        snapshot_data.parts,
         snapshot_data.mutations_snapshot,
         column_names_to_return,
         storage_snapshot,
@@ -1303,7 +1300,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
-    const RangesInDataParts & parts,
+    RangesInDataPartsPtr parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1322,7 +1319,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    else if (parts.empty())
+    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
+    else if (!parts)
+        return {};
+    else if (parts->empty())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(

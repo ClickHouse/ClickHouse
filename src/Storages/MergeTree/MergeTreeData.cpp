@@ -7033,7 +7033,7 @@ DataPartsVector MergeTreeData::getVisibleDataPartsVector(ContextPtr local_contex
     return getVisibleDataPartsVector(local_context->getCurrentTransaction());
 }
 
-std::tuple<MergeTreeData::RangesInDataPartsPtr, MergeTreeData::DataPartsVectorPtr>
+std::tuple<RangesInDataPartsPtr, MergeTreeData::DataPartsVectorPtr>
 MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context) const
 {
     auto shared_lock_holder = std::make_optional<DataPartsSharedLock>(readLockParts());

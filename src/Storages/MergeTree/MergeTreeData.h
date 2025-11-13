@@ -319,7 +319,6 @@ public:
     using MutableDataParts = std::set<MutableDataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
     using DataPartsVectorPtr = std::shared_ptr<const DataPartsVector>;
-    using RangesInDataPartsPtr = std::shared_ptr<const RangesInDataParts>;
 
     DataPartsLock lockParts() { return DataPartsLock(data_parts_mutex, this); }
     DataPartsSharedLock readLockParts() const { return DataPartsSharedLock(data_parts_mutex); }

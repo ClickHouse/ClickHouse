@@ -39,7 +39,7 @@ public:
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
-        const RangesInDataParts & parts,
+        RangesInDataPartsPtr parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
