@@ -154,8 +154,8 @@ namespace DB
     M(WORKLOAD_ENTRY_WATCH, "WrkldEntWatch") \
     M(WORKLOAD_RESOURCE_MANAGER, "WorkloadResMgr") \
     M(ZOOKEEPER_ACL_WATCHER, "ZooACLWatch") \
-    M(ZOOKEEPER_RECV, "ZkReceiver") \
-    M(ZOOKEEPER_SEND, "ZkSender") \
+    M(ZOOKEEPER_RECV, "ZooKeeperRecv") \
+    M(ZOOKEEPER_SEND, "ZooKeeperSend") \
 
 
 enum class ThreadName : uint8_t
