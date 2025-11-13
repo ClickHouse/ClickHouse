@@ -80,7 +80,8 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     int direction = sort_description.front().direction;
 
-    if (settings.use_top_n_dynamic_filtering)
+    /// If no WHERE clause, threshold filtering optimization not required.
+    if (settings.use_top_n_dynamic_filtering && where_clause)
     {
         threshold_tracker = std::make_shared<TopNThresholdTracker>(direction);
         sorting_step->setTopNThresholdTracker(threshold_tracker);

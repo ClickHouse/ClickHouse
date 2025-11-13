@@ -735,9 +735,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<IndexStat> useful_indices_stat(stat_size);
     std::vector<IndexStat> merged_indices_stat(skip_indexes.merged_indices.size());
 
-
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
+    std::atomic<size_t> sum_marks_after_top_n = 0;
+    std::atomic<size_t> top_n_elapsed_us = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
@@ -942,6 +943,37 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
                 }
             }
+
+            /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
+            /// TODO : We can still perform this optimization if the WHERE clause is only a range condition on the PK
+            if (top_n_filter_info && skip_indexes.skip_index_for_top_n_filtering && !top_n_filter_info->where_clause)
+            {
+                if (ranges.ranges.getNumberOfMarks() > (10 * top_n_filter_info->limit_n))
+                {
+                    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
+
+                    auto min_max_granules = getMinMaxIndexGranules(ranges.data_part,
+                                        ranges.ranges,
+                                        skip_indexes.skip_index_for_top_n_filtering,
+                                        top_n_filter_info->direction,
+                                        false, /*access_by_mark*/
+                                        reader_settings,
+                                        mark_cache.get(),
+                                        uncompressed_cache.get(),
+                                        vector_similarity_index_cache.get());
+
+                    std::vector<size_t> result;
+                    min_max_granules->getTopNMarks(top_n_filter_info->limit_n, result);
+                    MarkRanges res;
+                    for (auto range : result)
+                        res.push_back({range, range + 1});
+                    std::sort(res.begin(), res.end());
+                    ranges.ranges = res;
+                    top_n_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
+                }
+                sum_marks_after_top_n.fetch_add(ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
+                /// TODO If there are 100's of parts, maybe should do TopN of the TopN from each part! Specially for N=1000+
+            }
         };
 
         LOG_TRACE(log, "Filtering marks by primary and secondary keys");
@@ -1073,6 +1105,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             .num_parts_after = stat.total_parts - stat.parts_dropped,
             .num_granules_after = stat.total_granules - stat.granules_dropped});
     }
+    if (sum_marks_after_top_n > 0)
+    {
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Skip,
+            .name = skip_indexes.skip_index_for_top_n_filtering->index.name,
+            .description = "Filter TopN Granules",
+            .num_parts_after = parts_with_ranges.size(),
+            .num_granules_after = sum_marks_after_top_n});
+        LOG_DEBUG(
+            log,
+            "Skip index {} used for top N optimization, it took {}ms across {} threads.",
+            skip_indexes.skip_index_for_top_n_filtering->index.name,
+            top_n_elapsed_us.load() / 1000,
+            num_threads);
+    }
     /// Skip empty ranges.
     std::erase_if(
         parts_with_ranges,
@@ -1088,41 +1135,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             return !part.data_part || part.ranges.empty();
         });
 
-    /// Optimize ORDER BY <col> LIMIT n - if <col> is scalar numeric / date / datetime and has a minmax index
-    /// TODO : We can still perform this optimization if the WHERE clause is only a range condition on the PK
-    if (top_n_filter_info && skip_indexes.skip_index_for_top_n_filtering && !top_n_filter_info->where_clause)
-    {
-        auto mark_cache = context->getIndexMarkCache();
-        auto uncompressed_cache = context->getIndexUncompressedCache();
-        auto vector_similarity_index_cache = context->getVectorSimilarityIndexCache();
-
-        /// TODO - multithreading
-        for (auto & part_with_ranges : parts_with_ranges)
-        {
-            /// TODO - decision based on N v/s number of granules in part
-            if (part_with_ranges.ranges.getNumberOfMarks() > (10 * top_n_filter_info->limit_n))
-            {
-                auto min_max_granules = getMinMaxIndexGranules(part_with_ranges.data_part,
-                                        part_with_ranges.ranges,
-                                        skip_indexes.skip_index_for_top_n_filtering,
-                                        top_n_filter_info->direction,
-                                        false, /*access_by_mark*/
-                                        reader_settings,
-                                        mark_cache.get(),
-                                        uncompressed_cache.get(),
-                                        vector_similarity_index_cache.get());
-
-                std::vector<size_t> result;
-                min_max_granules->getTopNMarks(top_n_filter_info->limit_n, result);
-                MarkRanges res;
-                for (auto range : result)
-                    res.push_back({range, range + 1});
-                std::sort(res.begin(), res.end());
-                part_with_ranges.ranges = res;
-            }
-            /// TODO If there are 100's of parts, maybe should do TopN of the TopN from each part! Specially for N=1000+
-        }
-    }
 
     return parts_with_ranges;
 }
