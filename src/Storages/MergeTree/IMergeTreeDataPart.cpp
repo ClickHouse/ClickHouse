@@ -702,6 +702,8 @@ void IMergeTreeDataPart::removeIfNeeded()
         return;
 
 #ifndef NDEBUG
+    LOG_DEBUG(getLogger(storage.getStorageID().getNameForLogs()), "Removing part {}, will check merge mutate executor mutex", name);
+
     /// Let's check that this method not being called under merge mutate background executor mutex.
     /// getMaxThreads locks this mutex.
     if (auto context = storage.getContext())
