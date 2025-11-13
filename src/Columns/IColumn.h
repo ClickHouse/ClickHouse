@@ -4,6 +4,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/COW.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
@@ -80,6 +81,13 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     }
 
     ColumnCheckpoints nested;
+};
+
+struct ColumnsWithRowNumbers
+{
+    /// `columns` and `row_numbers` must have same size
+    std::vector<const ColumnsInfo *, AllocatorWithMemoryTracking<const ColumnsInfo *>> columns;
+    std::vector<UInt32, AllocatorWithMemoryTracking<UInt32>> row_numbers;
 };
 
 /// Declares interface to store columns in memory.
@@ -655,8 +663,7 @@ public:
     virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
 
     /// Fills column values from list of blocks and row numbers
-    /// `blocks` and `row_nums` must have same size
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums);
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers);
 
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
@@ -684,7 +691,7 @@ public:
     [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
-    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
+    virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/, std::optional<size_t> /*max_dynamic_subcolumns*/) {}
     /// For columns with dynamic subcolumns this method takes the exact dynamic structure from provided column.
     virtual void takeDynamicStructureFromColumn(const ColumnPtr & /*source_column*/) {}
 
@@ -914,8 +921,7 @@ private:
     void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
 
     /// Fills column values from list of columns and row numbers
-    /// `columns` and `row_nums` must have same size
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const std::vector<const ColumnsInfo *> & columns, const std::vector<UInt32> & row_nums) override;
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, ColumnsWithRowNumbers columns_with_row_numbers) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;

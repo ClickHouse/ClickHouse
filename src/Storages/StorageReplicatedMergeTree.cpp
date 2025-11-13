@@ -628,7 +628,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
-                metadata_snapshot = getInMemoryMetadataPtr();
+                metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
             }
         }
         catch (Coordination::Exception & e)
@@ -5757,6 +5757,8 @@ void StorageReplicatedMergeTree::shutdown(bool)
 
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
 
     flushAndPrepareForShutdown();
 
@@ -6406,10 +6408,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     }
 
     {
-        /// Reset Object columns, because column of type
-        /// Object may be added or dropped by alter.
         auto parts_lock = lockParts();
-        resetObjectColumnsFromActiveParts(parts_lock);
         resetSerializationHints(parts_lock);
     }
 
@@ -7831,7 +7830,7 @@ void StorageReplicatedMergeTree::fetchPartition(
 
         missing_parts.clear();
 
-        ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), "FETCH PARTITION");
+        ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), ThreadName::MERGETREE_FETCH_PARTITION);
         std::mutex missing_parts_mutex;
         for (const String & part : parts_to_fetch)
         {

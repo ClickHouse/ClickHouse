@@ -170,11 +170,6 @@ EOL
                     <readonly/>
                 </enable_analyzer>
 
-                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
-                <allow_experimental_object_type>
-                    <readonly/>
-                </allow_experimental_object_type>
-
                 <!-- Prevent stack overflow -->
                 <max_ast_depth>
                     <readonly/>
@@ -249,7 +244,7 @@ function stop_server()
 function start_server()
 {
     counter=0
-    max_attempt=${1:-120}
+    max_attempt=${1:-5}
     until clickhouse-client --query "SELECT 1"
     do
         if [ "$counter" -gt "$max_attempt" ]
@@ -260,11 +255,11 @@ function start_server()
             cat /var/log/clickhouse-server/stdout.log
             tail -n100 /var/log/clickhouse-server/stderr.log
             tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | rg -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n100
-            break
+            exit 1
         fi
         # use root to match with current uid
         clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
-        sleep 0.5
+        sleep 60
         counter=$((counter + 1))
     done
 

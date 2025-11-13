@@ -365,17 +365,18 @@ def create_iceberg_table(
     partition_by="",
     if_not_exists=False,
     compression_method=None,
+    run_on_cluster=False,
     format="Parquet",
     **kwargs,
 ):
     if 'output_format_parquet_use_custom_encoder' in kwargs:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster = run_on_cluster, **kwargs),
             settings={"output_format_parquet_use_custom_encoder" : 0, "output_format_parquet_parallel_encoding" : 0}
         )
     else:
         node.query(
-            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, **kwargs),
+            get_creation_expression(storage_type, table_name, cluster, schema, format_version, partition_by, if_not_exists, compression_method, format, run_on_cluster=run_on_cluster, **kwargs),
         )
 
 

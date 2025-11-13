@@ -454,7 +454,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
-        return &dag.addCast(*arg, common_type, {});
+        return &dag.addCast(*arg, common_type, {}, nullptr);
     };
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
@@ -873,7 +873,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else if (!join_expression.empty())
     {
-        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected JOIN ON expression {} for {} JOIN",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected JOIN ON expression {} for {} JOIN",
             formatJoinCondition(join_expression), toString(join_operator.kind));
     }
 
@@ -996,18 +996,36 @@ static QueryPlanNode buildPhysicalJoinImpl(
             else
                 action = action->children.at(0);
         }
-
         used_expressions.emplace_back(action, expression_actions);
     }
+
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
     for (const auto * child : children)
     {
+        /// We expect dag inputs to be a subset of child step header columns.
+        /// If column child step returns duplicate columns
+        /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
+        const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
+        std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
+        for (const auto * node : dag_inputs)
+            name_to_nodes[node->result_name].push_back(node);
+
         for (const auto & column : *child->step->getOutputHeader())
         {
-            auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
-            used_expressions.push_back(std::move(input_node));
+            auto input_it = name_to_nodes.find(column.name);
+
+            if (input_it == name_to_nodes.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in {}",
+                    column.name,
+                    fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
+                    expression_actions.getActionsDAG()->dumpDAG());
+
+
+            used_expressions.emplace_back(input_it->second.front(), expression_actions);
+            input_it->second.pop_front();
         }
     }
 

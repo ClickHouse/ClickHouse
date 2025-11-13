@@ -686,7 +686,7 @@ private:
         {
             address.setFail();
             ProfileEvents::increment(getMetrics().errors);
-            connection->reset();
+            (*connection).reset();
             throw;
         }
 
