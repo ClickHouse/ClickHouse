@@ -265,7 +265,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         columns[i++]->insertDefault();
     }
 
-    columns[i++]->insert(function_id.value_or(Field()));
+    columns[i++]->insert(function_id.has_value() ? function_id.value() : Field());
     columns[i++]->insert(function_name.has_value() ? function_name.value() : Field());
     columns[i++]->insert(handler.has_value() ? handler.value() : Field());
     columns[i++]->insert(entry_type.has_value() ? entry_type.value() : Field());
