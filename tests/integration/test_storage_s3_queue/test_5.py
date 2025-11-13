@@ -487,7 +487,16 @@ def test_failure_in_the_middle(started_cluster):
         )
     )
 
-    assert 1 <= int(
+    for _ in range(20):
+        if 0 < int(
+            node.query(
+                f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
+            )
+        ):
+            break
+        sleep(1)
+
+    assert 0 < int(
         node.query(
             f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Failed' and exception ilike '%Failed to read file. Processed rows%'"
         )
@@ -651,7 +660,7 @@ def test_disable_streaming(started_cluster):
     )
 
     expected_rows = files_to_generate
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)

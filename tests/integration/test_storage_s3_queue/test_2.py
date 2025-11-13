@@ -25,7 +25,6 @@ from helpers.s3_queue_common import (
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
-#test
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -250,7 +249,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             .strip()
             .split("\n")
         )
-        logging.debug(
+        print(
             f"Processed files: {len(processed_files)}/{files_to_generate}: {processed_files}"
         )
 
@@ -259,7 +258,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             + get_count(f"{dst_table_name}_2")
             + get_count(f"{dst_table_name}_3")
         )
-        logging.debug(f"Processed rows: {count}/{files_to_generate}")
+        print(f"Processed rows: {count}/{files_to_generate}")
 
         info = node.query(
             f"""
@@ -268,7 +267,7 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
-        logging.debug(f"Unprocessed files: {info}")
+        print(f"Unprocessed files: {info}")
 
         files1 = (
             node.query(f"select distinct(_path) from {dst_table_name}_1")
@@ -289,9 +288,9 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         def intersection(list_a, list_b):
             return [e for e in list_a if e in list_b]
 
-        logging.debug(f"Intersecting files 1: {intersection(files1, files2)}")
-        logging.debug(f"Intersecting files 2: {intersection(files1, files3)}")
-        logging.debug(f"Intersecting files 3: {intersection(files2, files3)}")
+        print(f"Intersecting files 1: {intersection(files1, files2)}")
+        print(f"Intersecting files 2: {intersection(files1, files3)}")
+        print(f"Intersecting files 3: {intersection(files2, files3)}")
 
         assert False
 
