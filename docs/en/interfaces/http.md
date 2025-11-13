@@ -5,7 +5,6 @@ sidebar_label: 'HTTP Interface'
 sidebar_position: 15
 slug: /interfaces/http
 title: 'HTTP Interface'
-doc_type: 'reference'
 ---
 
 import PlayUI from '@site/static/images/play.png';
@@ -142,7 +141,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-By default, data is returned in the [`TabSeparated`](/interfaces/formats/TabSeparated) format.
+By default, data is returned in the [`TabSeparated`](formats.md#tabseparated) format.
 
 The `FORMAT` clause is used in the query to request any other format. For example:
 
@@ -296,7 +295,7 @@ You can also choose to use [HTTP compression](https://en.wikipedia.org/wiki/HTTP
 
 To send a compressed `POST` request, append the request header `Content-Encoding: compression_method`.
 
-In order for ClickHouse to compress the response, append the `Accept-Encoding: compression_method` header to the request. 
+In order for ClickHouse to compress the response, enable compression with the [`enable_http_compression`](../operations/settings/settings.md#enable_http_compression) setting and append the `Accept-Encoding: compression_method` header to the request. 
 
 You can configure the data compression level using the [`http_zlib_compression_level`](../operations/settings/settings.md#http_zlib_compression_level) setting for all compression methods.
 
@@ -535,72 +534,6 @@ You can mitigate this problem by enabling `wait_end_of_query=1` ([Response Buffe
 The only way to catch all errors is to analyze the HTTP body before parsing it using the required format.
 :::
 
-Such exceptions in ClickHouse have consistent exception format as below irrespective of which format used (eg. `Native`, `TSV`, `JSON`, etc) when `http_write_exception_in_output_format=0` (default) . Which makes it easy to parse and extract error messages on the client side.
-
-```text
-\r\n
-__exception__\r\n
-<TAG>\r\n
-<error message>\r\n
-<message_length> <TAG>\r\n
-__exception__\r\n
-
-```
-
-Where `<TAG>` is a 16 byte random tag, which is the same tag sent in the `X-ClickHouse-Exception-Tag` response header.
-The `<error message>` is the actual exception message (exact length can be found in `<message_length>`). The whole exception block described above can be up to 16 KiB.
-
-Here is an example in `JSON` format
-
-```bash
-$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+JSON"
-...
-{
-    "meta":
-    [
-        {
-            "name": "sleepEachRow(0.001)",
-            "type": "UInt8"
-        },
-        {
-            "name": "throwIf(equals(number, 2))",
-            "type": "UInt8"
-        }
-    ],
-
-    "data":
-    [
-        {
-            "sleepEachRow(0.001)": 0,
-            "throwIf(equals(number, 2))": 0
-        },
-        {
-            "sleepEachRow(0.001)": 0,
-            "throwIf(equals(number, 2))": 0
-        }
-__exception__
-dmrdfnujjqvszhav
-Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
-262 dmrdfnujjqvszhav
-__exception__
-```
-
-Here is similar example but in `CSV` format
-
-```bash
-$ curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)+FORMAT+CSV"
-...
-<
-0,0
-0,0
-
-__exception__
-rumfyutuqkncbgau
-Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(equals(__table1.number, 2_UInt8) :: 1) -> throwIf(equals(__table1.number, 2_UInt8)) UInt8 : 0'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 25.11.1.1)
-262 rumfyutuqkncbgau
-__exception__
-```
-
 ## Queries with parameters {#cli-queries-with-parameters}
 
 You can create a query with parameters and pass values for them from the corresponding HTTP request parameters. For more information, see [Queries with Parameters for CLI](../interfaces/cli.md#cli-queries-with-parameters).
@@ -723,7 +656,6 @@ Configuration options for `http_handlers` work as follows.
 - `method`
 - `headers`
 - `url`
-- `full_url`
 - `handler`
 
 Each of these are discussed below:
@@ -732,27 +664,17 @@ Each of these are discussed below:
   (https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the   
   configuration file, it does not match the method portion of the HTTP request.
 
-- `url` is responsible for matching the URL part (path and query string) of the HTTP request.
-  If the `url` prefixed with `regex:` it expects [RE2](https://github.com/google/re2)'s regular expressions.
-  It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
-
-- `full_url` same as `url`, but, includes complete URL, i.e. `schema://host:port/path?query_string`.
-  Note, ClickHouse does not support "virtual hosts", so the `host` is an IP address (and not the value of `Host` header).
-
-- `empty_query_string` - ensures that there is no query string (`?query_string`) in the request
+- `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)'s regular 
+  expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP 
+  request.
 
 - `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2's regular expressions. It is an optional 
   configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
-- `handler` contains the main processing part.
+- `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `http_response_headers`, 
+  `response_content`, `query`, `query_param_name`. `type` currently supports three types: [`predefined_query_handler`](#predefined_query_handler), 
+  [`dynamic_query_handler`](#dynamic_query_handler), [`static`](#static).
 
-  It can have the following `type`:
-  - [`predefined_query_handler`](#predefined_query_handler)
-  - [`dynamic_query_handler`](#dynamic_query_handler)
-  - [`static`](#static)
-  - [`redirect`](#redirect)
-
-  And the following parameters:
   - `query` — use with `predefined_query_handler` type, executes query when the handler is called.
   - `query_param_name` — use with `dynamic_query_handler` type, extracts and executes the value corresponding to the `query_param_name` value in 
        HTTP request parameters.
@@ -761,8 +683,6 @@ Each of these are discussed below:
   - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
   - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content 
     from the file or configuration sends to client.
-  - `user` - user to execute the query from (default user is `default`).
-    **Note**, you do not need to specify password for this user.
 
 The configuration methods for different `type`s are discussed next.
 
@@ -1033,27 +953,6 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-### redirect {#redirect}
-
-`redirect` will do a `302` redirect to `location`
-
-For instance this is how you can automatically add set user to `play` for ClickHouse play:
-
-```xml
-<clickhouse>
-    <http_handlers>
-        <rule>
-            <methods>GET</methods>
-            <url>/play</url>
-            <handler>
-                <type>redirect</type>
-                <location>/play?user=play</location>
-            </handler>
-        </rule>
-    </http_handlers>
-</clickhouse>
-```
-
 ## HTTP response headers {#http-response-headers}
 
 ClickHouse allows you to configure custom HTTP response headers that can be applied to any kind of handler that can be configured. These headers can be set using the `http_response_headers` setting, which accepts key-value pairs representing header names and their values. This feature is particularly useful for implementing custom security headers, CORS policies, or any other HTTP header requirements across your ClickHouse HTTP interface.
@@ -1093,7 +992,7 @@ In the example below, every server response will contain two custom headers: `X-
 
 While query execution occurs over HTTP an exception can happen when part of the data has already been sent. Usually an exception is sent to the client in plain text.
 Even if some specific data format was used to output data and the output may become invalid in terms of specified data format.
-To prevent it, you can use setting [`http_write_exception_in_output_format`](/operations/settings/settings#http_write_exception_in_output_format) (disabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
+To prevent it, you can use setting [`http_write_exception_in_output_format`](/operations/settings/settings#http_write_exception_in_output_format) (enabled by default) that will tell ClickHouse to write an exception in specified format (currently supported for XML and JSON* formats).
 
 Examples:
 

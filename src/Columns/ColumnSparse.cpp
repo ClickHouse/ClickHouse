@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnReplicated.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
@@ -96,9 +95,9 @@ void ColumnSparse::get(size_t n, Field & res) const
     values->get(getValueIndex(n), res);
 }
 
-DataTypePtr  ColumnSparse::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+std::pair<String, DataTypePtr>  ColumnSparse::getValueNameAndType(size_t n) const
 {
-    return values->getValueNameAndTypeImpl(name_buf, getValueIndex(n), options);
+    return values->getValueNameAndType(getValueIndex(n));
 }
 
 bool ColumnSparse::getBool(size_t n) const
@@ -891,27 +890,19 @@ ColumnSparse::Iterator ColumnSparse::getIterator(size_t n) const
     return Iterator(offsets_data, _size, current_offset, n);
 }
 
-void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnSparse::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns values_source_columns;
     values_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         values_source_columns.push_back(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
-    values->takeDynamicStructureFromSourceColumns(values_source_columns, max_dynamic_subcolumns);
-}
-
-void ColumnSparse::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
-{
-    values->takeDynamicStructureFromColumn(assert_cast<const ColumnSparse &>(*source_column).getValuesPtr());
+    values->takeDynamicStructureFromSourceColumns(values_source_columns);
 }
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
 {
     if (!column)
         return column;
-
-    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
-        return ColumnReplicated::create(recursiveRemoveSparse(column_replicated->getNestedColumn()), column_replicated->getIndexesColumn());
 
     if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
     {
@@ -926,15 +917,6 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     }
 
     return column->convertToFullColumnIfSparse();
-}
-
-ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
-{
-    if (!column)
-        return column;
-
-    /// We can have only Replicated(Sparse) but not Sparse(Replicated).
-    return recursiveRemoveSparse(column->convertToFullColumnIfReplicated());
 }
 
 }

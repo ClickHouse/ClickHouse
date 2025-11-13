@@ -4,7 +4,6 @@ sidebar_label: 'Nullable(T)'
 sidebar_position: 44
 slug: /sql-reference/data-types/nullable
 title: 'Nullable(T)'
-doc_type: 'reference'
 ---
 
 # Nullable(T)

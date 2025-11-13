@@ -40,6 +40,9 @@ public:
 
     String getMetadataPath() const override { return metadata_path; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+    bool canContainDistributedTables() const override { return false; }
+    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     ASTPtr getCreateDatabaseQuery() const override;
@@ -62,7 +65,7 @@ public:
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
 
-    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
+    void alterDatabaseComment(const AlterCommand & command) override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 

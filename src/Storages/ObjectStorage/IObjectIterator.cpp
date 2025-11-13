@@ -10,7 +10,7 @@ static ExpressionActionsPtr getExpressionActions(
     const NamesAndTypesList & virtual_columns_,
     const ContextPtr & context_)
 {
-    auto filter = VirtualColumnUtils::createPathAndFileFilterDAG(filter_.getOutputs().at(0), virtual_columns_, context_);
+    auto filter = VirtualColumnUtils::createPathAndFileFilterDAG(filter_.getOutputs().at(0), virtual_columns_);
     if (filter.has_value())
     {
         VirtualColumnUtils::buildSetsForDAG(*filter, context_);
@@ -61,13 +61,6 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
         return object;
     }
     return {};
-}
-
-std::string ObjectInfo::getPathOrPathToArchiveIfArchive() const
-{
-    if (isArchive())
-        return getPathToArchive();
-    return getPath();
 }
 
 }
