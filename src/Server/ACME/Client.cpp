@@ -90,6 +90,9 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
     std::string pkey;
     std::string certificate;
 
+    if (domains.empty())
+        LOG_FATAL(log, "List of domains handled by ACME client is empty, please check configuration.");
+
     /// All domains have the same certificate
     std::string domain = domains.front();
 
