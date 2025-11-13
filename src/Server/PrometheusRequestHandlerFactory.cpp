@@ -96,6 +96,23 @@ namespace
     }
 
     /// Parses a configuration like this:
+    /// <!-- <type>query_api</type> (Implied, not actually parsed) -->
+    /// <table>db.time_series_table_name</table>
+    PrometheusRequestHandlerConfig parseQueryAPIConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    {
+        PrometheusRequestHandlerConfig res;
+        res.type = PrometheusRequestHandlerConfig::Type::QueryAPI;
+        res.time_series_table_name = parseTableNameFromConfig(config, config_prefix);
+        parseCommonConfig(config, res);
+        if (config.has(config_prefix + ".user"))
+        {
+            AlwaysAllowCredentials credentials(config.getString(config_prefix + ".user"));
+            res.connection_config.credentials.emplace(credentials);
+        }
+        return res;
+    }
+
+    /// Parses a configuration like this:
     /// <type>expose_metrics</type>
     /// <metrics>true</metrics>
     /// <asynchronous_metrics>true</asynchronous_metrics>
@@ -114,6 +131,8 @@ namespace
             return parseRemoteWriteConfig(config, config_prefix);
         if (type == "remote_read")
             return parseRemoteReadConfig(config, config_prefix);
+        if (type == "query_api")
+            return parseQueryAPIConfig(config, config_prefix);
         throw Exception(
             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown type {} is specified in the configuration for a prometheus protocol", type);
     }
