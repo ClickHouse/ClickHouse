@@ -828,7 +828,7 @@ void QueryOracle::swapQuery(RandomGenerator & rg, StatementGenerator & gen, goog
     {
         auto & torfunc = static_cast<TableOrFunction &>(mes);
 
-        if (torfunc.has_est() && rg.nextSmallNumber() < 5)
+        if (torfunc.has_est() && !compare_explain && rg.nextSmallNumber() < 5)
         {
             const ExprSchemaTable & est = torfunc.est();
 
