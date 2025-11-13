@@ -30,13 +30,15 @@ SELECT REGEXP_REPLACE(Referer, '^https?://(?:www\.)?([^/]+)/.*$', '\1') AS k, AV
 
 SELECT 1, URL, COUNT(*) AS c FROM test.hits GROUP BY 1, URL ORDER BY c DESC LIMIT 10 FORMAT Null SETTINGS log_comment='query_34';
 
+SELECT URL from test.hits WHERE URL LIKE '%yandex%' ORDER BY URL DESC FORMAT Null SETTINGS log_comment='query_43';
+
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off
 WITH
-    [96, 500000, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200] AS expected_bytes,
+    [96, 500000, 11189312, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200, 48271331] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM

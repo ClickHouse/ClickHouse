@@ -1,22 +1,25 @@
+#include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
-#include <Processors/QueryPlan/BufferChunksTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/JSONBuilder.h>
-#include <Core/Settings.h>
+#include <Common/MemoryTrackerUtils.h>
 
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <Common/scope_guard_safe.h>
 
 #include <memory>
 #include <optional>
@@ -457,6 +460,11 @@ void SortingStep::fullSort(
 
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    SCOPE_EXIT_SAFE({
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+    });
+
     /// We consider that a caller has more information what type of sorting to apply.
     /// The type depends on constructor used to create sorting step.
     /// So we'll try to infer sorting to use only in case of Full sorting

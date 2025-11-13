@@ -243,4 +243,17 @@ RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache()
     static RuntimeDataflowStatisticsCache stats_cache;
     return stats_cache;
 }
+
+RuntimeDataflowStatisticsCollector::RuntimeDataflowStatisticsCollector(
+    SharedHeader header_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    : ISimpleTransform(header_, header_, /*skip_empty_chunks=*/false)
+    , updater(std::move(updater_))
+{
+}
+
+void RuntimeDataflowStatisticsCollector::transform(Chunk & chunk)
+{
+    if (updater)
+        updater->recordOutputChunk(chunk, getOutputPort().getHeader());
+}
 }

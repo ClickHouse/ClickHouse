@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/CacheBase.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Processors/Chunk.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ColumnSize.h>
+#include <Common/CacheBase.h>
 
 #include <cstddef>
 #include <memory>
@@ -106,4 +107,18 @@ private:
 };
 
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
+
+class RuntimeDataflowStatisticsCollector : public ISimpleTransform
+{
+public:
+    RuntimeDataflowStatisticsCollector(SharedHeader header_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+
+    String getName() const override { return "RuntimeDataflowStatisticsCollector"; }
+
+protected:
+    void transform(Chunk & chunk) override;
+
+private:
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+};
 }

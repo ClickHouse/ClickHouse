@@ -121,6 +121,8 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
+    bool supportsDataflowStatisticsCollection() const override { return true; }
+
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;
