@@ -8,9 +8,11 @@ INSERT INTO payloads SELECT concat('Payload for event ', toString(number)) AS Pa
 WHERE number % 2 = 0
 ;
 
+SET enable_analyzer = 1;
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1;
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET read_in_order_use_virtual_row = 1;
+SET read_in_order_two_level_merge_threshold = DEFAULT;
 
 CREATE TEMPORARY TABLE start_ts AS ( SELECT now() AS ts );
 
