@@ -463,7 +463,7 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors)
+void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
@@ -498,7 +498,10 @@ void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_any
 
         for (const auto & name : names)
         {
-            String log_name = getLowerCaseAndRemoveUnderscores(name);
+            if (!name.first.empty() && name.first != "system")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}.{}' does not exist", name.first, name.second);
+
+            String log_name = getLowerCaseAndRemoveUnderscores(name.second);
 
             auto it = logs_map.find(log_name);
             if (it == logs_map.end())
@@ -540,7 +543,7 @@ void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_any
     }
 }
 
-void SystemLogs::flush(const Strings & names)
+void SystemLogs::flush(const std::vector<std::pair<String, String>> & names)
 {
     flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
 }
