@@ -7043,10 +7043,11 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
         /// In case of transactions we cannot use shared version
         DataPartsVector res;
         res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, *shared_lock_holder);
-        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
 
-        /// Avoid holding the lock while constructing RangesInDataParts (at this point it is safe to release the lock)
+        /// At this point it is safe to release the lock
         shared_lock_holder.reset();
+
+        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
 
         return std::make_tuple(
             std::make_shared<const RangesInDataParts>(res),
@@ -7058,9 +7059,11 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
         if (!shared_parts_list)
         {
             auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, *shared_lock_holder);
-            shared_lock_holder.reset();
 
+            /// Convert read to write lock, and re-check the shared_parts_list
+            shared_lock_holder.reset();
             DataPartsLock lock(data_parts_mutex, /*data_=*/ nullptr);
+
             if (!shared_parts_list)
             {
                 shared_ranges_in_parts = std::make_shared<const RangesInDataParts>(parts);
