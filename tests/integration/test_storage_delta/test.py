@@ -100,6 +100,7 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
+                "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -117,6 +118,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
+                "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -149,6 +151,7 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
+                "configs/config.d/remove_masking_rules.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,

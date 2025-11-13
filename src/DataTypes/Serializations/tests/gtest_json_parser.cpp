@@ -69,7 +69,7 @@ static std::ostream & operator<<(std::ostream & ostr, const JSONPathAndValue & p
     bool first = true;
     for (const auto & part : path_and_value.path.getParts())
     {
-        ostr << (first ? "{" : ", {") << part.key << ", " << part.is_nested << ", " << static_cast<uint8_t>(part.anonymous_array_level) << "}";
+        ostr << (first ? "{" : ", {") << part.key << ", " << part.is_nested << ", " << static_cast<uint8_t>(part.anonymous_array_level) << "}";  /// NOLINT(bugprone-unintended-char-ostream-output)
         first = false;
     }
 

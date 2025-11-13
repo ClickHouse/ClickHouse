@@ -33,7 +33,6 @@ namespace Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
 }
 
 namespace ServerSetting
@@ -89,19 +88,18 @@ std::unique_ptr<S3::Client> getClient(
     const std::string & endpoint,
     const S3Settings & settings,
     ContextPtr context,
-    bool for_disk_s3)
+    bool for_disk_s3,
+    std::optional<std::string> opt_disk_name)
+
 {
     auto url = S3::URI(endpoint);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3);
+    return getClient(url, settings, context, for_disk_s3, opt_disk_name);
 }
 
-std::unique_ptr<S3::Client> getClient(
-    const S3::URI & url,
-    const S3Settings & settings,
-    ContextPtr context,
-    bool for_disk_s3)
+std::unique_ptr<S3::Client>
+getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name)
 {
     const auto & auth_settings = settings.auth_settings;
     const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -137,10 +135,6 @@ std::unique_ptr<S3::Client> getClient(
     if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_network_error"))
         s3_slow_all_threads_after_network_error = local_settings[Setting::s3_slow_all_threads_after_network_error];
 
-    bool s3_slow_all_threads_after_retryable_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_retryable_error]);
-    if (!for_disk_s3 && local_settings.isChanged("s3_slow_all_threads_after_retryable_error"))
-        s3_slow_all_threads_after_retryable_error = static_cast<int>(local_settings[Setting::s3_slow_all_threads_after_retryable_error]);
-
     bool enable_s3_requests_logging = request_settings[S3RequestSetting::enable_request_logging];
     if (!for_disk_s3 && local_settings.isChanged("enable_s3_requests_logging"))
         enable_s3_requests_logging = local_settings[Setting::enable_s3_requests_logging];
@@ -156,11 +150,11 @@ std::unique_ptr<S3::Client> getClient(
         s3_max_redirects,
         retry_strategy,
         s3_slow_all_threads_after_network_error,
-        s3_slow_all_threads_after_retryable_error,
+        /* s3_slow_all_threads_after_retryable_error = */ false,
         enable_s3_requests_logging,
         for_disk_s3,
-        request_settings.get_request_throttler,
-        request_settings.put_request_throttler,
+        opt_disk_name,
+        request_settings.request_throttler,
         url.uri.getScheme());
 
     client_configuration.connectTimeoutMs = auth_settings[S3AuthSetting::connect_timeout_ms];

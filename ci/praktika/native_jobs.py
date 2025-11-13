@@ -16,6 +16,7 @@ from .info import Info
 from .mangle import _get_workflows
 from .result import Result, ResultInfo, _ResultS3
 from .runtime import RunConfig
+from .s3 import S3
 from .settings import Settings
 from .utils import Shell, Utils
 
@@ -512,6 +513,83 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     return Result.create_from(name=job_name, results=results, files=files)
 
 
+def _check_and_mark_flaky_tests(workflow_result: Result):
+    """
+    Downloads flaky test catalog from S3 and marks matching test results as flaky.
+
+    Args:
+        workflow_result: The workflow result object containing all test results
+    """
+    from .dataclasses import TestCaseIssueCatalog
+
+    if workflow_result.is_ok():
+        print("Workflow succeeded, no flaky test check needed.")
+        return
+
+    print("Checking for flaky tests...")
+
+    # Download catalog from S3
+    catalog_name = TestCaseIssueCatalog.name
+    s3_catalog_path = f"{Settings.HTML_S3_PATH}/statistics/{catalog_name}.json.gz"
+    local_catalog_gz = TestCaseIssueCatalog.file_name_static(name=catalog_name) + ".gz"
+    local_catalog_json = TestCaseIssueCatalog.file_name_static(name=catalog_name)
+
+    if not S3.copy_file_from_s3(s3_catalog_path, local_catalog_gz, no_strict=True):
+        print("  WARNING: Could not download flaky test catalog from S3")
+        return
+
+    if not Utils.decompress_file(local_catalog_gz, local_catalog_json):
+        print("  WARNING: Could not decompress flaky test catalog")
+        return
+
+    flaky_catalog = TestCaseIssueCatalog.from_fs(name=catalog_name)
+
+    # Build a lookup map: test_name -> issue (for fast matching)
+    flaky_tests_map = {
+        issue.test_name: issue
+        for issue in flaky_catalog.active_test_issues
+        if issue.test_name and issue.test_name != "unknown"
+    }
+    print(f"  Loaded {len(flaky_tests_map)} flaky test patterns")
+
+    # Walk the result tree and flag flaky leaves
+    def check_and_mark_flaky(result: Result):
+        if result.is_ok():
+            return
+
+        if result.results:
+            for sub_result in result.results:
+                check_and_mark_flaky(sub_result)
+        else:
+            for test_name, issue in flaky_tests_map.items():
+                name_in_report = result.name
+
+                # Normalize pytest parameterized names.
+                # If the issue already includes parameters (e.g. "test_x[param]"),
+                # do exact matching later. Otherwise, strip the "[param]" suffix
+                # from the reported test name so we can match the base test name.
+                if "[" in test_name:
+                    # Issue mentions a specific parametrization: keep full name for exact match
+                    pass
+                elif "[" in name_in_report:
+                    # Issue mentions only the base test: compare against the base part
+                    name_in_report = name_in_report.split("[")[0]
+
+                if name_in_report.endswith(
+                    test_name
+                ):  # TODO: Replace suffix match with a canonical test id matcher (e.g. full nodeid/path)
+                    print(
+                        f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
+                    )
+                    result.set_clickable_label(label="flaky", link=issue.issue_url)
+                    break
+
+    # Check all workflow results
+    check_and_mark_flaky(workflow_result)
+    workflow_result.dump()
+    print("Flaky test check completed and results updated")
+
+
 def _finish_workflow(workflow, job_name):
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     env = _Environment.get()
@@ -550,6 +628,23 @@ def _finish_workflow(workflow, job_name):
 
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
+
+    if workflow.enable_flaky_tests_catalog and workflow.enable_merge_ready_status:
+
+        def do():
+            try:
+                _check_and_mark_flaky_tests(workflow_result)
+            except Exception as e:
+                print(f"ERROR: failed to check flaky tests: {e}")
+                traceback.print_exc()
+                env.add_info("Flaky tests check failed")
+            return True  # make it always success for now
+
+        results.append(
+            Result.from_commands_run(
+                name="Flaky Tests Check", command=do, with_info=True
+            )
+        )
 
     for result in workflow_result.results:
         if result.name == job_name:

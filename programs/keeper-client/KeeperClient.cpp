@@ -13,6 +13,13 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/Util/HelpFormatter.h>
 
+#if USE_SSL
+#include <Poco/Net/Context.h>
+#include <Poco/Net/SSLManager.h>
+#include <Poco/Net/AcceptCertificateHandler.h>
+#include <Poco/Net/RejectCertificateHandler.h>
+#endif
+
 
 namespace DB
 {
@@ -203,6 +210,29 @@ void KeeperClient::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("identity", "", "connect to Keeper using authentication with specified identity. default no identity")
             .argument("<identity>")
             .binding("identity"));
+
+    options.addOption(
+        Poco::Util::Option("secure", "s", "use secure connection (adds secure:// prefix to host). default false")
+            .binding("secure"));
+
+    options.addOption(
+        Poco::Util::Option("tls-cert-file", "", "path to TLS certificate file for secure connection")
+            .argument("<file>")
+            .binding("tls-cert-file"));
+
+    options.addOption(
+        Poco::Util::Option("tls-key-file", "", "path to TLS private key file for secure connection")
+            .argument("<file>")
+            .binding("tls-key-file"));
+
+    options.addOption(
+        Poco::Util::Option("tls-ca-file", "", "path to TLS CA certificate file for secure connection")
+            .argument("<file>")
+            .binding("tls-ca-file"));
+
+    options.addOption(
+        Poco::Util::Option("accept-invalid-certificate", "", "accept invalid TLS certificates (bypasses verification). default false")
+            .binding("accept-invalid-certificate"));
 }
 
 void KeeperClient::initialize(Poco::Util::Application & /* self */)
@@ -231,7 +261,9 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
         std::make_shared<GetDirectChildrenNumberCommand>(),
         std::make_shared<GetAllChildrenNumberCommand>(),
         std::make_shared<CPCommand>(),
+        std::make_shared<CPRCommand>(),
         std::make_shared<MVCommand>(),
+        std::make_shared<MVRCommand>(),
         std::make_shared<GetAclCommand>(),
     });
 
@@ -415,6 +447,42 @@ void KeeperClient::runInteractive()
 
 void KeeperClient::connectToKeeper()
 {
+#if USE_SSL
+    /// Configure SSL context if TLS options are provided
+    if (config().has("tls-cert-file") || config().has("tls-key-file") || config().has("tls-ca-file") || config().has("accept-invalid-certificate"))
+    {
+        Poco::Net::Context::VerificationMode verification_mode = Poco::Net::Context::VERIFY_RELAXED;
+
+        if (config().has("accept-invalid-certificate"))
+        {
+            verification_mode = Poco::Net::Context::VERIFY_NONE;
+        }
+
+        auto context = Poco::Net::Context::Ptr(new Poco::Net::Context(
+            Poco::Net::Context::TLSV1_2_CLIENT_USE,
+            config().getString("tls-key-file", ""),
+            config().getString("tls-cert-file", ""),
+            config().getString("tls-ca-file", ""),
+            verification_mode,
+            9,
+            true,
+            "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"
+        ));
+
+        Poco::Net::SSLManager::InvalidCertificateHandlerPtr certificate_handler;
+        if (config().has("accept-invalid-certificate"))
+        {
+            certificate_handler = new Poco::Net::AcceptCertificateHandler(false);
+        }
+        else
+        {
+            certificate_handler = new Poco::Net::RejectCertificateHandler(false);
+        }
+
+        Poco::Net::SSLManager::instance().initializeClient(nullptr, certificate_handler, context);
+    }
+#endif
+
     ConfigProcessor config_processor(config().getString("config-file", "config.xml"));
 
     /// This will handle a situation when clickhouse is running on the embedded config, but config.d folder is also present.
@@ -439,7 +507,7 @@ void KeeperClient::connectToKeeper()
             String host = clickhouse_config.configuration->getString(prefix + ".host");
             String port = clickhouse_config.configuration->getString(prefix + ".port");
 
-            if (clickhouse_config.configuration->has(prefix + ".secure"))
+            if (clickhouse_config.configuration->has(prefix + ".secure") || config().has("secure"))
                 host = "secure://" + host;
 
             new_zk_args.hosts.push_back(host + ":" + port);
@@ -449,6 +517,9 @@ void KeeperClient::connectToKeeper()
     {
         String host = config().getString("host", "localhost");
         String port = config().getString("port", "9181");
+
+        if (config().has("secure"))
+            host = "secure://" + host;
 
         new_zk_args.hosts.push_back(host + ":" + port);
     }

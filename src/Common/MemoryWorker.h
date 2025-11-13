@@ -21,6 +21,9 @@ struct ICgroupsReader
 #if defined(OS_LINUX)
     static std::shared_ptr<ICgroupsReader>
     createCgroupsReader(ICgroupsReader::CgroupsVersion version, const std::filesystem::path & cgroup_path);
+
+    /// Return <path, version>
+    static std::pair<std::string, CgroupsVersion> getCgroupsPath();
 #endif
 
     virtual ~ICgroupsReader() = default;

@@ -81,10 +81,10 @@ public:
     BLOB & getBLOB() { return blob; }
     const BLOB & getBLOB() const { return blob; }
 
-    bool wrappedColumnIsSparse() const
+    const ColumnPtr & getWrappedColumn() const
     {
         chassert(wrapped_column);
-        return wrapped_column->isSparse();
+        return wrapped_column;
     }
 
     MutableColumnPtr cloneEmpty() const override
@@ -109,9 +109,9 @@ public:
     {
         WriteBufferFromVector<BLOB> wbuf(blob);
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
-        auto serialization = NativeWriter::getSerialization(client_revision, wrapped_column);
+        auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(client_revision, wrapped_column);
         NativeWriter::writeData(
-            *serialization, wrapped_column.column, compressed_buffer, format_settings, 0, wrapped_column.column->size(), client_revision);
+            *serialization, column_to_write, compressed_buffer, format_settings, 0, column_to_write->size(), client_revision);
         compressed_buffer.finalize();
     }
 
@@ -121,13 +121,12 @@ public:
         ColumnPtr nested,
         SerializationPtr nested_serialization,
         size_t rows,
-        const FormatSettings * format_settings,
-        double avg_value_size_hint)
+        const FormatSettings * format_settings)
     {
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
         chassert(nested->empty());
-        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
+        NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, nullptr, nullptr);
         return nested;
     }
 
@@ -148,7 +147,7 @@ public:
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
     void get(size_t, Field &) const override { throwInapplicable(); }
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override { throwInapplicable(); }
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwInapplicable(); }
     std::string_view getDataAt(size_t) const override { throwInapplicable(); }
     bool isDefaultAt(size_t) const override { throwInapplicable(); }
     void insert(const Field &) override { throwInapplicable(); }
@@ -192,7 +191,7 @@ public:
         throwInapplicable();
     }
     ColumnPtr replicate(const Offsets &) const override { throwInapplicable(); }
-    MutableColumns scatter(ColumnIndex, const Selector &) const override { throwInapplicable(); }
+    MutableColumns scatter(size_t, const Selector &) const override { throwInapplicable(); }
     void gather(ColumnGathererStream &) override { throwInapplicable(); }
     void getExtremes(Field &, Field &) const override { throwInapplicable(); }
     size_t byteSizeAt(size_t) const override { throwInapplicable(); }
@@ -201,7 +200,8 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwInapplicable(); }
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
+    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwInapplicable(); }
+    void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
 
 private:
     /// Compressed and serialized representation of the wrapped column.

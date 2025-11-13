@@ -1,4 +1,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
@@ -30,11 +33,6 @@ namespace ErrorCodes
 
 namespace
 {
-    zkutil::ZooKeeperPtr getZooKeeper()
-    {
-        return Context::getGlobalContextInstance()->getZooKeeper();
-    }
-
     time_t now()
     {
         return std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -101,7 +99,7 @@ std::string ObjectStorageQueueIFileMetadata::NodeMetadata::toString() const
     json.set("last_processed_timestamp", now());
     json.set("last_exception", last_exception);
     json.set("retries", retries);
-    json.set("processing_id", processing_id);
+    json.set("processor_id", ""); /// Remains for compatibility
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
@@ -120,7 +118,6 @@ ObjectStorageQueueIFileMetadata::NodeMetadata ObjectStorageQueueIFileMetadata::N
     metadata.last_processed_timestamp = json->getValue<UInt64>("last_processed_timestamp");
     metadata.last_exception = json->getValue<String>("last_exception");
     metadata.retries = json->getValue<UInt64>("retries");
-    metadata.processing_id = json->getValue<String>("processing_id");
     return metadata;
 }
 
@@ -145,7 +142,6 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
     , failed_node_path(failed_node_path_)
     , node_metadata(createNodeMetadata(path))
     , log(log_)
-    , processing_node_id_path(processing_node_path + "_processing_id")
 {
     LOG_TEST(log, "Path: {}, node_name: {}, max_loading_retries: {}, "
              "processed_path: {}, processing_path: {}, failed_path: {}",
@@ -155,7 +151,7 @@ ObjectStorageQueueIFileMetadata::ObjectStorageQueueIFileMetadata(
 
 ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
 {
-    if (processing_id_version.has_value())
+    if (created_processing_node)
     {
         if (file_status->getException().empty())
         {
@@ -168,22 +164,46 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
         LOG_TEST(log, "Removing processing node in destructor for file: {}", path);
         try
         {
-            auto zk_client = getZooKeeper();
-
-            Coordination::Requests requests;
-            requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
-            requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
-
-            Coordination::Responses responses;
-            const auto code = zk_client->tryMulti(requests, responses);
-            if (code != Coordination::Error::ZOK
-                && !Coordination::isHardwareError(code)
-                && code != Coordination::Error::ZBADVERSION
-                && code != Coordination::Error::ZNONODE)
+            Coordination::Error code;
+            auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+            zk_retry.retryLoop([&]
             {
-                LOG_WARNING(log, "Unexpected error while removing processing node: {}", code);
-                chassert(false);
+                auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                if (zk_retry.isRetry())
+                {
+                    /// It is possible that we fail "after operation",
+                    /// e.g. we successfully removed the node, but did not get confirmation,
+                    /// but then if we retry - we can remove a newly recreated node,
+                    /// therefore avoid this with this check.
+                    if (!checkProcessingOwnership(zk_client))
+                    {
+                        LOG_TEST(log, "Will not remove processing node, ownership changed");
+                        code = Coordination::Error::ZOK;
+                        return;
+                    }
+                }
+                else
+                {
+                    chassert(checkProcessingOwnership(zk_client));
+                }
+                code = zk_client->tryRemove(processing_node_path);
+            });
+
+            if (code == Coordination::Error::ZOK)
+                return;
+
+            if (Coordination::isHardwareError(code))
+            {
+                LOG_WARNING(log, "Keeper session expired and retries did not help. "
+                            "Will rely on automatic processing node cleanup");
+                return;
             }
+
+            LOG_WARNING(
+                log, "Unexpected error while removing processing node: {} (path: {})",
+                code, processing_node_path);
+
+            chassert(false);
         }
         catch (...)
         {
@@ -236,6 +256,28 @@ std::string ObjectStorageQueueIFileMetadata::getProcessorInfo(const std::string 
     return oss.str();
 }
 
+std::string ObjectStorageQueueIFileMetadata::generateProcessingID()
+{
+    return getRandomASCIIString(10);
+}
+
+bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client)
+{
+    if (processor_info.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor info is not set");
+
+    std::string data;
+    /// No retries, because they must be done on a higher level.
+    if (!zk_client->tryGet(processing_node_path, data))
+        return false;
+
+    LOG_TEST(
+        log, "Processing node {} has processor: {}, current processor: {}",
+        processing_node_path, data, processor_info);
+
+    return data == processor_info;
+}
+
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
@@ -258,30 +300,14 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
     auto [success, file_state] = setProcessingImpl();
-    if (success)
-    {
-        file_status->onProcessing();
-    }
-    else
-    {
-        LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state);
-        file_status->updateState(file_state);
-    }
+    afterSetProcessing(success, file_state);
 
-    LOG_TEST(log, "File {} has state `{}`: will {}process (processing id version: {})",
-             path, file_state, success ? "" : "not ",
-             processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
-
-    if (success)
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
-    else
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
-
+    LOG_TEST(log, "File {} has state `{}`: will {}process", path, file_state, success ? "" : "not ");
     return success;
 }
 
 std::optional<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes>
-ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests)
+ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requests & requests, const std::string & processing_id)
 {
     if (metadata_ref_count.load() > 1)
     {
@@ -312,57 +338,81 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
-    return prepareProcessingRequestsImpl(requests);
+    return prepareProcessingRequestsImpl(requests, processing_id);
 }
 
-void ObjectStorageQueueIFileMetadata::finalizeProcessing(int processing_id_version_)
+void ObjectStorageQueueIFileMetadata::afterSetProcessing(bool success, std::optional<FileStatus::State> file_state)
 {
-    processing_id_version = processing_id_version_;
-    file_status->onProcessing();
+    if (success)
+    {
+        chassert(!file_state.has_value() || *file_state == FileStatus::State::None);
+        chassert(!processor_info.empty());
+
+        created_processing_node = true;
+        file_status->onProcessing();
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
+    }
+    else
+    {
+        chassert(!created_processing_node);
+        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
+
+        if (file_state.has_value())
+        {
+            LOG_TEST(log, "Updating state of {} from {} to {}", path, file_status->state.load(), file_state.value());
+            file_status->updateState(file_state.value());
+        }
+    }
 }
 
 void ObjectStorageQueueIFileMetadata::resetProcessing()
 {
+    chassert(created_processing_node);
+
     auto state = file_status->state.load();
     if (state != FileStatus::State::Processing)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
 
     SCOPE_EXIT({
-        file_status->reset();
+        (*file_status).reset();
     });
-
-    if (!processing_id_version.has_value())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "No processing id version set, but state is `Processing` ({})",
-            node_metadata.toString());
-    }
 
     Coordination::Requests requests;
     prepareResetProcessingRequests(requests);
 
     Coordination::Responses responses;
-    const auto zk_client = getZooKeeper();
-    const auto code = zk_client->tryMulti(requests, responses);
+    Coordination::Error code;
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        if (zk_retry.isRetry())
+        {
+            /// It is possible that we fail "after operation",
+            /// e.g. we successfully removed the node, but did not get confirmation,
+            /// but then if we retry - we can remove a newly recreated node,
+            /// therefore avoid this with this check.
+            if (!checkProcessingOwnership(zk_client))
+            {
+                LOG_TEST(log, "Will not remove processing node, ownership changed");
+                code = Coordination::Error::ZOK;
+                return;
+            }
+        }
+        else
+        {
+            chassert(checkProcessingOwnership(zk_client));
+        }
+        code = zk_client->tryMulti(requests, responses);
+    });
+
     if (code == Coordination::Error::ZOK)
         return;
 
     if (Coordination::isHardwareError(code))
     {
-        LOG_TRACE(log, "Keeper session expired, processing will be automatically reset");
-        return;
-    }
-
-    if (responses[0]->error == Coordination::Error::ZBADVERSION
-        || responses[0]->error == Coordination::Error::ZNONODE
-        || responses[1]->error == Coordination::Error::ZNONODE)
-    {
-        LOG_TRACE(
-            log, "Processing node no longer exists ({}) "
-            "while resetting processing state. "
-            "This could be as a result of expired keeper session. ",
-            processing_node_path);
+        LOG_WARNING(log, "Keeper session expired and retries did not help. "
+                    "Will rely on automatic processing node cleanup");
         return;
     }
 
@@ -378,7 +428,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
 
 void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
 {
-    requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
+    LOG_TEST(log, "Resetting processing for {}", path);
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 }
 
@@ -438,10 +488,27 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
 void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueProcessedFiles);
-    file_status->onProcessed();
 
-    processing_id.reset();
-    processing_id_version.reset();
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        chassert(
+            !zk_client->exists(processing_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
+
+        chassert(
+            !zk_client->exists(failed_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", failed_node_path, path));
+
+        chassert(
+            zk_client->exists(processed_node_path),
+            fmt::format("Expected path {} to exist while finalizing {}", processed_node_path, path));
+    });
+#endif
+
+    file_status->onProcessed();
+    created_processing_node = false;
 
     LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
 }
@@ -449,10 +516,29 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
 {
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedFiles);
-    file_status->onFailed(exception_message);
 
-    processing_id.reset();
-    processing_id_version.reset();
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        chassert(
+            !zk_client->exists(processing_node_path),
+            fmt::format("Expected path {} not to exist while finalizing {}", processing_node_path, path));
+
+        if (!useBucketsForProcessing())
+            chassert(
+                !zk_client->exists(processed_node_path),
+                fmt::format("Expected path {} not to exist while finalizing {}", processed_node_path, path));
+
+        chassert(
+            zk_client->exists(failed_node_path) || zk_client->exists(failed_node_path + ".retriable"),
+            fmt::format("Expected path {} to exist while finalizing {}", failed_node_path, path));
+
+    });
+#endif
+
+    file_status->onFailed(exception_message);
+    created_processing_node = false;
 
     LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
 }
@@ -461,18 +547,10 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     Coordination::Requests & requests,
     bool retriable)
 {
-    if (!processing_id_version.has_value())
-    {
-        chassert(false);
-        return;
-    }
-
     if (!retriable)
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
-        /// Check Processing node id and remove processing_node_id node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Created Failed node.
@@ -486,12 +564,16 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     /// the number of already done retries in trySetProcessing.
 
     auto retrieable_failed_node_path = failed_node_path + ".retriable";
-    auto zk_client = getZooKeeper();
 
     /// Extract the number of already done retries from node_hash.retriable node if it exists.
     Coordination::Stat retriable_failed_node_stat;
     std::string res;
-    bool has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
+    bool has_failed_before = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+        has_failed_before = zk_client->tryGet(retrieable_failed_node_path, res, &retriable_failed_node_stat);
+    });
     if (has_failed_before)
         file_status->retries = node_metadata.retries = NodeMetadata::fromString(res).retries + 1;
     else
@@ -507,8 +589,6 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     {
         LOG_TEST(log, "File {} failed to process and will not be retried. ({})", path, failed_node_path);
 
-        /// Check Processing node id and remove processing_node_id node.
-        requests.push_back(zkutil::makeRemoveRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
         /// Remove /failed/node_hash.retriable node.
@@ -518,8 +598,6 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
     }
     else
     {
-        /// Check Processing node id (without removing, because processing retries are not over).
-        requests.push_back(zkutil::makeCheckRequest(processing_node_id_path, processing_id_version.value()));
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
 

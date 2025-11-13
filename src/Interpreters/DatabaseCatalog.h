@@ -121,6 +121,11 @@ using TemporaryTablesMapping = std::map<String, TemporaryTableHolderPtr>;
 
 class BackgroundSchedulePoolTaskHolder;
 
+struct GetDatabasesOptions
+{
+    bool with_datalake_catalogs{false};
+};
+
 /// For some reason Context is required to get Storage from Database object
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
@@ -171,7 +176,13 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
-    Databases getDatabases() const;
+    /// Datalake catalogs are implement at IDatabase level in ClickHouse.
+    /// In general case Datalake catalog is a some remote service which contains iceberg/delta tables.
+    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourself
+    /// to not accidentally query external non-free service for some trivial things like
+    /// autocompletion hints or system.tables query. We have a setting which allow to show
+    /// these databases everywhere, but user must explicitly specify it.
+    Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
     DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
@@ -185,14 +196,9 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getTableAndCheckAlias(
-        const StorageID & table_id,
-        ContextPtr context,
-        std::optional<Exception> * exception = nullptr) const;
-    DatabaseAndTable getTableImpl(
-        const StorageID & table_id,
-        ContextPtr context,
-        std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id,
+                                  ContextPtr context,
+                                  std::optional<Exception> * exception = nullptr) const;
 
     /// Returns true if a passed table_id refers to one of the predefined tables' names.
     /// All tables in the "system" database with System* table engine are predefined.
@@ -225,7 +231,6 @@ public:
     static String getPathForUUID(const UUID & uuid);
 
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
-    DatabaseAndTable getByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
@@ -278,6 +283,8 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const DatabasePtr & database);
+    bool hasDatalakeCatalogs() const;
+    bool isDatalakeCatalog(const String & database_name) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -325,6 +332,7 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
     /// Referential dependencies between tables: table "A" depends on table "B"

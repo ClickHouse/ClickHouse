@@ -114,11 +114,15 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
     {
         StackTrace::FramePointers frame_pointers;
         auto stacktrace_size = std::min<size_t>(backtrace_length, frame_pointers.size());
-        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *));
+        memcpy(frame_pointers.data(), backtrace, stacktrace_size * sizeof(void *)); // NOLINT(bugprone-bitwise-pointer-cast)
         TraceSender::send(
             TraceType::JemallocSample,
             StackTrace(std::move(frame_pointers), stacktrace_size),
-            TraceSender::Extras{.size = static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+            TraceSender::Extras{
+                .size = static_cast<Int64>(usize),
+                .ptr = const_cast<void *>(ptr),
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+            });
     }
     catch (...)
     {
@@ -137,7 +141,11 @@ void jemallocDeallocationTracker(const void * ptr, unsigned usize)
         TraceSender::send(
             TraceType::JemallocSample,
             StackTrace(),
-            TraceSender::Extras{.size = -static_cast<Int64>(usize), .ptr = const_cast<void *>(ptr)});
+            TraceSender::Extras{
+                .size = -static_cast<Int64>(usize),
+                .ptr = const_cast<void *>(ptr),
+                .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
+            });
     }
     catch (...)
     {

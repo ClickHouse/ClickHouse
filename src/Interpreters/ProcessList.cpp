@@ -50,6 +50,7 @@ namespace Setting
     extern const SettingsBool replace_running_query;
     extern const SettingsMilliseconds replace_running_query_max_wait_ms;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsUInt64 temporary_files_buffer_size;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool trace_profile_events;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
@@ -280,7 +281,8 @@ ProcessList::EntryPtr ProcessList::insert(
                 TemporaryDataOnDiskSettings temporary_data_on_disk_settings
                 {
                     .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_query],
-                    .compression_codec = settings[Setting::temporary_files_codec]
+                    .compression_codec = settings[Setting::temporary_files_codec],
+                    .buffer_size = settings[Setting::temporary_files_buffer_size],
                 };
                 query_context->setTempDataOnDisk(std::make_shared<TemporaryDataOnDiskScope>(
                     user_process_list.user_temp_data_on_disk, std::move(temporary_data_on_disk_settings)));
@@ -419,8 +421,6 @@ ProcessListEntry::~ProcessListEntry()
     /// If there are no more queries for the user, then we will reset memory tracker.
     if (user_process_list.queries.empty())
         user_process_list.resetTrackers();
-
-    /// NOTE: Do not reset parent.total_network_throttler, it MUST account for periods of inactivity for correct work.
 }
 
 
@@ -826,7 +826,8 @@ ProcessListForUser::ProcessListForUser(ContextPtr global_context, ProcessList * 
         TemporaryDataOnDiskSettings temporary_data_on_disk_settings
         {
             .max_size_on_disk = settings[Setting::max_temporary_data_on_disk_size_for_user],
-            .compression_codec = settings[Setting::temporary_files_codec]
+            .compression_codec = settings[Setting::temporary_files_codec],
+            .buffer_size = settings[Setting::temporary_files_buffer_size],
         };
 
         user_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(global_context->getSharedTempDataOnDisk(),

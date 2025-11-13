@@ -718,7 +718,7 @@ Replaces part of the string `input` with another string `replace`, starting at t
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {24, 9};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
     FunctionDocumentation overlay_documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionOverlay<false>>(overlay_documentation, FunctionFactory::Case::Insensitive);

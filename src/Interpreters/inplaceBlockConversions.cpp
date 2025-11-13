@@ -1,29 +1,47 @@
 #include <Interpreters/inplaceBlockConversions.h>
 
+#include <utility>
+
 #include <Core/Block.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <utility>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Common/checkStackSize.h>
-#include <Storages/ColumnsDescription.h>
-#include <DataTypes/NestedUtils.h>
+#include <Parsers/ASTWithAlias.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageDummy.h>
+#include <Common/checkStackSize.h>
+
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Utils.h>
+#include <Planner/CollectSets.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCode
 {
@@ -32,7 +50,6 @@ namespace ErrorCode
 
 namespace
 {
-
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
     const Block & block,
@@ -173,6 +190,56 @@ std::optional<ActionsDAG> createExpressions(
     return ActionsDAG::merge(std::move(dag), std::move(actions));
 }
 
+std::optional<ActionsDAG> createExpressionsAnalyzer(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
+{
+    if (!expr_list)
+        return {};
+
+    auto execution_context = Context::createCopy(context);
+    auto expression = buildQueryTree(expr_list, execution_context);
+
+    ColumnsDescription fake_column_descriptions{};
+    // Add columns from index to ensure names are unique in case of duplicated columns.
+    for (const auto & column : header.getIndexByName())
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type));
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+
+    QueryAnalyzer analyzer(false);
+    analyzer.resolve(expression, fake_table_expression, execution_context);
+
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
+    collectSets(expression, *planner_context);
+
+    auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
+    chassert(expression->getChildren().size() == actions.getOutputs().size());
+
+    NamesWithAliases result_columns;
+    for (size_t i = 0; i < expression->getChildren().size(); ++i)
+        result_columns.emplace_back(actions.getOutputs()[i]->result_name, expr_list->children[i]->getAliasOrColumnName());
+
+    if (!save_unneeded_columns)
+        actions.addAliases(result_columns);
+    else
+        actions.project(result_columns);
+
+    // Output columns without expression as-is
+    NameSet outputs;
+    for (const auto & output : actions.getOutputs())
+        outputs.insert(output->result_name);
+    for (const auto & input : actions.getInputs())
+        if (!outputs.contains(input->result_name))
+            actions.getOutputs().push_back(input);
+
+    return actions;
+}
 }
 
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
@@ -181,7 +248,13 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    if (auto dag = createExpressions(block, conversion_expr_list, true, context))
+    std::optional<ActionsDAG> dag;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    else
+        dag = createExpressions(block, conversion_expr_list, true, context);
+
+    if (dag)
     {
         auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
         expression->execute(block);
@@ -210,6 +283,8 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
@@ -230,7 +305,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -363,7 +438,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;

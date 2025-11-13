@@ -140,6 +140,52 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
+## Geometry {#geometry}
+
+`Geometry` is a common type for all the types above. It is equivalent to a Variant of those types.
+
+**Example**
+
+```sql
+CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((1, 2));
+SELECT * FROM geo;
+```
+Result:
+
+```text
+   ┌─geom──┐
+1. │ (1,2) │
+   └───────┘
+```
+
+<!-- -->
+
+```sql
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+
+CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
+INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
+INSERT INTO geo VALUES ('POINT(0 0)', 2);
+INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
+INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
+INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
+INSERT INTO geo_dst SELECT readWkt(geom) FROM geo ORDER BY id;
+
+SELECT * FROM geo_dst;
+```
+Result:
+
+```text
+   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+2. │ (0,0)                                                                                                            │
+3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
+4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
+5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Related Content {#related-content}
 
 - [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

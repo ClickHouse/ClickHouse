@@ -168,7 +168,7 @@ Ignore case when matching ORC columns with CH columns.
 Ignore case when matching Parquet columns with CH columns.
 )", 0) \
     DECLARE(Bool, input_format_parquet_preserve_order, false, R"(
-Avoid reordering rows when reading from Parquet files. Usually makes it much slower. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it.
+Avoid reordering rows when reading from Parquet files. Not recommended as row ordering is generally not guaranteed, and other parts of query pipeline may break it. Use `ORDER BY _row_number` instead.
 )", 0) \
     DECLARE(Bool, input_format_parquet_filter_push_down, true, R"(
 When reading Parquet files, skip whole row groups based on the WHERE/PREWHERE expressions and min/max statistics in the Parquet metadata.
@@ -196,6 +196,12 @@ Skip pages using min/max values from column index.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_offset_index, true, R"(
 Minor tweak to how pages are read from parquet file when no page filtering is used.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_verify_checksums, true, R"(
+Verify page checksums when reading parquet files.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_local_time_as_utc, true, R"(
+Determines the data type used by schema inference for Parquet timestamps with isAdjustedToUTC=false. If true: DateTime64(..., 'UTC'), if false: DateTime64(...). Neither behavior is fully correct as ClickHouse doesn't have a data type for local wall-clock time. Counterintuitively, 'true' is probably the less incorrect option, because formatting the 'UTC' timestamp as String will produce representation of the correct local time.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
@@ -349,9 +355,13 @@ If the `schema_inference_hints` is not formatted properly, or if there is a typo
     DECLARE(SchemaInferenceMode, schema_inference_mode, "default", R"(
 Mode of schema inference. 'default' - assume that all files have the same schema and schema can be inferred from any file, 'union' - files can have different schemas and the resulting schema should be the a union of schemas of all files
 )", 0) \
-    DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 1, R"(
+    DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 3, R"(
 Controls making inferred types `Nullable` in schema inference.
-If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+Possible values:
+ * 0 - the inferred type will never be `Nullable` (use input_format_null_as_default to control what do do with null values in this case),
+ * 1 - all inferred types will be `Nullable`,
+ * 2 or `auto` - the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability,
+ * 3 - the inferred type nullability will match file metadata if the format has it (e.g. Parquet), always Nullable otherwise (e.g. CSV).
 )", 0) \
     DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
 Controls making inferred JSON types `Nullable` in schema inference.
@@ -1073,7 +1083,7 @@ Target row group size in bytes, before compression.
 Use Parquet String type instead of Binary for String columns.
 )", 0) \
     DECLARE(Bool, output_format_parquet_fixed_string_as_fixed_byte_array, true, R"(
-Use Parquet FIXED_LENGTH_BYTE_ARRAY type instead of Binary for FixedString columns.
+Use Parquet FIXED_LEN_BYTE_ARRAY type instead of Binary for FixedString columns.
 )", 0) \
     DECLARE(ParquetVersion, output_format_parquet_version, "2.latest", R"(
 Parquet format version for output format. Supported versions: 1.0, 2.4, 2.6 and 2.latest (default)
@@ -1127,6 +1137,9 @@ If dictionary size grows bigger than this many bytes, switch to encoding without
 )", 0) \
     DECLARE(Bool, output_format_parquet_enum_as_byte_array, true, R"(
 Write enum using parquet physical type: BYTE_ARRAY and logical type: ENUM
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_checksums, true, R"(
+Put crc32 checksums in parquet page headers.
 )", 0) \
     DECLARE(String, output_format_avro_codec, "", R"(
 Compression codec used for output. Possible values: 'null', 'deflate', 'snappy', 'zstd'.
@@ -1188,7 +1201,7 @@ Method to write Errors to text output.
     DECLARE(String, format_schema_source, "file", R"(
 Define the source of `format_schema`.
 Possible values:
-- 'file' (default):: The `format_schema` is the name of a schema file located in the `format_schemas` directory.
+- 'file' (default): The `format_schema` is the name of a schema file located in the `format_schemas` directory.
 - 'string': The `format_schema` is the literal content of the schema.
 - 'query': The `format_schema` is a query to retrieve the schema.
 When `format_schema_source` is set to 'query', the following conditions apply:
@@ -1460,6 +1473,9 @@ Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/Mult
 )", 0) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
+)", 0) \
+    DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
+Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0) \
 
 

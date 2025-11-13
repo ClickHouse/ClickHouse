@@ -38,7 +38,7 @@ namespace ErrorCodes
     DECLARE(UInt64, polling_backoff_ms, 30 * 1000, "Polling backoff", 0) \
     DECLARE(UInt32, cleanup_interval_min_ms, 60000, "For unordered mode. Polling backoff min for cleanup", 0) \
     DECLARE(UInt32, cleanup_interval_max_ms, 60000, "For unordered mode. Polling backoff max for cleanup", 0) \
-    DECLARE(Bool, use_persistent_processing_nodes, false, "Whether persistent nodes should be used for processing nodes in keeper", 0) \
+    DECLARE(Bool, use_persistent_processing_nodes, true, "This setting is deprecated", 0) \
     DECLARE(UInt32, persistent_processing_node_ttl_seconds, 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \

@@ -505,6 +505,22 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
+## Handling JSON keys with NULL {#handling-json-keys-with-nulls}
+
+In our JSON implementation `null` and absence of the value are considered equivalent:
+
+```sql title="Query"
+SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
+```
+
+```text title="Response"
+┌─json1─┬─json2─┬─equals(json1, json2)─┐
+│ {}    │ {}    │                    1 │
+└───────┴───────┴──────────────────────┘
+```
+
+It means that it's impossible to determine whether the original JSON data contained some path with the NULL value or didn't contain it at all.
+
 ## Handling JSON keys with dots {#handling-json-keys-with-dots}
 
 Internally JSON column stores all paths and values in a flattened form. It means that by default these 2 objects are considered as the same:
@@ -576,7 +592,7 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, json.`a%2Eb`,
 └───────────────────────────────────────┴────────────┴──────────────┘
 ```
 
-Note: due to identifiers parser and analyzer limitations subcolumn ``json.`a.b`\`` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
+Note: due to identifiers parser and analyzer limitations subcolumn `` json.`a.b` `` is equivalent to subcolumn `json.a.b` and won't read path with escaped dot:
 
 ```sql title="Query"
 SET json_type_escape_dots_in_keys=1;
@@ -615,12 +631,12 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 
 ## Reading JSON type from data {#reading-json-type-from-data}
 
-All text formats 
-([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md), 
-[`TSV`](../../interfaces/formats/TabSeparated/TabSeparated.md), 
-[`CSV`](../../interfaces/formats/CSV/CSV.md), 
-[`CustomSeparated`](../../interfaces/formats/CustomSeparated/CustomSeparated.md), 
-[`Values`](../../interfaces/formats/Values.md), etc.) support reading the `JSON` type.
+All text formats
+([`JSONEachRow`](/interfaces/formats/JSONEachRow),
+[`TSV`](/interfaces/formats/TabSeparated),
+[`CSV`](/interfaces/formats/CSV),
+[`CustomSeparated`](/interfaces/formats/CustomSeparated),
+[`Values`](/interfaces/formats/Values), etc.) support reading the `JSON` type.
 
 Examples:
 
@@ -775,6 +791,8 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
 In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
 
+See section ["introspection functions"](/sql-reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
+
 ### Shared data structure in memory {#shared-data-structure-in-memory}
 
 In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
@@ -826,6 +844,8 @@ This serialization is quite inefficient for writing data (so it's not recommende
 
 Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to 
 `map` and `map_with_buckets` serializations.
+
+For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
 
 ## Introspection functions {#introspection-functions}
 

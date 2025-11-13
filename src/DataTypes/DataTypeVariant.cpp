@@ -182,7 +182,7 @@ SerializationPtr DataTypeVariant::doGetDefaultSerialization() const
         variant_names.push_back(variant->getName());
     }
 
-    return std::make_shared<SerializationVariant>(std::move(serializations), std::move(variant_names), SerializationVariant::getVariantsDeserializeTextOrder(variants), getName());
+    return std::make_shared<SerializationVariant>(variants, getName());
 }
 
 void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const

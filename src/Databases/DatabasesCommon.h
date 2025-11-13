@@ -23,12 +23,14 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query);
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path);
 void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, std::string_view content, bool fsync_metadata);
 
-void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command);
+void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command, ContextPtr query_context);
 
 /// A base class for databases that manage their own list of tables.
 class DatabaseWithOwnTablesBase : public IDatabase, protected WithContext
 {
 public:
+    bool isExternal() const override { return false; }
+
     bool isTableExist(const String & table_name, ContextPtr context) const override;
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;

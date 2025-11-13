@@ -2381,8 +2381,7 @@ namespace
             , field_descriptor(field_descriptor_)
             , element_serializers(std::move(element_serializers_))
         {
-            assert(tuple_size);
-            assert(tuple_size == element_serializers.size());
+            chassert(tuple_size == element_serializers.size());
         }
 
         void setColumns(const ColumnPtr * columns, [[maybe_unused]] size_t num_columns) override

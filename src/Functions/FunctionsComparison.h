@@ -1439,6 +1439,22 @@ public:
 
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
     }
+
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        for (const auto & argument : arguments)
+        {
+            ColumnPtr column = argument.column;
+
+            if (!column || !isColumnConst(*column))
+                continue;
+
+            if (column->isNullAt(0))
+                return result_type->createColumnConst(1, Null());
+        }
+
+        return nullptr;
+    }
 };
 
 }

@@ -55,19 +55,14 @@ public:
         delegate->writeInlineDataToFile(wrappedPath(path), data);
     }
 
-    void createEmptyMetadataFile(const std::string & path) override
+    void createMetadataFile(const std::string & path, const StoredObjects & objects) override
     {
-        delegate->createEmptyMetadataFile(wrappedPath(path));
+        delegate->createMetadataFile(wrappedPath(path), objects);
     }
 
-    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
+    void addBlobToMetadata(const std::string & path, const StoredObject & object) override
     {
-        delegate->createMetadataFile(wrappedPath(path), object_key, size_in_bytes);
-    }
-
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override
-    {
-        delegate->addBlobToMetadata(wrappedPath(path), object_key, size_in_bytes);
+        delegate->addBlobToMetadata(wrappedPath(path), object);
     }
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override
@@ -213,11 +208,6 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
 
     bool supportsStat() const override { return delegate->supportsStat(); }
-
-    bool supportsPartitionCommand(const PartitionCommand & command) const override
-    {
-        return delegate->supportsPartitionCommand(command);
-    }
 
     struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
 

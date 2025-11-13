@@ -144,6 +144,7 @@ namespace ProfileEvents
     extern const Event NotCreatedLogEntryForMutation;
     extern const Event ReplicaPartialShutdown;
     extern const Event ReplicatedCoveredPartsInZooKeeperOnStart;
+    extern const Event MergesRejectedByMemoryLimit;
 }
 
 namespace CurrentMetrics
@@ -225,6 +226,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
     extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
+    extern const MergeTreeSettingsString auto_statistics_types;
 }
 
 namespace FailPoints
@@ -626,7 +628,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                   * Otherwise `metadata_version` for not first replica will be initialized with 0 by default.
                   */
                 setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
-                metadata_snapshot = getInMemoryMetadataPtr();
+                metadata_snapshot = getInMemoryMetadataPtr(/*bypass_metadata_cache=*/true);
             }
         }
         catch (Coordination::Exception & e)
@@ -1008,7 +1010,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", metadata_snapshot->getColumns().toString(true),
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "",
             zkutil::CreateMode::Persistent));
@@ -1062,7 +1064,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMeta
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata", metadata_str,
             zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", metadata_snapshot->getColumns().toString(),
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", metadata_snapshot->getColumns().toString(true),
             zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/metadata_version", toString(metadata_snapshot->getMetadataVersion()),
             zkutil::CreateMode::Persistent));
@@ -1119,7 +1121,7 @@ void StorageReplicatedMergeTree::createReplicaAttempt(const StorageMetadataPtr &
     LOG_DEBUG(log, "Creating replica {}", replica_path);
 
     const String local_metadata = ReplicatedMergeTreeTableMetadata(*this, metadata_snapshot).toString();
-    const String local_columns = metadata_snapshot->getColumns().toString();
+    const String local_columns = metadata_snapshot->getColumns().toString(true);
     const String local_metadata_version = toString(metadata_snapshot->getMetadataVersion());
     const String creator_info = toString(getStorageID().uuid) + "|" + toString(ServerUUID::get());
 
@@ -1688,13 +1690,13 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     {
         LOG_WARNING(log, "Table columns structure in ZooKeeper is different from local table structure. "
                     "Assuming it's because the table was altered concurrently. Metadata version: {}. Local columns:\n"
-                    "{}\nZookeeper columns:\n{}", metadata_stat.version, old_columns.toString(), columns_from_zk.toString());
+                    "{}\nZookeeper columns:\n{}", metadata_stat.version, old_columns.toString(true), columns_from_zk.toString(true));
         return false;
     }
 
     throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS,
         "Table columns structure in ZooKeeper is different from local table structure. Local columns:\n"
-        "{}\nZookeeper columns:\n{}", old_columns.toString(), columns_from_zk.toString());
+        "{}\nZookeeper columns:\n{}", old_columns.toString(true), columns_from_zk.toString(true));
 }
 
 void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
@@ -4126,6 +4128,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         size_t merges_and_mutations_sum = merges_and_mutations_queued.merges + merges_and_mutations_queued.mutations;
         if (!canEnqueueBackgroundTask())
         {
+            ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
             LOG_TRACE(log, "Reached memory limit for the background tasks ({}), so won't select new parts to merge or mutate."
                 "Current background tasks memory usage: {}.",
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
@@ -5754,6 +5757,8 @@ void StorageReplicatedMergeTree::shutdown(bool)
 
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
 
     flushAndPrepareForShutdown();
 
@@ -6468,15 +6473,23 @@ void StorageReplicatedMergeTree::alter(
     const auto & query_settings = query_context->getSettingsRef();
 
     StorageInMemoryMetadata future_metadata = getInMemoryMetadata();
+
+    removeImplicitStatistics(future_metadata.columns);
     commands.apply(future_metadata, query_context);
+
+    auto old_settings = getSettings();
+    auto [auto_statistics_types, statistics_changed] = MergeTreeData::getNewImplicitStatisticsTypes(future_metadata, *old_settings);
+    addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
     if (commands.isSettingsAlter())
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
         merge_strategy_picker.refreshState();
-
         changeSettings(future_metadata.settings_changes, table_lock_holder);
+
+        if (statistics_changed)
+            setInMemoryMetadata(future_metadata);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
@@ -6591,7 +6604,7 @@ void StorageReplicatedMergeTree::alter(
         String new_metadata_str = future_metadata_in_zk.toString();
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "metadata", new_metadata_str, current_metadata->getMetadataVersion()));
 
-        String new_columns_str = future_metadata.columns.toString();
+        String new_columns_str = future_metadata.columns.toString(true);
         ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "columns", new_columns_str, -1));
 
         bool settings_are_changed = (ast_to_str(current_metadata->settings_changes) != ast_to_str(future_metadata.settings_changes));
@@ -7108,6 +7121,12 @@ bool StorageReplicatedMergeTree::existsNodeCached(const ZooKeeperWithFaultInject
     }
 
     return res;
+}
+
+void StorageReplicatedMergeTree::tryRemoveNodeCache(const std::string & path) const
+{
+    std::lock_guard lock(existing_nodes_cache_mutex);
+    existing_nodes_cache.erase(path);
 }
 
 std::optional<EphemeralLockInZooKeeper> StorageReplicatedMergeTree::allocateBlockNumber(
@@ -7874,6 +7893,8 @@ void StorageReplicatedMergeTree::forgetPartition(const ASTPtr & partition, Conte
         throw Exception(ErrorCodes::CANNOT_FORGET_PARTITION, "Partition {} is unknown", partition_id);
     else
         throw zkutil::KeeperException::fromPath(error_code, partition_path);
+
+    tryRemoveNodeCache(partition_path);
 }
 
 
@@ -10712,27 +10733,27 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(
     return {};
 }
 
-
 bool StorageReplicatedMergeTree::checkIfDetachedPartExists(const String & part_name)
 {
-    fs::directory_iterator dir_end;
-    for (const std::string & path : getDataPaths())
-        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
-            if (dir_it->path().filename().string() == part_name)
+    for (const auto & disk : getStoragePolicy()->getDisks())
+    {
+        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
+        {
+            if (it->name() == part_name)
                 return true;
+        }
+    }
     return false;
 }
 
 
 bool StorageReplicatedMergeTree::checkIfDetachedPartitionExists(const String & partition_name)
 {
-    fs::directory_iterator dir_end;
-
-    for (const std::string & path : getDataPaths())
+    for (const auto & disk : getStoragePolicy()->getDisks())
     {
-        for (fs::directory_iterator dir_it{fs::path(path) / DETACHED_DIR_NAME}; dir_it != dir_end; ++dir_it)
+        for (auto it = disk->iterateDirectory(fs::path(getRelativeDataPath()) / DETACHED_DIR_NAME); it->isValid(); it->next())
         {
-            const String file_name = dir_it->path().filename().string();
+            const String file_name = it->name();
             auto part_info = MergeTreePartInfo::tryParsePartName(file_name, format_version);
 
             if (part_info && part_info->getPartitionId() == partition_name)

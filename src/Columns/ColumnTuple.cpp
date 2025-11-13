@@ -14,6 +14,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/ObjectUtils.h>
 #include <base/sort.h>
 
 
@@ -149,26 +150,32 @@ void ColumnTuple::get(size_t n, Field & res) const
         res_tuple.push_back((*columns[i])[n]);
 }
 
-std::pair<String, DataTypePtr> ColumnTuple::getValueNameAndType(size_t n) const
+DataTypePtr ColumnTuple::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const size_t tuple_size = columns.size();
 
-    String value_name {tuple_size > 1 ? "(" : "tuple("};
+    if (options.notFull(name_buf))
+    {
+        if (tuple_size > 1)
+            name_buf << "(";
+        else
+            name_buf << "tuple(";
+    }
 
     DataTypes element_types;
     element_types.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        const auto & [value, type] = columns[i]->getValueNameAndType(n);
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = columns[i]->getValueNameAndTypeImpl(name_buf, n, options);
         element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
     }
-    value_name += ")";
+    if (options.notFull(name_buf))
+        name_buf << ")";
 
-    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
+    return std::make_shared<DataTypeTuple>(element_types);
 }
 
 bool ColumnTuple::isDefaultAt(size_t n) const
@@ -193,12 +200,17 @@ void ColumnTuple::insertData(const char *, size_t)
 void ColumnTuple::insert(const Field & x)
 {
     const auto & tuple = x.safeGet<Tuple>();
-
     const size_t tuple_size = columns.size();
+
     if (tuple.size() != tuple_size)
-        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            tuple.size(),
+            tuple_size);
 
     ++column_length;
+
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insert(tuple[i]);
 }
@@ -236,12 +248,17 @@ void ColumnTuple::doInsertFrom(const IColumn & src_, size_t n)
 #endif
 {
     const ColumnTuple & src = assert_cast<const ColumnTuple &>(src_);
-
     const size_t tuple_size = columns.size();
+
     if (src.columns.size() != tuple_size)
-        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            src.columns.size(),
+            tuple_size);
 
     ++column_length;
+
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertFrom(*src.columns[i], n);
 }
@@ -256,10 +273,15 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
     const size_t tuple_size = columns.size();
     if (src_tuple.columns.size() != tuple_size)
-        throw Exception(ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE, "Cannot insert value of different size into tuple");
+        throw Exception(
+            ErrorCodes::CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE,
+            "Cannot insert value of different size into tuple. Got: {}, expected: {}",
+            src_tuple.columns.size(),
+            tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->insertManyFrom(*src_tuple.columns[i], position, length);
+
     column_length += length;
 }
 
@@ -531,7 +553,7 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-MutableColumns ColumnTuple::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
 {
     if (columns.empty())
     {
@@ -863,7 +885,7 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     std::vector<Columns> nested_source_columns;
     nested_source_columns.resize(columns.size());
@@ -878,7 +900,14 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
+        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i], max_dynamic_subcolumns);
+}
+
+void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    const auto & source_elements = assert_cast<const ColumnTuple &>(*source_column).getColumns();
+    for (size_t i = 0; i != columns.size(); ++i)
+        columns[i]->takeDynamicStructureFromColumn(source_elements[i]);
 }
 
 

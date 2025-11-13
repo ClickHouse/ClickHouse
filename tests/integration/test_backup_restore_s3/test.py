@@ -4,6 +4,7 @@ from typing import Dict
 
 import pytest
 
+from ast import literal_eval
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.config_cluster import minio_secret_key
@@ -384,8 +385,16 @@ def test_backup_to_s3_multipart():
         size=1000000,
     )
     node = cluster.instances["node"]
-    assert node.contains_in_log(
-        f"copyDataToS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+
+    node.query("SYSTEM FLUSH LOGS")
+    pattern = f"Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='copyDataToS3File' AND message like '{pattern}%'",
+            )
+        )
+        > 0
     )
 
     backup_query_id = backup_events["query_id"]
@@ -465,9 +474,56 @@ def test_backup_to_s3_native_copy(storage_policy):
     # single part upload
     assert backup_events["S3CopyObject"] > 0
     assert restore_events["S3CopyObject"] > 0
+
+    node.query("SYSTEM FLUSH LOGS")
+    pattern = f"Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='copyS3File' AND message like '{pattern}%'",
+            )
+        )
+        > 0
+    )
+
+
+@pytest.mark.parametrize(
+    "storage_policy",
+    [
+        "policy_s3",
+        "policy_s3_other_bucket",
+        "policy_s3_plain_rewritable",
+    ],
+)
+def test_backup_to_s3_native_copy_slow_down_all_threads(storage_policy):
+    backup_name = new_backup_name()
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+    (backup_events, restore_events) = check_backup_and_restore(
+        cluster,
+        storage_policy,
+        backup_destination,
+        backup_settings={"backup_slow_all_threads_after_retryable_s3_error": True},
+    )
+    # single part upload
+    assert backup_events["S3CopyObject"] > 0
+    assert restore_events["S3CopyObject"] > 0
     node = cluster.instances["node"]
-    assert node.contains_in_log(
-        f"copyS3File: Single operation copy has completed. Bucket: root, Key: data/backups/{backup_name}"
+
+    disks = literal_eval(
+        node.query(
+            f"SELECT disks FROM system.storage_policies WHERE policy_name='{storage_policy}'"
+        )
+    )
+    assert len(disks) == 1
+    node.query("SYSTEM FLUSH LOGS")
+    pattern = f"S3 client for disk \\'{disks[0]}\\': slowing down threads on retryable errors is enabled"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='S3Client' AND message LIKE '%{pattern}%'",
+            )
+        )
+        > 0
     )
 
 
@@ -481,9 +537,16 @@ def test_backup_to_s3_native_copy_multipart():
     # multi part upload
     assert backup_events["S3CreateMultipartUpload"] > 0
     assert restore_events["S3CreateMultipartUpload"] > 0
+
     node = cluster.instances["node"]
-    assert node.contains_in_log(
-        f"copyS3File: Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
+    pattern = f"Multipart upload has completed. Bucket: root, Key: data/backups/multipart/{backup_name}/"
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.text_log WHERE logger_name='copyS3File' AND message like '{pattern}%'",
+            )
+        )
+        > 0
     )
 
 
@@ -919,26 +982,24 @@ def test_backup_restore_s3_plain():
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = os.path.join(instance.path, f"database/store")
+    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
-    remote_blob_path = "data/disks/disk_s3_plain/store"
+    local_path = os.path.join(instance.path, "database")
+    source_table_path = f"{local_path}/{table_data_path}"
+    remote_blob_path = f"data/disks/disk_s3_plain/{table_data_path}"
+    print(f"Copying from {source_table_path} to {remote_blob_path}")
     remove_directory(minio, cluster.minio_bucket, remote_blob_path)
     upload_directory(
-        minio, cluster.minio_bucket, table_data_path, remote_blob_path, use_relpath=True
+        minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(
-        f"""
-            SELECT uuid FROM system.tables WHERE name='sample' and database='default'
-            """
-    ).strip()
-
+    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;
         ATTACH TABLE sample UUID '{table_uuid}' (key Int, value String)
         ENGINE = MergeTree() ORDER BY tuple()
-        SETTINGS storage_policy='policy_s3_plain'
+        SETTINGS storage_policy='policy_s3_plain', max_suspicious_broken_parts=0, max_suspicious_broken_parts_bytes=0
         """
     )
     assert instance.query("SELECT count(*) FROM sample") == "100\n"

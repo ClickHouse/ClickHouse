@@ -31,8 +31,11 @@ from helpers.iceberg_utils import (
 )
 
 
-SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
+SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
+    os.path.dirname(os.path.realpath(__file__))
+)
 cluster = ClickHouseCluster(__file__, with_spark=True)
+
 
 def get_spark():
     builder = (
@@ -42,13 +45,17 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files")
+        .config(
+            "spark.sql.catalog.spark_catalog.warehouse",
+            "/var/lib/clickhouse/user_files",
+        )
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .master("local")
     )
 
     return builder.master("local").getOrCreate()
+
 
 def generate_cluster_def(common_path, port, azure_container):
     path = os.path.join(
@@ -168,7 +175,6 @@ def started_cluster():
         cluster.shutdown()
 
 
-
 def write_delta_from_file(spark, path, result_path, mode="overwrite"):
     spark.read.load(path).write.mode(mode).option("compression", "none").format(
         "delta"
@@ -230,6 +236,7 @@ def get_node(cluster, use_delta_kernel):
     else:
         assert False
 
+
 def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
 
@@ -250,7 +257,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake({path_suffix})
-            SETTINGS datalake_disk_name = 'disk_s3_{use_delta_kernel}{disk_suffix}'
+            SETTINGS disk = 'disk_s3_{use_delta_kernel}{disk_suffix}'
             """
         )
 
@@ -260,7 +267,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake({path_suffix})
-            SETTINGS datalake_disk_name = 'disk_azure{disk_suffix}'
+            SETTINGS disk = 'disk_azure{disk_suffix}'
             """
         )
     elif storage_type == "local":
@@ -269,7 +276,7 @@ def create_delta_table(
             DROP TABLE IF EXISTS {table_name};
             CREATE TABLE {table_name}
             ENGINE=DeltaLake({path_suffix})
-            SETTINGS datalake_disk_name = 'disk_local{disk_suffix}'
+            SETTINGS disk = 'disk_local{disk_suffix}'
             """
         )
     else:
@@ -289,10 +296,12 @@ def create_initial_data_file(
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
-        os.path.join(os.path.dirname(os.path.realpath(__file__))), f"{cluster.instances_dir_name}/{node_name}/database/user_files"
+        os.path.join(os.path.dirname(os.path.realpath(__file__))),
+        f"{cluster.instances_dir_name}/{node_name}/database/user_files",
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
+
 
 @pytest.mark.parametrize(
     "use_delta_kernel, storage_type",
@@ -305,7 +314,11 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
     parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME + "_" + storage_type, node_name=instance.name
+        started_cluster,
+        instance,
+        inserted_data,
+        TABLE_NAME + "_" + storage_type,
+        node_name=instance.name,
     )
 
     user_files_path = os.path.join(
@@ -314,7 +327,11 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     table_path = os.path.join(user_files_path, TABLE_NAME)
 
     # We need to exclude the leading slash for local storage protocol file://
-    delta_path = table_path if storage_type == "local" else f"/var/lib/clickhouse/user_files/{TABLE_NAME}"
+    delta_path = (
+        table_path
+        if storage_type == "local"
+        else f"/var/lib/clickhouse/user_files/{TABLE_NAME}"
+    )
     write_delta_from_file(spark, parquet_data_path, delta_path)
 
     files = default_upload_directory(
@@ -332,8 +349,12 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         TABLE_NAME,
         started_cluster,
         use_delta_kernel,
-        f"'{TABLE_NAME}'" if storage_type != "azure" else f"'var/lib/clickhouse/user_files/{TABLE_NAME}'",
-        "_common"
+        (
+            f"'{TABLE_NAME}'"
+            if storage_type != "azure"
+            else f"'var/lib/clickhouse/user_files/{TABLE_NAME}'"
+        ),
+        "_common",
     )
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
@@ -348,14 +369,18 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     else:
         disk_name = f"disk_azure_common"
 
-    storage_path = f'{TABLE_NAME}' if storage_type != "azure" else  f"var/lib/clickhouse/user_files/{TABLE_NAME}"
-    assert instance.query(f"SELECT * FROM deltaLake('{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
-        inserted_data
+    storage_path = (
+        f"{TABLE_NAME}"
+        if storage_type != "azure"
+        else f"var/lib/clickhouse/user_files/{TABLE_NAME}"
     )
+    assert instance.query(
+        f"SELECT * FROM deltaLake('{storage_path}', SETTINGS disk = '{disk_name}')"
+    ) == instance.query(inserted_data)
 
     if storage_type == "s3":
-        assert instance.query(f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}') SETTINGS datalake_disk_name = '{disk_name}'") == instance.query(
-            inserted_data
-        )
+        assert instance.query(
+            f"SELECT * FROM deltaLakeCluster('cluster_simple', '{storage_path}', SETTINGS disk = '{disk_name}')"
+        ) == instance.query(inserted_data)
 
     instance.query(f"DROP TABLE {TABLE_NAME}")
