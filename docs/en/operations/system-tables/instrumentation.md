@@ -26,7 +26,7 @@ Columns:
 **Example**
 
 ```sql
-SELECT * FROM system.instrumentation;
+SELECT * FROM system.instrumentation FORMAT Vertical;
 ```
 
 ```text

@@ -22,9 +22,12 @@ endif()
 set (LLVM_VERSION "21.1.5bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
-    "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
+if (USE_XRAY)
+    set (LLVM_INCLUDE_DIRS "${LLVM_INCLUDE_DIRS}" "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt/include")
+endif ()
+
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
 
 # There are compilation errors with C++23.

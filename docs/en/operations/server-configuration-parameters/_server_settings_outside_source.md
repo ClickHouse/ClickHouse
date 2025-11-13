@@ -1163,39 +1163,6 @@ For the `volume_priority`:
 - If _no_ volumes are given this parameter, their order is determined by the order of the description in the configuration file.
 - The priority of volumes may not be identical.
 
-## instrumentation_trace_log {#instrumentation_trace_log}
-
-It is disabled by default.
-
-**Enabling**
-
-To allow storing the profiling information for instrumented functions from [`system.instrumentation`](../../operations/system-tables/instrumentation.md), create `/etc/clickhouse-server/config.d/instrumentation_trace_log.xml` with the following content:
-
-```xml
-<clickhouse>
-    <instrumentation_trace_log>
-        <database>system</database>
-        <table>instrumentation_trace_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
-    </instrumentation_trace_log>
-</clickhouse>
-```
-
-**Disabling**
-
-To disable `instrumentation_trace_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_instrumentation_trace_log.xml` with the following content:
-
-```xml
-<clickhouse>
-    <instrumentation_trace_log remove="1" />
-</clickhouse>
-```
-
 ## macros {#macros}
 
 Parameter substitutions for replicated tables.

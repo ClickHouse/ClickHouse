@@ -45,7 +45,7 @@ static constexpr String SLEEP_HANDLER = "sleep";
 static constexpr String LOG_HANDLER = "log";
 static constexpr String PROFILE_HANDLER = "profile";
 
-auto logger = getLogger("InstrumentationManager");
+static auto logger = getLogger("InstrumentationManager");
 
 InstrumentationManager::InstrumentationManager()
 {
@@ -165,7 +165,10 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
     {
         LOG_DEBUG(logger, "Removing all instrumented functions");
         for (const auto & info : instrumented_points)
+        {
+            LOG_DEBUG(logger, "Removing instrumented function {}", info.toString());
             unpatchFunctionIfNeeded(info.function_id);
+        }
         instrumented_points.clear();
     }
     else
@@ -201,6 +204,7 @@ const InstrumentationManager::FunctionsContainer & InstrumentationManager::getFu
 void InstrumentationManager::dispatchHandler(Int32 func_id, XRayEntryType entry_type)
 {
     static thread_local bool dispatching = false;
+
     /// Prevent reentrancy.
     if (dispatching)
         return;

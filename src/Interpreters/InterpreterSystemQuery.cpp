@@ -1801,7 +1801,6 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
         String id;
         if (query.instrumentation_point_id.has_value())
         {
-            String id;
             if (std::holds_alternative<bool>(query.instrumentation_point_id.value()))
                 id = " and ALL ids";
             else
@@ -1820,7 +1819,7 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
             query.instrumentation_function_name,
             query.instrumentation_handler_name,
             entry_type,
-            id_str,
+            id,
             e.what());
     }
 }
