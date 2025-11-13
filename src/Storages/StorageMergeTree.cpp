@@ -255,6 +255,9 @@ void StorageMergeTree::shutdown(bool)
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
+
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
     /// Unlock all waiting mutations
@@ -473,10 +476,7 @@ void StorageMergeTree::alter(
             }
 
             {
-                /// Reset Object columns, because column of type
-                /// Object may be added or dropped by alter.
                 auto parts_lock = lockParts();
-                resetObjectColumnsFromActiveParts(parts_lock);
                 resetSerializationHints(parts_lock);
             }
 
