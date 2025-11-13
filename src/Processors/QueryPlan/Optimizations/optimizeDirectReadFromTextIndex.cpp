@@ -101,24 +101,28 @@ public:
     /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
     /// Returns a pair of (added columns by index name, removed columns)
-    std::pair<IndexReadColumns, Names> replace()
+    std::tuple<IndexReadColumns, Names, String> replace(const String & origin_prewhere_column_name)
     {
         IndexReadColumns added_columns;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
+        auto prewhere_column_name = origin_prewhere_column_name;
 
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
+            auto prewhere_column_name = origin_prewhere_column_name;
             auto replaced = tryReplaceFunctionNodeInplace(node);
 
             if (replaced.has_value())
             {
                 const auto & [index_name, column_name] = replaced.value();
                 added_columns[index_name].emplace_back(column_name, node.result_type);
+                if (origin_prewhere_column_name == origin_result_name)
+                    prewhere_column_name = node.result_name;
             }
         }
 
         if (added_columns.empty())
-            return {{}, {}};
+            return {{}, {}, prewhere_column_name };
 
         actions_dag.removeUnusedActions();
 
@@ -132,7 +136,7 @@ public:
                 removed_columns.push_back(column);
         }
 
-        return std::make_pair(added_columns, removed_columns);
+        return std::make_tuple(added_columns, removed_columns, prewhere_column_name);
     }
 
 private:
@@ -274,31 +278,59 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
     FilterStep * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
-    if (!filter_step)
+    if (!filter_step && !read_from_merge_tree_step)
         return;
 
-    ActionsDAG & filter_dag = filter_step->getExpression();
-    const ActionsDAG::Node & filter_column_node = filter_dag.findInOutputs(filter_step->getFilterColumnName());
+    if (filter_step)
+    {
+        ActionsDAG & filter_dag = filter_step->getExpression();
+        const ActionsDAG::Node & filter_column_node = filter_dag.findInOutputs(filter_step->getFilterColumnName());
 
-    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
-    auto [added_columns, removed_columns] = replacer.replace();
+        FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
+        auto [added_columns, removed_columns, _] = replacer.replace(filter_step->getFilterColumnName());
 
-    if (added_columns.empty())
+        if (added_columns.empty())
+            return;
+
+        auto logger = getLogger("optimizeDirectReadFromTextIndex");
+        LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
+
+        read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
+
+        bool removes_filter_column = filter_step->removesFilterColumn();
+
+        /// The original node (pointer address) should be preserved in the DAG outputs because we replace in-place.
+        /// However, the `result_name` could be different if the output column was replaced.
+        chassert(std::ranges::contains(filter_dag.getOutputs(), &filter_column_node));
+
+        const String new_filter_column_name = filter_column_node.result_name;
+        filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
         return;
+    }
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
+    if (read_from_merge_tree_step)
+    {
+        auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo();
+        if (!prewhere_info)
+            return;
 
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
+        auto cloned_prewhere_info = prewhere_info->clone();
+        FullTextMatchingFunctionDAGReplacer replacer(cloned_prewhere_info.prewhere_actions, index_conditions);
+        auto [added_columns, removed_columns, prewhere_column_name] = replacer.replace(
+            cloned_prewhere_info.prewhere_column_name);
 
-    bool removes_filter_column = filter_step->removesFilterColumn();
+        if (added_columns.empty())
+            return;
+        auto logger = getLogger("optimizeDirectReadFromTextIndex");
+        LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
 
-    /// The original node (pointer address) should be preserved in the DAG outputs because we replace in-place.
-    /// However, the `result_name` could be different if the output column was replaced.
-    chassert(std::ranges::contains(filter_dag.getOutputs(), &filter_column_node));
+        read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns, true);
 
-    const String new_filter_column_name = filter_column_node.result_name;
-    filter_node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+        // Update the PREWHERE filter column name to the new one produced by replacer.
+        cloned_prewhere_info.prewhere_column_name = prewhere_column_name;
+        auto modified_prewhere_info = std::make_shared<PrewhereInfo>(std::move(cloned_prewhere_info));
+        read_from_merge_tree_step->updatePrewhereInfo(modified_prewhere_info);
+    }
 }
 
 }
