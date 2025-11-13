@@ -359,7 +359,7 @@ public:
 
     struct ScatteredColumns
     {
-        ColumnsInfo columns_info;
+        Columns columns;
         ScatteredBlock::Selector selector;
 
         size_t allocatedBytes() const;
@@ -456,8 +456,6 @@ public:
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
 
-    bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
-
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
@@ -515,8 +513,6 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
-    bool joined_block_split_single_row = false;
-    bool enable_lazy_columns_replication = false;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;

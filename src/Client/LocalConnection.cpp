@@ -16,7 +16,6 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
-#include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -694,7 +693,9 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
+                /// Send external table name (empty name is the main table)
+                /// (see TCPHandler::sendTableColumns)
+                packet.multistring_message = {"", state->columns_description->toString()};
             }
 
             if (state->block)
@@ -731,15 +732,11 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & name,
-    UInt64 & version_major, UInt64 & version_minor,
-    UInt64 & version_patch, UInt64 & revision)
+    const ConnectionTimeouts & /* timeouts */, String & /* name */,
+    UInt64 & /* version_major */, UInt64 & /* version_minor */,
+    UInt64 & /* version_patch */, UInt64 & /* revision */)
 {
-    name = std::string(VERSION_NAME);
-    version_major = VERSION_MAJOR;
-    version_minor = VERSION_MINOR;
-    version_patch = VERSION_PATCH;
-    revision = DBMS_TCP_PROTOCOL_VERSION;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)

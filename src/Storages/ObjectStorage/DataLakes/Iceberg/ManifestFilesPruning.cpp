@@ -40,7 +40,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
         return std::make_shared<ASTIdentifier>(column_name);
 
     if (transform_name == "void")
-        return makeASTOperator("tuple");
+        return makeASTFunction("tuple");
 
     if (transform_and_argument->argument.has_value())
     {

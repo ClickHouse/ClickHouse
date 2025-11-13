@@ -246,7 +246,7 @@ void FileSegmentRangeWriter::jumpToPosition(size_t position)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot jump backwards: {} < {}", position, current_write_offset);
 
         file_segments->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/true);
-        file_segments = nullptr;
+        file_segments.reset();
     }
     expected_write_offset = position;
 }

@@ -77,7 +77,7 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, local_context);
 
     const auto & key_columns = getPatchPartKeyColumns();
-    auto order_by_expression = makeASTOperator("tuple");
+    auto order_by_expression = makeASTFunction("tuple");
 
     for (const auto & [key_column_name, _] : key_columns)
         order_by_expression->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column_name));

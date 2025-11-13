@@ -29,9 +29,6 @@ public:
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_VECTOR_SIMILARITY_INDEX_CACHE,
-        DROP_TEXT_INDEX_DICTIONARY_CACHE,
-        DROP_TEXT_INDEX_HEADER_CACHE,
-        DROP_TEXT_INDEX_POSTINGS_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
@@ -123,7 +120,6 @@ public:
         STOP_REDUCE_BLOCKING_PARTS,
         START_REDUCE_BLOCKING_PARTS,
         UNLOCK_SNAPSHOT,
-        RECONNECT_ZOOKEEPER,
         END
     };
 
@@ -148,7 +144,6 @@ public:
     String shard;
     String replica_zk_path;
     bool is_drop_whole_replica{};
-    bool with_tables{false};
     String storage_policy;
     String volume;
     String disk;

@@ -45,8 +45,6 @@ public:
         bool custom_disk = false,
         const std::unordered_set<String> & skip_types = {}) const;
 
-    void clearRegistry();
-
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;
     DiskTypeRegistry registry;
