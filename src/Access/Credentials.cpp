@@ -21,8 +21,9 @@ struct JWTClaims
     String subject;
 };
 
-jwt::algorithm::rsa chooseRSA(const String & alg, const String & public_key, const String & private_key = {})
+jwt::algorithm::rsa chooseRSA(const String & algorithm, const String & public_key, const String & private_key = {})
 {
+    String alg = Poco::toUpper(algorithm);
     if (alg == "RS256")
         return jwt::algorithm::rs256(public_key, private_key, {}, {});
     else if (alg == "RS384")
@@ -30,7 +31,7 @@ jwt::algorithm::rsa chooseRSA(const String & alg, const String & public_key, con
     else if (alg == "RS512")
         return jwt::algorithm::rs512(public_key, private_key, {}, {});
 
-    throw std::runtime_error("unknown RSA alg: '" + alg + "'");
+    throw std::runtime_error("unknown RSA algorithm: '" + algorithm + "'");
 }
 
 String jwtGetUser(const String & jwt_str)
@@ -51,7 +52,13 @@ bool jwtVerify(const String & jwt_str, const String & jwks_str, JWTClaims & out)
     out.issuer = decoded_jwt.get_issuer();
     out.subject = decoded_jwt.get_subject();
 
-    if (jwk.get_key_type() == "RSA")
+    if (!jwk.has_key_type())
+        throw std::runtime_error("no key type in JWK.");
+
+    if (!decoded_jwt.has_algorithm())
+        throw std::runtime_error("no algorithm in JWT.");
+
+    if (Poco::toUpper(jwk.get_key_type()) == "RSA")
     {
         String public_key_pem;
         if (jwk.has_x5c())
@@ -71,7 +78,7 @@ bool jwtVerify(const String & jwt_str, const String & jwks_str, JWTClaims & out)
         verifier.verify(decoded_jwt);
     }
     else
-        throw std::runtime_error("not supported algorithm '" + decoded_jwt.get_algorithm() + "'. Only RSA is supported yet.");
+        throw std::runtime_error("not supported key type '" + jwk.get_key_type() + "'. Only RSA is supported yet.");
 
     return true;
 }
