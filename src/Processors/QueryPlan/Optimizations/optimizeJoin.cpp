@@ -255,6 +255,20 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         return RelationStats{.estimated_rows = estimated_rows, .table_name = table_display_name};
     }
 
+    if (const auto * reading = typeid_cast<const ReadFromPreparedSource *>(step))
+    {
+        if (reading->isEmpty())
+        {
+            return RelationStats {
+                .estimated_rows = 0,
+                .table_name = reading->getName(),
+                .is_exact_upper_bound = true
+
+            };
+        }
+        return {};
+    }
+
     if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
     {
         if (!reading->getContext() || !reading->getContext()->getSettingsRef()[Setting::allow_statistics_optimize])

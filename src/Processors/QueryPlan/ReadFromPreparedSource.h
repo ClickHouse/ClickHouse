@@ -20,6 +20,8 @@ public:
     String getName() const override { return "ReadFromPreparedSource"; }
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    bool isEmpty() const;
+
 protected:
     Pipe pipe;
 };
