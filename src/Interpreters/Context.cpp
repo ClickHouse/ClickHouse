@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -4143,7 +4144,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
-            "BgBufSchPool");
+            ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
     });
 
     return *shared->buffer_flush_schedule_pool;
@@ -4190,7 +4191,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
             max_parallel_tasks_per_type,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
-            "BgSchPool");
+            DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
     });
 
     return *shared->schedule_pool;
@@ -4204,7 +4205,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
-            "BgDistSchPool");
+            DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
     });
 
     return *shared->distributed_schedule_pool;
@@ -4218,7 +4219,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
-            "BgMBSchPool");
+            DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
     });
 
     return *shared->message_broker_schedule_pool;
@@ -6705,7 +6706,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
-        "MergeMutate",
+        ThreadName::MERGE_MUTATE,
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_max_tasks_count,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
@@ -6721,7 +6722,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
-        "Move",
+        ThreadName::MERGETREE_MOVE,
         background_move_pool_size,
         background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask,
@@ -6735,7 +6736,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
-        "Fetch",
+        ThreadName::MERGETREE_FETCH,
         background_fetches_pool_size,
         background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask,
@@ -6749,7 +6750,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
-        "Common",
+        ThreadName::MERGETREE_COMMON,
         background_common_pool_size,
         background_common_pool_size,
         CurrentMetrics::BackgroundCommonPoolTask,

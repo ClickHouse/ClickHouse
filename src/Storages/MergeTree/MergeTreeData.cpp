@@ -2039,7 +2039,7 @@ std::vector<MergeTreeData::LoadPartResult> MergeTreeData::loadDataPartsFromDisk(
 
     std::vector<LoadPartResult> loaded_parts;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
+    ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_ACTIVE_PARTS);
     while (true)
     {
         bool are_parts_to_load_empty = false;
@@ -2191,7 +2191,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     std::vector<PartLoadingTree::PartLoadingInfos> parts_to_load_by_disk(disks.size());
     std::vector<PartLoadingTree::PartLoadingInfos> unexpected_parts_to_load_by_disk(disks.size());
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), "ActiveParts");
+    ThreadPoolCallbackRunnerLocal<void> runner(getActivePartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_ACTIVE_PARTS);
 
     bool all_disks_are_readonly = true;
     for (size_t i = 0; i < disks.size(); ++i)
@@ -2603,7 +2603,7 @@ try
 
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), "UnexpectedParts");
+    ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_UNEXPECTED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     for (auto & load_state : unexpected_data_parts)
@@ -2670,7 +2670,7 @@ try
 
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), "OutdatedParts");
+    ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
     while (true)
@@ -2924,7 +2924,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, MarkCachePtr mark_cache, Pr
 
     /// Allocate runner on stack after all used local variables to make its destructor
     /// is called first and all tasks stopped before local variables are being destroyed.
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PrewarmCaches");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_PREWARM_CACHE);
 
     auto enough_space = [&](const auto & cache, double ratio_to_prewarm)
     {
@@ -3400,7 +3400,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         LOG_DEBUG(
             log, "Removing {} parts from filesystem (concurrently): Parts: [{}]", parts_to_remove.size(), fmt::join(parts_to_remove, ", "));
 
-        ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), "PartsCleaning");
+        ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), ThreadName::MERGETREE_PARTS_CLEANUP);
 
         for (const DataPartPtr & part : parts_to_remove)
         {
@@ -3486,7 +3486,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
         return independent_ranges;
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), "PartsCleaning");
+    ThreadPoolCallbackRunnerLocal<void> runner(getPartsCleaningThreadPool().get(), ThreadName::MERGETREE_PARTS_CLEANUP);
 
     auto schedule_parts_removal = [this, &runner, &part_names_mutex, part_names_succeed](
         const MergeTreePartInfo & range, DataPartsVector && parts_in_range)
@@ -8789,7 +8789,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     PartitionCommandsResultInfo result;
     std::mutex result_mutex;
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "FreezePart");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::MERGETREE_FREEZE_PART);
 
     for (const auto & part : data_parts)
     {
