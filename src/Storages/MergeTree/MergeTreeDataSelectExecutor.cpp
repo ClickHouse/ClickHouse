@@ -1283,7 +1283,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
     return ReadFromMergeTree::selectRangesToRead(
-        std::move(parts),
+        parts,
         mutations_snapshot,
         std::nullopt,
         metadata_snapshot,
