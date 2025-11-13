@@ -26,7 +26,9 @@ set (LLVM_INCLUDE_DIRS
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
-set (CMAKE_CXX_STANDARD 23)
+
+# There are compilation errors with C++23.
+set (CMAKE_CXX_STANDARD 17)
 
 if (ARCH_AMD64)
     set (LLVM_TARGETS_TO_BUILD "X86" CACHE INTERNAL "")
