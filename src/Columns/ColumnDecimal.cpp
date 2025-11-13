@@ -29,6 +29,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -78,16 +79,17 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T dec;
+    readBinaryLittleEndian(dec, in);
+    data.push_back(std::move(dec));
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
