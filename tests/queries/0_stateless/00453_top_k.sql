@@ -2,7 +2,7 @@ SELECT arraySort(topK(10)(n)) FROM (SELECT if(number % 100 < 10, number % 10, nu
 
 SELECT
     k,
-    topK(v)
+    arraySort(topK(v))
 FROM
 (
     SELECT
