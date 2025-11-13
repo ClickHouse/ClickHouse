@@ -105,7 +105,8 @@ static Block adoptBlock(const Block & header, const Block & block, LoggerPtr log
     auto converting_dag = ActionsDAG::makeConvertingActions(
         block.cloneEmpty().getColumnsWithTypeAndName(),
         header.getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        nullptr);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     Block converted = block;
@@ -915,12 +916,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
 
         // Create hardlink here to reuse increment number
         auto bin_file = (fs::path(path) / file_name).string();
-        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue->addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
     ++it;
 
@@ -931,12 +932,12 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         fs::create_directory(path);
 
         auto bin_file = (fs::path(path) / (toString(storage.file_names_increment.get()) + ".bin")).string();
-        auto & directory_queue = storage.getDirectoryQueue(disk, *it);
+        auto directory_queue = storage.getDirectoryQueue(disk, *it);
         {
             createHardLink(first_file_tmp_path, bin_file);
             auto dir_sync_guard = make_directory_sync_guard(*it);
         }
-        directory_queue.addFileAndSchedule(bin_file, file_size, sleep_ms);
+        directory_queue->addFileAndSchedule(bin_file, file_size, sleep_ms);
     }
 
     /// remove the temporary file, enabling the OS to reclaim inode after all threads

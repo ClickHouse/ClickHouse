@@ -502,7 +502,6 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
@@ -1016,10 +1015,6 @@ public:
         return column_sizes;
     }
 
-    /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getConcreteObjectColumns(
-        const DataPartsVector & parts, const ColumnsDescription & storage_columns);
-
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         /// Always keep locks order parts_lock -> sizes_lock
@@ -1075,7 +1070,7 @@ public:
         return storage_settings.get();
     }
 
-    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1427,11 +1422,6 @@ protected:
     /// It is like truncate, drop/detach partition
     mutable std::mutex operation_with_data_parts_mutex;
 
-    /// Current description of columns of data type Object.
-    /// It changes only when set of parts is changed and is
-    /// protected by @data_parts_mutex.
-    ColumnsDescription object_columns;
-
     /// Serialization info accumulated among all active parts.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
@@ -1479,10 +1469,6 @@ protected:
     {
         return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
-
-    /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getConcreteObjectColumns(
-        boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
@@ -1652,9 +1638,6 @@ protected:
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
 
-    void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
-    void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
-
     void resetSerializationHints(const DataPartsLock & lock);
 
     template <typename AddedParts, typename RemovedParts>
@@ -1796,7 +1779,6 @@ private:
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
-    void checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction

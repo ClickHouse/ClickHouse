@@ -51,11 +51,6 @@ time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
     return disk->getLastChanged(path);
 }
 
-bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
-}
-
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
 {
     return getTotalSize(readMetadata(path)->objects);
@@ -129,6 +124,12 @@ std::unordered_map<String, String> MetadataStorageFromDisk::getSerializedMetadat
 MetadataTransactionPtr MetadataStorageFromDisk::createTransaction()
 {
     return std::make_shared<MetadataStorageFromDiskTransaction>(*this);
+}
+
+/// It supports writing with Append because `createTransaction` creates `MetadataStorageFromDiskTransaction` which has `supportAddingBlobToMetadata`
+bool MetadataStorageFromDisk::supportWritingWithAppend() const
+{
+    return true;
 }
 
 StoredObjects MetadataStorageFromDisk::getStorageObjects(const std::string & path) const

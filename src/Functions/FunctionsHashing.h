@@ -1044,18 +1044,35 @@ private:
     }
 
     template <bool first>
-    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
+    void executeGeneric(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, const IDataType * type) const
     {
         KeyType key{};
         if constexpr (Keyed)
             key = Impl::getKey(key_cols, 0);
+
+        SerializationPtr serialization;
         for (size_t i = 0, size = column->size(); i < size; ++i)
         {
             if constexpr (Keyed)
                 if (!key_cols.is_const && i != 0)
                     key = Impl::getKey(key_cols, i);
-            StringRef bytes = column->getDataAt(i);
-            const ToType hash = apply(key, bytes.data, bytes.size);
+            ToType hash;
+            if (type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+            {
+                StringRef bytes = column->getDataAt(i);
+                hash = apply(key, bytes.data, bytes.size);
+            }
+            else
+            {
+                /// If column doesn't support getDataAt method we use ISerialization::serializeForHashCalculation
+                /// to serialize value and calculate hash from it.
+                if (!serialization)
+                    serialization = type->getDefaultSerialization();
+                WriteBufferFromOwnString buf;
+                serialization->serializeForHashCalculation(*column, i, buf);
+                auto bytes = buf.str();
+                hash = apply(key, bytes.data(), bytes.size());
+            }
             if constexpr (first)
                 vec_to[i] = hash;
             else
@@ -1332,7 +1349,7 @@ private:
         else if (which.isArray()) executeArray<first>(key_cols, from_type, icolumn, vec_to);
         else if (which.isNothing()) executeNothing<first>(key_cols, icolumn, vec_to);
         else if (which.isNullable()) executeNullable<first>(key_cols, from_type, icolumn, vec_to);
-        else executeGeneric<first>(key_cols, icolumn, vec_to);
+        else executeGeneric<first>(key_cols, icolumn, vec_to, from_type);
     }
 
     /// Return a fixed random-looking magic number when input is empty.

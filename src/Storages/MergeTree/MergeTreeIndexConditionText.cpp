@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/misc.h>
 #include <Functions/hasAnyAllTokens.h>
@@ -25,6 +26,8 @@ namespace Setting
     extern const SettingsBool text_index_use_bloom_filter;
     extern const SettingsBool query_plan_text_index_add_hint;
     extern const SettingsBool use_text_index_dictionary_cache;
+    extern const SettingsBool use_text_index_header_cache;
+    extern const SettingsBool use_text_index_postings_cache;
 }
 
 TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode read_mode_, std::vector<String> tokens_)
@@ -54,13 +57,19 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    TokenExtractorPtr token_extactor_)
+    TokenExtractorPtr token_extractor_,
+    MergeTreeIndexTextPreprocessorPtr preprocessor_)
     : WithContext(context_)
     , header(index_sample_block)
-    , token_extractor(token_extactor_)
+    , token_extractor(token_extractor_)
     , use_bloom_filter(context_->getSettingsRef()[Setting::text_index_use_bloom_filter])
+    , preprocessor(preprocessor_)
     , use_dictionary_block_cache(context_->getSettingsRef()[Setting::use_text_index_dictionary_cache])
-    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
+    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache())
+    , use_header_cache(context_->getSettingsRef()[Setting::use_text_index_header_cache])
+    , header_cache(context_->getTextIndexHeaderCache())
+    , use_postings_cache(context_->getSettingsRef()[Setting::use_text_index_postings_cache])
+    , postings_cache(context_->getTextIndexPostingsCache())
 {
     if (!predicate)
     {
@@ -382,10 +391,40 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
+/**
+  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
+  * The expected data is either form of Array(String) or Array(FixedString).
+  */
+static bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
+{
+    const auto function = index_column_node.toFunctionNode();
+    if (function.getFunctionName() == "arrayElement")
+    {
+        const auto column_name = function.getArgumentAt(0).getColumnName();
+        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", column_name));
+        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", column_name));
+        if (has_maps_keys_index_column_name)
+        {
+            const auto & argument_const_key = function.getArgumentAt(1);
+            DataTypePtr key_const_type;
+            if (argument_const_key.tryGetConstant(const_value, key_const_type))
+            {
+                auto const_data_type = WhichDataType(key_const_type);
+                if (!const_data_type.isStringOrFixedString())
+                    return false;
+                return true;
+            }
+            return false;
+        }
+        return has_map_values_index_column_name;
+    }
+    return false;
+}
+
 std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
     std::vector<String> tokens;
-    const String & value = field.safeGet<String>();
+    const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->stringToTokens(value.data(), value.size(), tokens);
     return tokens;
 }
@@ -393,7 +432,7 @@ std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & fi
 std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const
 {
     std::vector<String> tokens;
-    const String & value = field.safeGet<String>();
+    const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->substringToTokens(value.data(), value.size(), tokens, is_prefix, is_suffix);
     return tokens;
 }
@@ -401,10 +440,11 @@ std::vector<String> MergeTreeIndexConditionText::substringToTokens(const Field &
 std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field & field) const
 {
     std::vector<String> tokens;
-    const String & value = field.safeGet<String>();
+    const String value = preprocessor->process(field.safeGet<String>());
     token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
     return tokens;
 }
+
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,

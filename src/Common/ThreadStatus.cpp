@@ -346,7 +346,7 @@ MainThreadStatus::~MainThreadStatus()
     /// the file descriptors are closed, which will throw errors.
     /// As we don't really care about stats of the main thread (they won't be used) it's simpler to just disable them before the
     /// implicit ~ThreadStatus is called here
-    getInstance().taskstats.reset();
+    getInstance().taskstats = nullptr;
     main_thread = nullptr;
 }
 
