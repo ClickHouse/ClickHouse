@@ -7043,17 +7043,16 @@ MergeTreeData::getPossiblySharedVisibleDataPartsRanges(ContextPtr local_context)
     if (const auto * txn = local_context->getCurrentTransaction().get())
     {
         /// In case of transactions we cannot use shared version
-        DataPartsVector res;
-        res = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, *shared_lock_holder);
+        auto parts = getDataPartsVectorForInternalUsage({DataPartState::Active, DataPartState::Outdated}, *shared_lock_holder);
 
         /// At this point it is safe to release the lock
         shared_lock_holder.reset();
 
-        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
+        filterVisibleDataParts(parts, txn->getSnapshot(), txn->tid);
 
         return std::make_tuple(
-            std::make_shared<const RangesInDataParts>(res),
-            std::make_shared<const DataPartsVector>(std::move(res))
+            std::make_shared<const RangesInDataParts>(parts),
+            std::make_shared<const DataPartsVector>(std::move(parts))
         );
     }
     else
@@ -9993,7 +9992,7 @@ StorageSnapshotPtr MergeTreeData::createStorageSnapshot(const StorageMetadataPtr
     snapshot_data->storage = shared_from_this();
 
     auto [query_ranges, query_parts] = getPossiblySharedVisibleDataPartsRanges(query_context);
-    snapshot_data->parts = shared_ranges_in_parts;
+    snapshot_data->parts = query_ranges;
 
     bool apply_mutations_on_fly = query_context->getSettingsRef()[Setting::apply_mutations_on_fly];
     bool apply_patch_parts = query_context->getSettingsRef()[Setting::apply_patch_parts];
