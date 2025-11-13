@@ -1299,20 +1299,20 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         if (min_length > max_length)
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Incorrect params of {} tokenizer: minimal length ({}) cannot be larger than maximal length ({})",
+                "Incorrect params of {} tokenizer: minimal length {} cannot be larger than maximal length {}",
                 tokenizer, min_length, max_length);
         }
         if (min_cutoff_length.has_value() && min_cutoff_length.value() < min_length)
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Incorrect params of {} tokenizer: minimal cutoff length ({}) cannot be smaller than minimal length ({})",
+                "Incorrect params of {} tokenizer: minimal cutoff length {} cannot be smaller than minimal length {}",
                 tokenizer, min_length, min_cutoff_length.value());
         }
         if (min_cutoff_length.has_value() && min_cutoff_length.value() > max_length)
         {
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Incorrect params of {} tokenizer: minimal cutoff length ({}) cannot be larger than maximal length ({})",
+                "Incorrect params of {} tokenizer: minimal cutoff length {} cannot be larger than maximal length {}",
                 tokenizer, min_cutoff_length.value(), max_length);
         }
     }
