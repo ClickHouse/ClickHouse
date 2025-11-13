@@ -278,6 +278,26 @@ bool hasNullInCollection(const Field & rhs, const WhichDataType & rhs_which_type
     return false;
 }
 
+bool hasTupleInCollection(const Field & rhs, const WhichDataType & rhs_which_type)
+{
+    if (rhs_which_type.isArray())
+    {
+        const auto & rhs_array = rhs.safeGet<Array>();
+        for (const auto & elem : rhs_array)
+            if (elem.getType() == Field::Types::Tuple)
+                return true;
+    }
+    else if (rhs_which_type.isTuple())
+    {
+        const auto & rhs_tuple = rhs.safeGet<Tuple>();
+        for (const auto & elem : rhs_tuple)
+            if (elem.getType() == Field::Types::Tuple)
+                return true;
+    }
+    return false;
+}
+
+
 }
 
 /// lhs IN rhs
@@ -355,6 +375,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         WhichDataType rhs_which_type(rhs_type);
 
         bool is_null_in_rhs = hasNullInCollection(rhs, rhs_which_type);
+        bool has_tuple_in_rhs = hasTupleInCollection(rhs, rhs_which_type);
 
         if (lhs_is_tuple && rhs_which_type.isArray() && is_null_in_rhs)
         {
@@ -362,10 +383,10 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
             /// Tuple(...) IN [NULL, NULL, (...)]
             result_block = buildFromArray(rhs, rhs_type);
         }
-        else if (lhs_is_tuple && rhs_which_type.isTuple() && is_null_in_rhs)
+        else if (lhs_is_tuple && rhs_which_type.isTuple() && is_null_in_rhs && (lhs_is_nullable || has_tuple_in_rhs))
         {
-            /// CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, (...))
-            /// Tuple(...) IN (NULL, NULL, (...))
+            /// CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, ...)
+            /// Tuple(...) IN (NULL, NULL, Tuple(...), ...)
             result_block = buildFromTuple(rhs, rhs_type);
         }
         else
