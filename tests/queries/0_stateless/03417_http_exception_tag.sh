@@ -53,4 +53,36 @@ if echo "$RESPONSE" | grep -q "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; then
 else
     echo "exception message handling failed"
 fi
+
+echo "Test 6: Verify no final zero chunk on exception without compression"
+# When an exception occurs, the HTTP protocol should be broken by NOT sending the final zero chunk
+RESPONSE=$(${CLICKHOUSE_CURL} -sS --raw "${CLICKHOUSE_URL}&$SETTINGS" --data-binary "SELECT throwIf(number=3, 'exception') FROM system.numbers SETTINGS max_block_size=1 FORMAT CSV" 2>&1 || true)
+# Check that response does NOT end with "0\r\n\r\n" (the final zero chunk)
+# The response should end with "__exception__\r\n" instead
+if echo "$RESPONSE" | od -c | tail -2 | grep -q "0.*\\\\r.*\\\\n.*\\\\r.*\\\\n$"; then
+    echo "Final zero chunk found (BAD): FAILED"
+else
+    echo "No final zero chunk on exception: OK"
+fi
+
+echo "Test 7: Verify no final zero chunk on exception with gzip compression"
+# Same test but with gzip compression enabled
+RESPONSE=$(${CLICKHOUSE_CURL} -sS --raw -H "Accept-Encoding: gzip" "${CLICKHOUSE_URL}&$SETTINGS" --data-binary "SELECT throwIf(number=3, 'exception') FROM system.numbers SETTINGS max_block_size=1 FORMAT CSV" 2>&1 || true)
+# Even with compression, when an exception occurs, there should be no final zero chunk
+# The compressed response should NOT end with the pattern "0\r\n\r\n"
+if echo "$RESPONSE" | od -c | tail -2 | grep -q "0.*\\\\r.*\\\\n.*\\\\r.*\\\\n$"; then
+    echo "Final zero chunk found with compression (BAD): FAILED"
+else
+    echo "No final zero chunk on exception with compression: OK"
+fi
+
+echo "Test 8: Verify final zero chunk IS present on successful query with compression"
+# On successful queries with compression, the final zero chunk should be present
+RESPONSE=$(${CLICKHOUSE_CURL} -sS --raw -H "Accept-Encoding: gzip" "${CLICKHOUSE_URL}" --data-binary "SELECT number FROM system.numbers LIMIT 3 FORMAT CSV" 2>&1)
+# Successful query should end with "0\r\n\r\n" (the final zero chunk)
+if echo "$RESPONSE" | od -c | tail -2 | grep -q "0.*\\\\r.*\\\\n.*\\\\r.*\\\\n$"; then
+    echo "Final zero chunk present on success: OK"
+else
+    echo "Final zero chunk missing on success (BAD): FAILED"
+fi
 echo

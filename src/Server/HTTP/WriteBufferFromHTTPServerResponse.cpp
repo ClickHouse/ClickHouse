@@ -1,3 +1,4 @@
+#include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <IO/HTTPCommon.h>
@@ -194,9 +195,10 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 {
     std::lock_guard lock(mutex);
 
-    if (headers_started_sending)
-        exception_code = code;
-    else
+    // Always set exception_code so finalizeImpl() can check it
+    exception_code = code;
+
+    if (!headers_started_sending)
         response.set("X-ClickHouse-Exception-Code", toString<int>(code));
 
     if (code == ErrorCodes::REQUIRED_PASSWORD)
@@ -207,15 +209,23 @@ void WriteBufferFromHTTPServerResponse::setExceptionCode(int code)
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
+    int exception_code_copy = 0;
     {
         std::lock_guard lock(mutex);
         startSendHeaders();
         finishSendHeaders();
+        exception_code_copy = exception_code;
     }
 
     if (!is_http_method_head)
     {
         HTTPWriteBuffer::finalizeImpl();
+
+        // Only send the final zero chunk if no exception occurred
+        // When an exception occurs, we intentionally break the HTTP protocol
+        // by not sending the final chunk to signal an error to the client
+        if (isChunked() && !exception_code_copy)
+            socketSendBytes("0\r\n\r\n", 5);
     }
 }
 
@@ -383,7 +393,6 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             if (use_compression_buffer)
             {
                 compression_buffer->next();
-                compression_buffer->finalize();
             }
             next();
 
