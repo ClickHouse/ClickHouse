@@ -222,6 +222,8 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
         func_ips.emplace_back(*it);
     lock.unlock();
 
+    std::sort(func_ips.begin(), func_ips.end());
+
     for (const auto & info : func_ips)
     {
         if (info.entry_type.has_value() && info.entry_type.value() != entry_type)
