@@ -389,6 +389,17 @@
         </client>
     </openSSL>
 
+    <!-- Let's Encrypt certificate provider configuration -->
+    <!--
+    <acme>
+        <email>someone@example.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>example.com</domain>
+        </domains>
+    </acme>
+    -->
+
     <!-- Default root page on http[s] server. -->
     <!--
     <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>

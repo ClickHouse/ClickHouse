@@ -78,7 +78,6 @@ WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
             break;
         }
     }
-}
 
 WorkloadResourceManager::Resource::~Resource()
 {

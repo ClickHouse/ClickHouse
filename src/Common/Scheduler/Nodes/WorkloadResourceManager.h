@@ -213,7 +213,7 @@ private:
         void setup()
         {
             auto sched = std::make_shared<Scheduler>();
-            sched->start("Sch." + resource_name);
+            sched->start(ThreadName::WORKLOAD_RESOURCE_MANAGER);
             scheduler = sched;
 
             stop = [] (const SchedulerNodePtr & root)
