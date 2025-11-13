@@ -113,7 +113,7 @@ SELECT (1, 2) IN [NULL, (1, 2)];
 
 SELECT (1, 2) IN NULL;
 
-SELECT (1, 2) IN (NULL, NULL, NULL);
+SELECT (1, 2) IN (NULL, NULL, NULL);-- { serverError INCORRECT_ELEMENT_OF_SET }
 
 SELECT (1, 2) IN (NULL, NULL, (1, 2));
 
@@ -160,5 +160,15 @@ SELECT CAST(('a', 1), 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN 
 SELECT CAST(NULL, 'Nullable(Tuple(Enum8(\'a\' = 1, \'b\' = 2), Int32))') IN (('a', 1), ('c', 1), NULL) SETTINGS enable_analyzer = 1;
 
 SELECT CAST((1, 2), 'Tuple(Int32, Int32)') IN [1, 2]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+
+SELECT (1, 2) IN (1, NULL);
+
+SELECT (1, NULL) IN (1, NULL);
+
+SELECT (1, 2) IN (NULL, NULL, (1, 2));
+
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL);
+
+SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2));
 
 {% endfor -%}
