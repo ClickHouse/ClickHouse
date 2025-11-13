@@ -46,6 +46,8 @@ class Field;
 struct FormatSettings;
 struct NameAndTypePair;
 
+struct MergeTreeSettings;
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -593,8 +595,16 @@ public:
 
     virtual void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
-    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+    struct StreamFileNameSettings
+    {
+        StreamFileNameSettings() = default;
+        explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
+
+        bool escape_variant_substreams = true;
+    };
+
+    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
+    static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings);
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 

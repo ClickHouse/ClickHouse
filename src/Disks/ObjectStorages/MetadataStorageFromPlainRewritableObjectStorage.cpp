@@ -97,7 +97,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
         /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
         /// is not applicable.
         auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0)->isValid();
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0, /*with_tags=*/ false)->isValid();
         /// No metadata directory: legacy layout is likely in use.
         if (has_data && !has_metadata)
         {
@@ -116,10 +116,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     try
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
-        for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
             remote_layout[""].file_names.insert(fs::path(iterator->current()->getPath()).filename());
 
-        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
         {
             auto file = iterator->current();
             String path = file->getPath();
@@ -171,7 +171,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                     /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
                     size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
-                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
+                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0, /*with_tags=*/ false); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
                         String remote_file_path = remote_file->getPath();
