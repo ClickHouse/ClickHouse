@@ -391,36 +391,6 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-/**
-  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
-  * The expected data is either form of Array(String) or Array(FixedString).
-  */
-static bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
-{
-    const auto function = index_column_node.toFunctionNode();
-    if (function.getFunctionName() == "arrayElement")
-    {
-        const auto column_name = function.getArgumentAt(0).getColumnName();
-        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", column_name));
-        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", column_name));
-        if (has_maps_keys_index_column_name)
-        {
-            const auto & argument_const_key = function.getArgumentAt(1);
-            DataTypePtr key_const_type;
-            if (argument_const_key.tryGetConstant(const_value, key_const_type))
-            {
-                auto const_data_type = WhichDataType(key_const_type);
-                if (!const_data_type.isStringOrFixedString())
-                    return false;
-                return true;
-            }
-            return false;
-        }
-        return has_map_values_index_column_name;
-    }
-    return false;
-}
-
 std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
     std::vector<String> tokens;
@@ -444,7 +414,6 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
     return tokens;
 }
-
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,

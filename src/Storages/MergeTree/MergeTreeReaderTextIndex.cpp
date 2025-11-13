@@ -356,9 +356,9 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
     auto * data_buffer = postings_stream->getDataBuffer();
     auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
 
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index.condition);
     const String & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
     const String & index_name = index.index->getFileName();
+
     const auto get_postings = [&](const TokenPostingsInfo::FuturePostings future_postings, std::string_view token)
     {
         const auto load_postings = [&]() -> PostingListPtr
