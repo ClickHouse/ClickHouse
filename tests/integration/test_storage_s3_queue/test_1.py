@@ -28,7 +28,6 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
-#test
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -105,6 +104,22 @@ def started_cluster():
                 "configs/remote_servers.xml",
             ],
             stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_with_keeper_multiread",
+            user_configs=[
+                "configs/users.xml",
+                "configs/enable_keeper_fault_injection.xml",
+            ],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            stay_alive=True,
+            keeper_randomize_feature_flags=False,
         )
 
         logging.info("Starting cluster...")
@@ -343,7 +358,10 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 
 def test_max_set_age(started_cluster):
-    node = started_cluster.instances["instance"]
+    # We use a instance with disable keeper feature flags randomization,
+    # because with disabled multi-read we fail to do cleanup to often
+    # (with enabled keeper fault injection), leading to this test's failure.
+    node = started_cluster.instances["instance_with_keeper_multiread"]
     table_name = f"max_set_age_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests

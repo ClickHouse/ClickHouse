@@ -1198,6 +1198,8 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     {
         auto get_paths = [&]
         {
+            LOG_TEST(log, "Fetching info for {} paths", paths.size());
+
             zkutil::ZooKeeper::MultiTryGetResponse response;
             zk_retries.resetFailures();
             zk_retries.retryLoop([&]
@@ -1230,6 +1232,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         if (!paths.empty())
             get_paths();
     };
+
+    LOG_TRACE(
+        log, "Processed nodes to remove: {}, failed nodes to remove: {}, multiread batch size: {}",
+        processed_nodes.size(), failed_nodes.size(), keeper_multiread_batch_size);
 
     fetch_nodes(processed_nodes, zookeeper_processed_path);
     fetch_nodes(failed_nodes, zookeeper_failed_path);
