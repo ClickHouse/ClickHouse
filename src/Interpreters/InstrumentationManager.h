@@ -14,9 +14,10 @@
 #include <xray/xray_interface.h>
 
 #include <boost/multi_index_container.hpp>
+#include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/member.hpp>
+#include <boost/multi_index/ordered_index.hpp>
 
 
 class InstrumentationManagerTest;
@@ -31,7 +32,7 @@ class InstrumentationManager
 public:
     using InstrumentedParameter = std::variant<String, Int64, Float64>;
 
-    enum class HandlerType
+    enum class HandlerType : UInt8
     {
         SLEEP,
         LOG,
@@ -118,8 +119,12 @@ private:
     using InstrumentedPointContainer = boost::multi_index_container<
         InstrumentedPointInfo,
         boost::multi_index::indexed_by<
-            boost::multi_index::ordered_unique<boost::multi_index::tag<Id>, boost::multi_index::member<InstrumentedPointInfo, UInt64, &InstrumentedPointInfo::id>>,
-            boost::multi_index::hashed_non_unique<boost::multi_index::tag<FunctionId>, boost::multi_index::member<InstrumentedPointInfo, Int32, &InstrumentedPointInfo::function_id>>
+            boost::multi_index::hashed_unique<boost::multi_index::tag<Id>, boost::multi_index::member<InstrumentedPointInfo, UInt64, &InstrumentedPointInfo::id>>,
+            boost::multi_index::ordered_non_unique<boost::multi_index::tag<FunctionId>,
+                boost::multi_index::composite_key<
+                    InstrumentedPointInfo,
+                    boost::multi_index::member<InstrumentedPointInfo, Int32, &InstrumentedPointInfo::function_id>,
+                    boost::multi_index::member<InstrumentedPointInfo, UInt64, &InstrumentedPointInfo::id>>>
         >>;
 
     InstrumentationManager();
