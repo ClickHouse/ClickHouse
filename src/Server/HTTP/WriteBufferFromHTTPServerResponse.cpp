@@ -219,7 +219,10 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
 
     if (!is_http_method_head)
     {
-        HTTPWriteBuffer::finalizeImpl();
+        // We intentionally call WriteBufferFromPocoSocket::finalizeImpl() instead of
+        // HTTPWriteBuffer::finalizeImpl() because HTTPWriteBuffer unconditionally sends
+        // the final zero chunk. We need to conditionally send it based on exception_code.
+        WriteBufferFromPocoSocket::finalizeImpl(); // NOLINT(bugprone-parent-virtual-call)
 
         // Only send the final zero chunk if no exception occurred
         // When an exception occurs, we intentionally break the HTTP protocol
