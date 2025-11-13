@@ -1382,7 +1382,7 @@ TEST(T64Test, TranscodeRawInput)
 
     for (const auto & type : types)
     {
-        for (size_t buffer_size = 8; buffer_size < 2000; buffer_size++)
+        for (size_t buffer_size = 1; buffer_size < 2000; buffer_size++)
         {
             DB::Memory<> source_memory;
             source_memory.resize(buffer_size);
@@ -1406,45 +1406,6 @@ TEST(T64Test, TranscodeRawInput)
                 ASSERT_EQ(memory_for_decompression.data()[i], source_memory.data()[i]) << "with data type " << type->getName() << " with buffer size " << buffer_size << " at position " << i;
         }
     }
-}
-
-TEST(T64Test, CompressZeroBufferThrows)
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "this test trigger LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
-#else
-    std::vector<DataTypePtr> types = {
-        std::make_shared<DataTypeInt8>(),
-        std::make_shared<DataTypeInt16>(),
-        std::make_shared<DataTypeInt32>(),
-        std::make_shared<DataTypeInt64>(),
-        std::make_shared<DataTypeUInt8>(),
-        std::make_shared<DataTypeUInt16>(),
-        std::make_shared<DataTypeUInt32>(),
-        std::make_shared<DataTypeUInt64>(),
-    };
-
-    for (const auto & type : types)
-    {
-        // If the buffer size is 0, 'assert(source != nullptr && dest != nullptr);' will be triggered
-        // in ICompressionCodec::compress(const char * source, UInt32 source_size, char * dest)
-        for (size_t buffer_size = 1; buffer_size < type->getSizeOfValueInMemory(); buffer_size++)
-        {
-            DB::Memory<> source_memory;
-            source_memory.resize(buffer_size);
-
-            for (size_t i = 0; i < buffer_size; ++i)
-                source_memory.data()[i] = i;
-
-            DB::Memory<> memory_for_compression;
-            auto codec = makeCodec("T64", type);
-
-            memory_for_compression.resize(codec->getCompressedReserveSize(buffer_size));
-
-            ASSERT_THROW(codec->compress(source_memory.data(), UInt32(source_memory.size()), memory_for_compression.data()), Exception);
-        }
-    }
-#endif
 }
 
 }

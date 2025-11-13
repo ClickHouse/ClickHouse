@@ -505,11 +505,8 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     src += bytes_to_skip;
     dst += bytes_to_skip;
 
-    if (bytes_size % sizeof(T) != 0)
-        throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with T64 codec, data size {} is not aligned to {}", bytes_size, sizeof(T));
-
     if (bytes_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compressing a buffer of size 0 is not expected.");
+        return bytes_to_skip;
 
     UInt32 src_size = bytes_size / sizeof(T);
     UInt32 num_full = src_size / matrix_size;
