@@ -4319,7 +4319,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
         cluster = t.getCluster();
         ren->set_sobject(SQLObject::TABLE);
         t.setName(oldn->mutable_est(), true);
-        SQLTable::setName(newn->mutable_est(), true, t.db, this->table_counter++);
+        SQLTable::setName(newn->mutable_est(), "t", true, t.db, this->table_counter++);
     }
     else if (rename_view && nopt < (rename_table + rename_view + 1))
     {
@@ -4328,7 +4328,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
         cluster = v.getCluster();
         ren->set_sobject(SQLObject::TABLE);
         v.setName(oldn->mutable_est(), true);
-        SQLView::setName(newn->mutable_est(), true, v.db, this->table_counter++);
+        SQLView::setName(newn->mutable_est(), "v", true, v.db, this->table_counter++);
     }
     else if (rename_dictionary && nopt < (rename_table + rename_view + rename_dictionary + 1))
     {
@@ -4337,7 +4337,7 @@ void StatementGenerator::generateNextRename(RandomGenerator & rg, Rename * ren)
         cluster = d.getCluster();
         ren->set_sobject(SQLObject::DICTIONARY);
         d.setName(oldn->mutable_est(), true);
-        SQLDictionary::setName(newn->mutable_est(), true, d.db, this->table_counter++);
+        SQLDictionary::setName(newn->mutable_est(), "d", true, d.db, this->table_counter++);
     }
     else if (rename_database && nopt < (rename_table + rename_view + rename_dictionary + rename_database + 1))
     {

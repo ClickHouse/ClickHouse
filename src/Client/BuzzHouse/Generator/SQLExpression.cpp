@@ -1101,6 +1101,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 {
     ExprColAlias * eca = nullptr;
     const auto & level_rels = this->levels[this->current_level].rels;
+    const auto has_dictionary_lambda
+        = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
 
     const uint32_t literal_value = this->inside_projection ? 50 : 100;
     const uint32_t col_ref_expr = this->inside_projection ? 600 : 300;
@@ -1125,9 +1127,11 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                                 && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t lambda_expr = 3 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
     const uint32_t projection_expr = 75 * static_cast<uint32_t>(this->inside_projection);
+    const uint32_t dict_expr
+        = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth && collectionHas<SQLDictionary>(has_dictionary_lambda));
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr
-        + lambda_expr + projection_expr;
+        + lambda_expr + projection_expr + dict_expr;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -1460,6 +1464,29 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
 
         sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCcount);
+    }
+    else if (
+        dict_expr
+        && noption
+            < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
+               + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr + lambda_expr
+               + projection_expr + dict_expr + 1))
+    {
+        /// Dictionary functions
+        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+
+        sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCdictGet);
+        sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + d.getFullName(true) + "'");
+        flatTableColumnPath(
+            flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated,
+            d.cols,
+            [](const SQLColumn &) { return true; });
+        sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(this->table_entries).columnPathRef("'"));
+        this->table_entries.clear();
+        this->depth++;
+        this->generateExpression(rg, sfc->add_args()->mutable_expr());
+        this->depth--;
     }
     else
     {

@@ -3,6 +3,11 @@
 namespace BuzzHouse
 {
 
+String SQLColumn::getColumnName() const
+{
+    return "c" + std::to_string(cname);
+}
+
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
 {
     if (add_params && isReplicatedDatabase())
@@ -107,7 +112,19 @@ String SQLBase::getTableName(const bool full) const
     {
         res += "test.";
     }
-    res += "t" + std::to_string(tname);
+    res += this->prefix + std::to_string(tname);
+    return res;
+}
+
+String SQLBase::getFullName(const bool setdbname) const
+{
+    String res;
+
+    if (db || setdbname)
+    {
+        res += getDatabaseName() + ".";
+    }
+    res += getTableName();
     return res;
 }
 
@@ -367,21 +384,9 @@ size_t SQLTable::numberOfInsertableColumns() const
     return res;
 }
 
-String SQLTable::getFullName(const bool setdbname) const
+String ColumnPathChain::columnPathRef(String quote) const
 {
-    String res;
-
-    if (db || setdbname)
-    {
-        res += getDatabaseName() + ".";
-    }
-    res += getTableName();
-    return res;
-}
-
-String ColumnPathChain::columnPathRef() const
-{
-    String res = "`";
+    String res = quote;
 
     for (size_t i = 0; i < path.size(); i++)
     {
@@ -391,7 +396,7 @@ String ColumnPathChain::columnPathRef() const
         }
         res += path[i].cname;
     }
-    res += "`";
+    res += quote;
     return res;
 }
 
