@@ -282,6 +282,7 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
 
     if (have_eq)
     {
+        node.reset();
         /// Default
         if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
         {
@@ -308,10 +309,22 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
 
         if (allow_expressions)
         {
-            ASTPtr expr_node;
-            if (!expression_p.parse(pos, expr_node, expected))
-                return false;
-            node = expr_node;
+            /// If value starts with '{', treat it as a collection of literals (e.g. Map) to
+            /// avoid mis-parsing as a substitution. This preserves existing SETTINGS map syntax.
+            if (pos->type == TokenType::OpeningCurlyBrace)
+            {
+                /// Parse Map in SET/SETTINGS as array of tuples (key, value).
+                /// Use the local literal-or-map parser that constructs Map of Tuple properly.
+                if (!value_p.parse(pos, node, expected))
+                    return false;
+            }
+            else
+            {
+                ASTPtr expr_node;
+                if (!expression_p.parse(pos, expr_node, expected))
+                    return false;
+                node = expr_node;
+            }
         }
         else
         {
