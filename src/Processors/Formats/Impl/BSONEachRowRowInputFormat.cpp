@@ -59,7 +59,7 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     name_map = getNamesToIndexesMap(getPort().getHeader());
 }
 
-inline size_t BSONEachRowRowInputFormat::columnIndex(const std::string_view & name, size_t key_index)
+inline size_t BSONEachRowRowInputFormat::columnIndex(std::string_view name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.

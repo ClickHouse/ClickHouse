@@ -41,7 +41,7 @@ public:
     }
 
     /// throws exception if value is not valid
-    const std::string_view & getNameForValue(const T & value) const
+    std::string_view getNameForValue(const T & value) const
     {
         return findByValue(value)->second;
     }

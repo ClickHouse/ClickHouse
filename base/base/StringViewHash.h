@@ -334,18 +334,3 @@ namespace ZeroTraits
     inline bool check(const std::string_view & x) { return x.empty(); }
     inline void set(std::string_view & x) { x = std::string_view(); }
 }
-
-namespace PackedZeroTraits
-{
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline bool check(const PackedPairNoInit<std::string_view, Second> p)
-    {
-        return 0 == p.key.size;
-    }
-
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline void set(PackedPairNoInit<std::string_view, Second> & p)
-    {
-        p.key.size = 0;
-    }
-}

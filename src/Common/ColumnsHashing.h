@@ -19,7 +19,6 @@
 #include <Core/Defines.h>
 #include <memory>
 #include <cassert>
-#include <string>
 
 namespace DB
 {

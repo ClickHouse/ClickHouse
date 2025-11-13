@@ -96,7 +96,7 @@ size_t DictionaryBlockBase::upperBound(const std::string_view token) const
 {
     auto range = collections::range(0, tokens->size());
 
-    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const std::string_view & lhs_ref, size_t rhs_idx)
+    auto it = std::upper_bound(range.begin(), range.end(), token, [this](const std::string_view lhs_ref, size_t rhs_idx)
     {
         return lhs_ref < assert_cast<const ColumnString &>(*tokens).getDataAt(rhs_idx);
     });

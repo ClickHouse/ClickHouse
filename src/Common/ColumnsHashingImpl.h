@@ -5,7 +5,6 @@
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -212,7 +211,6 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        LOG_INFO(getLogger("HELP"), "{}", typeid(key_holder).name());
         return emplaceImpl(key_holder, data);
     }
 

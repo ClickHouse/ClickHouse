@@ -474,7 +474,7 @@ namespace
                 ColumnString::Offset current_offset = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    const std::string_view ref{reinterpret_cast<const char *>(data.data()) + current_offset, offsets[i] - current_offset};
+                    const std::string_view ref{reinterpret_cast<const char *>(&data[current_offset]), offsets[i] - current_offset};
                     current_offset = offsets[i];
                     const auto * it = table.find(ref);
                     if (it)

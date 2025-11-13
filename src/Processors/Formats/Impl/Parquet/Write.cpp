@@ -88,7 +88,7 @@ struct StatisticsNumeric
     }
 };
 
-struct StatisticsFixedStringView
+struct StatisticsFixedStringRef
 {
     size_t fixed_string_size = UINT64_MAX;
     const uint8_t * min = nullptr;
@@ -101,7 +101,7 @@ struct StatisticsFixedStringView
         addMax(a.ptr);
     }
 
-    void merge(const StatisticsFixedStringView & s)
+    void merge(const StatisticsFixedStringRef & s)
     {
         chassert(fixed_string_size == UINT64_MAX || fixed_string_size == s.fixed_string_size);
         fixed_string_size = s.fixed_string_size;
@@ -195,7 +195,7 @@ struct StatisticsFixedStringCopy
     }
 };
 
-struct StatisticsStringView
+struct StatisticsStringRef
 {
     parquet::ByteArray min;
     parquet::ByteArray max;
@@ -206,7 +206,7 @@ struct StatisticsStringView
         addMax(x);
     }
 
-    void merge(const StatisticsStringView & s)
+    void merge(const StatisticsStringRef & s)
     {
         if (s.min.ptr == nullptr)
             return;
@@ -333,7 +333,7 @@ struct ConverterDateTime
 
 struct ConverterString
 {
-    using Statistics = StatisticsStringView;
+    using Statistics = StatisticsStringRef;
 
     const ColumnString & column;
     PODArray<parquet::ByteArray> buf;
@@ -355,7 +355,7 @@ struct ConverterString
 template <typename T>
 struct ConverterEnumAsString
 {
-    using Statistics = StatisticsStringView;
+    using Statistics = StatisticsStringRef;
 
     explicit ConverterEnumAsString(const ColumnPtr & c, const DataTypePtr & enum_type_)
     : column(assert_cast<const ColumnVector<T> &>(*c)), enum_type(assert_cast<const DataTypeEnum<T> *>(enum_type_.get())) {}
@@ -382,7 +382,7 @@ struct ConverterEnumAsString
 
 struct ConverterFixedString
 {
-    using Statistics = StatisticsFixedStringView;
+    using Statistics = StatisticsFixedStringRef;
 
     const ColumnFixedString & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -402,7 +402,7 @@ struct ConverterFixedString
 
 struct ConverterFixedStringAsString
 {
-    using Statistics = StatisticsStringView;
+    using Statistics = StatisticsStringRef;
 
     const ColumnFixedString & column;
     PODArray<parquet::ByteArray> buf;
@@ -443,7 +443,7 @@ struct ConverterNumberAsFixedString
 
 struct ConverterJSON
 {
-    using Statistics = StatisticsStringView;
+    using Statistics = StatisticsStringRef;
 
     const ColumnObject & column;
     DataTypePtr data_type;
@@ -718,7 +718,7 @@ void writeColumnImpl(
             "", parquet::Repetition::REQUIRED, parquet::Type::FIXED_LEN_BYTE_ARRAY,
             parquet::ConvertedType::NONE, static_cast<int>(converter.fixedStringSize())), 0, 0);
 
-        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringView>)
+        if constexpr (std::is_same_v<typename Converter::Statistics, StatisticsFixedStringRef>)
             page_statistics.fixed_string_size = converter.fixedStringSize();
     }
 

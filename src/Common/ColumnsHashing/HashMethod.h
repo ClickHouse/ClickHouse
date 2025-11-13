@@ -189,14 +189,13 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
             column = key_columns[0];
         }
         const ColumnFixedString & column_string = assert_cast<const ColumnFixedString &>(*column);
-
         n = column_string.getN();
         chars = &column_string.getChars();
     }
 
     auto getKeyHolder(size_t row, [[maybe_unused]] Arena & pool) const
     {
-        std::string_view key(reinterpret_cast<const char *>(chars->data()) + row * n, n);
+        std::string_view key(reinterpret_cast<const char *>(&(*chars)[row * n]), n);
         if constexpr (place_string_to_arena)
         {
             return ArenaKeyHolder{key, pool};

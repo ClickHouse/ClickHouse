@@ -146,7 +146,7 @@ namespace
                     setResult(result, location, frames);
                     return result;
                 }
-                return {object->name};
+                return object->name;
             }
             return {};
         }

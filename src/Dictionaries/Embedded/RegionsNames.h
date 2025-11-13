@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <Poco/Exception.h>
+#include <base/StringViewHash.h>
 #include <base/types.h>
 #include <Dictionaries/Embedded/GeodataProviders/INamesProvider.h>
 
@@ -66,7 +67,6 @@ private:
 
     using Chars = std::vector<char>;
     using CharsForLanguageID = std::vector<Chars>;
-    using StringViews = std::vector<std::string_view>; /// Lookup table RegionID -> std::string_view
     using StringViewsForLanguageID = std::vector<StringViews>;
 
 

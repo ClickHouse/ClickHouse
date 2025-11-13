@@ -150,7 +150,7 @@ public:
     /// Check if it is enough place to write key in block
     bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
-        const std::string_view & key = cache_key.key;
+        std::string_view key = cache_key.key;
         size_t complex_key_size = sizeof(key.size()) + key.size();
 
         return (current_block_offset + (complex_key_size + sizeof(cache_key.size) + cache_key.size)) <= block_size;
@@ -197,7 +197,7 @@ public:
 
         char * current_block_offset_data = block_data + current_block_offset;
 
-        const std::string_view & key = cache_key.key;
+        std::string_view key = cache_key.key;
 
         /// Write complex key
         auto key_size = key.size();

@@ -4,6 +4,7 @@
 #include <Storages/IStorage.h>
 #include <Common/quoteString.h>
 
+#include <base/StringViewHash.h>
 #include <sparsehash/dense_hash_set>
 
 namespace DB

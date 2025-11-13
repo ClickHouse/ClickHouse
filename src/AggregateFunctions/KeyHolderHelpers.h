@@ -18,7 +18,7 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     {
         const char * begin = nullptr;
         auto serialized = column.serializeAggregationStateValueIntoArena(row_num, arena, begin);
-        chassert(serialized.data() != nullptr);
+        chassert(!serialized.empty());
         return SerializedKeyHolder{serialized, arena};
     }
 }

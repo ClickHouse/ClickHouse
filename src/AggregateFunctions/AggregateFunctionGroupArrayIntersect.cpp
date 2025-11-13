@@ -236,7 +236,7 @@ public:
                 {
                     const char * begin = nullptr;
                     auto serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data() != nullptr);
+                    chassert(!serialized.empty());
                     set.emplace(SerializedKeyHolder{serialized, *arena}, it, inserted);
                 }
             }
@@ -256,7 +256,7 @@ public:
                 {
                     const char * begin = nullptr;
                     auto serialized = data_column->serializeAggregationStateValueIntoArena(offset + i, *arena, begin);
-                    chassert(serialized.data() != nullptr);
+                    chassert(!serialized.empty());
                     it = set.find(serialized);
 
                     if (it != nullptr)

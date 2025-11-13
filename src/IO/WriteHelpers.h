@@ -151,12 +151,6 @@ inline void writeString(const char * data, size_t size, WriteBuffer & buf)
     buf.write(data, size);
 }
 
-// Otherwise std::string_view and string_view overloads are ambiguous when passing string literal. Prefer std::string_view
-void writeString(std::same_as<std::string_view> auto ref, WriteBuffer & buf)
-{
-    writeString(ref.data, ref.size, buf);
-}
-
 inline void writeString(std::string_view ref, WriteBuffer & buf)
 {
     writeString(ref.data(), ref.size(), buf);
