@@ -270,10 +270,11 @@ std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
     const StorageMetadataPtr & metadata_snapshot,
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
-    const std::string & partition_id)
+    const std::string & partition_id,
+    const bool ignore_prefer_not_to_merge)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id, /*ignore_prefer_not_to_merge=*/true);
+    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id, ignore_prefer_not_to_merge);
 }
 
 MergeSelectorChoices chooseMergesFrom(
@@ -423,7 +424,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
     LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
-    auto grab_and_split_ranges = [&](bool ignore_prefer_not_to_merge) -> std::expected<PartsRanges, SelectMergeFailure>
+    auto grab_and_split_ranges = [&](bool ignore_prefer_not_to_merge = false) -> std::expected<PartsRanges, SelectMergeFailure>
     {
         auto ranges = grabAllPossibleRanges(
             parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log, ignore_prefer_not_to_merge);
@@ -446,9 +447,9 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
         return ranges;
     };
 
-    // For background merges, try TTLDelete merges first to drop entire parts.
+    // Try TTLDelete merges first to drop entire parts.
     // (Should ignore storage policy merge restrictions)
-    if (!selector.aggressive && can_use_ttl_merges && metadata_snapshot->hasAnyTTL() && storage_policy->hasAnyVolumeWithDisabledMerges())
+    if (can_use_ttl_merges && metadata_snapshot->hasAnyTTL() && storage_policy->hasAnyVolumeWithDisabledMerges())
     {
         auto res = grab_and_split_ranges(/*ignore_prefer_not_to_merge=*/true);
 
@@ -468,8 +469,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     }
 
     // Then, try TTL merges and regular merges
-    // (Should ignore storage policy merge restrictions for aggressive mode (OPTIMIZE))
-    auto res = grab_and_split_ranges(/*ignore_prefer_not_to_merge=*/selector.aggressive);
+    auto res = grab_and_split_ranges();
 
     if (!res)
         return std::unexpected(res.error());
@@ -518,7 +518,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     const time_t current_time = std::time(nullptr);
     const auto storage_policy = data.getStoragePolicy();
 
-    auto collect_result = grabAllPartsInsidePartition(parts_collector, metadata_snapshot, storage_policy, current_time, partition_id);
+    auto collect_result = grabAllPartsInsidePartition(parts_collector, metadata_snapshot, storage_policy, current_time, partition_id, final);
     if (!collect_result)
     {
         return std::unexpected(SelectMergeFailure{
