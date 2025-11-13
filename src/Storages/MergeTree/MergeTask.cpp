@@ -9,7 +9,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
@@ -445,10 +444,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->temporary_directory_lock = global_ctx->data->getTemporaryPartDirectoryHolder(local_tmp_part_basename);
 
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
-
-    auto object_columns = MergeTreeData::getConcreteObjectColumns(global_ctx->future_part->parts, global_ctx->metadata_snapshot->getColumns());
-    extendObjectColumns(global_ctx->storage_columns, object_columns, false);
-    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
+    global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot);
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;

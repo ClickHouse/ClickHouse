@@ -596,7 +596,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (options.only_analyze)
             storage_snapshot = storage->getStorageSnapshotWithoutData(metadata_snapshot, context);
         else
-            storage_snapshot = storage->getStorageSnapshotForQuery(metadata_snapshot, query_ptr, context);
+            storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
     }
 
     if (has_input || !joined_tables.resolveTables())
