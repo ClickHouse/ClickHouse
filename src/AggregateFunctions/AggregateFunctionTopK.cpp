@@ -290,7 +290,8 @@ public:
                 column_error[old_size + i] = it->error;
             }
 
-        } else
+        }
+        else
         {
 
             auto & column_key = assert_cast<ColumnVector<T> &>(data_to).getData();
@@ -451,7 +452,8 @@ public:
                 column_error.insert(elem.error);
                 deserializeAndInsert<is_plain_column>(elem.key, column_key);
             }
-        } else
+        }
+        else
         {
             for (auto & elem : result_vec)
             {
@@ -573,7 +575,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
                 if (reserved < 1)
                     throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                     "Too small parameter 'reserved' for aggregate function '{}' (got {}, minimum is 1)", name, reserved);
-            } else
+            }
+            else
             {
                 load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
 
