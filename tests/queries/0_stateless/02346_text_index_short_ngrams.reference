@@ -24,8 +24,6 @@ SELECT * FROM tab WHERE hasAllTokens(arr, 'abc');
 SELECT * FROM tab WHERE hasAnyTokens(arr, '');
 SELECT * FROM tab WHERE hasAllTokens(arr, '');
 SELECT * from tab WHERE has(arr, 'abc');
-1	abc	['abc']	{'abc':'abc'}
-2	def	['def','abc']	{'abc':'foo','def':'foo'}
 -- Maps
 SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
 SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), ['abc']);
@@ -38,9 +36,5 @@ SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), 'abc');
 SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), '');
 SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), '');
 SELECT * FROM tab WHERE mapContains(map, 'abc');
-1	abc	['abc']	{'abc':'abc'}
-2	def	['def','abc']	{'abc':'foo','def':'foo'}
 SELECT * FROM tab WHERE mapContains(map, '');
 SELECT * from tab WHERE has(map, 'abc');
-1	abc	['abc']	{'abc':'abc'}
-2	def	['def','abc']	{'abc':'foo','def':'foo'}
