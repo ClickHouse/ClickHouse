@@ -1419,10 +1419,6 @@ private:
     bool flag_per_row;
 
     size_t current_block_start;
-    /// Separate progress pointer for iterating nullmap holders' rows across calls
-    size_t current_nullmap_row = 0;
-    /// Separate progress pointer for iterating rows inside the current block when flag_per_row is true
-    size_t current_used_row = 0;
 
     std::any position;
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
@@ -1500,13 +1496,12 @@ private:
 
             auto end = parent.data->columns.end();
 
-            while (*used_position != end && rows_added < max_block_size)
+            for (auto & it = *used_position; it != end && rows_added < max_block_size; ++it)
             {
-                const auto & mapped_block = **used_position;
-                const size_t rows = mapped_block.columns_info.columns.at(0)->size();
+                const auto & mapped_block = *it;
+                size_t rows = mapped_block.columns_info.columns.at(0)->size();
 
-                size_t row = current_used_row;
-                for (; row < rows && rows_added < max_block_size; ++row)
+                for (size_t row = 0; row < rows; ++row)
                 {
                     if (!parent.isUsed(&mapped_block.columns_info.columns, row))
                     {
@@ -1519,19 +1514,6 @@ private:
                         }
                         ++rows_added;
                     }
-                }
-
-                if (row < rows)
-                {
-                    // Hit max_block_size within this block; persist position and stop.
-                    current_used_row = row;
-                    break;
-                }
-                else
-                {
-                    // Finished current block; advance to next and reset offset.
-                    current_used_row = 0;
-                    ++(*used_position);
                 }
             }
         }
@@ -1581,10 +1563,8 @@ private:
             if (it->column)
                 nullmap = &assert_cast<const ColumnUInt8 &>(*it->column).getData();
 
-            const size_t rows = columns->columns_info.columns.at(0)->size();
-
-            size_t row = current_nullmap_row;
-            for (; row < rows && rows_added < max_block_size; ++row)
+            size_t rows = columns->columns_info.columns.at(0)->size();
+            for (size_t row = 0; row < rows; ++row)
             {
                 if (nullmap && (*nullmap)[row])
                 {
@@ -1597,18 +1577,6 @@ private:
                     }
                     ++rows_added;
                 }
-            }
-
-            if (row < rows)
-            {
-                /// Partial consumption of this nullmap holder; persist row offset and return
-                current_nullmap_row = row;
-                break;
-            }
-            else
-            {
-                /// Finished this nullmap holder, move to next and reset row offset
-                current_nullmap_row = 0;
             }
         }
     }

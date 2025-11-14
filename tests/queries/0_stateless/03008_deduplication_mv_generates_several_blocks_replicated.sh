@@ -47,8 +47,6 @@ for insert_method in "InsertSelect" "InsertValues"; do
                                 --deduplicate-dst-table $deduplicate_dst_table \
                                 --insert-unique-blocks $insert_unique_blocks \
                                 --get-logs false \
-                                --debug-on-fail True \
-                                --debug-limit 200 \
                             )
                         " && echo OK || echo FAIL
                     done

@@ -36,7 +36,7 @@ THIS_RUN+=" deduplicate_src_table=$deduplicate_src_table"
 THIS_RUN+=" deduplicate_dst_table=$deduplicate_dst_table"
 THIS_RUN+=" insert_unique_blocks=$insert_unique_blocks"
 
-OUTPUT="$($CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
+$CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
     $(python3 $CURDIR/03008_deduplication.python insert_several_blocks_into_table \
         --insert-method $insert_method \
         --table-engine $engine \
@@ -46,18 +46,10 @@ OUTPUT="$($CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
         --deduplicate-dst-table $deduplicate_dst_table \
         --insert-unique-blocks $insert_unique_blocks \
         --get-logs false \
-        --debug-on-fail True \
-        --debug-limit 200 \
     )
-" 2>&1)"; RC=$?
-if [ $RC -eq 0 ]; then
-    echo 'insert_several_blocks_into_table OK'
-else
-    echo "FAIL: insert_several_blocks_into_table ${THIS_RUN}"
-    echo "$OUTPUT"
-fi
+" 1>/dev/null 2>&1 && echo 'insert_several_blocks_into_table OK'  || echo "FAIL: insert_several_blocks_into_table ${THIS_RUN}"
 
-OUTPUT="$($CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
+$CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
     $(python3 $CURDIR/03008_deduplication.python mv_generates_several_blocks \
         --insert-method $insert_method \
         --table-engine $engine \
@@ -67,18 +59,10 @@ OUTPUT="$($CLICKHOUSE_CLIENT --max_insert_block_size 1  -mq "
         --deduplicate-dst-table $deduplicate_dst_table \
         --insert-unique-blocks $insert_unique_blocks \
         --get-logs false \
-        --debug-on-fail True \
-        --debug-limit 200 \
     )
-" 2>&1)"; RC=$?
-if [ $RC -eq 0 ]; then
-    echo 'mv_generates_several_blocks OK'
-else
-    echo "FAIL: mv_generates_several_blocks ${THIS_RUN}"
-    echo "$OUTPUT"
-fi
+" 1>/dev/null 2>&1 && echo 'mv_generates_several_blocks OK'  || echo "FAIL: mv_generates_several_blocks ${THIS_RUN}"
 
-OUTPUT="$($CLICKHOUSE_CLIENT  --max_insert_block_size 1 -mq "
+$CLICKHOUSE_CLIENT  --max_insert_block_size 1 -mq "
     $(python3 $CURDIR/03008_deduplication.python several_mv_into_one_table \
         --insert-method $insert_method \
         --table-engine $engine \
@@ -88,14 +72,6 @@ OUTPUT="$($CLICKHOUSE_CLIENT  --max_insert_block_size 1 -mq "
         --deduplicate-dst-table $deduplicate_dst_table \
         --insert-unique-blocks $insert_unique_blocks \
         --get-logs false \
-        --debug-on-fail True \
-        --debug-limit 200 \
     )
-" 2>&1)"; RC=$?
-if [ $RC -eq 0 ]; then
-    echo 'several_mv_into_one_table OK'
-else
-    echo "FAIL: several_mv_into_one_table ${THIS_RUN}"
-    echo "$OUTPUT"
-fi
+" 1>/dev/null 2>&1 && echo 'several_mv_into_one_table OK'  || echo "FAIL: several_mv_into_one_table ${THIS_RUN}"
 

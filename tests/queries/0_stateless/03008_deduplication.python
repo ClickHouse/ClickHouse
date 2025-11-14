@@ -199,14 +199,6 @@ class ArgsFactory:
         self.add_opt_get_logs()
         self.add_opt_insert_method()
         self.add_opt_uniq_blocks()
-        # Debug flags
-        self.__parser.add_argument(
-            "--debug-on-fail", type=str2bool, nargs="?", const=True, default=True
-        )
-        self.__parser.add_argument(
-            "--debug-verbose", type=str2bool, nargs="?", const=True, default=False
-        )
-        self.__parser.add_argument("--debug-limit", type=int, default=100)
 
 
 def test_insert_several_blocks(parser):
@@ -394,7 +386,6 @@ def test_mv_generates_several_blocks(parser):
             {"" if not args.get_logs else "SELECT _part, a_src, a_join, b FROM table_when_b_even_and_joined ORDER BY _part;"}
         """
 
-        # Expected counts for debug conditions
         if args.insert_unique_blocks:
             assert_first_insert_statements = f"""
                 SELECT throwIf( count() != 5 )
@@ -403,8 +394,6 @@ def test_mv_generates_several_blocks(parser):
                 SELECT throwIf( count() != 9 )
                     FROM table_when_b_even_and_joined;
                 """
-            expected_first_src = 5
-            expected_first_dst = 9
             assert_second_insert_statements = f"""
                 SELECT throwIf( count() != {5 if args.deduplicate_src_table else 10} )
                     FROM table_a_b;
@@ -412,8 +401,6 @@ def test_mv_generates_several_blocks(parser):
                 SELECT throwIf( count() != {9 if args.deduplicate_dst_table else 18} )
                     FROM table_when_b_even_and_joined;
                 """
-            expected_second_src = (5 if args.deduplicate_src_table else 10)
-            expected_second_dst = (9 if args.deduplicate_dst_table else 18)
         else:
             if args.use_insert_token:
                 assert_first_insert_statements = f"""
@@ -423,8 +410,6 @@ def test_mv_generates_several_blocks(parser):
                     SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 10} )
                         FROM table_when_b_even_and_joined;
                     """
-                expected_first_src = (5 if args.deduplicate_src_table else 5)
-                expected_first_dst = (10 if args.deduplicate_dst_table else 10)
                 assert_second_insert_statements = f"""
                     SELECT throwIf( count() != {5 if args.deduplicate_src_table else 10} )
                         FROM table_a_b;
@@ -432,8 +417,6 @@ def test_mv_generates_several_blocks(parser):
                     SELECT throwIf( count() != {10 if args.deduplicate_dst_table else 20} )
                         FROM table_when_b_even_and_joined;
                     """
-                expected_second_src = (5 if args.deduplicate_src_table else 10)
-                expected_second_dst = (10 if args.deduplicate_dst_table else 20)
             else:
                 assert_first_insert_statements = f"""
                     SELECT throwIf( count() != {1 if args.deduplicate_src_table else 5} )
@@ -442,8 +425,6 @@ def test_mv_generates_several_blocks(parser):
                     SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 10} )
                        FROM table_when_b_even_and_joined;
                     """
-                expected_first_src = (1 if args.deduplicate_src_table else 5)
-                expected_first_dst = (2 if args.deduplicate_dst_table else 10)
                 assert_second_insert_statements = f"""
                     SELECT throwIf( count() != {1 if args.deduplicate_src_table else 10} )
                         FROM table_a_b;
@@ -451,245 +432,6 @@ def test_mv_generates_several_blocks(parser):
                     SELECT throwIf( count() != {2 if args.deduplicate_dst_table else 20} )
                         FROM table_when_b_even_and_joined;
                     """
-                expected_second_src = (1 if args.deduplicate_src_table else 10)
-                expected_second_dst = (2 if args.deduplicate_dst_table else 20)
-
-        debug_before_first = ""
-        debug_before_second = ""
-        if args.debug_on_fail:
-            debug_before_first = f"""
-                -- DEBUG (first) — only printed when counts mismatch
-                WITH (SELECT count() FROM table_a_b) AS c_src
-                SELECT 'DEBUG first src expected/actual', toUInt64({expected_first_src}) AS expected, c_src AS actual
-                WHERE c_src != {expected_first_src};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT 'DEBUG first dst expected/actual', toUInt64({expected_first_dst}) AS expected, c_dst AS actual
-                WHERE c_dst != {expected_first_dst};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT '_part', _part, count() FROM table_when_b_even_and_joined WHERE c_dst != {expected_first_dst}
-                GROUP BY _part ORDER BY _part;
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b FROM table_when_b_even_and_joined
-                WHERE c_dst != {expected_first_dst}
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b, count()
-                FROM table_when_b_even_and_joined
-                WHERE c_dst != {expected_first_dst}
-                GROUP BY a_src, a_join, b
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit};
-
-                -- Join outputs (hash vs parallel_hash)
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT 'DEBUG first join hash count', count() FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_first_dst}
-                SETTINGS join_algorithm='hash';
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT 'DEBUG first join chj count', count() FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_first_dst}
-                SETTINGS join_algorithm='parallel_hash';
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b, count()
-                FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_first_dst}
-                GROUP BY a_src, a_join, b
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit}
-                SETTINGS join_algorithm='hash', join_use_nulls=1;
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b, count()
-                FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_first_dst}
-                GROUP BY a_src, a_join, b
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit}
-                SETTINGS join_algorithm='parallel_hash', join_use_nulls=1;
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, r.b AS b
-                FROM table_a_b
-                FULL OUTER JOIN table_for_join_with AS r
-                ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                WHERE c_dst != {expected_first_dst}
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT table, name, rows, bytes_on_disk
-                FROM system.parts
-                WHERE active AND database = currentDatabase()
-                  AND table IN ('table_a_b','table_for_join_with','table_when_b_even_and_joined')
-                  AND c_dst != {expected_first_dst}
-                ORDER BY table, name;
-
-                -- Schemas (DDL) for involved objects
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT name, engine, create_table_query
-                FROM system.tables
-                WHERE database = currentDatabase()
-                  AND name IN ('table_a_b','table_for_join_with','table_when_b_even_and_joined','mv_b_even')
-                  AND c_dst != {expected_first_dst}
-                ORDER BY name;
-
-                -- Relevant settings snapshot
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT name, value
-                FROM system.settings
-                WHERE name IN (
-                    'max_insert_threads',
-                    'max_block_size',
-                    'update_insert_deduplication_token_in_dependent_materialized_views',
-                    'deduplicate_blocks_in_dependent_materialized_views'
-                )
-                  AND c_dst != {expected_first_dst}
-                ORDER BY name;
-            """
-
-            debug_before_second = f"""
-                -- DEBUG (second) — only printed when counts mismatch
-                WITH (SELECT count() FROM table_a_b) AS c_src
-                SELECT 'DEBUG second src expected/actual', toUInt64({expected_second_src}) AS expected, c_src AS actual
-                WHERE c_src != {expected_second_src};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT 'DEBUG second dst expected/actual', toUInt64({expected_second_dst}) AS expected, c_dst AS actual
-                WHERE c_dst != {expected_second_dst};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT '_part', _part, count() FROM table_when_b_even_and_joined WHERE c_dst != {expected_second_dst}
-                GROUP BY _part ORDER BY _part;
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b FROM table_when_b_even_and_joined
-                WHERE c_dst != {expected_second_dst}
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b, count()
-                FROM table_when_b_even_and_joined
-                WHERE c_dst != {expected_second_dst}
-                GROUP BY a_src, a_join, b
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit};
-
-                -- Join outputs (hash vs parallel_hash)
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT 'DEBUG second join hash count', count() FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_second_dst}
-                SETTINGS join_algorithm='hash';
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT 'DEBUG second join chj count', count() FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_second_dst}
-                SETTINGS join_algorithm='parallel_hash';
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b, count()
-                FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_second_dst}
-                GROUP BY a_src, a_join, b
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit}
-                SETTINGS join_algorithm='hash', join_use_nulls=1;
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, b, count()
-                FROM (
-                    SELECT a_src, a_join, r.b AS b
-                    FROM table_a_b
-                    FULL OUTER JOIN table_for_join_with AS r
-                    ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                )
-                WHERE c_dst != {expected_second_dst}
-                GROUP BY a_src, a_join, b
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit}
-                SETTINGS join_algorithm='parallel_hash', join_use_nulls=1;
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT a_src, a_join, r.b AS b
-                FROM table_a_b
-                FULL OUTER JOIN table_for_join_with AS r
-                ON table_a_b.b = r.b AND table_a_b.b % 2 = 0
-                WHERE c_dst != {expected_second_dst}
-                ORDER BY a_src, a_join, b
-                LIMIT {args.debug_limit};
-
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT table, name, rows, bytes_on_disk
-                FROM system.parts
-                WHERE active AND database = currentDatabase()
-                  AND table IN ('table_a_b','table_for_join_with','table_when_b_even_and_joined')
-                  AND c_dst != {expected_second_dst}
-                ORDER BY table, name;
-
-                -- Schemas (DDL) for involved objects
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT name, engine, create_table_query
-                FROM system.tables
-                WHERE database = currentDatabase()
-                  AND name IN ('table_a_b','table_for_join_with','table_when_b_even_and_joined','mv_b_even')
-                  AND c_dst != {expected_second_dst}
-                ORDER BY name;
-
-                -- Relevant settings snapshot
-                WITH (SELECT count() FROM table_when_b_even_and_joined) AS c_dst
-                SELECT name, value
-                FROM system.settings
-                WHERE name IN (
-                    'max_insert_threads',
-                    'max_block_size',
-                    'update_insert_deduplication_token_in_dependent_materialized_views',
-                    'deduplicate_blocks_in_dependent_materialized_views'
-                )
-                  AND c_dst != {expected_second_dst}
-                ORDER BY name;
-            """
 
         script = f"""
             {get_logs_statement(args)}
@@ -697,6 +439,9 @@ def test_mv_generates_several_blocks(parser):
             SET max_insert_threads={1 if args.single_thread else 10};
             SET update_insert_deduplication_token_in_dependent_materialized_views=1;
             SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+            SET min_joined_block_size_rows = 1;
+            SET max_joined_block_size_rows = 1;
 
             SET max_block_size=1;
             SET min_insert_block_size_rows=0;
@@ -733,8 +478,6 @@ def test_mv_generates_several_blocks(parser):
 
             {details_print_statements}
 
-            {debug_before_first}
-
             -- first assertion
             {assert_first_insert_statements}
 
@@ -742,8 +485,6 @@ def test_mv_generates_several_blocks(parser):
             {insert_statement}
 
             {details_print_statements}
-
-            {debug_before_second}
 
             -- second assertion
             {assert_second_insert_statements}
