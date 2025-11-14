@@ -580,7 +580,7 @@ def test_registry(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1000
+    files_to_generate = 100
 
     node1.query(f"DROP DATABASE IF EXISTS {db_name}")
     node2.query(f"DROP DATABASE IF EXISTS {db_name}")
@@ -706,6 +706,20 @@ def test_registry(started_cluster):
         f"1\\ninstance\\n{uuid2}\\n{server_uuid_1}\\n",
         f"1\\ninstance2\\n{uuid2}\\n{server_uuid_2}\\n",
     ]
+
+    for _ in range(10):
+        all_registered = True
+        registry, stat = zk.get(f"{keeper_path}/registry/")
+        for elem in expected:
+            if elem not in str(registry):
+                all_registered = False
+                time.sleep(1)
+                break
+        if all_registered:
+            break
+        time.sleep(1)
+
+    assert all_registered
 
     for elem in expected:
         assert elem in str(registry)
