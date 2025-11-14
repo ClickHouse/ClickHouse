@@ -1,16 +1,16 @@
 #pragma once
 
-#include <Backups/IBackup.h>
+#include <memory>
+#include <optional>
+#include <unordered_map>
+#include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
+#include <Backups/IBackup.h>
 #include <Core/Types.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 #include <Parsers/IAST_fwd.h>
-#include <Core/SettingsEnums.h>
 #include <boost/noncopyable.hpp>
-#include <memory>
-#include <optional>
-#include <unordered_map>
 
 
 namespace DB

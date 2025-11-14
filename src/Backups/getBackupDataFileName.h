@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupFileInfo.h>
-#include <Core/SettingsEnums.h>
 
 namespace DB
 {

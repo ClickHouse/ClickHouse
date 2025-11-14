@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Backups/BackupInfo.h>
-#include <Core/SettingsEnums.h>
-#include <Common/SettingsChanges.h>
 #include <optional>
+#include <Backups/BackupDataFileNameGeneratorType.h>
+#include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
