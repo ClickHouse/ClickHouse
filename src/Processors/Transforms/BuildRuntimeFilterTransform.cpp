@@ -15,6 +15,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     String filter_column_name_,
     const DataTypePtr & filter_column_type_,
     String filter_name_,
+    size_t filters_to_merge_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
@@ -25,11 +26,25 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , built_filter(std::make_unique<RuntimeFilter>(filter_column_target_type, exact_values_limit_, bloom_filter_bytes_, bloom_filter_hash_functions_, allow_to_use_not_exact_filter_))
+    , filters_to_merge(filters_to_merge_)
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
         cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
+
+    if (allow_to_use_not_exact_filter_)
+        built_filter = std::make_unique<ApproximateRuntimeFilter>(
+            filters_to_merge_,
+            filter_column_target_type,
+            bloom_filter_bytes_,
+            exact_values_limit_,
+            bloom_filter_hash_functions_);
+    else
+        built_filter = std::make_unique<ExactRuntimeFilter<true>>(
+            filters_to_merge_,
+            filter_column_target_type,
+            bloom_filter_bytes_,
+            exact_values_limit_);
 }
 
 

@@ -88,6 +88,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto streams = pipeline.getNumStreams();
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType)
     {
         return std::make_shared<BuildRuntimeFilterTransform>(
@@ -95,6 +96,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             filter_column_name,
             filter_column_type,
             filter_name,
+            /*filters_to_merge_=*/streams - 1,
             exact_values_limit,
             bloom_filter_bytes,
             bloom_filter_hash_functions,

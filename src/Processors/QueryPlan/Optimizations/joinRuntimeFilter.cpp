@@ -28,8 +28,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(
     ActionsDAG & actions_dag,
     const String & filter_name,
     const ColumnWithTypeAndName & key_column,
-    const DataTypePtr & filter_element_type,
-    bool need_negate)
+    const DataTypePtr & filter_element_type)
 {
     const auto & filter_name_node = actions_dag.addColumn(
         ColumnWithTypeAndName(
@@ -47,11 +46,6 @@ const ActionsDAG::Node & createRuntimeFilterCondition(
     auto filter_function = FunctionFactory::instance().get("__filterContains", /*query_context*/nullptr);
     const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
 
-    if (need_negate)
-    {
-        auto function_not = FunctionFactory::instance().get("not", /*query_context*/nullptr);
-        return actions_dag.addFunction(function_not, {&condition}, {});
-    }
     return condition;
 }
 
@@ -164,7 +158,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
             }
 
             /// Add filter lookup to the probe subtree
-            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type, check_left_does_not_contain));
+            all_filter_conditions.push_back(&createRuntimeFilterCondition(filter_dag, filter_name, join_key_probe_side, common_type));
 
             /// Add building filter to the build subtree of join
             {
