@@ -8,7 +8,8 @@
 500
 6000
 6000
-Filter column: and(__filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey), __filterContains(_runtime_filter_UNIQ_ID_1, modulo(__table1.c_custkey, 100_UInt8))) (removed)
+Algorithm: FullSortingMergeJoin
+Prewhere filter column: and(__filterContains(_runtime_filter_UNIQ_ID_0, __table1.c_nationkey), __filterContains(_runtime_filter_UNIQ_ID_1, modulo(__table1.c_custkey, 100_UInt8))) (removed)
 BuildRuntimeFilter (Build runtime join filter on modulo(__table2.n_nationkey, 10_UInt8) (_runtime_filter_UNIQ_ID_1))
 BuildRuntimeFilter (Build runtime join filter on __table2.n_nationkey (_runtime_filter_UNIQ_ID_0))
 765
