@@ -1,6 +1,11 @@
-SET allow_experimental_full_text_index = 1;
-SET use_skip_indexes_on_data_read = 0;
+#!/usr/bin/env bash
 
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+SETTINGS="--allow_experimental_full_text_index=1 "
+cat <<EOF | $CLICKHOUSE_CLIENT -n $SETTINGS
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
@@ -8,7 +13,7 @@ CREATE TABLE tab
     message String,
     arr Array(String),
     map Map(String, String),
-    INDEX idx(`message`) TYPE text(tokenizer = ngrams(4)),
+    INDEX idx(message) TYPE text(tokenizer = ngrams(4)),
     INDEX array_idx(arr) TYPE text(tokenizer = ngrams(4)),
     INDEX map_keys_idx mapKeys(map) TYPE text(tokenizer = ngrams(4)),
 )
@@ -19,7 +24,15 @@ INSERT INTO tab
 VALUES
 (1, 'abc', ['abc'], {'abc':'abc'}),
 (2, 'def', ['def', 'abc'], {'abc':'foo', 'def':'foo'});
+EOF
 
+for direct_read_setting in 0 1; do
+    echo "Setting query_plan_direct_read_from_text_index to $direct_read_setting."
+
+    SETTINGS="$SETTINGS --use_query_condition_cache=0 "
+    SETTINGS="$SETTINGS --use_skip_indexes_on_data_read=1 "
+    SETTINGS="$SETTINGS --query_plan_direct_read_from_text_index=$direct_read_setting "
+    cat <<EOF | $CLICKHOUSE_CLIENT -n $SETTINGS
 -- { echoOn }
 SELECT * FROM tab WHERE hasAnyTokens(message, ['abc']);
 SELECT * FROM tab WHERE hasAllTokens(message, ['abc']);
@@ -79,5 +92,8 @@ SELECT * FROM tab WHERE mapContains(map, '');
 
 SELECT * from tab WHERE has(map, 'abc');
 -- { echoOff }
+EOF
 
-DROP TABLE tab;
+done
+
+$CLICKHOUSE_CLIENT -q 'DROP TABLE tab;'
