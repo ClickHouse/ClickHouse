@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
@@ -40,8 +39,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_object_type;
-    extern const SettingsBool use_json_alias_for_old_object_type;
     extern const SettingsBool allow_simdjson;
 }
 
@@ -560,18 +557,6 @@ DataTypePtr DataTypeObject::getDynamicType() const
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
-    auto context = CurrentThread::getQueryContext();
-    if (!context)
-        context = Context::getGlobalContextInstance();
-
-    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
-    {
-        if (arguments && !arguments->children.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings enable_json_type = 1 and use_json_alias_for_old_object_type = 0");
-
-        return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
-    }
-
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
 }
 

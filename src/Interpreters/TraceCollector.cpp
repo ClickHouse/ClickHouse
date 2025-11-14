@@ -104,7 +104,7 @@ void TraceCollector::run()
 {
     [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
 
-    setThreadName("TraceCollector");
+    DB::setThreadName(ThreadName::TRACE_COLLECTOR);
 
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
     ReadBufferFromFileDescriptor in(TraceSender::pipe.fds_rw[0]);
@@ -158,6 +158,9 @@ void TraceCollector::run()
             UInt64 thread_id;
             readPODBinary(thread_id, in);
 
+            UInt8 thread_name_id = 0;
+            readPODBinary(thread_name_id, in);
+
             Int64 size;
             readPODBinary(size, in);
 
@@ -193,6 +196,7 @@ void TraceCollector::run()
                     .trace_type = trace_type,
                     .cpu_id = cpu_id,
                     .thread_id = thread_id,
+                    .thread_name = static_cast<ThreadName>(thread_name_id),
                     .query_id = query_id,
                     .trace = std::move(trace),
                     .size = size,

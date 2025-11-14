@@ -154,6 +154,9 @@
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
     M(S3PutRequestThrottlerBlocked, "Number of S3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
+    /* ACME profile events */ \
+    M(ACMEAPIRequests, "Number of ACME API requests issued.", ValueType::Number) \
+    M(ACMECertificateOrders, "Number of ACME certificate orders issued.", ValueType::Number) \
     /* Azure profile events */ \
     M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \
     M(DiskAzureReadRequestsCount, "Number of Azure disk read requests.", ValueType::Number) \
@@ -528,6 +531,10 @@ The server successfully detected this situation and will download merged part fr
     M(DNSError, "Total count of errors in DNS resolution", ValueType::Number) \
     M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables", ValueType::Microseconds) \
+    M(PartsLocks, "Number of times data parts lock has been acquired for MergeTree tables", ValueType::Number) \
+    M(SharedPartsLockHoldMicroseconds, "Total time spent holding shared data parts lock in MergeTree tables", ValueType::Microseconds) \
+    M(SharedPartsLockWaitMicroseconds, "Total time spent waiting for shared data parts lock in MergeTree tables", ValueType::Microseconds) \
+    M(SharedPartsLocks, "Number of times shared data parts lock has been acquired for MergeTree tables", ValueType::Number) \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).", ValueType::Microseconds) \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This includes time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.", ValueType::Microseconds) \
