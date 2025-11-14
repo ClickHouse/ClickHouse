@@ -55,3 +55,6 @@ SELECT
     sum(ProfileEvent_ParquetMetadataCacheHits),
     sum(ProfileEvent_ParquetMetadataCacheWeightLost)
 FROM system.metric_log;
+
+-- TODO: Add tests for ParquetMetadataCacheBytes and ParquetMetadataCacheFiles
+-- TODO: Add a test the triggers cache eviction
