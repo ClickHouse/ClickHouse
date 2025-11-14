@@ -22,7 +22,7 @@ struct ErrorLogElement
     ErrorCodes::Value value{};
     bool remote{};
     std::string last_error_query_id;
-    std::vector<void *> error_trace{};
+    std::vector<void *> last_error_trace{};
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases() { return {}; }

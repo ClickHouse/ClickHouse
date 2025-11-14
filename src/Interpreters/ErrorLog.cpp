@@ -106,13 +106,13 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(remote);
     columns[column_idx++]->insert(last_error_query_id);
 
-    std::vector<UInt64> error_trace_array;
-    error_trace_array.reserve(error_trace.size());
+    std::vector<UInt64> last_error_trace_array;
+    last_error_trace_array.reserve(last_error_trace.size());
 
-    for (auto * ptr : error_trace)
-        error_trace_array.emplace_back(reinterpret_cast<UInt64>(ptr));
+    for (auto * ptr : last_error_trace)
+        last_error_trace_array.emplace_back(reinterpret_cast<UInt64>(ptr));
 
-    columns[column_idx++]->insert(Array(error_trace_array.begin(), error_trace_array.end()));
+    columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
 
 }
 
@@ -141,7 +141,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
                 .value=error.local.count - previous_values.at(code).local,
                 .remote=false,
                 .last_error_query_id=error.local.query_id,
-                .error_trace=error.local.trace
+                .last_error_trace=error.local.trace
             };
             this->add(std::move(local_elem));
             previous_values[code].local = error.local.count;
@@ -156,7 +156,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
                 .value=error.remote.count - previous_values.at(code).remote,
                 .remote=true,
                 .last_error_query_id=error.remote.query_id,
-                .error_trace=error.remote.trace
+                .last_error_trace=error.remote.trace
             };
             add(std::move(remote_elem));
             previous_values[code].remote = error.remote.count;
