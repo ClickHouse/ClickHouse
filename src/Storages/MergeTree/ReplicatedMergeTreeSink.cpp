@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
 #include <fmt/core.h>
@@ -281,6 +282,9 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::consume(Chunk & chunk)
       * TODO Too complex logic, you can do better.
       */
     size_t replicas_num = checkQuorumPrecondition(zookeeper);
+
+    if (!storage_snapshot->object_columns.empty())
+        convertDynamicColumnsToTuples(block, storage_snapshot);
 
     AsyncInsertInfoPtr async_insert_info;
 
@@ -1224,7 +1228,7 @@ void ReplicatedMergeTreeSinkImpl<async_insert>::waitForQuorum(
 
     while (true)
     {
-        Coordination::EventPtr event = std::make_shared<Poco::Event>();
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
         std::string value;
         /// `get` instead of `exists` so that `watch` does not leak if the node is no longer there.

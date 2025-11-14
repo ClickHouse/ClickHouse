@@ -180,8 +180,6 @@ void MergePlainMergeTreeTask::finish()
         ThreadFuzzer::maybeInjectSleep();
         ThreadFuzzer::maybeInjectMemoryLimitException();
     }
-
-    merge_mutate_entry->finalize();
 }
 
 void MergePlainMergeTreeTask::cancel() noexcept
@@ -191,9 +189,6 @@ void MergePlainMergeTreeTask::cancel() noexcept
 
     if (new_part)
         new_part->removeIfNeeded();
-
-    if (merge_mutate_entry)
-        merge_mutate_entry->finalize();
 }
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const

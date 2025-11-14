@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
@@ -39,6 +40,8 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_object_type;
+    extern const SettingsBool use_json_alias_for_old_object_type;
     extern const SettingsBool allow_simdjson;
 }
 
@@ -122,6 +125,11 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetDefaultSerialization() const
 {
+    std::unordered_map<String, SerializationPtr> typed_path_serializations;
+    typed_path_serializations.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        typed_path_serializations[path] = type->getDefaultSerialization();
+
     switch (schema_format)
     {
         case SchemaFormat::JSON:
@@ -131,7 +139,7 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
                 context = Context::getGlobalContextInstance();
             if (context->getSettingsRef()[Setting::allow_simdjson])
                 return std::make_shared<SerializationJSON<SimdJSONParser>>(
-                    typed_paths,
+                    std::move(typed_path_serializations),
                     paths_to_skip,
                     path_regexps_to_skip,
                     getDynamicType(),
@@ -140,14 +148,14 @@ SerializationPtr DataTypeObject::doGetDefaultSerialization() const
 
 #if USE_RAPIDJSON
             return std::make_shared<SerializationJSON<RapidJSONParser>>(
-                typed_paths,
+                std::move(typed_path_serializations),
                 paths_to_skip,
                 path_regexps_to_skip,
                 getDynamicType(),
                 buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
 #else
             return std::make_shared<SerializationJSON<DummyJSONParser>>(
-                typed_paths,
+                std::move(typed_path_serializations),
                 paths_to_skip,
                 path_regexps_to_skip,
                 getDynamicType(),
@@ -557,6 +565,18 @@ DataTypePtr DataTypeObject::getDynamicType() const
 
 static DataTypePtr createJSON(const ASTPtr & arguments)
 {
+    auto context = CurrentThread::getQueryContext();
+    if (!context)
+        context = Context::getGlobalContextInstance();
+
+    if (context->getSettingsRef()[Setting::allow_experimental_object_type] && context->getSettingsRef()[Setting::use_json_alias_for_old_object_type])
+    {
+        if (arguments && !arguments->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Experimental Object type doesn't support any arguments. If you want to use new JSON type, set settings enable_json_type = 1 and use_json_alias_for_old_object_type = 0");
+
+        return std::make_shared<DataTypeObjectDeprecated>("JSON", false);
+    }
+
     return createObject(arguments, DataTypeObject::SchemaFormat::JSON);
 }
 

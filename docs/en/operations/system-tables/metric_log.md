@@ -4,7 +4,6 @@ description: 'System table containing history of metrics values from tables `sys
 keywords: ['system table', 'metric_log']
 slug: /operations/system-tables/metric_log
 title: 'system.metric_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
