@@ -951,11 +951,11 @@ void ZooKeeper::receiveEvent()
     read(zxid);
     read(err);
 
-    /// This is the only thread making writes to the atomic, so no race condition is possible here.
-    last_zxid_seen.store(
-        std::max(last_zxid_seen.load(std::memory_order_relaxed), zxid),
-        std::memory_order_relaxed
-    );
+    /// Watches have zxid = -1, some errors have zxid = 0.
+    if (zxid > 0)
+    {
+        last_zxid_seen.store(zxid, std::memory_order_relaxed);
+    }
 
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
