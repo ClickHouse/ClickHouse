@@ -131,6 +131,7 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
+    bool is_shared_catalog_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};

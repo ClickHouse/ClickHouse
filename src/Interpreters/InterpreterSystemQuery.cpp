@@ -441,6 +441,10 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
             system_context->clearTextIndexHeaderCache();
             break;
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
+            system_context->clearTextIndexPostingsCache();
+            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -482,8 +486,7 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (query.filesystem_cache_name.empty())
             {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [_, cache_data] : caches)
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     if (!cache_data->cache->isInitialized())
                         continue;
@@ -544,11 +547,10 @@ BlockIO InterpreterSystemQuery::execute()
 
             if (query.filesystem_cache_name.empty())
             {
-                auto caches = FileCacheFactory::instance().getAll();
-                for (const auto & [cache_name, cache_data] : caches)
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     auto file_segments = cache_data->cache->sync();
-                    fill_data(cache_name, cache_data->cache, file_segments);
+                    fill_data(cache_data->cache->getName(), cache_data->cache, file_segments);
                 }
             }
             else
@@ -840,7 +842,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(query.logs);
+            system_logs.flush(query.tables);
             break;
         }
         case Type::STOP_LISTEN:
@@ -867,7 +869,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flushAll();
+            queue->flush(query.tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
@@ -1868,6 +1870,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
         case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:

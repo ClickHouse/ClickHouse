@@ -305,7 +305,8 @@ IMPLEMENT_SETTING_ENUM(
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
-     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -383,4 +384,9 @@ IMPLEMENT_SETTING_ENUM(
      {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
      {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
      {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
+
+IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ArrowFlightDescriptorType::Path},
+     {"command", ArrowFlightDescriptorType::Command}})
 }
+
