@@ -262,7 +262,7 @@ void ColumnNullable::skipSerializedInArena(ReadBuffer & in) const
     readBinaryLittleEndian<UInt8>(val, in);
 
     if (val == 0)
-        return getNestedColumn().skipSerializedInArena(in);
+        getNestedColumn().skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

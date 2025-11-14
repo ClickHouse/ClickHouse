@@ -167,7 +167,7 @@ void ColumnReplicated::deserializeAndInsertAggregationStateValueFromArena(ReadBu
 
 void ColumnReplicated::skipSerializedInArena(ReadBuffer & in) const
 {
-    return nested_column->skipSerializedInArena(in);
+    nested_column->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

@@ -323,7 +323,7 @@ void ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(Re
 
 void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
 {
-    return getDictionary().skipSerializedInArena(in);
+    getDictionary().skipSerializedInArena(in);
 }
 
 WeakHash32 ColumnLowCardinality::getWeakHash32() const

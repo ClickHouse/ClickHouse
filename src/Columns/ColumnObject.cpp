@@ -1013,7 +1013,7 @@ void ColumnObject::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer
         typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(in);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    return deserializeDynamicPathsAndSharedDataFromArena(in);
+    deserializeDynamicPathsAndSharedDataFromArena(in);
 }
 
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)

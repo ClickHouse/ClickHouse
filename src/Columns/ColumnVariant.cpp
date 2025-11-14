@@ -860,7 +860,7 @@ void ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(ReadBuffe
     }
 
     getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(in);
+    variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
@@ -871,7 +871,7 @@ void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
     if (global_discr == NULL_DISCRIMINATOR)
         return;
 
-    return variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
+    variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
 
 char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const

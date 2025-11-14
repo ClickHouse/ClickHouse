@@ -191,7 +191,7 @@ void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer
 
 void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
 {
-    return values->skipSerializedInArena(in);
+    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
