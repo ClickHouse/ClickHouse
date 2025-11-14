@@ -2357,8 +2357,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         {
             if (ctx->indices_to_recalc.insert(index_factory.get(index)).second)
             {
-                ASTPtr expr_list = index.expression_list_ast->clone();
-                for (const auto & expr : expr_list->children)
+                for (const auto & expr : index.expression_list_ast->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
             }
         }
