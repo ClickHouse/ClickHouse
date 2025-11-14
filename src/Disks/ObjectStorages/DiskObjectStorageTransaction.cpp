@@ -516,9 +516,9 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
 
     void undo(StoredObjects & to_remove) override
     {
-        LOG_DEBUG(getLogger("DiskObjectStorageTransaction"), "Undoing WriteFileObjectStorageOperation for path {}, key {}", object->local_path, object->remote_path);
+        LOG_DEBUG(getLogger("DiskObjectStorageTransaction"), "Undoing WriteFileObjectStorageOperation for path {}, key {}", object.local_path, object.remote_path);
         /// If the file was created, we need to remove it
-        to_remove.push_back(*object);
+        to_remove.push_back(object);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
