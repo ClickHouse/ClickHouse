@@ -1,14 +1,15 @@
-#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
 #include <filesystem>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/trim.hpp>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFileBase.h>
-#include <Disks/WriteMode.h>
 #include <Disks/IDisk.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/WriteMode.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeDeduplicationLog.h>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
 
@@ -81,17 +82,26 @@ size_t getLogNumber(const std::string & path_str)
 
 }
 
+static bool supportWritingWithAppend(const DiskPtr & disk)
+{
+    if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+    {
+        if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
+            return false;
+    }
+    return true;
+}
+
+
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
-    const std::string & logs_dir_,
-    size_t deduplication_window_,
-    const MergeTreeDataFormatVersion & format_version_,
-    DiskPtr disk_)
+    const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_)
     : logs_dir(logs_dir_)
     , deduplication_window(deduplication_window_)
     , rotate_interval(deduplication_window_ * 2) /// actually it doesn't matter
     , format_version(format_version_)
     , deduplication_map(deduplication_window)
     , disk(disk_)
+    , disk_supports_writing_with_append(supportWritingWithAppend(disk))
 {
     if (deduplication_window != 0 && !disk->existsDirectory(logs_dir))
         disk->createDirectories(logs_dir);
@@ -162,18 +172,25 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
+    try
+    {
+        if (current_writer)
+        {
+            current_writer->finalize();
+            current_writer->sync();
+        }
+    } catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        current_writer = nullptr;
+    }
+
     current_log_number++;
     auto new_path = getLogPath(logs_dir, current_log_number);
     MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
     existing_logs.emplace(current_log_number, log_description);
 
-    if (current_writer)
-    {
-        current_writer->finalize();
-        current_writer->sync();
-    }
-
-    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 }
 
 void MergeTreeDeduplicationLog::dropOutdatedLogs()
@@ -213,7 +230,8 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
 void MergeTreeDeduplicationLog::rotateAndDropIfNeeded()
 {
     /// If we don't have logs at all or already have enough records in current
-    if (existing_logs.empty() || existing_logs[current_log_number].entries_count >= rotate_interval)
+    /// For the disk that doesn't support writing with append, we can't append logs to the last file.
+    if (existing_logs.empty() || existing_logs[current_log_number].entries_count >= rotate_interval || !disk_supports_writing_with_append)
     {
         rotate();
         dropOutdatedLogs();
