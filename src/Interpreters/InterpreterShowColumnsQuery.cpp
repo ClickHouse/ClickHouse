@@ -76,8 +76,8 @@ WITH map(
         'String',      '{}',
         'FixedString', '{}') AS native_to_mysql_mapping,
         )",
-        remap_string_as_text ? "TEXT" : "BLOB",
-        remap_fixed_string_as_text ? "TEXT" : "BLOB");
+            remap_string_as_text ? "TEXT" : "BLOB",
+            remap_fixed_string_as_text ? "TEXT" : "BLOB");
 
         rewritten_query += R"(
         splitByRegexp('\(|\)', type_) AS split,
@@ -127,7 +127,8 @@ SELECT
     '' AS privileges )";
     }
 
-    rewritten_query += fmt::format(R"(
+    rewritten_query += fmt::format(
+        R"(
 -- need to rename columns of the base table to avoid "CYCLIC_ALIASES" errors
 FROM (SELECT name AS name_,
              database AS database_,
@@ -141,7 +142,9 @@ FROM (SELECT name AS name_,
       FROM system.columns)
 WHERE
     database_ = '{}'
-    AND table_ = '{}' )", database, table);
+    AND table_ = '{}' )",
+        database,
+        table);
 
     if (!query.like.empty())
     {
@@ -152,7 +155,7 @@ WHERE
             rewritten_query += "ILIKE ";
         else
             rewritten_query += "LIKE ";
-        rewritten_query += fmt::format("'{}'", query.like);
+        rewritten_query += quoteString(query.like);
     }
     else if (query.where_expression)
         rewritten_query += fmt::format(" AND ({})", query.where_expression->formatWithSecretsOneLine());
