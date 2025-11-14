@@ -22,7 +22,7 @@ namespace DB
 {
 class FormatSchemaInfo;
 
-/** Keeps parsed google protobuf schemas parsed from files.
+/** Keeps google protobuf schemas parsed from files.
   * This class is used to handle the "Protobuf" input/output formats.
   */
 class ProtobufSchemas : private boost::noncopyable

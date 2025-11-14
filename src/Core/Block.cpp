@@ -2,6 +2,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -45,6 +46,21 @@ static ReturnType onError(int code [[maybe_unused]],
         return false;
 }
 
+/// Omit Const, Sparse and Replicated and get actual column.
+static const IColumn * getActualColumn(const IColumn * column)
+{
+    const IColumn * actual_column = column;
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+        return getActualColumn(&column_const->getDataColumn());
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column))
+        return getActualColumn(column_replicated->getNestedColumn().get());
+
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column))
+        return getActualColumn(&column_sparse->getValuesColumn());
+
+    return actual_column;
+}
 
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
@@ -65,20 +81,11 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
     const IColumn * actual_column = actual.column.get();
     const IColumn * expected_column = expected.column.get();
 
-    /// If we allow to materialize columns, omit Const and Sparse columns.
+    /// If we allow to materialize columns, omit Const, Replicated and Sparse columns.
     if (allow_materialize)
     {
-        if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-            actual_column = &column_const->getDataColumn();
-
-        if (const auto * column_const = typeid_cast<const ColumnConst *>(expected_column))
-            expected_column = &column_const->getDataColumn();
-
-        if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
-            actual_column = &column_sparse->getValuesColumn();
-
-        if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(expected_column))
-            expected_column = &column_sparse->getValuesColumn();
+        actual_column = getActualColumn(actual_column);
+        expected_column = getActualColumn(expected_column);
     }
 
     const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
@@ -782,6 +789,29 @@ void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::s
     checkBlockStructure<void>(lhs, rhs, context_description, false);
 }
 
+namespace
+{
+
+Block replaceReplicatedColumnsToNested(const Block & block)
+{
+    Block block_without_replicated;
+    for (const auto & column : block.getColumnsWithTypeAndName())
+    {
+        if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.column.get()))
+            block_without_replicated.insert(ColumnWithTypeAndName(column_replicated->getNestedColumn(), column.type, column.name));
+        else
+            block_without_replicated.insert(column);
+    }
+    return block_without_replicated;
+}
+
+}
+
+void assertBlocksHaveEqualStructureAllowReplicated(const Block & lhs, const Block & rhs, std::string_view context_description)
+{
+    checkBlockStructure<void>(replaceReplicatedColumnsToNested(lhs), replaceReplicatedColumnsToNested(rhs), context_description, false);
+}
+
 
 bool isCompatibleHeader(const Block & actual, const Block & desired)
 {
@@ -915,13 +945,13 @@ Serializations Block::getSerializations(const SerializationInfoByName & hints) c
     return res;
 }
 
-void convertToFullIfSparse(Block & block)
+void removeSpecialColumnRepresentations(Block & block)
 {
     for (auto & column : block)
-        column.column = recursiveRemoveSparse(column.column);
+        column.column = removeSpecialRepresentations(column.column);
 }
 
-Block materializeBlock(const Block & block)
+Block materializeBlock(const Block & block, bool remove_special_column_representations)
 {
     if (block.empty())
         return block;
@@ -931,16 +961,22 @@ Block materializeBlock(const Block & block)
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
+        element.column = element.column->convertToFullColumnIfConst();
+        if (remove_special_column_representations)
+            element.column = removeSpecialRepresentations(element.column);
     }
 
     return res;
 }
 
-void materializeBlockInplace(Block & block)
+void materializeBlockInplace(Block & block, bool remove_special_column_representations)
 {
     for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
+    {
+        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        if (remove_special_column_representations)
+            block.getByPosition(i).column = removeSpecialRepresentations(block.getByPosition(i).column);
+    }
 }
 
 Block concatenateBlocks(const std::vector<Block> & blocks)

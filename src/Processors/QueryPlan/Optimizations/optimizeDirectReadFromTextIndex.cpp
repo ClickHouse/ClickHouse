@@ -201,6 +201,7 @@ private:
             return std::nullopt;
 
         function_node.type = ActionsDAG::ActionType::INPUT;
+        function_node.result_type = std::make_shared<DataTypeUInt8>();
         function_node.result_name = virtual_column_name.value();
         function_node.function.reset();
         function_node.function_base.reset();
@@ -260,7 +261,7 @@ void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & /*n
             /// search for parts where index is not materialized.
             bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
             {
-                return !!index.index->getDeserializedFormat(part->getDataPartStorage(), index.index->getFileName());
+                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
             });
 
             if (has_index_in_all_parts)
