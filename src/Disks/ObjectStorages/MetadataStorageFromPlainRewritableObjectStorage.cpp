@@ -56,7 +56,7 @@ constexpr auto ROOT_FOLDER_TOKEN = "__root";
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
 {
     ThreadPool & pool = getIOThreadPool().get();
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
@@ -160,7 +160,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
             runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
-                setThreadName("PlainRWMetaLoad");
+                DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
                 StoredObject object{path};
                 String local_path;
