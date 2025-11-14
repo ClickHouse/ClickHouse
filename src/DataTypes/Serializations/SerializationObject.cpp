@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
@@ -599,7 +601,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
             auto task = std::make_shared<DeserializationTask>(deserialize);
             static_cast<void>(settings.prefixes_deserialization_thread_pool->trySchedule([task_ptr = task, thread_group = CurrentThread::getGroup()]()
             {
-                ThreadGroupSwitcher switcher(thread_group, "PrefixReader");
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::PREFIX_READER);
 
                 task_ptr->tryExecute();
             }));
