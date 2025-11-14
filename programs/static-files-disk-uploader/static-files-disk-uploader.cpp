@@ -170,7 +170,7 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.empty() || options.count("help"))
+    if (options.empty() || options.contains("help"))
     {
         std::cout << description << std::endl;
         exit(0); // NOLINT(concurrency-mt-unsafe)
@@ -178,7 +178,7 @@ try
 
     String metadata_path;
 
-    if (options.count("metadata-path"))
+    if (options.contains("metadata-path"))
         metadata_path = options["metadata-path"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No metadata-path option passed");
@@ -194,20 +194,20 @@ try
     auto test_mode = options.contains("test-mode");
     if (test_mode)
     {
-        if (options.count("url"))
+        if (options.contains("url"))
             root_path = options["url"].as<std::string>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed for test mode");
     }
     else
     {
-        if (options.count("output-dir"))
+        if (options.contains("output-dir"))
             root_path = options["output-dir"].as<std::string>();
         else
             root_path = fs::current_path();
     }
 
-    processTableFiles(fs_path, root_path, test_mode, options.count("link"));
+    processTableFiles(fs_path, root_path, test_mode, options.contains("link"));
 
     return 0;
 }

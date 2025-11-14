@@ -721,9 +721,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
+            if (std::tuple_size_v<KeysNullMap<UInt128>> + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
+            if (std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -1568,7 +1568,7 @@ void Aggregator::prepareAggregateInstructions(
         for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
         {
             const auto pos = header.getPositionByName(params.aggregates[i].argument_names[j]);
-            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst());
+            materialized_columns.push_back(columns.at(pos)->convertToFullColumnIfConst()->convertToFullColumnIfReplicated());
             aggregate_columns[i][j] = materialized_columns.back().get();
 
             /// Sparse columns without defaults may be handled incorrectly.
@@ -1676,7 +1676,7 @@ bool Aggregator::executeOnBlock(Columns columns,
         }
         else
         {
-            materialized_columns.push_back(recursiveRemoveSparse(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
+            materialized_columns.push_back(removeSpecialRepresentations(columns.at(keys_positions[i]))->convertToFullColumnIfConst());
             key_columns[i] = materialized_columns.back().get();
         }
 
@@ -2676,7 +2676,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -3653,7 +3653,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)

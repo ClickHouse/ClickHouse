@@ -54,7 +54,7 @@ SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata(
     return result;
 }
 
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
 {
     RelativePathsWithMetadata files;
     listObjects(path_prefix, files, max_keys);

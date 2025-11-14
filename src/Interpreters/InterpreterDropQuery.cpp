@@ -494,7 +494,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             auto prepare_tables = [&](std::vector<StoragePtr> & tables)
             {
                 /// Prepare tables for shutdown in parallel.
-                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
                 for (StoragePtr & table_ptr : tables)
                 {
                     StorageID storage_id = table_ptr->getStorageID();
@@ -575,8 +575,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),
-            "TruncTbls"
-        );
+            ThreadName::TRUNCATE_TABLE);
 
         for (const auto & table_id : tables_to_truncate)
         {
@@ -711,6 +710,11 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
         /// and not allowed to drop inner table explicitly. Allowing to drop inner table without explicit grant
         /// looks like expected behaviour and we have tests for it.
         auto drop_context = Context::createCopy(global_context);
+
+        /// We need to propagate settings related to drop size limits,
+        ///  otherwise we will not be able to drop large inner tables.
+        drop_context->setSettings(current_context->getSettingsRef());
+
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
         drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);

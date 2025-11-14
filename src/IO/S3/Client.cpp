@@ -14,6 +14,7 @@
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
@@ -314,6 +315,7 @@ Client::Client(
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
+    , api_mode(other.api_mode)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
     , log(getLogger("S3Client"))
@@ -489,6 +491,12 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
+
+Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest & request) const
+{
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
+}
 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
@@ -699,7 +707,6 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             return result;
 
         // maybe we detect a correct region
-        bool new_region_detected = false;
         if (!detect_region || is_illegal_constraint_exception)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
@@ -707,22 +714,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
                 LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
-                new_region_detected = true;
             }
         }
 
-        /// special handling for opt-in regions
-        if (new_region_detected && is_illegal_constraint_exception && initial_endpoint.substr(11) == "amazonaws.com")
-        {
-            S3::URI new_uri(initial_endpoint);
-            new_uri.addRegionToURI(request.getRegionOverride());
-            found_new_endpoint = true;
-            request.overrideURI(new_uri);
-            continue;
-        }
-
         // we possibly got new location, need to try with that one
-        auto new_uri = getURIFromError(error);
+        auto new_uri = is_illegal_constraint_exception ? std::optional<S3::URI>(initial_endpoint) : getURIFromError(error);
         if (!new_uri)
             return result;
 
@@ -944,6 +940,24 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
     }
+}
+
+std::string Client::getGCSOAuthToken() const
+{
+    if (provider_type != ProviderType::GCS)
+        return "";
+
+    const auto & http_client = GetHttpClient();
+
+    if (!http_client)
+        return "";
+
+    auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
+
+    if (!gcp_oauth_client)
+        return "";
+
+    return gcp_oauth_client->getBearerToken();
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
@@ -1224,8 +1238,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler,
+    const HTTPRequestThrottler & request_throttler,
     const String & protocol)
 {
     auto context = Context::getGlobalContextInstance();
@@ -1247,8 +1260,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
-        get_request_throttler,
-        put_request_throttler,
+        request_throttler,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());

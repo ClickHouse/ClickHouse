@@ -394,6 +394,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     UNITY,
     GLUE,
     ICEBERG_HIVE,
+    ICEBERG_ONELAKE,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -425,7 +426,7 @@ DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
 enum class MergeTreeSerializationInfoVersion : uint8_t
 {
-    DEFAULT = 0,
+    BASIC = 0,
     WITH_TYPES = 1,
 };
 
@@ -433,7 +434,7 @@ DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 
 enum class MergeTreeStringSerializationVersion : uint8_t
 {
-    DEFAULT = 0,
+    SINGLE_STREAM = 0,
     WITH_SIZE_STREAM = 1,
 };
 

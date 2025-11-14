@@ -250,6 +250,7 @@ class Runner:
         debug=False,
         path="",
         path_1="",
+        workers=None,
     ):
         # re-set envs for local run
         env = _Environment.get()
@@ -356,6 +357,9 @@ class Runner:
         if path_1:
             print(f"Custom --path_1 [{path_1}] will be passed to job's script")
             cmd += f" --path_1 {path_1}"
+        if workers is not None:
+            print(f"Custom --workers [{workers}] will be passed to job's script")
+            cmd += f" --workers {workers}"
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(
@@ -591,6 +595,7 @@ class Runner:
                                     test_case_result.name,
                                     url=Settings.CI_DB_READ_URL,
                                     user=Settings.CI_DB_READ_USER,
+                                    job_name=job.name,
                                 ),
                             )
                     result.dump()
@@ -723,6 +728,7 @@ class Runner:
         debug=False,
         path="",
         path_1="",
+        workers=None,
     ):
         res = True
         setup_env_code = -10
@@ -780,6 +786,7 @@ class Runner:
                     debug=debug,
                     path=path,
                     path_1=path_1,
+                    workers=workers,
                 )
                 res = run_code == 0
                 if not res:

@@ -39,6 +39,8 @@ public:
 
     std::string getName() const override { return "MySQL"; }
 
+    bool isExternalDatabase() const override { return true; }
+
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
