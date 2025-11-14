@@ -771,47 +771,47 @@ void Client::processOptions(
     /// TODO: Is this code necessary?
     global_context->getSettingsRef().addToClientOptions(config(), options, allow_repeated_settings);
 
-    if (options.count("config-file") && options.count("config"))
+    if (options.contains("config-file") && options.contains("config"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Two or more configuration files referenced in arguments");
 
-    if (options.count("config"))
+    if (options.contains("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.count("connection"))
+    if (options.contains("connection"))
         config().setString("connection", options["connection"].as<std::string>());
-    if (options.count("interleave-queries-file"))
+    if (options.contains("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("secure"))
+    if (options.contains("secure"))
         config().setBool("secure", true);
-    if (options.count("no-secure"))
+    if (options.contains("no-secure"))
         config().setBool("no-secure", true);
-    if (options.count("user") && !options["user"].defaulted())
+    if (options.contains("user") && !options["user"].defaulted())
         config().setString("user", options["user"].as<std::string>());
-    if (options.count("password"))
+    if (options.contains("password"))
         config().setString("password", options["password"].as<std::string>());
-    if (options.count("ask-password"))
+    if (options.contains("ask-password"))
         config().setBool("ask-password", true);
-    if (options.count("ssh-key-file"))
+    if (options.contains("ssh-key-file"))
         config().setString("ssh-key-file", options["ssh-key-file"].as<std::string>());
-    if (options.count("ssh-key-passphrase"))
+    if (options.contains("ssh-key-passphrase"))
         config().setString("ssh-key-passphrase", options["ssh-key-passphrase"].as<std::string>());
-    if (options.count("quota_key"))
+    if (options.contains("quota_key"))
         config().setString("quota_key", options["quota_key"].as<std::string>());
-    if (options.count("max_client_network_bandwidth"))
+    if (options.contains("max_client_network_bandwidth"))
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
-    if (options.count("compression"))
+    if (options.contains("compression"))
         config().setBool("compression", options["compression"].as<bool>());
-    if (options.count("no-warnings"))
+    if (options.contains("no-warnings"))
         config().setBool("no-warnings", true);
-    if (options.count("fake-drop"))
+    if (options.contains("fake-drop"))
         config().setString("ignore_drop_queries_probability", "1");
-    if (options.count("jwt"))
+    if (options.contains("jwt"))
     {
         if (!options["user"].defaulted())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "User and JWT flags can't be specified together");
         config().setString("jwt", options["jwt"].as<std::string>());
         config().setString("user", "");
     }
-    if (options.count("accept-invalid-certificate"))
+    if (options.contains("accept-invalid-certificate"))
     {
         config().setString("openSSL.client.invalidCertificateHandler.name", "AcceptCertificateHandler");
         config().setString("openSSL.client.verificationMode", "none");
@@ -820,7 +820,7 @@ void Client::processOptions(
         config().setString("openSSL.client.invalidCertificateHandler.name", "RejectCertificateHandler");
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
-    buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
+    buzz_house_options_path = options.contains("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
     buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
     if (query_fuzzer_runs || !buzz_house_options_path.empty())
     {
@@ -854,7 +854,7 @@ void Client::processOptions(
         ignore_error = true;
     }
 
-    if (options.count("opentelemetry-traceparent"))
+    if (options.contains("opentelemetry-traceparent"))
     {
         String traceparent = options["opentelemetry-traceparent"].as<std::string>();
         String error;
@@ -862,7 +862,7 @@ void Client::processOptions(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse OpenTelemetry traceparent '{}': {}", traceparent, error);
     }
 
-    if (options.count("opentelemetry-tracestate"))
+    if (options.contains("opentelemetry-tracestate"))
         global_context->getClientTraceContext().tracestate = options["opentelemetry-tracestate"].as<std::string>();
 
     initClientContext(Context::createCopy(global_context));
