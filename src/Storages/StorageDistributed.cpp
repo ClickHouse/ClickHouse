@@ -1432,7 +1432,7 @@ void StorageDistributed::initializeFromDisk()
 
     /// Make initialization for large number of disks parallel.
     ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, disks.size());
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistInit");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_INIT);
 
     for (const DiskPtr & disk : disks)
     {
@@ -1896,7 +1896,7 @@ void StorageDistributed::flushClusterNodesAllDataImpl(ContextPtr local_context, 
 
         Stopwatch watch;
         ThreadPool pool(CurrentMetrics::StorageDistributedThreads, CurrentMetrics::StorageDistributedThreadsActive, CurrentMetrics::StorageDistributedThreadsScheduled, directory_queues.size());
-        ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistFlush");
+        ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DISTRIBUTED_FLUSH);
 
         for (const auto & node : directory_queues)
         {

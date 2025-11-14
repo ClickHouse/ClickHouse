@@ -13,7 +13,6 @@
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
-#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBuffer.h>
@@ -604,7 +603,6 @@ void logQueryFinishImpl(
     QueryStatusPtr process_list_elem = context->getProcessListElement();
     if (process_list_elem)
     {
-
         if (!query_pipeline.getProcessors().empty())
             logProcessorProfile(context, query_pipeline.getProcessors());
 
@@ -1012,7 +1010,8 @@ static BlockIO executeQueryImpl(
     ReadBufferUniquePtr & istr,
     ASTPtr & out_ast,
     ImplicitTransactionControlExecutorPtr implicit_tcl_executor,
-    HTTPContinueCallback http_continue_callback = {})
+    HTTPContinueCallback http_continue_callback,
+    QueryResultDetails & result_details)
 {
     const bool internal = flags.internal;
 
@@ -1510,6 +1509,13 @@ static BlockIO executeQueryImpl(
                         pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
+
+                        if (const auto & used_key = reader.getKey(); used_key)
+                        {
+                            result_details.query_cache_created_at = used_key->created_at;
+                            result_details.query_cache_expires_at = used_key->expires_at;
+                        }
+
                         return true;
                     }
                 }
@@ -1633,33 +1639,42 @@ static BlockIO executeQueryImpl(
                         if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
                             && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
+                            auto created_at = std::chrono::system_clock::now();
+                            auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl]);
+
                             QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],
-                                std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
+                                created_at, expires_at,
                                 settings[Setting::query_cache_compress_entries]);
 
                             const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                             {
                                 LOG_TRACE(getLogger("QueryResultCache"),
-                                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                        num_query_runs, settings[Setting::query_cache_min_query_runs].value);
+                                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                    num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
                             else
                             {
                                 auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
-                                                 key,
-                                                 std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
-                                                 settings[Setting::query_cache_squash_partial_results],
-                                                 settings[Setting::max_block_size],
-                                                 settings[Setting::query_cache_max_size_in_bytes],
-                                                 settings[Setting::query_cache_max_entries]));
+                                     key,
+                                     std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
+                                     settings[Setting::query_cache_squash_partial_results],
+                                     settings[Setting::max_block_size],
+                                     settings[Setting::query_cache_max_size_in_bytes],
+                                     settings[Setting::query_cache_max_entries]));
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
+
+                            /// We will also provide the info in HTTP headers,
+                            /// but only if the cache is enabled for reading (otherwise browsers should not cache either)
+                            /// and we set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+                            if (settings[Setting::enable_reads_from_query_cache])
+                                result_details.query_cache_expires_at = expires_at;
                         }
                     }
                 }
@@ -1814,7 +1829,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     BlockIO res;
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     ReadBufferUniquePtr no_input_buffer;
-    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor);
+    QueryResultDetails result_details;
+    res = executeQueryImpl(query.data(), query.data() + query.size(), context, flags, stage, no_input_buffer, ast, implicit_tcl_executor, {}, result_details);
     if (const auto * ast_query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
     {
         String format_name = ast_query_with_output->format_ast
@@ -1975,7 +1991,7 @@ void executeQuery(
     auto implicit_tcl_executor = std::make_shared<ImplicitTransactionControlExecutor>();
     try
     {
-        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback);
+        streams = executeQueryImpl(begin, end, context, flags, QueryProcessingStage::Complete, istr, ast, implicit_tcl_executor, http_continue_callback, result_details);
     }
     catch (...)
     {
