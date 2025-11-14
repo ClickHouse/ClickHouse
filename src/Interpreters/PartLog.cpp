@@ -37,6 +37,8 @@ PartLogElement::MergeReasonType PartLogElement::getMergeReasonType(MergeType mer
             return TTL_DELETE_MERGE;
         case MergeType::TTLRecompress:
             return TTL_RECOMPRESS_MERGE;
+        case MergeType::TTLDrop:
+            return TTL_DROP_MERGE;
     }
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unknown MergeType {}", static_cast<UInt64>(merge_type));
