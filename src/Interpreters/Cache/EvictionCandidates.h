@@ -8,9 +8,9 @@ namespace DB
 /// Eviction info:
 /// - contains information about how much size/elements is needed to be evicted
 /// - holds "space holders", for space which was already available
-///   and will now be "hold" as reserved, while we are evicting remaining space.
+///   and will now be "held" as reserved, while we are evicting remaining space.
 /// If releaseHoldSpace() is not called,
-/// hold space will be automatically released in destructor of HoldSpacePtr.
+/// held space will be automatically released in destructor of HoldSpacePtr.
 struct QueueEvictionInfo
 {
     explicit QueueEvictionInfo(const std::string & description_) : description(description_) {}
@@ -78,19 +78,16 @@ public:
     size_t size() const { return candidates_size; }
     size_t bytes() const { return candidates_bytes; }
 
-    auto begin() const { return candidates.begin(); }
-    auto begin() { return candidates.begin(); }
-
-    auto end() const { return candidates.end(); }
-    auto end() { return candidates.end(); }
+    auto begin(this auto && self) { return self.candidates.begin(); }
+    auto end(this auto&& self) { return self.candidates.end(); }
 
     /// Add a new eviction candidate.
     void add(const FileSegmentMetadataPtr & candidate, LockedKey & locked_key);
     /// Set a callback to be executed after eviction is finished.
     /// "write" func modifies priority queue structure.
     /// "state" func modifies cache size/elements counters.
-    void setAfterEvictWriteFunc(AfterEvictWriteFunc && func) { after_evict_write_func = func; }
-    void setAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_func = func; }
+    void setAfterEvictWriteFunc(AfterEvictWriteFunc && func) { after_evict_write_func = std::move(func); }
+    void setAfterEvictStateFunc(AfterEvictStateFunc && func) { after_evict_state_func = std::move(func); }
 
     /// Evict all candidates, which were added before via add().
     void evict();

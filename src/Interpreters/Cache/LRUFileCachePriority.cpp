@@ -37,13 +37,13 @@ void LRUFileCachePriority::State::add(uint64_t size_, uint64_t elements_, const 
 
     if (size_)
     {
-        size += size_;
+        size.fetch_add(size_, std::memory_order_relaxed);
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size_);
     }
 
     if (elements_)
     {
-        elements_num += elements_;
+        elements_num.fetch_add(elements_, std::memory_order_relaxed);
         CurrentMetrics::add(CurrentMetrics::FilesystemCacheElements, elements_);
     }
 }

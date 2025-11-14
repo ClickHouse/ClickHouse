@@ -1127,10 +1127,10 @@ bool FileCache::doEviction(
 {
     LOG_TEST(log, "Main eviction info {}", main_eviction_info.toString());
     if (query_priority)
-        LOG_TEST(log, "Query eviction info {}", main_eviction_info.toString());
+        LOG_TEST(log, "Query eviction info {}", query_eviction_info->toString());
 
     if (!main_eviction_info.requiresEviction()
-        && (!query_eviction_info || query_eviction_info->requiresEviction()))
+        && (!query_eviction_info || !query_eviction_info->requiresEviction()))
         return true;
 
     /// If there is at least something we need to evict,
@@ -1170,7 +1170,7 @@ bool FileCache::doEviction(
                     cache_guard,
                     cache_state_guard))
             {
-                failure_reason = on_cannot_evict_enough_space_message(*main_priority);
+                failure_reason = on_cannot_evict_enough_space_message(*query_priority);
                 return false;
             }
 

@@ -137,7 +137,7 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         /// If it is server startup, we put entries in any queue it will fit in,
         /// but with preference for probationary queue,
         /// because we do not know the distribution between queues after server restart.
-        is_protected = probationary_queue.canFit(size, /* elements */1, *state_lock);
+        is_protected = !probationary_queue.canFit(size, /* elements */1, *state_lock);
     }
     else
     {
@@ -524,6 +524,7 @@ bool SLRUFileCachePriority::collectCandidatesForEvictionInProtected(
                 break;
 
             auto * iterator = assert_cast<SLRUIterator *>(info->slru_iterator->getNestedOrThis());
+            chassert(iterator);
             try
             {
                 info->new_nested_iterator.incrementSize(info->entry_size, lk);
