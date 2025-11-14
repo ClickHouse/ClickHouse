@@ -3399,4 +3399,76 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
     return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 
+bool ReadFromMergeTree::canRemoveUnusedColumns() const
+{
+    return true;
+}
+
+IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(NameMultiSet required_outputs, bool /*remove_inputs*/)
+{
+    if (output_header == nullptr)
+        return RemovedUnusedColumns::None;
+
+    NameSet columns_to_keep;
+
+    for (const auto & column_name : required_outputs)
+        columns_to_keep.insert(column_name);
+
+    if (query_info.row_level_filter)
+    {
+        for (const auto * input : query_info.row_level_filter->actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+    auto erased_prewhere_output = false;
+
+    if (query_info.prewhere_info)
+    {
+        auto & prewhere_outputs = query_info.prewhere_info->prewhere_actions.getOutputs();
+        erased_prewhere_output = std::erase_if(
+                                     prewhere_outputs,
+                                     [&](const auto * output)
+                                     {
+                                         return output->result_name != query_info.prewhere_info->prewhere_column_name
+                                             && required_outputs.find(output->result_name) == required_outputs.end();
+                                     })
+            > 0;
+        for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+    Names new_column_names;
+    for (const auto & column_name : all_column_names)
+    {
+        if (columns_to_keep.contains(column_name))
+            new_column_names.push_back(column_name);
+    }
+
+    if (!erased_prewhere_output && new_column_names.size() == all_column_names.size())
+        return RemovedUnusedColumns::None;
+
+    all_column_names = std::move(new_column_names);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        lazily_read_info,
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// Update analysis result if it exists
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+
+    required_source_columns = all_column_names;
+
+    return RemovedUnusedColumns::OutputOnly;
+}
+
+bool ReadFromMergeTree::canRemoveColumnsFromOutput() const
+{
+    if (output_header == nullptr)
+        return false;
+
+    return canRemoveUnusedColumns() && output_header->columns() > 0;
+}
 }
