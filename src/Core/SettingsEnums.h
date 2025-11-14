@@ -495,4 +495,13 @@ enum class IcebergMetadataLogLevel : uint8_t
 };
 
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
+
+enum class ArrowFlightDescriptorType : uint8_t
+{
+    Path = 0,
+    Command
+};
+
+DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
 }

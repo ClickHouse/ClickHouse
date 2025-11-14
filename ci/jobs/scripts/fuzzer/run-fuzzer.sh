@@ -350,18 +350,14 @@ EOF
         # find a message about normal server termination (Received signal 15),
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
+        echo "error" > status.txt
         echo "Let op!" > description.txt
-        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
-        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
     fi
 
     if test -f core.*; then
         zstd --threads=0 core.*
         mv core.*.zst core.zst
     fi
-
-    dmesg -T | rg -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
@@ -374,14 +370,5 @@ case "$stage" in
     time fuzz
     ;&
 esac
-
-dmesg -T > dmesg.log ||:
-
-zstd --threads=0 --rm server.log
-zstd --threads=0 --rm fuzzer.log
-
-if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
-    zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
-fi
 
 exit $task_exit_code

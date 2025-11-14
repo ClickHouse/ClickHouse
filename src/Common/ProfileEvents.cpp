@@ -555,8 +555,8 @@ The server successfully detected this situation and will download merged part fr
     M(OSCPUVirtualTimeMicroseconds, "CPU time spent seen by OS. Does not include involuntary waits due to virtualization.", ValueType::Microseconds) \
     M(OSReadBytes, "Number of bytes read from disks or block devices. Doesn't include bytes read from page cache. May include excessive data due to block size, readahead, etc.", ValueType::Bytes) \
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.", ValueType::Bytes) \
-    M(OSReadChars, "Number of bytes read from filesystem, including page cache.", ValueType::Bytes) \
-    M(OSWriteChars, "Number of bytes written to filesystem, including page cache.", ValueType::Bytes) \
+    M(OSReadChars, "Number of bytes read from filesystem, including page cache, as well as network and other files.", ValueType::Bytes) \
+    M(OSWriteChars, "Number of bytes written to filesystem, including page cache, as well as network and other files.", ValueType::Bytes) \
     \
     M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas", ValueType::Microseconds) \
     M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements", ValueType::Microseconds) \
