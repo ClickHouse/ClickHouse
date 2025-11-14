@@ -1,4 +1,7 @@
 #include <Storages/System/StorageSystemInstrumentation.h>
+
+#if USE_XRAY
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -15,23 +18,18 @@
 #include <Access/EnabledRolesInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InstrumentationManager.h>
-#include <xray/xray_interface.h>
-
-#if USE_XRAY
 
 namespace DB
 {
-
-static const Int8 ENTRY_AND_EXIT = XRayEntryType::EXIT + 1;
 
 ColumnsDescription StorageSystemInstrumentation::getColumnsDescription()
 {
     auto entry_type_enum = std::make_shared<DataTypeEnum8> (
         DataTypeEnum8::Values
         {
-            {"Entry", static_cast<Int8>(XRayEntryType::ENTRY)},
-            {"Exit", static_cast<Int8>(XRayEntryType::EXIT)},
-            {"EntryAndExit", static_cast<Int8>(ENTRY_AND_EXIT)},
+            {"Entry", static_cast<Int8>(Instrumentation::EntryType::ENTRY)},
+            {"Exit", static_cast<Int8>(Instrumentation::EntryType::EXIT)},
+            {"EntryAndExit", static_cast<Int8>(Instrumentation::EntryType::ENTRY_AND_EXIT)},
         });
 
     return ColumnsDescription
@@ -66,29 +64,22 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
         column_function_id.insert(ip.function_id);
         column_function_name.insert(ip.function_name);
         column_handler_name.insert(ip.handler_name);
-
-        if (ip.entry_type.has_value())
-            column_entry_type.insert(ip.entry_type.value());
-        else
-            column_entry_type.insert(ENTRY_AND_EXIT);
+        column_entry_type.insert(ip.entry_type);
 
         column_symbol.insert(ip.symbol);
 
         Array array;
-        if (ip.parameters.has_value() && !ip.parameters->empty())
+        for (const auto & param : ip.parameters)
         {
-            for (const auto & param : ip.parameters.value())
-            {
-                Field field = Field();
-                if (std::holds_alternative<std::string>(param))
-                    field = Field(std::get<std::string>(param));
-                else if (std::holds_alternative<Int64>(param))
-                    field = Field(std::get<Int64>(param));
-                else if (std::holds_alternative<Float64>(param))
-                    field = Field(std::get<Float64>(param));
+            Field field = Field();
+            if (std::holds_alternative<std::string>(param))
+                field = Field(std::get<std::string>(param));
+            else if (std::holds_alternative<Int64>(param))
+                field = Field(std::get<Int64>(param));
+            else if (std::holds_alternative<Float64>(param))
+                field = Field(std::get<Float64>(param));
 
-                array.emplace_back(field);
-            }
+            array.emplace_back(field);
         }
         column_parameters.insert(array);
     }

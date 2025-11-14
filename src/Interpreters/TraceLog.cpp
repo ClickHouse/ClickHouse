@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <base/demangle.h>
 #include <Common/DateLUTImpl.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/TraceLog.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -16,7 +17,6 @@
 #include <Common/SymbolIndex.h>
 #include <Common/Dwarf.h>
 #include <IO/WriteBufferFromArena.h>
-#include <xray/xray_interface.h>
 
 #include <filesystem>
 
@@ -66,8 +66,8 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
     auto entry_type_enum = std::make_shared<DataTypeEnum8> (
         DataTypeEnum8::Values
         {
-            {"Entry", static_cast<Int8>(XRayEntryType::ENTRY)},
-            {"Exit", static_cast<Int8>(XRayEntryType::EXIT)},
+            {"Entry", static_cast<Int8>(Instrumentation::EntryType::ENTRY)},
+            {"Exit", static_cast<Int8>(Instrumentation::EntryType::EXIT)},
         });
 
     return ColumnsDescription

@@ -1,17 +1,32 @@
 #pragma once
 
 #include "config.h"
+#include <base/types.h>
+#include <xray/xray_interface.h>
+
+namespace DB
+{
+namespace Instrumentation
+{
+
+enum class EntryType : UInt8
+{
+    ENTRY,
+    EXIT,
+    ENTRY_AND_EXIT
+};
+
+EntryType fromXRayEntryType(XRayEntryType entry_type);
+String entryTypeToString(EntryType entry_type);
+
+}
+}
 
 #if USE_XRAY
 
-#include <vector>
-#include <variant>
-
-#include <base/types.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
-#include <xray/xray_interface.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/composite_key.hpp>
@@ -19,8 +34,8 @@
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 
-
-class InstrumentationManagerTest;
+#include <vector>
+#include <variant>
 
 namespace DB
 {
@@ -46,28 +61,26 @@ public:
         Int32 function_id;
         String function_name;
         String handler_name;
-        std::optional<XRayEntryType> entry_type;
+        Instrumentation::EntryType entry_type;
         String symbol;
-        std::optional<std::vector<InstrumentedParameter>> parameters;
+        std::vector<InstrumentedParameter> parameters;
 
         String toString() const
         {
-            String entry_type_str = !entry_type.has_value() ? "EntryAndExit" : (entry_type.value() == XRayEntryType::ENTRY ? "Entry" : "Exit");
+            String entry_type_str = entryTypeToString(entry_type);
             String parameters_str;
-            if (parameters.has_value())
+
+            parameters_str = ", parameters [";
+            for (const auto & param : parameters)
             {
-                parameters_str = ", parameters (";
-                for (const auto & param : parameters.value())
-                {
-                    if (std::holds_alternative<String>(param))
-                        parameters_str += fmt::format("{}, ", std::get<String>(param));
-                    else if (std::holds_alternative<Int64>(param))
-                        parameters_str += fmt::format("{}, ", std::get<Int64>(param));
-                    else if (std::holds_alternative<Float64>(param))
-                        parameters_str += fmt::format("{}, ", std::get<Float64>(param));
-                }
-                parameters_str = ")";
+                if (std::holds_alternative<String>(param))
+                    parameters_str += fmt::format("{}, ", std::get<String>(param));
+                else if (std::holds_alternative<Int64>(param))
+                    parameters_str += fmt::format("{}, ", std::get<Int64>(param));
+                else if (std::holds_alternative<Float64>(param))
+                    parameters_str += fmt::format("{}, ", std::get<Float64>(param));
             }
+            parameters_str = "]";
 
             return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
                 id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
@@ -104,16 +117,12 @@ public:
 
     static InstrumentationManager & instance();
 
-    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters);
+    [[clang::xray_never_instrument]] void patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters);
     [[clang::xray_never_instrument]] void unpatchFunction(std::variant<UInt64, bool> id);
 
     using InstrumentedPoints = std::vector<InstrumentedPointInfo>;
     InstrumentedPoints getInstrumentedPoints() const;
     const FunctionsContainer & getFunctions();
-
-protected:
-    static std::string_view removeTemplateArgs(std::string_view input);
-    static String extractNearestNamespaceAndFunction(std::string_view signature);
 
 private:
     using InstrumentedPointContainer = boost::multi_index_container<
@@ -150,8 +159,6 @@ private:
     mutable SharedMutex shared_mutex;
     UInt64 instrumented_point_ids;
     InstrumentedPointContainer instrumented_points TSA_GUARDED_BY(shared_mutex);
-
-    friend class ::InstrumentationManagerTest;
 };
 
 }

@@ -1807,18 +1807,12 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
                 id = fmt::format(" and id '{}'", std::get<UInt64>(query.instrumentation_point_id.value()));
         }
 
-        String entry_type;
-        if (query.instrumentation_entry_type.has_value())
-            entry_type = query.instrumentation_entry_type.value() == XRayEntryType::ENTRY ? "entry" : "exit";
-        else
-            entry_type = "None";
-
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Failed to instrument function '{}' with handler '{}', entry type '{}'{}: {}",
             query.instrumentation_function_name,
             query.instrumentation_handler_name,
-            entry_type,
+            Instrumentation::entryTypeToString(query.instrumentation_entry_type),
             id,
             e.what());
     }

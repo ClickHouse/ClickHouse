@@ -47,6 +47,31 @@ static constexpr String PROFILE_HANDLER = "profile";
 
 static auto logger = getLogger("InstrumentationManager");
 
+namespace Instrumentation
+{
+
+EntryType fromXRayEntryType(XRayEntryType entry_type)
+{
+    switch (entry_type)
+    {
+        case XRayEntryType::ENTRY: return EntryType::ENTRY;
+        case XRayEntryType::EXIT: return EntryType::EXIT;
+        default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong XRay entry_type to convert: {}", entry_type);
+    }
+}
+
+String entryTypeToString(EntryType entry_type)
+{
+    switch (entry_type)
+    {
+        case EntryType::ENTRY: return "Entry";
+        case EntryType::EXIT: return "Exit";
+        case EntryType::ENTRY_AND_EXIT: return "EntryAndExit";
+    }
+}
+
+}
+
 InstrumentationManager::InstrumentationManager()
 {
     registerHandler(LOG_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { log(entry_type, ip); });
@@ -99,7 +124,7 @@ void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
         __xray_unpatch_function(function_id);
 }
 
-void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, std::optional<XRayEntryType> entry_type, std::optional<std::vector<InstrumentedParameter>> & parameters)
+void InstrumentationManager::patchFunction(ContextPtr context, const String & function_name, const String & handler_name, Instrumentation::EntryType entry_type, const std::vector<InstrumentedParameter> & parameters)
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
@@ -221,6 +246,9 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
     if (entry_type == XRayEntryType::TAIL)
         entry_type = XRayEntryType::EXIT;
 
+    if (entry_type != XRayEntryType::ENTRY && entry_type != XRayEntryType::EXIT)
+        return;
+
     std::vector<InstrumentedPointInfo> func_ips;
     SharedLockGuard lock(shared_mutex);
     for (auto it = instrumented_points.get<FunctionId>().find(func_id); it != instrumented_points.get<FunctionId>().end(); ++it)
@@ -229,7 +257,7 @@ void InstrumentationManager::dispatchHandlerImpl(Int32 func_id, XRayEntryType en
 
     for (const auto & info : func_ips)
     {
-        if (info.entry_type.has_value() && info.entry_type.value() != entry_type)
+        if (info.entry_type != Instrumentation::EntryType::ENTRY_AND_EXIT && info.entry_type != Instrumentation::fromXRayEntryType(entry_type))
             continue;
 
         try
@@ -335,11 +363,9 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
     static thread_local pcg64_fast random_generator{randomSeed()};
 
-    const auto & params_opt = instrumented_point.parameters;
-    if (!params_opt.has_value())
+    const auto & params = instrumented_point.parameters;
+    if (params.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for sleep instrumentation");
-
-    const auto & params = params_opt.value();
 
     auto get_value = [](auto param)
     {
@@ -382,11 +408,10 @@ void InstrumentationManager::sleep([[maybe_unused]] XRayEntryType entry_type, co
 
 void InstrumentationManager::log(XRayEntryType entry_type, const InstrumentedPointInfo & instrumented_point)
 {
-    const auto & params_opt = instrumented_point.parameters;
-    if (!params_opt.has_value())
+    const auto & params = instrumented_point.parameters;
+    if (params.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing parameters for log instrumentation");
 
-    const auto & params = params_opt.value();
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected exactly one parameter for instrumentation, but got {}", params.size());
 

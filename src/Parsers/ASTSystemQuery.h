@@ -8,7 +8,7 @@
 #include "config.h"
 
 #if USE_XRAY
-#include <xray/xray_interface.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <variant>
 #endif
 
@@ -193,9 +193,9 @@ public:
     using InstrumentParameter = std::variant<String, Int64, Float64>;
     String instrumentation_function_name;
     String instrumentation_handler_name;
-    std::optional<XRayEntryType> instrumentation_entry_type;
+    Instrumentation::EntryType instrumentation_entry_type;
     std::optional<std::variant<UInt64, bool>> instrumentation_point_id;
-    std::optional<std::vector<InstrumentParameter>> instrumentation_parameters;
+    std::vector<InstrumentParameter> instrumentation_parameters;
     String instrumentation_subquery;
 #endif
 

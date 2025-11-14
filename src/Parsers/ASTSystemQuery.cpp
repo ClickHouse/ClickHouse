@@ -485,46 +485,38 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 print_identifier(Poco::toUpper(instrumentation_handler_name));
             }
 
-            if (instrumentation_entry_type.has_value())
+            switch (instrumentation_entry_type)
             {
-                switch (instrumentation_entry_type.value())
-                {
-                    case XRayEntryType::ENTRY:
-                        ostr << " ENTRY"; break;
-                    case XRayEntryType::EXIT:
-                        ostr << " EXIT"; break;
-                    default:
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown entry type: {}", instrumentation_entry_type.value());
-                }
+                case Instrumentation::EntryType::ENTRY:
+                    ostr << " ENTRY"; break;
+                case Instrumentation::EntryType::EXIT:
+                    ostr << " EXIT"; break;
+                case Instrumentation::EntryType::ENTRY_AND_EXIT:
+                    break;
             }
 
-            if (instrumentation_parameters && !instrumentation_parameters->empty())
+            bool first = false;
+            for (const auto & param : instrumentation_parameters)
             {
-                bool first = false;
-                for (const auto & param : *instrumentation_parameters)
+                if (!first)
+                    ostr << ' ';
+                else
+                    first = true;
+                std::visit([&](const auto & value)
                 {
-                    if (!first)
-                        ostr << ' ';
+                    using T = std::decay_t<decltype(value)>;
+                    if constexpr (std::is_same_v<T, String>)
+                        ostr << ' ' << quoteString(value);
                     else
-                        first = true;
-                    std::visit([&](const auto & value)
-                    {
-                        using T = std::decay_t<decltype(value)>;
-                        if constexpr (std::is_same_v<T, String>)
-                            ostr << ' ' << quoteString(value);
-                        else
-                            ostr << ' ' << value;
-                    }, param);
-                }
+                        ostr << ' ' << value;
+                }, param);
             }
             break;
         }
         case Type::INSTRUMENT_REMOVE:
         {
             if (!instrumentation_subquery.empty())
-            {
                 ostr << " (" << instrumentation_subquery << ')';
-            }
             else if (instrumentation_point_id)
             {
                 if (std::holds_alternative<bool>(instrumentation_point_id.value()))

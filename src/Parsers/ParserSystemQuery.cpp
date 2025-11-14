@@ -11,6 +11,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/InstrumentationManager.h>
 
 #include <base/EnumReflection.h>
 
@@ -795,46 +796,39 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
 
             if (Poco::toLower(res->instrumentation_handler_name) == "profile")
+            {
+                res->instrumentation_entry_type = Instrumentation::EntryType::ENTRY_AND_EXIT;
                 break;
+            }
 
             if (ParserIdentifier{}.parse(pos, temporary_identifier, expected))
             {
                 String entry_type = temporary_identifier->as<ASTIdentifier &>().name();
                 if (Poco::toLower(entry_type) == "entry")
-                    res->instrumentation_entry_type = XRayEntryType::ENTRY;
+                    res->instrumentation_entry_type = Instrumentation::EntryType::ENTRY;
                 else if (Poco::toLower(entry_type) == "exit")
-                    res->instrumentation_entry_type = XRayEntryType::EXIT;
+                    res->instrumentation_entry_type = Instrumentation::EntryType::EXIT;
                 else
                     return false;
             }
             else
                 return false;
 
-            res->instrumentation_parameters.emplace();
-
             ASTPtr params_ast;
             while (ParserLiteral{}.parse(pos, params_ast, expected))
             {
                 const auto & value = params_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
-                {
-                    res->instrumentation_parameters->emplace_back(value.safeGet<String>());
-                }
+                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
-                {
-                    res->instrumentation_parameters->emplace_back(value.safeGet<Int64>());
-                }
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                {
-                    res->instrumentation_parameters->emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
-                }
+                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
                 else if (value.getType() == Field::Types::Float64)
-                {
-                    res->instrumentation_parameters->emplace_back(value.safeGet<Float64>());
-                }
+                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
             }
 
-            if (res->instrumentation_parameters.value().empty())
+            if (res->instrumentation_parameters.empty())
                 return false;
 
             break;
