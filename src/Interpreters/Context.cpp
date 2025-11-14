@@ -132,6 +132,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
