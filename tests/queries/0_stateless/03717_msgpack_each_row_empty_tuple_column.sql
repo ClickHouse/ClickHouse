@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: 'MsgPack` format is not supported
+
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS random_filename;
 
