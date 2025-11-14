@@ -2,19 +2,11 @@
 
 #if USE_XRAY
 
-#include <chrono>
-#include <filesystem>
-#include <print>
-#include <thread>
-#include <sched.h>
-#include <stack>
-#include <unistd.h>
-#include <variant>
-
 #include <base/getThreadId.h>
 #include <base/scope_guard.h>
 #include <Interpreters/TraceLog.h>
 #include <Common/CurrentThread.h>
+#include <Common/CPUID.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 #include <Common/logger_useful.h>
@@ -30,6 +22,15 @@
 
 #include <xray/xray_interface.h>
 #include <llvm/XRay/InstrumentationMap.h>
+
+#include <chrono>
+#include <filesystem>
+#include <print>
+#include <thread>
+#include <ranges>
+#include <stack>
+#include <unistd.h>
+#include <variant>
 
 namespace DB
 {
@@ -128,17 +129,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
 {
     auto handler_name_lower = Poco::toLower(handler_name);
 
-    bool found = false;
-    for (const auto & [name, _] : handler_name_to_function)
-    {
-        if (handler_name_lower == name)
-        {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found)
+    if (std::ranges::none_of(handler_name_to_function, [&](const auto & pair) { return pair.first == handler_name_lower; }))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown XRay handler: ({})", handler_name);
 
     /// Lazy load the XRay instrumentation map only once we need to set up a handler
@@ -324,7 +315,7 @@ TraceLogElement InstrumentationManager::createTraceLogElement(const Instrumented
     element.timestamp_ns = duration_cast<nanoseconds>(event_time.time_since_epoch()).count();
     element.instrumented_point_id = instrumented_point.id;
     element.trace_type = TraceType::Instrumentation;
-    element.cpu_id = sched_getcpu();
+    element.cpu_id = CPU::get_cpuid();
     element.thread_id = getThreadId();
     element.query_id = CurrentThread::isInitialized() ? CurrentThread::getQueryId() : "";
     element.function_id = instrumented_point.function_id;

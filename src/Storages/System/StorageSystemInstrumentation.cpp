@@ -65,7 +65,6 @@ void StorageSystemInstrumentation::fillData(MutableColumns & res_columns, Contex
         column_function_name.insert(ip.function_name);
         column_handler_name.insert(ip.handler_name);
         column_entry_type.insert(ip.entry_type);
-
         column_symbol.insert(ip.symbol);
 
         Array array;
