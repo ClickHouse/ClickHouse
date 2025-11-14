@@ -1176,7 +1176,7 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo()
 {
-    if (!is_committed)
+    if (is_committed)
     {
         operations_to_execute.clear();
         return;
