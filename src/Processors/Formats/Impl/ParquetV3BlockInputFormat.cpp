@@ -110,6 +110,11 @@ Chunk ParquetV3BlockInputFormat::read()
                 ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
                 file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(temp_prefetcher); });
             }
+            else
+            {
+                /// S3 file but no ETag available - read directly without caching
+                file_metadata = Parquet::Reader::readFileMetaData(temp_prefetcher);
+            }
         }
         else
         {
@@ -171,6 +176,11 @@ void NativeParquetSchemaReader::initializeIfNeeded()
         {
             ParquetMetadataCacheKey cache_key = ParquetV3MetadataCache::createKey(file_path, etag);
             file_metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        }
+        else
+        {
+            /// S3 file but no ETag available - read directly without caching
+            file_metadata = Parquet::Reader::readFileMetaData(prefetcher);
         }
     }
     else

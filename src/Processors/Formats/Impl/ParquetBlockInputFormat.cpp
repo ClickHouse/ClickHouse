@@ -678,6 +678,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_path, etag);
             metadata = metadata_cache->getOrSetMetadata(cache_key, [&]() { return parquet::ReadMetaData(arrow_file); });
         }
+        else
+        {
+            /// S3 file but no ETag available - read directly without caching
+            metadata = parquet::ReadMetaData(arrow_file);
+        }
     }
     else
     {
