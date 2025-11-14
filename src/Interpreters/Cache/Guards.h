@@ -1,8 +1,10 @@
 #pragma once
 #include <mutex>
 #include <boost/noncopyable.hpp>
-#include <shared_mutex>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/SharedMutex.h>
+#include <Common/SharedLockGuard.h>
+#include <absl/synchronization/mutex.h>
 
 namespace ProfileEvents
 {
@@ -74,19 +76,10 @@ namespace DB
  */
 struct CachePriorityGuard : private boost::noncopyable
 {
-    using Mutex = std::shared_timed_mutex;
     /// struct is used (not keyword `using`) to make CachePriorityGuard::Lock non-interchangable with other guards locks
     /// so, we wouldn't be able to pass CachePriorityGuard::Lock to a function which accepts KeyGuard::Lock, for example
-    struct WriteLock : public std::unique_lock<Mutex>
-    {
-        using Base = std::unique_lock<Mutex>;
-        using Base::Base;
-    };
-    struct ReadLock : public std::shared_lock<Mutex>
-    {
-        using Base = std::shared_lock<Mutex>;
-        using Base::Base;
-    };
+    using WriteLock = std::unique_lock<SharedMutex>;
+    using ReadLock = std::shared_lock<SharedMutex>;
 
     ReadLock tryReadLock() { return ReadLock(mutex, std::try_to_lock); }
     WriteLock tryWriteLock() { return WriteLock(mutex, std::try_to_lock); }
@@ -102,19 +95,8 @@ struct CachePriorityGuard : private boost::noncopyable
         return WriteLock(mutex);
     }
 
-    ReadLock tryReadLockFor(const std::chrono::milliseconds & acquire_timeout)
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityReadLockMicroseconds);
-        return ReadLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
-    }
-    WriteLock tryWriteLockFor(const std::chrono::milliseconds & acquire_timeout)
-    {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilesystemCachePriorityWriteLockMicroseconds);
-        return WriteLock(mutex, std::chrono::duration<double, std::milli>(acquire_timeout));
-    }
-
 private:
-    Mutex mutex;
+    SharedMutex mutex;
 };
 
 /// State lock protects cache total size/elements counters.
