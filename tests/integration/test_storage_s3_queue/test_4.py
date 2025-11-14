@@ -654,10 +654,10 @@ def test_registry(started_cluster):
     count = get_count()
     if expected_rows != count:
         expected_files = [f"{files_path}/test_{x}.csv" for x in range(1000)]
-        node.query("SYSTEM FLUSH LOGS")
-        node_2.query("SYSTEM FLUSH LOGS")
+        node1.query("SYSTEM FLUSH LOGS")
+        node2.query("SYSTEM FLUSH LOGS")
         processed_files = (
-            node.query(
+            node1.query(
                 f"SELECT distinct(_path) FROM clusterAllReplicas(cluster, {db_name}.{dst_table_name})"
             )
             .strip()

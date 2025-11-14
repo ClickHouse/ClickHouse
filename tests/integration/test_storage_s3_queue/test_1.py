@@ -119,7 +119,7 @@ def started_cluster():
                 "configs/s3queue_log.xml",
             ],
             stay_alive=True,
-            keeper_randomize_feature_flags=False,
+            keeper_required_feature_flags=["multi_read"],
         )
 
         logging.info("Starting cluster...")

@@ -191,10 +191,10 @@ def test_processing_threads(started_cluster, mode):
 )
 def test_shards(started_cluster, mode, processing_threads):
     node = started_cluster.instances["instance"]
-    table_name = f"test_shards_{mode}_{processing_threads}"
+    table_name = f"test_shards_{mode}_{processing_threads}_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     # A unique path is necessary for repeatable tests
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 300
     shards_num = 3

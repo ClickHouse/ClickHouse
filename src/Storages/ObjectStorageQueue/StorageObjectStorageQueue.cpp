@@ -910,8 +910,9 @@ void StorageObjectStorageQueue::commit(
 
     LOG_DEBUG(
         log, "Successfully committed {} requests for {} sources with commit id {} "
-        "(inserted rows: {}, successful files: {})",
-        requests.size(), sources.size(), commit_id, inserted_rows, successful_objects.size());
+        "(inserted rows: {}, successful files ({}): {})",
+        requests.size(), sources.size(), commit_id, inserted_rows,
+        successful_objects.size(), getRemotePaths(successful_objects));
 }
 
 UInt64 StorageObjectStorageQueue::generateCommitID()
