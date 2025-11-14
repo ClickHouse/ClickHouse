@@ -223,22 +223,25 @@ namespace
         }
 
         template <bool padded>
-        static void appendToResultColumn(const std::string_view & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        static void appendToResultColumn(std::string_view res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
-            res_data.resize(res_offset + res_ref.size());
+            if (!res_ref.empty())
+            {
+                res_data.resize(res_offset + res_ref.size());
+                if constexpr (padded)
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data(), res_ref.size());
+                else
+                    memcpy(&res_data[res_offset], res_ref.data(), res_ref.size());
 
-            if constexpr (padded)
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data(), res_ref.size());
-            else
-                memcpy(&res_data[res_offset], res_ref.data(), res_ref.size());
+                res_offset += res_ref.size();
+            }
 
-            res_offset += res_ref.size();
             res_offsets.emplace_back(res_offset);
         }
 
         static std::string_view substringIndexUTF8(
-            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const std::string_view & str_ref, const String & delim, Int64 count)
+            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, std::string_view str_ref, const String & delim, Int64 count)
         {
             if (count == 0)
                 return {};
@@ -285,7 +288,7 @@ namespace
             return {reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos)};
         }
 
-        static std::string_view substringIndex(const std::string_view & str_ref, char delim, Int64 count)
+        static std::string_view substringIndex(std::string_view str_ref, char delim, Int64 count)
         {
             if (count == 0)
                 return {};
