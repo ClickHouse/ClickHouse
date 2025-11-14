@@ -117,6 +117,12 @@ public:
 
     Block getHeader() const { return result_header; }
 
+    /// Reads a single MergeTreeReadTask in a stateless manner.
+    /// Can be called concurrently and is used, for example, by SingleProjectionIndexReader.
+    ChunkAndProgress readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const;
+
+    /// Reads using the standard task-based algorithm, managing task state internally.
+    /// Not thread-safe: must not be called concurrently on the same MergeTreeSelectProcessor instance.
     ChunkAndProgress read();
 
     void cancel() noexcept;
@@ -139,9 +145,6 @@ private:
     friend class SingleProjectionIndexReader;
 
     static void injectLazilyReadColumns(size_t rows, Block & block, size_t part_index, const LazilyReadInfoPtr & lazily_read_info);
-
-    /// Sets up range readers corresponding to data readers
-    void initializeReadersChain();
 
     const MergeTreeReadPoolPtr pool;
     const MergeTreeSelectAlgorithmPtr algorithm;

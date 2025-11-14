@@ -227,7 +227,6 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::QBit:
             return to_which_type.isQBit();
         case TypeIndex::String:
-        case TypeIndex::ObjectDeprecated:
         case TypeIndex::Object:
         case TypeIndex::Set:
         case TypeIndex::Interval:
