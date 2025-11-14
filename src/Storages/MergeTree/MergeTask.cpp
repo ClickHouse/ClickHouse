@@ -2559,6 +2559,7 @@ public:
             filter_column_name,
             merge_block_size_rows,
             merge_block_size_bytes,
+            max_dynamic_subcolumns,
             blocks_are_granules_size,
             cleanup,
             time_of_merge

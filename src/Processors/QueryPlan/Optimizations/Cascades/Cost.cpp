@@ -305,7 +305,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
             const ActionsDAG::Node * prewhere_node = prewhere_info
                 ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
                 : nullptr;
-            auto relation_profile = estimator->estimateRelationProfile(nullptr, prewhere_node);
+            auto relation_profile = estimator->estimateRelationProfile(nullptr, nullptr, prewhere_node);
 
             statistics.estimated_row_count = relation_profile.rows;
             statistics.max_row_count = std::max<Float64>(statistics.max_row_count, statistics.estimated_row_count);
