@@ -78,7 +78,7 @@ bool authenticateUserByHTTP(
     bool has_http_credentials = request.hasCredentials() && request.get("Authorization") != "never";
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
-    std::string bearer_token = request.get("Authorization", (params.has("token") ? BEARER_PREFIX + params.get("token") : ""));
+    String bearer_token;
 
     std::string spnego_challenge;
 #if USE_SSL

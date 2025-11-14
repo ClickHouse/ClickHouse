@@ -43,7 +43,7 @@ def started_cluster():
 
 def curl_with_jwt(token, ip, https=False):
     http_prefix = "https" if https else "http"
-    curl = f'curl -H "X-ClickHouse-JWT-Token: Bearer {token}" "{http_prefix}://{ip}:8123/?query=SELECT%20currentUser()"'
+    curl = f'curl -H "Authorization: Bearer {token}" "{http_prefix}://{ip}:8123/?query=SELECT%20currentUser()"'
     return curl
 
 
