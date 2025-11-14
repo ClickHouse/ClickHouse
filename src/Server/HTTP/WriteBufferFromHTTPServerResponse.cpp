@@ -380,25 +380,8 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             writeString(EXCEPTION_MARKER, out);
             writeCString("\r\n", out);
 
-            // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
-            {
-                /// Some compression buffers (like ZlibDeflatingWriteBuffer) can be flushed properly only by finalizing them.
-                /// We want to flush the compression buffer without finalizing the underlying buffer,
-                /// so we will not send the final chunk in HTTP and indicate an error by breaking the protocol (there's no other way).
-                /// So we finalize the decorator in this hacky way in order to flush it without actually finalizing
                 compression_buffer->next();
-                if (auto * decorator = dynamic_cast<WriteBufferWithOwnMemoryDecorator *>(compression_buffer))
-                {
-                    decorator->finalizeBefore();
-                    decorator->next();
-                    decorator->finalizeAfter();
-                }
-                else
-                {
-                    LOG_INFO(getLogger("WriteBufferFromHTTPServerResponse"), "Not finalizing buffer of type {}", demangle(typeid(*compression_buffer).name()));
-                }
-            }
             next();
 
             LOG_DEBUG(

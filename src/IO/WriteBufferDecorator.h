@@ -35,9 +35,9 @@ public:
         Base::finalizeImpl();
         try
         {
-            finalizeBefore();
+            finalFlushBefore();
             out->finalize();
-            finalizeAfter();
+            finalFlushAfter();
         }
         catch (...)
         {
@@ -49,19 +49,23 @@ public:
 
     void cancelImpl() noexcept override
     {
+        finalFlushBefore();
+        Base::next();
         Base::cancelImpl();
+        out->next();
         out->cancel();
+        finalFlushAfter();
     }
 
     WriteBuffer * getNestedBuffer() { return out; }
 
-    /// Do some finalization before finalization of underlying buffer.
-    virtual void finalizeBefore() {}
-
-    /// Do some finalization after finalization of underlying buffer.
-    virtual void finalizeAfter() {}
-
 protected:
+    /// Do some finalization before finalization/cancellation of underlying buffer.
+    virtual void finalFlushBefore() {}
+
+    /// Do some finalization after finalization/cancellation of underlying buffer.
+    virtual void finalFlushAfter() {}
+
     std::unique_ptr<WriteBuffer> owning_holder;
     WriteBuffer * out;
 };
