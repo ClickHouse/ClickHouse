@@ -1115,8 +1115,13 @@ bool tryOptimizeJoinWithEmptyInput(
     JoinStepLogical * join_step,
     QueryPlan::Node & node,
     JoinKind kind,
-    JoinStrictness strictness)
+    JoinStrictness strictness,
+    const QueryPlanOptimizationSettings & optimization_settings)
 {
+    // Check if statistics-based optimizations are enabled
+    if (!optimization_settings.allow_statistics_optimize)
+        return false;
+
     // TODO(mfilitov): check side only if required by the join and strictness type
     auto left_empty = isDefinitelyEmpty(*node.children[0]);
     auto right_empty = isDefinitelyEmpty(*node.children[1]);
@@ -1175,7 +1180,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
-    if (tryOptimizeJoinWithEmptyInput(join_step, node, kind, strictness))
+    if (tryOptimizeJoinWithEmptyInput(join_step, node, kind, strictness, optimization_settings))
         return;
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());

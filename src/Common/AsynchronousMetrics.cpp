@@ -175,9 +175,9 @@ AsynchronousMetrics::AsynchronousMetrics(
 
     openFileIfExists("/proc/meminfo", meminfo);
 
-    openFileIfExists("/proc/pressure/memory", memory_pressure);
-    openFileIfExists("/proc/pressure/cpu", cpu_pressure);
-    openFileIfExists("/proc/pressure/io", io_pressure);
+    // openFileIfExists("/proc/pressure/memory", memory_pressure);
+    // openFileIfExists("/proc/pressure/cpu", cpu_pressure);
+    // openFileIfExists("/proc/pressure/io", io_pressure);
 
     openFileIfExists("/proc/sys/vm/max_map_count", vm_max_map_count);
     openFileIfExists("/proc/self/maps", vm_maps);
