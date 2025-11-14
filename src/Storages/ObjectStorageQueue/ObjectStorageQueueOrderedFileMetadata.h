@@ -83,16 +83,16 @@ private:
 
     struct LastProcessedInfo
     {
-        std::optional<std::string> file_path;
+        std::string file_path;
         bool is_failed = false;
     };
 
-    LastProcessedInfo getLastProcessedFile(
+    std::optional<LastProcessedInfo> getLastProcessedFile(
         Coordination::Stat * stat,
         bool check_failed = false,
         LoggerPtr log_ = nullptr);
 
-    static LastProcessedInfo getLastProcessedFile(
+    static std::optional<LastProcessedInfo> getLastProcessedFile(
         Coordination::Stat * stat,
         const std::string & processed_node_path_,
         const std::string & file_path,

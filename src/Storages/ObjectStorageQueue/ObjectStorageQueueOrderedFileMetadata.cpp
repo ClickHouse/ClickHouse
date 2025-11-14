@@ -216,7 +216,7 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
     return false;
 }
 
-ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
+std::optional<ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo> ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
     Coordination::Stat * stat,
     bool check_failed,
     LoggerPtr log_)
@@ -231,7 +231,7 @@ ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrder
         failed_node_path_, log_);
 }
 
-ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
+std::optional<ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo> ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
     const std::string & file_path,
@@ -269,10 +269,10 @@ ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrder
     for (size_t i = 0; i < size; ++i)
         check_code(responses[i].error, file_path);
 
-    LastProcessedInfo resp;
-
     if (responses[0].data.empty())
-        return resp;
+        return std::nullopt;
+
+    LastProcessedInfo resp;
 
     NodeMetadata result = NodeMetadata::fromString(responses[0].data);
     if (stat)
@@ -425,7 +425,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         Coordination::Stat processed_node_stat_;
         auto processed_file_info = getLastProcessedFile(&processed_node_stat_, true, log);
 
-        if (processed_file_info.file_path.has_value())
+        if (processed_file_info.has_value())
         {
             Coordination::Requests requests;
             std::vector<std::string> paths{processed_node_path, failed_node_path};
@@ -454,9 +454,9 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
             processed_node_stat = processed_node_stat_;
 
             LOG_TEST(log, "Current max processed file {} from path: {}",
-                        *processed_file_info.file_path, processed_node_path);
+                        processed_file_info->file_path, processed_node_path);
 
-            if (!processed_file_info.file_path->empty() && path <= *processed_file_info.file_path)
+            if (!processed_file_info->file_path.empty() && path <= processed_file_info->file_path)
             {
                 return {false, FileStatus::State::Processed};
             }
@@ -566,14 +566,14 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     auto processed_file_info = getLastProcessedFile(&processed_node_stat, false, log);
-    if (processed_file_info.file_path.has_value())
+    if (processed_file_info.has_value())
     {
         LOG_TEST(log, "Current max processed file: {}, condition less: {}",
-                 *processed_file_info.file_path, bool(path <= *processed_file_info.file_path));
+                 processed_file_info->file_path, bool(path <= processed_file_info->file_path));
 
-        if (!processed_file_info.file_path->empty() && path <= *processed_file_info.file_path)
+        if (!processed_file_info->file_path.empty() && path <= processed_file_info->file_path)
         {
-            LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, *processed_file_info.file_path);
+            LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, processed_file_info->file_path);
 
             if (ignore_if_exists)
                 return;
@@ -789,8 +789,8 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         else
         {
             auto processed_file_info = getLastProcessedFile({}, processed_node_path, "");
-            if (processed_file_info.file_path.has_value())
-                max_processed_file_per_bucket_and_hive_partition[i][""] = std::move(*processed_file_info.file_path);
+            if (processed_file_info.has_value())
+                max_processed_file_per_bucket_and_hive_partition[i][""] = std::move(processed_file_info->file_path);
         }
     }
 
