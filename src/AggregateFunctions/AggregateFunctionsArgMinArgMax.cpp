@@ -81,7 +81,7 @@ static_assert(
     "Incorrect size of AggregateFunctionArgMinMaxData struct");
 
 /// Returns the first arg value found for the minimum/maximum value. Example: argMin(arg, value).
-/// When returnBoth is true, returns tuple (arg, value). Example: argAndMin(arg, value).
+/// When return_both is true, returns tuple (arg, value). Example: argAndMin(arg, value).
 template <typename Data, bool isMin>
 class AggregateFunctionArgMinMax final : public IAggregateFunctionDataHelper<Data, AggregateFunctionArgMinMax<Data, isMin>>
 {

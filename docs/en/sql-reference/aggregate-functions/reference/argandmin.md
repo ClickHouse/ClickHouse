@@ -6,10 +6,14 @@ title: 'argAndMin'
 doc_type: 'reference'
 ---
 
-# argMin
+# argAndMin
 
 Calculates the `arg` and `val` value for a minimum `val` value. If there are multiple rows with equal `val` being the minimum, which of the associated `arg` and `val` is returned is not deterministic.
 Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+
+:::note
+The only difference between `argMin` is that `argAndMin` returns both argumnet and value.
+:::
 
 **Syntax**
 
@@ -115,4 +119,5 @@ SELECT argAndMin(a, tuple(b)) FROM test;
 
 **See also**
 
+- [argMin](/sql-reference/aggregate-functions/reference/argmin.md)
 - [Tuple](/sql-reference/data-types/tuple.md)
