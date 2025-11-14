@@ -6,6 +6,8 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -203,6 +205,41 @@ std::vector<std::pair<String, UProperty>> getPropNames()
     return properties;
 }
 
+static DataTypePtr getEnumTypeForProperty(UProperty prop)
+{
+    int32_t min_value = u_getIntPropertyMinValue(prop);
+    int32_t max_value = u_getIntPropertyMaxValue(prop);
+
+    DataTypeEnum8::Values enum8_values;
+    DataTypeEnum16::Values enum16_values;
+    bool use_enum16 = (min_value < -128 || max_value > 127);
+
+    for (int32_t value = min_value; value <= max_value; ++value)
+    {
+        const char * value_name = u_getPropertyValueName(prop, value, U_LONG_PROPERTY_NAME);
+        if (value_name)
+        {
+            if (use_enum16)
+                enum16_values.emplace_back(String(value_name), value);
+            else
+                enum8_values.emplace_back(String(value_name), value);
+        }
+    }
+
+    if (use_enum16)
+    {
+        if (enum16_values.empty())
+            return std::make_shared<DataTypeInt32>();
+        return std::make_shared<DataTypeEnum16>(enum16_values);
+    }
+    else
+    {
+        if (enum8_values.empty())
+            return std::make_shared<DataTypeInt32>();
+        return std::make_shared<DataTypeEnum8>(enum8_values);
+    }
+}
+
 ColumnsDescription StorageSystemUnicode::getColumnsDescription()
 {
     NamesAndTypes names_and_types;
@@ -215,14 +252,14 @@ ColumnsDescription StorageSystemUnicode::getColumnsDescription()
     for (size_t i = 0; i < sizeof(binary_properties) / sizeof(binary_properties[0]); ++i)
     {
         const auto & [prop_name, prop] = prop_names[prop_index++];
-        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeUInt8>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), DataTypeFactory::instance().get("Bool"));
     }
 
     // Process integer properties
     for (size_t i = 0; i < sizeof(int_properties) / sizeof(int_properties[0]); ++i)
     {
         const auto & [prop_name, prop] = prop_names[prop_index++];
-        names_and_types.emplace_back(Poco::toLower(prop_name), std::make_shared<DataTypeInt32>());
+        names_and_types.emplace_back(Poco::toLower(prop_name), getEnumTypeForProperty(prop));
     }
 
     // Process mask properties
@@ -416,10 +453,32 @@ void StorageSystemUnicode::fillData(
     {
         if (columns_mask[mask_index++])
         {
-            ColumnInt32 & column = assert_cast<ColumnInt32 &>(*res_columns[column_index++]);
-            for (UChar32 code : filtered_code_points)
+            IColumn & column = *res_columns[column_index++];
+
+            // Try Int8 (for Enum8) first, then Int16 (for Enum16), then fallback to Int32
+            if (auto * col_int8 = typeid_cast<ColumnInt8 *>(&column))
             {
-                column.insert(u_getIntPropertyValue(code, int_prop));
+                for (UChar32 code : filtered_code_points)
+                {
+                    int32_t value = u_getIntPropertyValue(code, int_prop);
+                    col_int8->insert(static_cast<int8_t>(value));
+                }
+            }
+            else if (auto * col_int16 = typeid_cast<ColumnInt16 *>(&column))
+            {
+                for (UChar32 code : filtered_code_points)
+                {
+                    int32_t value = u_getIntPropertyValue(code, int_prop);
+                    col_int16->insert(static_cast<int16_t>(value));
+                }
+            }
+            else
+            {
+                ColumnInt32 & col_int32 = assert_cast<ColumnInt32 &>(column);
+                for (UChar32 code : filtered_code_points)
+                {
+                    col_int32.insert(u_getIntPropertyValue(code, int_prop));
+                }
             }
         }
     }
