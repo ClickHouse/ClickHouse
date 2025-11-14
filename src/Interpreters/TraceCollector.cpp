@@ -206,9 +206,9 @@ void TraceCollector::run()
                     .event = event,
                     .increment = increment,
                     .instrumented_point_id = 0,
-                    .function_id = std::nullopt,
-                    .function_name = std::nullopt,
-                    .handler = std::nullopt,
+                    .function_id = -1,
+                    .function_name = "",
+                    .handler = "",
                     .entry_type = std::nullopt,
                     .duration_nanoseconds = std::nullopt,
                 };

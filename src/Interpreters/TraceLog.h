@@ -50,9 +50,9 @@ struct TraceLogElement
 
     /// Instrumentation values
     UInt64 instrumented_point_id;
-    std::optional<Int32> function_id{};
-    std::optional<String> function_name{};
-    std::optional<String> handler{};
+    Int32 function_id = -1;
+    String function_name{};
+    String handler{};
     std::optional<Int8> entry_type{};
     std::optional<UInt64> duration_nanoseconds{};
 
