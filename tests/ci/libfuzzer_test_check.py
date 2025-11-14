@@ -173,11 +173,11 @@ def upload_corpus(path):
             zip_file_path = corpus_dir / f"{fuzzer_dir.name}.zip"
             with zipfile.ZipFile(zip_file_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 zipdir(fuzzer_dir, zipf)
-                s3.upload_file(
-                    bucket=S3_BUILDS_BUCKET,
-                    file_path=str(zip_file_path),
-                    s3_path=f"fuzzer/corpus/{zip_file_path.name}",
-                )
+            s3.upload_file(
+                bucket=S3_BUILDS_BUCKET,
+                file_path=str(zip_file_path),
+                s3_path=f"fuzzer/corpus/{zip_file_path.name}",
+            )
 
 
 # same as upload_corpus but without uploading - for testing purposes
