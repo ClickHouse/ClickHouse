@@ -104,7 +104,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
         else
         {
             /// Write empty string as format name if file_bucket_info is not set.
-            writeStringBinary("", out); 
+            writeStringBinary("", out);
         }
     }
 

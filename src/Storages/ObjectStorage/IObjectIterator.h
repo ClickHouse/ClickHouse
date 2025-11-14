@@ -44,6 +44,10 @@ struct ObjectInfo
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
+
+    FileBucketInfoPtr file_bucket_info;
+
+    String getIdentifier() const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;

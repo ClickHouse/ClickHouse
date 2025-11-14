@@ -35,7 +35,8 @@ struct StorageID;
 struct IObjectIterator;
 struct RelativePathWithMetadata;
 class IObjectStorage;
-using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
+struct ObjectInfo;
+using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 

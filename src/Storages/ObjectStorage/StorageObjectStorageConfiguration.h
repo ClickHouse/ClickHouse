@@ -25,7 +25,6 @@ class SinkToStorage;
 class IDataLakeMetadata;
 struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
-using ObjectInfoPtr = std::shared_ptr<RelativePathWithMetadata>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
 namespace ErrorCodes

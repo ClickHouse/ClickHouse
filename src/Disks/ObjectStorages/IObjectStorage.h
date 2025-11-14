@@ -117,10 +117,6 @@ struct RelativePathWithMetadata
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 
-    FileBucketInfoPtr file_bucket_info;
-
-    String getIdentifier() const;
-
     RelativePathWithMetadata() = default;
 
     explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
