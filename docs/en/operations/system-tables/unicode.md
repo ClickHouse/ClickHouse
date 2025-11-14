@@ -13,7 +13,7 @@ The `system.unicode` table is a virtual table that provides information about Un
 Columns
 
 :::note
-The property names of unicode code points in ICU documents are converted to snake case. 
+The property names of Unicode code points in ICU documents are converted to snake case. 
 :::
 
 - `code_point` ([String](../../sql-reference/data-types/string.md)) — The UTF-8 representation of the code point.
