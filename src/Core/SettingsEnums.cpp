@@ -391,4 +391,8 @@ IMPLEMENT_SETTING_ENUM(
     {{"file", ObjectStorageGranularityLevel::FILE},
     {"bucket", ObjectStorageGranularityLevel::BUCKET}})
 
+IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ArrowFlightDescriptorType::Path},
+     {"command", ArrowFlightDescriptorType::Command}})
 }
+
