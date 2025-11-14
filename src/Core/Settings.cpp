@@ -657,6 +657,13 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
+Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
+
+Possible values:
+- 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
+- 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
+)", 0) \
     DECLARE(UInt64, hsts_max_age, 0, R"(
 Expired time for HSTS. 0 means disable HSTS.
 )", 0) \
@@ -977,10 +984,10 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
     DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
-Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in ORDER BY keys.
+Allows or restricts using not comparable types (like JSON/AggregateFunction) in ORDER BY keys.
 )", 0) \
     DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
-Allows or restricts using not comparable types (like JSON/Object/AggregateFunction) in comparison functions `equal/less/greater/etc`.
+Allows or restricts using not comparable types (like JSON/AggregateFunction) in comparison functions `equal/less/greater/etc`.
 )", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
@@ -1352,7 +1359,7 @@ Can be used when the output compression method is `zstd`. If greater than `0`, t
 
 Possible values: non-negative numbers. Note that if the value is too small or too big, `zstdlib` will throw an exception. Typical values are from `20` (window size = `1MB`) to `30` (window size = `1GB`).
 )", 0) \
-    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, false, R"(
+    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
 Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
 It helps to avoid unnecessary data copy during formatting.
 )", 0) \
@@ -2077,6 +2084,17 @@ Max number of HTTP GET redirects hops allowed. Ensures additional security measu
     \
     DECLARE(Bool, use_client_time_zone, false, R"(
 Use client timezone for interpreting DateTime string values, instead of adopting server timezone.
+)", 0) \
+    \
+    DECLARE(Bool, send_profile_events, true, R"(
+Enables or disables sending of [ProfileEvents](/native-protocol/server.md#profile-events) packets to the client.
+
+This can be disabled to reduce network traffic for clients that do not require profile events.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
 )", 0) \
     \
     DECLARE(Bool, send_progress_in_http_headers, false, R"(
@@ -4910,9 +4928,6 @@ Possible values:
 - 0 — Inserting `NULL` into a not nullable column causes an exception.
 - 1 — Default column value is inserted instead of `NULL`.
 )", 0) \
-    DECLARE(Bool, describe_extend_object_types, false, R"(
-Deduce concrete type of columns of type Object in DESCRIBE query
-)", 0) \
     DECLARE(Bool, describe_include_subcolumns, false, R"(
 Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](/sql-reference/data-types/map#reading-subcolumns-of-map), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
 
@@ -6215,6 +6230,9 @@ Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed c
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
 Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
 )", 0) \
+    DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
+Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6540,9 +6558,6 @@ See also:
 )", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
-)", 0) \
-    DECLARE(Bool, use_json_alias_for_old_object_type, false, R"(
-When enabled, `JSON` data type alias will be used to create an old [Object('json')](../../sql-reference/data-types/json.md) type instead of the new [JSON](../../sql-reference/data-types/newjson.md) type.
 )", 0) \
     DECLARE(Bool, allow_create_index_without_type, false, R"(
 Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
@@ -7082,9 +7097,6 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_object_type, false, R"(
-Allow the obsolete Object data type
-)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
 - 0 — the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
@@ -7379,6 +7391,9 @@ Allow to create table with the Alias engine.
     MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
     MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
     MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
+    MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
+    MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 

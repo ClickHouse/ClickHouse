@@ -237,9 +237,6 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::LowCardinality;
         case TypeIndex::Map:
             return BinaryTypeIndex::Map;
-        case TypeIndex::ObjectDeprecated:
-            /// Object type will be deprecated and replaced by new implementation. No need to support it here.
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Binary encoding of type Object is not supported");
         case TypeIndex::IPv4:
             return BinaryTypeIndex::IPv4;
         case TypeIndex::IPv6:

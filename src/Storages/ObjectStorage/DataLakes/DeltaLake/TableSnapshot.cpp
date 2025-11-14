@@ -140,7 +140,7 @@ public:
             {
                 /// Attach to current query thread group, to be able to
                 /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
+                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
                 scanDataFunc();
             });
     }
@@ -286,7 +286,7 @@ public:
                 continue;
             }
 
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath()));
+            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
 
             if (callback)
             {

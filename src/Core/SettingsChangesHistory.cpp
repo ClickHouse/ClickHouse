@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"arrow_flight_request_descriptor_type", "path", "path", "New setting. Type of descriptor to use for Arrow Flight requests: 'path' or 'command'. Dremio requires 'command'."},
+            {"send_profile_events", true, true, "New setting. Whether to send profile events to the clients."},
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
@@ -53,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"http_write_exception_in_output_format", true, false, "Changed for consistency across formats"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
+            {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
             {"allow_experimental_alias_table_engine", false, false, "New setting"},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
@@ -60,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"use_skip_indexes_for_top_n", false, false, "New setting."},
             {"use_top_n_dynamic_filtering", false, false, "New setting."},
+            {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
@@ -941,6 +945,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
             {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
             {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {

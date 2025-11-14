@@ -40,7 +40,7 @@ public:
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
-        RangesInDataParts parts,
+        RangesInDataPartsPtr parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -134,8 +134,8 @@ private:
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
-    static void selectPartsToRead(
-        RangesInDataParts & parts,
+    static RangesInDataParts selectPartsToRead(
+        const RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
@@ -145,8 +145,8 @@ private:
         QueryStatusPtr query_status);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static void selectPartsToReadWithUUIDFilter(
-        RangesInDataParts & parts,
+    static RangesInDataParts selectPartsToReadWithUUIDFilter(
+        const RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
@@ -189,8 +189,8 @@ public:
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
-    static void filterPartsByPartition(
-        RangesInDataParts & parts,
+    static RangesInDataParts filterPartsByPartition(
+        const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
