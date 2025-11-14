@@ -104,7 +104,7 @@ public:
         writeField(name, [&] { writeVector(values); }, condition);
     }
 
-    size_t getIndnet() const { return indent; }
+    size_t getIndent() const { return indent; }
 
 private:
     WriteBuffer & buf;

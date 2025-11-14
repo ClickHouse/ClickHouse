@@ -930,7 +930,7 @@ void ASTAlterQuery::writeJSON(WriteBuffer & buf, size_t indent) const
     {
         WriteBufferFromOwnString obj_buf;
 
-        size_t outer_indent = builder.getIndnet();
+        size_t outer_indent = builder.getIndent();
         buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
         writeChar('[', buf);
         writeChar('\n', buf);

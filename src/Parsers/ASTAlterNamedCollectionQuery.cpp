@@ -75,7 +75,7 @@ void ASTAlterNamedCollectionQuery::writeJSON(WriteBuffer & buf, size_t indent) c
             {
                 WriteBufferFromOwnString obj_buf;
 
-                size_t outer_indent = builder.getIndnet();
+                size_t outer_indent = builder.getIndent();
                 buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
                 writeChar('{', buf);
                 writeChar('\n', buf);
@@ -100,7 +100,7 @@ void ASTAlterNamedCollectionQuery::writeJSON(WriteBuffer & buf, size_t indent) c
                 }
 
                 // Close object with proper indent
-                obj_buf.write(String((builder.getIndnet()) * 2, ' ').c_str(), builder.getIndnet() * 2);
+                obj_buf.write(String((builder.getIndent()) * 2, ' ').c_str(), builder.getIndent() * 2);
                 obj_buf.write('}');
 
                 buf.write(obj_buf.str().c_str(), obj_buf.str().size());
@@ -115,7 +115,7 @@ void ASTAlterNamedCollectionQuery::writeJSON(WriteBuffer & buf, size_t indent) c
             {
                 WriteBufferFromOwnString obj_buf;
 
-                size_t outer_indent = builder.getIndnet();
+                size_t outer_indent = builder.getIndent();
                 buf.write(String(outer_indent * 2, ' ').c_str(), outer_indent * 2);
                 writeChar('{', buf);
                 writeChar('\n', buf);
@@ -139,7 +139,7 @@ void ASTAlterNamedCollectionQuery::writeJSON(WriteBuffer & buf, size_t indent) c
                 }
 
                 // Close object with proper indent
-                obj_buf.write(String((builder.getIndnet()) * 2, ' ').c_str(), builder.getIndnet() * 2);
+                obj_buf.write(String((builder.getIndent()) * 2, ' ').c_str(), builder.getIndent() * 2);
                 obj_buf.write('}');
 
                 buf.write(obj_buf.str().c_str(), obj_buf.str().size());
