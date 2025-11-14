@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -240,20 +239,6 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
-        if (auto * column = compound_expression->as<ColumnNode>())
-        {
-            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
-            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
-            {
-                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
-                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
-                {
-                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
-                    return constant_node_null;
-                }
-            }
-        }
-
         if (can_be_not_found)
             return {};
 

@@ -30,7 +30,7 @@ class CIDBCluster:
             self.url = None
             self.pwd = None
         self._session = None
-        self._auth = None
+        self._auth = {}
 
     def close_session(self):
         if self._session:
@@ -39,7 +39,7 @@ class CIDBCluster:
 
     def is_ready(self):
         if not self.url:
-            self.url, self.user, passwd = (
+            self.url, self.user, self.pwd = (
                 self.url_secret.join_with(self.user_secret)
                 .join_with(self.pwd_secret)
                 .get_value()
@@ -47,18 +47,14 @@ class CIDBCluster:
             if not self.url:
                 print("ERROR: failed to retrieve password for LogCluster")
                 return False
-            if not passwd:
+            if not self.pwd:
                 print("ERROR: failed to retrieve password for LogCluster")
                 return False
-        else:
-            passwd = self.pwd
-        if passwd:
+        if self.pwd and not self._auth:
             self._auth = {
                 "X-ClickHouse-User": self.user,
-                "X-ClickHouse-Key": passwd,
+                "X-ClickHouse-Key": self.pwd,
             }
-        else:
-            self._auth = {}
         params = {
             "query": f"SELECT 1",
         }
@@ -71,7 +67,9 @@ class CIDBCluster:
                 timeout=3,
             )
             if not response.ok:
-                print("ERROR: No connection to LogCluster")
+                print(
+                    f"ERROR: No connection to cluster [{self.url}]: [{response.text}]"
+                )
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
@@ -103,7 +101,6 @@ class CIDBCluster:
                     headers=self._auth,
                     timeout=timeout,
                 )
-                print(response)
                 if response.ok:
                     return response.text
                 else:

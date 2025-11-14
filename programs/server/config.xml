@@ -389,6 +389,17 @@
         </client>
     </openSSL>
 
+    <!-- Let's Encrypt certificate provider configuration -->
+    <!--
+    <acme>
+        <email>someone@example.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>example.com</domain>
+        </domains>
+    </acme>
+    -->
+
     <!-- Default root page on http[s] server. -->
     <!--
     <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>
@@ -893,6 +904,8 @@
          Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
     -->
     <mlock_executable>true</mlock_executable>
+    <!-- But skip it if the memory is low -->
+    <mlock_executable_min_total_memory_amount_bytes>5000000000</mlock_executable_min_total_memory_amount_bytes>
 
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>

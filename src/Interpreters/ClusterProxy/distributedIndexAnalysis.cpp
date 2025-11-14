@@ -19,6 +19,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <Columns/ColumnString.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -273,7 +274,7 @@ DistributedIndexAnalysisPartsRanges distributedIndexAnalysisOnReplicas(
                     CurrentMetrics::DistributedIndexAnalysisThreadsScheduled,
                     /// TODO: limit amount of threads (maybe shared thread pool)
                     replicas_parts.size());
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DistIdxAnalysis");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DISTRIBUTED_INDEX_ANALYSIS);
     for (size_t i = 0; i < replicas_parts.size(); ++i)
     {
         const auto & replica_parts = replicas_parts[i];

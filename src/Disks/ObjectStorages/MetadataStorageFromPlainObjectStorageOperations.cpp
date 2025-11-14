@@ -109,7 +109,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
     auto event = object_storage->getMetadataStorageMetrics().directory_created;
     ProfileEvents::increment(event);
-    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path);
+    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path, /*with_tags=*/ false);
     fs_tree.recordDirectoryPath(path, DirectoryRemoteInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
     created_directory = true;
 }

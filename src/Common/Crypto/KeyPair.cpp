@@ -3,6 +3,7 @@
 #if USE_SSL
 
 #include <base/scope_guard.h>
+#include <openssl/core_names.h>
 
 
 namespace DB
@@ -89,6 +90,37 @@ KeyPair KeyPair::fromBIO(BIO_ptr bio, const std::string & password)
     return KeyPair(key);
 }
 
+KeyPair KeyPair::fromBuffer(const std::string & buffer, const std::string & password)
+{
+    EVP_PKEY * key = nullptr;
+
+    /// Try to load a private key.
+    {
+        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+
+        if (!bio_buffer)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_mem_buf failed: {}", getOpenSSLErrors());
+
+        key = PEM_read_bio_PrivateKey(bio_buffer.get(), nullptr, nullptr, password.empty() ? nullptr : const_cast<char *>(password.c_str()));
+    }
+
+    /// Maybe it is a public key.
+    if (!key)
+    {
+        BIO_ptr bio_buffer(BIO_new_mem_buf(buffer.c_str(), buffer.size()), BIO_free);
+
+        if (!bio_buffer)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new_file failed: {}", getOpenSSLErrors());
+
+        key = PEM_read_bio_PUBKEY(bio_buffer.get(), nullptr, nullptr, nullptr);
+    }
+
+    if (!key)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to load key from a file: {}", getOpenSSLErrors());
+
+    return KeyPair(key);
+}
+
 KeyPair KeyPair::generateRSA(uint32_t bits, uint32_t exponent)
 {
     EVP_PKEY * key = nullptr;
@@ -127,6 +159,31 @@ KeyPair KeyPair::generateRSA(uint32_t bits, uint32_t exponent)
     return KeyPair(key);
 }
 
+std::vector<unsigned char> KeyPair::modulus() const
+{
+    BIGNUM * raw_n = nullptr;
+    if (EVP_PKEY_get_bn_param(key, OSSL_PKEY_PARAM_RSA_N, &raw_n) <= 0 || !raw_n)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to get RSA modulus: {}", getOpenSSLErrors());
+    BIGNUM_ptr n(raw_n, &BN_free);
+
+    std::vector<unsigned char> result(BN_num_bytes(n.get()));
+    BN_bn2bin(n.get(), reinterpret_cast<unsigned char *>(result.data()));
+
+    return result;
+}
+
+std::vector<unsigned char> KeyPair::encryptionExponent() const
+{
+    BIGNUM * raw_e = nullptr;
+    if (EVP_PKEY_get_bn_param(key, OSSL_PKEY_PARAM_RSA_E, &raw_e) <= 0 || !raw_e)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "Failed to get RSA exponent: {}", getOpenSSLErrors());
+    BIGNUM_ptr e(raw_e, &BN_free);
+
+    std::vector<unsigned char> result(BN_num_bytes(e.get()));
+    BN_bn2bin(e.get(), reinterpret_cast<unsigned char *>(result.data()));
+    return result;
+}
+
 KeyPair::~KeyPair()
 {
     if (key)
@@ -142,6 +199,23 @@ std::string KeyPair::publicKey() const
 
     if (!PEM_write_bio_PUBKEY(bio.get(), key))
         throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PUBKEY failed: {}", getOpenSSLErrors());
+
+    char * data;
+    uint64_t len = BIO_get_mem_data(bio.get(), &data);
+    std::string result(data, len);
+
+    return result;
+}
+
+std::string KeyPair::privateKey() const
+{
+    BIO_ptr bio(BIO_new(BIO_s_mem()), BIO_free);
+
+    if (!bio)
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "BIO_new failed: {}", getOpenSSLErrors());
+
+    if (!PEM_write_bio_PrivateKey(bio.get(), key, nullptr, nullptr, 0, nullptr, nullptr))
+        throw Exception(ErrorCodes::OPENSSL_ERROR, "PEM_write_bio_PrivateKey failed: {}", getOpenSSLErrors());
 
     char * data;
     uint64_t len = BIO_get_mem_data(bio.get(), &data);

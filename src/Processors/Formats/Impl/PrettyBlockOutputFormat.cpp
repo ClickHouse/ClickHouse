@@ -161,7 +161,7 @@ void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
             {
                 thread.emplace([this, thread_group = CurrentThread::getGroup()]
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "PrettyWriter");
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PRETTY_WRITER);
 
                     writingThread();
                 });

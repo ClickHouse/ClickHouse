@@ -375,7 +375,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     /// {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     /// {"describe_compact_output", trueOrFalseSettingNoOracle},
-    {"describe_extend_object_types", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
     {"distinct_overflow_mode", overflowSetting},
@@ -619,7 +618,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_udf_queries", trueOrFalseSettingNoOracle},
     {"implicit_select", trueOrFalseSettingNoOracle},
-    {"implicit_transaction", trueOrFalseSettingNoOracle},
     {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
     {"input_format_allow_errors_ratio", CHSetting(probRange, {}, false)},
     {"input_format_allow_seeks", trueOrFalseSettingNoOracle},
@@ -1249,6 +1247,10 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (auto & setting : serverSettings2)
     {
         serverSettings.emplace(std::move(setting));
+    }
+    if (fc.allow_transactions)
+    {
+        serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
     }
 
     /// When measuring performance use bigger block sizes

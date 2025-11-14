@@ -39,6 +39,7 @@
 #include <azure/storage/common/storage_credential.hpp>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <azure/identity/client_secret_credential.hpp>
 
 namespace DB::AzureBlobStorage
 {
@@ -69,6 +70,7 @@ using ConnectionString = StrongTypedef<String, struct ConnectionStringTag>;
 
 using AuthMethod = std::variant<
     ConnectionString,
+    std::shared_ptr<Azure::Identity::ClientSecretCredential>,
     std::shared_ptr<Azure::Storage::StorageSharedKeyCredential>,
     std::shared_ptr<Azure::Identity::WorkloadIdentityCredential>,
     std::shared_ptr<Azure::Identity::ManagedIdentityCredential>,
@@ -102,6 +104,7 @@ struct ObjectMetadata
     uint64_t size_bytes = 0;
     Poco::Timestamp last_modified;
     std::string etag;
+    ObjectAttributes tags;
     ObjectAttributes attributes;
 };
 
@@ -192,14 +195,13 @@ public:
     virtual void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const;
 
     /// List objects recursively by certain prefix. Use it instead of listObjects, if you want to list objects lazily.
-    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const;
+    virtual ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const;
 
-    /// Get object metadata if supported. It should be possible to receive
-    /// at least size of object
-    virtual ObjectMetadata getObjectMetadata(const std::string & path) const = 0;
+    /// Get object metadata if supported. It should be possible to receive at least size of object
+    virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
     /// Same as getObjectMetadata(), but ignores if object does not exist.
-    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const = 0;
+    virtual std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const = 0;
 
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT

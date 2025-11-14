@@ -34,6 +34,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         columns_,
         /*virtual_fields=*/ {},
         main_reader_->storage_snapshot,
+        main_reader_->storage_settings,
         Context::getGlobalContextInstance()->getIndexUncompressedCache().get(),
         Context::getGlobalContextInstance()->getIndexMarkCache().get(),
         main_reader_->all_mark_ranges,
@@ -209,7 +210,7 @@ size_t MergeTreeReaderTextIndex::readRows(
         }
         else
         {
-            readPostingsIfNeeded(granule);
+            readPostingsIfNeeded(granule, index_mark);
 
             const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
             size_t mark_at_index_granule = index_mark * granularity;
@@ -247,7 +248,7 @@ void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns) const
     }
 }
 
-void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
+void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t index_mark)
 {
     if (!granule.need_read_postings)
         return;
@@ -258,6 +259,26 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
     auto * postings_stream = index_reader->getStreams().at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     auto * data_buffer = postings_stream->getDataBuffer();
     auto * compressed_buffer = postings_stream->getCompressedDataBuffer();
+
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*index.condition);
+    const String & data_path = data_part_info_for_read->getDataPartStorage()->getFullPath();
+    const String & index_name = index.index->getFileName();
+    const auto get_postings = [&](const TokenPostingsInfo::FuturePostings future_postings, std::string_view token)
+    {
+        const auto load_postings = [&]() -> PostingListPtr
+        {
+            ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
+            compressed_buffer->seek(future_postings.offset_in_file, 0);
+            return PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
+        };
+
+        if (condition_text.usePostingsCache())
+            condition_text.postingsCache()->getOrSet(
+                TextIndexPostingsCache::hash(data_path, index_name, index_mark, future_postings.cardinality, future_postings.offset_in_file, token),
+                load_postings);
+
+        return load_postings();
+    };
 
     PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
@@ -270,19 +291,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule)
         else
         {
             const auto & future_postings = postings.getFuturePostings();
-            const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*future_postings.state.condition);
-            const auto load_postings = [&]() -> PostingListPtr
-            {
-                ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
-                compressed_buffer->seek(future_postings.offset_in_file, 0);
-                return PostingsSerialization::deserialize(future_postings.header, future_postings.cardinality, *data_buffer);
-            };
-
-            posting_list = condition_text.usePostingsCache()
-                ? condition_text.postingsCache()->getOrSet(
-                    TextIndexPostingsCache::hash(future_postings.state.path_to_data_part, future_postings.state.index_name, future_postings.state.index_mark, token.toView()),
-                    load_postings)
-                : load_postings();
+            posting_list = get_postings(future_postings, token.toView());
         }
 
         granule.postings.emplace(token, std::move(posting_list));

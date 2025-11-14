@@ -927,7 +927,7 @@ void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     std::optional<ThreadPoolCallbackRunnerLocal<void>> runner;
     if (flush_pool)
-        runner.emplace(*flush_pool, "BufferFlush");
+        runner.emplace(*flush_pool, ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
     for (auto & buf : buffers)
     {
         if (runner)

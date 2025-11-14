@@ -67,7 +67,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/hasNullable.h>
 
 #include <Databases/DatabaseFactory.h>
@@ -1761,14 +1760,6 @@ namespace
 
 void checkForUnsupportedColumns(const IStorage & storage, LoadingStrictnessLevel mode)
 {
-    if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumnsDeprecated(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumnsDeprecated())
-    {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-            "Cannot create table with column of type Object, "
-            "because storage {} doesn't support dynamic subcolumns",
-            storage.getName());
-    }
-
     if (mode <= LoadingStrictnessLevel::CREATE && hasDynamicSubcolumns(storage.getInMemoryMetadataPtr()->getColumns()) && !storage.supportsDynamicSubcolumns())
     {
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
@@ -2153,7 +2144,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         /// Try fill temporary table
         BlockIO fill_io = fillTableIfNeeded(create);
-        executeTrivialBlockIO(fill_io, getContext());
+        /// For queries like 'CREATE OR REPLACE TABLE ... AS SELECT * INSERT' might take a long time,
+        /// passing this callback allows tcp sessions to send progress, stats and logs.
+        /// It prevents getting socket timeout as well.
+        bool with_interactive_cancel = create.isCreateQueryWithImmediateInsertSelect();
+        executeTrivialBlockIO(fill_io, getContext(), with_interactive_cancel);
 
         /// Replace target table with created one
         ASTRenameQuery::Element elem
@@ -2252,9 +2247,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
 BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
-    if (create.select && !create.attach && !create.is_create_empty
-        && !create.is_ordinary_view
-        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
+    if (create.isCreateQueryWithImmediateInsertSelect())
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};

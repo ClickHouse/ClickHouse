@@ -232,10 +232,10 @@ BlockIO InterpreterShowTablesQuery::execute()
     }
     auto rewritten_query = getRewrittenQuery();
     String database = getContext()->resolveDatabase(query.getFrom());
-    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
     {
         auto context_copy = Context::createCopy(getContext());
-        /// HACK To always show them in explicit "SHOW TABLES" queries
+        /// HACK To always show them in explicit "SHOW TABLES" and "SHOW DATABASES" queries
         context_copy->setSetting("show_data_lake_catalogs_in_system_tables", true);
         return executeQuery(rewritten_query, context_copy, QueryFlags{ .internal = true }).second;
     }

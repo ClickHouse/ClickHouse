@@ -92,6 +92,8 @@ public:
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
+    bool isObjectStorage() const override { return true; }
+
     bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
 
     /// Things required for PREWHERE.

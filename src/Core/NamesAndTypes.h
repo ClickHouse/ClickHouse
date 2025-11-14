@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
+#include <DataTypes/IDataType.h>
 #include <base/types.h>
 
 #include <initializer_list>
@@ -12,7 +13,6 @@
 namespace DB
 {
 
-class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 

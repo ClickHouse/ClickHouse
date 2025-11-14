@@ -576,7 +576,6 @@ Chunk SystemZooKeeperSource::generate()
 {
     if (name.empty())
     {
-        /// NOLINTNEXTLINE(bugprone-sizeof-expression)
         chassert(0); // In fact, it must always have a default value.
         name = zkutil::DEFAULT_ZOOKEEPER_NAME;
     }

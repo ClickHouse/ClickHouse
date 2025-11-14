@@ -335,7 +335,7 @@ HashedDictionary<dictionary_key_type, sparse, sharded>::~HashedDictionary()
 
         if (!pool.trySchedule([&container, thread_group = CurrentThread::getGroup()]
             {
-                ThreadGroupSwitcher switcher(thread_group, "HashedDictDtor");
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::HASHED_DICT_DTOR);
 
                 /// Do not account memory that was occupied by the dictionaries for the query/user context.
                 MemoryTrackerBlockerInThread memory_blocker;

@@ -162,7 +162,7 @@ void IDisk::copyThroughBuffers(
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, "AsyncCopy");
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, ThreadName::ASYNC_COPY);
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage

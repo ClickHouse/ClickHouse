@@ -1466,7 +1466,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
     std::optional<String> cluster;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
-    const uint32_t nalters = rg.nextBool() ? 1 : ((rg.nextMediumNumber() % 4) + 1);
+    const uint32_t nalters = rg.randomInt<uint32_t>(1, fc.max_number_alters);
 
     if (alter_view && nopt2 < (alter_view + 1))
     {
@@ -4666,9 +4666,9 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
 
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
 {
-    const uint32_t nqueries = rg.nextMediumNumber() < 96 ? 1 : (rg.nextMediumNumber() % 4) + 1;
-    const uint32_t start_transaction = 2 * static_cast<uint32_t>(nqueries == 1 && !this->in_transaction);
-    const uint32_t commit = 50 * static_cast<uint32_t>(nqueries == 1 && this->in_transaction);
+    const uint32_t nqueries = rg.randomInt<uint32_t>(1, fc.max_parallel_queries);
+    const uint32_t start_transaction = 2 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && !this->in_transaction);
+    const uint32_t commit = 50 * static_cast<uint32_t>(fc.allow_transactions && nqueries == 1 && this->in_transaction);
     const uint32_t explain_query = 10;
     const uint32_t run_query = 120;
     const uint32_t prob_space = start_transaction + commit + explain_query + run_query;

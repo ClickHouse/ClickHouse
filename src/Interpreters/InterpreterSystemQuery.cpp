@@ -844,7 +844,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(query.logs);
+            system_logs.flush(query.tables);
             break;
         }
         case Type::STOP_LISTEN:
@@ -871,7 +871,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flushAll();
+            queue->flush(query.tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

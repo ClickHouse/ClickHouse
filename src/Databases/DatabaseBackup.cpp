@@ -360,7 +360,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DatabaseBackup");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
 
     const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
 

@@ -22,18 +22,18 @@ Positions: 3 0 1
     Locality: UNSPECIFIED
     Expression: equals(__table2.__table1.name, __table1.name)
     Expression:
-    Actions: INPUT : 0 -> __table2.__table1.name String : 0
-             INPUT : 1 -> __table1.name String : 1
-             INPUT :: 2 -> __table2 Nullable(Int64) : 2
-             INPUT :: 3 -> __table1.uid Int16 : 3
+    Actions: INPUT :: 0 -> __table2 Nullable(Int64) : 0
+             INPUT : 1 -> __table2.__table1.name String : 1
+             INPUT :: 2 -> __table1.uid Int16 : 2
+             INPUT : 3 -> __table1.name String : 3
              INPUT :: 4 -> __table1.age Int16 : 4
-             FUNCTION equals(__table2.__table1.name :: 0, __table1.name : 1) -> equals(__table2.__table1.name, __table1.name) UInt8 : 5
-    Positions: 2 3 1 4
+             FUNCTION equals(__table2.__table1.name :: 1, __table1.name : 3) -> equals(__table2.__table1.name, __table1.name) UInt8 : 5
+    Positions: 0 2 3 4
     Expression Sources:
-    __table2.__table1.name: {0}
-    __table1.name: {1}
     __table2: {0}
+    __table2.__table1.name: {0}
     __table1.uid: {1}
+    __table1.name: {1}
     __table1.age: {1}
       Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
       Actions: INPUT : 0 -> sum(__table3.age) Int64 : 0

@@ -213,11 +213,6 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & m
     return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
 }
 
-StorageSnapshotPtr StorageAlias::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const
-{
-    return getTargetTable()->getStorageSnapshotForQuery(metadata_snapshot, query, query_context);
-}
-
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);

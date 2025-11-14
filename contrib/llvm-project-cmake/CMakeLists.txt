@@ -19,14 +19,14 @@ if (NOT ENABLE_EMBEDDED_COMPILER AND NOT ENABLE_DWARF_PARSER AND NOT ENABLE_BLAK
     return()
 endif()
 
-set (LLVM_VERSION "19.0.0bundled")
+set (LLVM_VERSION "21.1.5bundled")
 set (LLVM_INCLUDE_DIRS
     "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/llvm/include"
     "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm/include"
 )
 set (LLVM_LIBRARY_DIRS "${ClickHouse_BINARY_DIR}/contrib/llvm-project/llvm")
-# NOTE: You should not remove this line since otherwise it will use default 20,
-# and llvm cannot be compiled with bundled libcxx and 20 standard.
+
+# There are compilation errors with C++23.
 set (CMAKE_CXX_STANDARD 17)
 
 if (ARCH_AMD64)

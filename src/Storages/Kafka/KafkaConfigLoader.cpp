@@ -68,13 +68,13 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     switch (thread_type)
     {
         case RD_KAFKA_THREAD_MAIN:
-            setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_MAIN);
             break;
         case RD_KAFKA_THREAD_BACKGROUND:
-            setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BACKGROUND);
             break;
         case RD_KAFKA_THREAD_BROKER:
-            setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BROKER);
             break;
     }
 
@@ -495,6 +495,8 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     for (auto & property : conf.get_all())
     {
+        if (property.first.find("password") != std::string::npos)
+            continue;
         LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
     }
 

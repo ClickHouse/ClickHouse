@@ -5,12 +5,12 @@
 namespace DB
 {
 
-void addConvertingActions(QueryPlan & plan, const Block & header, const ContextPtr & context, bool has_missing_objects)
+void addConvertingActions(QueryPlan & plan, const Block & header, const ContextPtr & context)
 {
     if (blocksHaveEqualStructure(*plan.getCurrentHeader(), header))
         return;
 
-    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
+    auto mode = ActionsDAG::MatchColumnsMode::Name;
 
     auto get_converting_dag = [mode, context](const Block & block_, const Block & header_)
     {

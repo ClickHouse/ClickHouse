@@ -31,12 +31,12 @@ public:
         InitializerFunc initializer_func_ = {})
         : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
-              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
+              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
     {
-        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
+        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
         for (const auto & [name, type] : all_column_names_and_types)
             all_names_to_types[name] = type;
     }

@@ -509,7 +509,7 @@ void PrometheusRequestHandler::createImpl()
 
 void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event_)
 {
-    setThreadName("PrometheusHndlr");
+    DB::setThreadName(ThreadName::PROMETHEUS_HANDLER);
     applyHTTPResponseHeaders(response, response_headers);
 
     try

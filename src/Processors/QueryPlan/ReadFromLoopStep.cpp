@@ -55,7 +55,7 @@ namespace DB
                 if (!loop)
                 {
                     QueryPlan plan;
-                    auto storage_snapshot_ = inner_storage->getStorageSnapshotForQuery(inner_storage->getInMemoryMetadataPtr(), nullptr, context);
+                    auto storage_snapshot_ = inner_storage->getStorageSnapshot(inner_storage->getInMemoryMetadataPtr(), context);
                     inner_storage->read(
                             plan,
                             column_names,

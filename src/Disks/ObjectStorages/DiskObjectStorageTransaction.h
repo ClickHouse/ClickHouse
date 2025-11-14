@@ -28,7 +28,7 @@ public:
     /// It is called if something went wrong before commit of metadata transaction
     /// It is called in reverse order of execution of operations for all operations
     /// even if they were not executed at all
-    virtual void undo() = 0;
+    virtual void undo(StoredObjects & to_remove) = 0;
     /// Action to execute after metadata transaction successfully committed.
     /// Useful when it's impossible to revert operation
     /// like removal of blobs. Such implementation can lead to garbage.

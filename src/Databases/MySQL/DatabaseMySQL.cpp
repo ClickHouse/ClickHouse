@@ -404,7 +404,7 @@ void DatabaseMySQL::drop(ContextPtr)
 
 void DatabaseMySQL::cleanOutdatedTables()
 {
-    setThreadName("MySQLDBCleaner");
+    DB::setThreadName(ThreadName::MYSQL_DATABASE_CLEANUP);
 
     std::unique_lock lock{mutex};
 

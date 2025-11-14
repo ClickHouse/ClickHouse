@@ -229,6 +229,19 @@ public:
         return res;
     }
 
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const Cell & cell)
+    {
+        auto hash_value = cell.getHash(*this);
+
+        std::pair<LookupResult, bool> res;
+        emplace(cell.getKey(), res.first, res.second, hash_value);
+
+        if (res.second)
+            res.first->setMapped(cell.getValue());
+
+        return res;
+    }
+
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {

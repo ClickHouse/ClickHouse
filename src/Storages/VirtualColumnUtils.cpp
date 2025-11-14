@@ -31,6 +31,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 
@@ -142,13 +143,15 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
-    return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())}
+    return {
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
+        {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
     };
 }
 
@@ -302,6 +305,21 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_tags")
+        {
+            if (virtual_values.tags)
+            {
+                Map map_value;
+                for (const auto & [key, value] : *virtual_values.tags)
+                    map_value.push_back(Field(Tuple{Field(key), Field(value)}));
+
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), map_value)->convertToFullColumnIfConst());
+            }
+            else
+            {
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            }
         }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {

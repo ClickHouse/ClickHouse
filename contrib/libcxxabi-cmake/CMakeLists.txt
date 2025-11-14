@@ -12,7 +12,6 @@ set(SRCS
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_exception_storage.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_guard.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_handlers.cpp"
-# "${LIBCXXABI_SOURCE_DIR}/src/cxa_noexception.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_personality.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_thread_atexit.cpp"
 "${LIBCXXABI_SOURCE_DIR}/src/cxa_vector.cpp"
