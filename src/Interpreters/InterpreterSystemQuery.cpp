@@ -437,6 +437,14 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE);
             system_context->clearTextIndexDictionaryBlockCache();
             break;
+        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
+            system_context->clearTextIndexHeaderCache();
+            break;
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
+            system_context->clearTextIndexPostingsCache();
+            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -836,7 +844,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(query.logs);
+            system_logs.flush(query.tables);
             break;
         }
         case Type::STOP_LISTEN:
@@ -863,7 +871,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Cannot flush asynchronous insert queue because it is not initialized");
 
-            queue->flushAll();
+            queue->flush(query.tables);
             break;
         }
         case Type::STOP_THREAD_FUZZER:
@@ -1863,6 +1871,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:

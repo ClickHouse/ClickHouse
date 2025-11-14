@@ -223,7 +223,7 @@ void ThreadGroup::attachInternalProfileEventsQueue(const InternalProfileEventsQu
     shared_data.profile_queue_ptr = profile_queue;
 }
 
-ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const char * thread_name, bool allow_existing_group) noexcept
+ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
     try
@@ -253,8 +253,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, const cha
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         CurrentThread::attachToGroup(thread_group);
-        if (thread_name[0] != '\0')
-            setThreadName(thread_name);
+        setThreadName(thread_name);
     }
     catch (...)
     {
