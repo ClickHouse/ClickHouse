@@ -11,9 +11,8 @@ namespace DB
 /// - `Checksum`: derive the name from the file checksum.
 enum class BackupDataFileNameGeneratorType : uint8_t
 {
-    Unspecified = 0,
-    FirstFileName = 1,
-    Checksum = 2,
+    FirstFileName = 0,
+    Checksum = 1,
 };
 
 DECLARE_SETTING_ENUM(BackupDataFileNameGeneratorType)

@@ -405,14 +405,9 @@ struct BackupsWorker::BackupStarter
         if (is_internal_backup)
             backup_id += "-internal-" + backup_settings.host_id;
 
-        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::Unspecified)
-        {
-            auto from_cfg = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
+        if (backup_settings.data_file_name_generator == BackupDataFileNameGeneratorType::FirstFileName)
+            backup_settings.data_file_name_generator = SettingFieldBackupDataFileNameGeneratorTypeTraits::fromString(
                 backup_context->getConfigRef().getString("backups.data_file_name_generator", ""));
-
-            backup_settings.data_file_name_generator
-                = (from_cfg != BackupDataFileNameGeneratorType::Unspecified) ? from_cfg : BackupDataFileNameGeneratorType::FirstFileName;
-        }
 
         if (!backup_settings.data_file_name_prefix_length)
             backup_settings.data_file_name_prefix_length

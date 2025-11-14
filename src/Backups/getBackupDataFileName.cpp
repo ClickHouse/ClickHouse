@@ -38,9 +38,8 @@ getBackupDataFileName(const BackupFileInfo & file_info, BackupDataFileNameGenera
             const std::string_view suffix = {checksum_hex.data() + prefix_length, checksum_hex.size() - prefix_length};
             return (fs::path(prefix) / suffix).string();
         }
-        default:
-            UNREACHABLE();
     }
+    UNREACHABLE();
 }
 
 }

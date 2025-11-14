@@ -14,7 +14,5 @@ extern const int BAD_ARGUMENTS;
 IMPLEMENT_SETTING_ENUM(
     BackupDataFileNameGeneratorType,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"", BackupDataFileNameGeneratorType::Unspecified},
-     {"first_file_name", BackupDataFileNameGeneratorType::FirstFileName},
-     {"checksum", BackupDataFileNameGeneratorType::Checksum}})
+    {{"", BackupDataFileNameGeneratorType::FirstFileName}, {"checksum", BackupDataFileNameGeneratorType::Checksum}})
 }
