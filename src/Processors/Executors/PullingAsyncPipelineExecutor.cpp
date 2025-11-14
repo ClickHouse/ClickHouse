@@ -71,7 +71,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryPullPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PULLING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }

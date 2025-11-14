@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -306,7 +305,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -425,7 +424,7 @@ void fillMissingColumns(
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
-            num_dimensions = getNumberOfDimensions(*array_type);
+            num_dimensions = array_type->getNumberOfDimensions();
             current_offsets.resize(num_dimensions);
 
             auto serialization_info = res_columns[i] ? requested_column->type->getSerializationInfo(*res_columns[i]) : nullptr;
@@ -440,7 +439,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
