@@ -3,6 +3,7 @@ description: 'System table containing a list of Unicode characters and their pro
 keywords: ['system table', 'unicode']
 slug: /operations/system-tables/unicode
 title: 'system.unicode'
+doc_type: 'reference'
 ---
 
 # system.unicode
