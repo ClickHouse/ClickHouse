@@ -143,7 +143,7 @@
     M(S3CopyObject) \
     M(S3ListObjects) \
     M(S3HeadObject) \
-    M(S3GetObjectAttributes) \
+    M(S3GetObjectTagging) \
     M(S3CreateMultipartUpload) \
     M(S3UploadPartCopy) \
     M(S3UploadPart) \
@@ -169,7 +169,7 @@
     M(DiskS3CopyObject) \
     M(DiskS3ListObjects) \
     M(DiskS3HeadObject) \
-    M(DiskS3GetObjectAttributes) \
+    M(DiskS3GetObjectTagging) \
     M(DiskS3CreateMultipartUpload) \
     M(DiskS3UploadPartCopy) \
     M(DiskS3UploadPart) \

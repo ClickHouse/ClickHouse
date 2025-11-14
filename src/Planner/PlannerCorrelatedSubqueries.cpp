@@ -404,7 +404,7 @@ QueryPlan decorrelateQueryPlan(
             query_plans_headers,
             SelectUnionMode::UNION_ALL,
             settings[Setting::use_variant_as_common_type]); // Union mode doesn't matter here
-        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers);
+        addConvertingToCommonHeaderActionsIfNeeded(child_plans, union_common_header, query_plans_headers, context.planner_context->getQueryContext());
 
         union_step->updateInputHeaders(std::move(query_plans_headers));
 
@@ -612,7 +612,8 @@ Planner buildPlannerForCorrelatedSubquery(
 
 void addStepForResultRenaming(
     const CorrelatedSubquery & correlated_subquery,
-    QueryPlan & correlated_subquery_plan
+    QueryPlan & correlated_subquery_plan,
+    const PlannerContextPtr & planner_context
 )
 {
     const auto & header = correlated_subquery_plan.getCurrentHeader();
@@ -642,7 +643,8 @@ void addStepForResultRenaming(
         result_node = &dag.addCast(
             *dag.getOutputs()[0],
             expected_result_type,
-            correlated_subquery.action_node_name);
+            correlated_subquery.action_node_name,
+            planner_context->getQueryContext());
     }
     else
     {
@@ -692,7 +694,7 @@ void buildQueryPlanForCorrelatedSubquery(
             /// Logical plan for correlated subquery
             auto & correlated_query_plan = subquery_planner.getQueryPlan();
 
-            addStepForResultRenaming(correlated_subquery, correlated_query_plan);
+            addStepForResultRenaming(correlated_subquery, correlated_query_plan, planner_context);
 
             /// Mark all query plan steps if they or their subplans contain usage of correlated subqueries.
             /// It's needed to identify the moment when dependent join can be replaced by CROSS JOIN.

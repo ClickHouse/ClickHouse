@@ -170,11 +170,6 @@ EOL
                     <readonly/>
                 </enable_analyzer>
 
-                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
-                <allow_experimental_object_type>
-                    <readonly/>
-                </allow_experimental_object_type>
-
                 <!-- Prevent stack overflow -->
                 <max_ast_depth>
                     <readonly/>
