@@ -137,10 +137,10 @@ def main():
 
         def do_checkout():
             res = Shell.check(
-                f"mkdir -p {build_dir} && git submodule sync && git submodule init && contrib/sparse-checkout/setup-sparse-checkout.sh"
+                f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
             res = res and Shell.check(
-                f"git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch",
+                f"contrib/update-submodules.sh --max-procs 10",
                 retries=3,
             )
             return res
