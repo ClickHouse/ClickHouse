@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -75,12 +76,16 @@ struct LazyOutput
         ++row_count;
     }
 
-    [[nodiscard]] size_t buildOutput(size_t size_to_reserve,
+    [[nodiscard]] size_t buildOutput(
+        size_t size_to_reserve,
+        const Block & left_block,
+        const IColumn::Offsets & left_offsets,
         MutableColumns & columns,
         const UInt64 * row_refs_begin,
         const UInt64 * row_refs_end,
         size_t rows_offset,
-        size_t rows_limit) const;
+        size_t rows_limit,
+        size_t bytes_limit) const;
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
@@ -94,7 +99,10 @@ struct LazyOutput
 
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-        size_t rows_offset, size_t rows_limit) const;
+        const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
+        size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
+
+private:
 };
 
 template <bool lazy>
@@ -177,7 +185,24 @@ public:
         return ColumnWithTypeAndName(std::move(columns[i]), lazy_output.type_name[i].type, lazy_output.type_name[i].name);
     }
 
-    void appendFromBlock(const RowRefList * row_ref_list, bool has_default);
+    void appendFromBlock(const RowRefList * row_ref_list, bool)
+    {
+        if constexpr (lazy)
+        {
+#ifndef NDEBUG
+            checkColumns(row_ref_list->columns_info->columns);
+#endif
+            if (has_columns_to_add)
+            {
+                lazy_output.addRowRefList(row_ref_list);
+            }
+        }
+        else
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+        }
+    }
+
     void appendFromBlock(const RowRef * row_ref, bool has_default);
 
     void appendDefaultRow()
@@ -256,6 +281,12 @@ private:
                                     dest_column->getName(), column_from_block->getName());
                 dest_column = nullable_col->getNestedColumnPtr().get();
             }
+
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column_from_block))
+                column_from_block = column_replicated->getNestedColumn().get();
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(dest_column))
+                dest_column = column_replicated->getNestedColumn().get();
+
             /** Using dest_column->structureEquals(*column_from_block) will not work for low cardinality columns,
               * because dictionaries can be different, while calling insertFrom on them is safe, for example:
               * ColumnLowCardinality(size = 0, UInt8(size = 0), ColumnUnique(size = 1, String(size = 1)))
@@ -295,5 +326,7 @@ public:
     void appendFromBlock(const RowRef * row_ref, bool /* has_default */) { this->emplace_back(row_ref); }
     static constexpr bool isLazy() { return false; }
 };
+
+std::pair<const IColumn *, size_t> getBlockColumnAndRow(const RowRef * row_ref, size_t column_index);
 
 }

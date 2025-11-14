@@ -660,6 +660,34 @@ CONV_FN(SpecialVal, val)
                 ret += "::DateTime64";
             }
             break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::min());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::max());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_DENORM_MIN_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::denorm_min());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
+        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_LOWEST_DOUBLE:
+            ret += std::to_string(std::numeric_limits<double>::lowest());
+            if (val.paren())
+            {
+                ret += "::Float64";
+            }
+            break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL_CHAR:
             ret += "'\\0'";
             break;
@@ -958,6 +986,23 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             ret += ")";
         }
         break;
+        case BottomTypeNameType::kGeo:
+            ret += GeoTypes_Name(btn.geo());
+            break;
+        case BottomTypeNameType::kAggr: {
+            const AggregateFunction & af = btn.aggr();
+
+            ret += af.simple() ? "Simple" : "";
+            ret += "AggregateFunction(";
+            ret += SQLFunc_Name(af.aggr()).substr(4);
+            for (int i = 0; i < af.types_size(); i++)
+            {
+                ret += ", ";
+                TopTypeNameToString(ret, quote, af.types(i));
+            }
+            ret += ")";
+        }
+        break;
         default: {
             if (lcard)
             {
@@ -1160,9 +1205,6 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kVariant:
             ret += "Variant";
             TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
-            break;
-        case TopTypeNameType::kGeo:
-            ret += GeoTypes_Name(ttn.geo());
             break;
         default:
             ret += "Int";
@@ -2664,10 +2706,17 @@ CONV_FN(LimitStatement, ls)
     {
         ret += " WITH TIES";
     }
-    if (ls.has_limit_by())
+    if (ls.has_by_expr() || ls.lall())
     {
         ret += " BY ";
-        ExprToString(ret, ls.limit_by());
+        if (ls.has_by_expr())
+        {
+            ExprToString(ret, ls.by_expr());
+        }
+        else
+        {
+            ret += "ALL";
+        }
     }
 }
 
@@ -2901,6 +2950,11 @@ CONV_FN(IndexParam, ip)
         case IndexParamType::kUnescapedSval:
             ret += ip.unescaped_sval();
             break;
+        case IndexParamType::kKval:
+            ret += ip.kval().key();
+            ret += " = ";
+            ExprToString(ret, ip.kval().value());
+            break;
         default:
             ret += "0";
     }
@@ -2980,6 +3034,12 @@ CONV_FN(CreateDatabase, create_database)
         ret += "IF NOT EXISTS ";
     }
     DatabaseToString(ret, create_database.database());
+    if (create_database.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_database.uuid();
+        ret += "'";
+    }
     if (create_database.has_cluster())
     {
         ClusterToString(ret, true, create_database.cluster());
@@ -3439,7 +3499,7 @@ CONV_FN(CreateTable, create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
+    if (create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3449,6 +3509,12 @@ CONV_FN(CreateTable, create_table)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_table.est());
+    if (create_table.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_table.uuid();
+        ret += "'";
+    }
     if (create_table.has_cluster())
     {
         ClusterToString(ret, true, create_table.cluster());
@@ -3837,7 +3903,8 @@ CONV_FN(OptimizeTable, ot)
     }
     if (ot.final())
     {
-        ret += " FINAL";
+        ret += " ";
+        ret += ot.use_force() ? "FORCE" : "FINAL";
     }
     if (ot.has_dedup())
     {
@@ -3944,7 +4011,7 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
+    if (create_view.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3966,6 +4033,12 @@ CONV_FN(CreateView, create_view)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_view.est());
+    if (create_view.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_view.uuid();
+        ret += "'";
+    }
     if (create_view.has_cluster())
     {
         ClusterToString(ret, true, create_view.cluster());
@@ -4193,6 +4266,12 @@ CONV_FN(CreateDictionary, create_dictionary)
     if (create_dictionary.has_cluster())
     {
         ClusterToString(ret, true, create_dictionary.cluster());
+    }
+    if (create_dictionary.has_uuid())
+    {
+        ret += " UUID '";
+        ret += create_dictionary.uuid();
+        ret += "'";
     }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
@@ -4879,9 +4958,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kUnloadPk:
             SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
-        case CmdType::kRefreshViews:
-            ret += "REFRESH VIEWS";
-            break;
         case CmdType::kRefreshView:
             ret += "REFRESH VIEW ";
             ExprSchemaTableToString(ret, cmd.refresh_view());
@@ -4983,6 +5059,22 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kIcebergMetadataCache:
             ret += "DROP ICEBERG METADATA CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kReconnectKeeper:
+            ret += "RECONNECT ZOOKEEPER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexDictionaryCache:
+            ret += "DROP TEXT INDEX DICTIONARY CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexHeaderCache:
+            ret += "DROP TEXT INDEX HEADER CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexPostingsCache:
+            ret += "DROP TEXT INDEX POSTINGS CACHE";
             can_set_cluster = true;
             break;
         default:

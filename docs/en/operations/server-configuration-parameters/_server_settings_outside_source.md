@@ -380,7 +380,7 @@ See also:
 
 ## format_schema_path {#format_schema_path}
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](/interfaces/formats/CapnProto) format.
 
 **Example**
 
@@ -1695,7 +1695,23 @@ Settings for the [asynchronous_insert_log](/operations/system-tables/asynchronou
 
 Settings for the [crash_log](../../operations/system-tables/crash_log.md) system table operation.
 
-<SystemLogParameters/>
+The following settings can be configured by sub-tags:
+
+| Setting                            | Description                                                                                                                                             | Default             | Note                                                                                                               |
+|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------|
+| `database`                         | Name of the database.                                                                                                                                   |                     |                                                                                                                    |
+| `table`                            | Name of the system table.                                                                                                                               |                     |                                                                                                                    |
+| `engine`                           | [MergeTree Engine Definition](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) for a system table. |                     | Cannot be used if `partition_by` or `order_by` defined. If not specified `MergeTree` is selected by default        |
+| `partition_by`                     | [Custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table.                               |                     | If `engine` is specified for system table, `partition_by` parameter should be specified directly inside 'engine'   |
+| `ttl`                              | Specifies the table [TTL](/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).                                              |                     | If `engine` is specified for system table, `ttl` parameter should be specified directly inside 'engine'            |
+| `order_by`                         | [Custom sorting key](/engines/table-engines/mergetree-family/mergetree#order_by) for a system table. Can't be used if `engine` defined.      |                     | If `engine` is specified for system table, `order_by` parameter should be specified directly inside 'engine'       |
+| `storage_policy`                   | Name of the storage policy to use for the table (optional).                                                                                             |                     | If `engine` is specified for system table, `storage_policy` parameter should be specified directly inside 'engine' |
+| `settings`                         | [Additional parameters](/engines/table-engines/mergetree-family/mergetree/#settings) that control the behavior of the MergeTree (optional).   |                     | If `engine` is specified for system table, `settings` parameter should be specified directly inside 'engine'       |
+| `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                      | `7500`              |                                                                                                                    |
+| `max_size_rows`                    | Maximal size in lines for the logs. When the amount of non-flushed logs reaches the max_size, logs are dumped to the disk.                              | `1024`           |                                                                                                                    |
+| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                        | `1024`              |                                                                                                                    |
+| `buffer_size_rows_flush_threshold` | Threshold for amount of lines. If the threshold is reached, flushing logs to the disk is launched in background.                                        | `max_size_rows / 2` |                                                                                                                    |
+| `flush_on_crash`                   | Sets whether logs should be dumped to the disk in case of a crash.                                                                                      | `false`             |                                                                                                                    |
 
 The default server configuration file `config.xml` contains the following settings section:
 
@@ -2316,7 +2332,7 @@ For example:
 ```
 
 See also:
-- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
+- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cutToFirstSignificantSubdomainCustom) and variations thereof,
   which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## proxy {#proxy}
@@ -2517,3 +2533,24 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 **See Also**
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
+
+## zookeeper_log {#zookeeper_log}
+
+Settings for the [`zookeeper_log`](/operations/system-tables/zookeeper_log) system table.
+
+The following settings can be configured by sub-tags:
+
+<SystemLogParameters/>
+
+**Example**
+
+```xml
+<clickhouse>
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
+    </zookeeper_log>
+</clickhouse>
+```

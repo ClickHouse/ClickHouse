@@ -65,10 +65,9 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since:
+        /// Remove table without lock since
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to
-        ///   resolve tables (like StorageLiveView)
+        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
         table->drop();
 
         if (table->storesDataOnDisk())
@@ -87,6 +86,7 @@ void DatabaseMemory::dropTable(
     std::lock_guard lock{mutex};
     table->is_dropped = true;
     create_queries.erase(table_name);
+    snapshot_detached_tables.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
@@ -219,9 +219,9 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
+void DatabaseMemory::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

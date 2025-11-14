@@ -12,11 +12,10 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/IStorage.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/StorageDictionary.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/TTLDescription.h>
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -25,6 +24,11 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 
 namespace DB
 {
@@ -44,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_QUERY;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 namespace
@@ -331,7 +336,7 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
+void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
 {
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
@@ -341,6 +346,23 @@ void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & 
 
     try
     {
+#if CLICKHOUSE_CLOUD
+        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(db->getEngineName());
+        if (managed_by_shared_catalog)
+        {
+            if (!SharedDatabaseCatalog::isInitialQuery(query_context))
+                return;
+
+            auto ast = db->getCreateDatabaseQuery();
+            if (!ast)
+                throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(db->getDatabaseName()));
+
+            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(db->getUUID(), ast);
+            query_context->setVersionToWaitSharedCatalog(version_to_wait);
+            return;
+        }
+#endif
+
         DatabaseCatalog::instance().updateMetadataFile(db);
     }
     catch (...)
@@ -360,7 +382,7 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end();
+    return tables.contains(table_name);
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, ContextPtr) const

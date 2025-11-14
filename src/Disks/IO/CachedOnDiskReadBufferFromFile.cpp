@@ -1048,7 +1048,9 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         bool download_current_segment_succeeded = false;
         if (download_current_segment)
         {
-            chassert(file_offset_of_buffer_end + size - 1 <= file_segment.range().right);
+            chassert(
+                file_offset_of_buffer_end + size - 1 <= file_segment.range().right,
+                fmt::format("Offset: {}, size: {}, file segment range: {}, impl offset: {}", file_offset_of_buffer_end, size, file_segment.range().toString(), implementation_buffer->getPosition()));
 
             std::string failure_reason;
             bool success = file_segment.reserve(size, settings.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, failure_reason);
@@ -1273,7 +1275,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
         resetWorkingBuffer();
 
     first_offset = file_offset_of_buffer_end = new_pos;
-    file_segments.reset();
+    file_segments = nullptr;
     implementation_buffer.reset();
     cache_file_reader.reset();
     initialized = false;
@@ -1309,7 +1311,7 @@ void CachedOnDiskReadBufferFromFile::setReadUntilPosition(size_t position)
 
     file_offset_of_buffer_end = getPosition();
     resetWorkingBuffer();
-    file_segments.reset();
+    file_segments = nullptr;
     implementation_buffer.reset();
     initialized = false;
     cache_file_reader.reset();
