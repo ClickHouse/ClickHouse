@@ -78,6 +78,7 @@ def vault_startup_command_cert(cluster):
     }
     response = requests.post(
         f"https://{cluster.hashicorp_vault_ip}:8210/v1/{path}",
+        # f"https://hashicorpvault:8210/v1/{path}",
         json=payload,
         headers=custom_headers,
         cert=(
@@ -86,5 +87,4 @@ def vault_startup_command_cert(cluster):
         ),
         verify=f"{cluster.base_dir}/configs/ca.crt",
     )
-    logging.info(f"path {path}, code {response.status_code}")
     assert response.status_code == 204

@@ -47,7 +47,7 @@ def test_wrong_url():
     start_clickhouse(
         "configs/config_wrong_url.xml",
         "configs/users.xml",
-        "DB::NetException: Not found address of host: wrong",
+        "DNS error: Temporary DNS error while resolving: wrong",
     )
 
 
@@ -63,7 +63,7 @@ def test_wrong_token():
     start_clickhouse(
         "configs/config_wrong_token.xml",
         "configs/users.xml",
-        "HTTP status code: 403 'Forbidden'",
+        "Exception: HTTP error: 403",
     )
 
 
@@ -79,7 +79,7 @@ def test_wrong_secret():
     start_clickhouse(
         "configs/config.xml",
         "configs/users_wrong_secret.xml",
-        "HTTP status code: 404 'Not Found'",
+        "Exception: HTTP error: 404",
     )
 
 
