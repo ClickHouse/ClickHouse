@@ -393,16 +393,14 @@ private:
             while (!data.empty() && data.back() == 0)
                 data.remove_suffix(1);
 #else
-            size_t index = 0;
-            while (index < data.size() && data[index] == 0)
-                index++;
-            data.remove_suffx(index);
+            while (!data.empty() && data.front() == 0)
+                data.remove_prefix(1);
 #endif
             data_to.resize(offset + data.size());
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
             memcpy(&data_to[offset], data.data(), data.size());
 #else
-            reverseMemcpy(&data_to[offset], data.data() + index, data.size());
+            reverseMemcpy(&data_to[offset], data.data(), data.size());
 #endif
             offset += data.size();
             offsets_to[i] = offset;
