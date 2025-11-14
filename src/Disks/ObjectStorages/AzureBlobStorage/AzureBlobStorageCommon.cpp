@@ -6,8 +6,6 @@
 #include <azure/identity/workload_identity_credential.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_responses.hpp>
-#include <azure/storage/blobs/rest_client.hpp>
-#include <azure/core/credentials/credentials.hpp>
 
 #endif
 
@@ -30,11 +28,20 @@ namespace ProfileEvents
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
     extern const Event DiskAzureCreateContainer;
+
     extern const Event AzureGetRequestThrottlerCount;
+    extern const Event AzureGetRequestThrottlerBlocked;
     extern const Event AzureGetRequestThrottlerSleepMicroseconds;
     extern const Event AzurePutRequestThrottlerCount;
+    extern const Event AzurePutRequestThrottlerBlocked;
     extern const Event AzurePutRequestThrottlerSleepMicroseconds;
 
+    extern const Event DiskAzureGetRequestThrottlerCount;
+    extern const Event DiskAzureGetRequestThrottlerBlocked;
+    extern const Event DiskAzureGetRequestThrottlerSleepMicroseconds;
+    extern const Event DiskAzurePutRequestThrottlerCount;
+    extern const Event DiskAzurePutRequestThrottlerBlocked;
+    extern const Event DiskAzurePutRequestThrottlerSleepMicroseconds;
 }
 
 namespace fs = std::filesystem;
@@ -68,8 +75,6 @@ namespace Setting
     extern const SettingsUInt64 http_max_fields;
     extern const SettingsUInt64 http_max_field_name_size;
     extern const SettingsUInt64 http_max_field_value_size;
-    extern const SettingsBool azure_sdk_use_native_client;
-
     extern const SettingsUInt64 azure_max_get_rps;
     extern const SettingsUInt64 azure_max_get_burst;
     extern const SettingsUInt64 azure_max_put_rps;
@@ -271,7 +276,7 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
-    if (!params.endpoint.sas_auth.empty())
+    if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
         return params.createForContainer();
 
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
@@ -340,59 +345,66 @@ BlobClientOptions getClientOptions(
     client_options.Retry = retry_options;
     client_options.ClickhouseOptions = Azure::Storage::Blobs::ClickhouseClientOptions{.IsClientForDisk=for_disk};
 
-    if (settings[Setting::azure_sdk_use_native_client])
+    // Initialize HTTP request throttling
+    HTTPRequestThrottler request_throttler;
+
+    if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
     {
-        ThrottlerPtr get_request_throttler;
-        ThrottlerPtr put_request_throttler;
+        request_throttler.get_throttler = std::make_shared<Throttler>(
+            settings[Setting::azure_max_get_rps],
+            settings[Setting::azure_max_get_burst],
+            ProfileEvents::AzureGetRequestThrottlerCount,
+            ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
+        request_throttler.get_blocked = ProfileEvents::AzureGetRequestThrottlerBlocked;
 
-        if (settings[Setting::azure_max_get_rps] > 0 || settings[Setting::azure_max_get_burst] > 0)
+        // Update additional profile events for DiskAzure
+        if (for_disk)
         {
-            get_request_throttler = std::make_shared<Throttler>(
-                settings[Setting::azure_max_get_rps],
-                settings[Setting::azure_max_get_burst],
-                ProfileEvents::AzureGetRequestThrottlerCount,
-                ProfileEvents::AzureGetRequestThrottlerSleepMicroseconds);
+            request_throttler.disk_get_amount = ProfileEvents::DiskAzureGetRequestThrottlerCount;
+            request_throttler.disk_get_blocked = ProfileEvents::DiskAzureGetRequestThrottlerBlocked;
+            request_throttler.disk_get_sleep_us = ProfileEvents::DiskAzureGetRequestThrottlerSleepMicroseconds;
         }
-
-        if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
-        {
-            put_request_throttler = std::make_shared<Throttler>(
-                settings[Setting::azure_max_put_rps],
-                settings[Setting::azure_max_put_burst],
-                ProfileEvents::AzurePutRequestThrottlerCount,
-                ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
-        }
-
-        auto http_keep_alive_seconds = static_cast<size_t>(context->getServerSettings()[ServerSetting::keep_alive_timeout].totalSeconds());
-        auto tcp_keep_alive_milliseconds = static_cast<size_t>(settings[Setting::tcp_keep_alive_timeout].totalMilliseconds());
-
-        PocoAzureHTTPClientConfiguration conf{
-            .remote_host_filter = context->getRemoteHostFilter(),
-            .max_redirects = settings[Setting::azure_max_redirects],
-            .for_disk_azure = for_disk,
-            .get_request_throttler = get_request_throttler,
-            .put_request_throttler = put_request_throttler,
-            .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
-            .connect_timeout_ms = settings[Setting::azure_connect_timeout_ms],
-            .request_timeout_ms = settings[Setting::azure_request_timeout_ms],
-            .tcp_keep_alive_interval_ms = tcp_keep_alive_milliseconds,
-            .use_adaptive_timeouts = settings[Setting::azure_use_adaptive_timeouts],
-            .http_keep_alive_timeout = http_keep_alive_seconds, // Convert seconds to milliseconds
-            .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
-            .http_max_fields = settings[Setting::http_max_fields],
-            .http_max_field_name_size = settings[Setting::http_max_field_name_size],
-            .http_max_field_value_size = settings[Setting::http_max_field_value_size]};
-
-        client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
-    }
-    else /// TODO (alesapin) Remove Curl client in future releases
-    {
-        Azure::Core::Http::CurlTransportOptions curl_options;
-        curl_options.NoSignal = true;
-        curl_options.IPResolve = request_settings.curl_ip_resolve;
-        client_options.Transport.Transport = std::make_shared<Azure::Core::Http::CurlTransport>(curl_options);
     }
 
+    if (settings[Setting::azure_max_put_rps] > 0 || settings[Setting::azure_max_put_burst] > 0)
+    {
+        request_throttler.put_throttler = std::make_shared<Throttler>(
+            settings[Setting::azure_max_put_rps],
+            settings[Setting::azure_max_put_burst],
+            ProfileEvents::AzurePutRequestThrottlerCount,
+            ProfileEvents::AzurePutRequestThrottlerSleepMicroseconds);
+        request_throttler.put_blocked = ProfileEvents::AzurePutRequestThrottlerBlocked;
+
+        // Update additional profile events for DiskAzure
+        if (for_disk)
+        {
+            request_throttler.disk_put_amount = ProfileEvents::DiskAzurePutRequestThrottlerCount;
+            request_throttler.disk_put_blocked = ProfileEvents::DiskAzurePutRequestThrottlerBlocked;
+            request_throttler.disk_put_sleep_us = ProfileEvents::DiskAzurePutRequestThrottlerSleepMicroseconds;
+        }
+    }
+
+    auto http_keep_alive_seconds = static_cast<size_t>(context->getServerSettings()[ServerSetting::keep_alive_timeout].totalSeconds());
+    auto tcp_keep_alive_milliseconds = static_cast<size_t>(settings[Setting::tcp_keep_alive_timeout].totalMilliseconds());
+
+    PocoAzureHTTPClientConfiguration conf
+    {
+        .remote_host_filter = context->getRemoteHostFilter(),
+        .max_redirects = settings[Setting::azure_max_redirects],
+        .for_disk_azure = for_disk,
+        .request_throttler = request_throttler,
+        .extra_headers = HTTPHeaderEntries{}, /// No extra headers so far
+        .connect_timeout_ms = settings[Setting::azure_connect_timeout_ms],
+        .request_timeout_ms = settings[Setting::azure_request_timeout_ms],
+        .tcp_keep_alive_interval_ms = tcp_keep_alive_milliseconds,
+        .use_adaptive_timeouts = settings[Setting::azure_use_adaptive_timeouts],
+        .http_keep_alive_timeout = http_keep_alive_seconds, // Convert seconds to milliseconds
+        .http_keep_alive_max_requests = context->getServerSettings()[ServerSetting::max_keep_alive_requests],
+        .http_max_fields = settings[Setting::http_max_fields],
+        .http_max_field_name_size = settings[Setting::http_max_field_name_size],
+        .http_max_field_value_size = settings[Setting::http_max_field_value_size]};
+
+    client_options.Transport.Transport = std::make_shared<PocoAzureHTTPClient>(conf);
     return client_options;
 }
 
@@ -502,7 +514,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
+    return {storage_url, account_name, container_name, prefix, "", "", container_already_exists};
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)
@@ -571,20 +583,6 @@ std::unique_ptr<RequestSettings> getRequestSettings(const Poco::Util::AbstractCo
     settings->sdk_retry_max_backoff_ms = config.getUInt64(config_prefix + ".retry_max_backoff_ms", settings_ref[Setting::azure_sdk_retry_max_backoff_ms]);
 
     settings->check_objects_after_upload = config.getBool(config_prefix + ".check_objects_after_upload", settings_ref[Setting::azure_check_objects_after_upload]);
-
-
-#if USE_AZURE_BLOB_STORAGE
-    if (config.has(config_prefix + ".curl_ip_resolve"))
-    {
-        auto value = config.getString(config_prefix + ".curl_ip_resolve");
-        if (value == "ipv4")
-            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V4;
-        else if (value == "ipv6")
-            settings->curl_ip_resolve = RequestSettings::CurlOptions::CURL_IPRESOLVE_V6;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected value for option 'curl_ip_resolve': {}. Expected one of 'ipv4' or 'ipv6'", value);
-    }
-#endif
 
     return settings;
 }

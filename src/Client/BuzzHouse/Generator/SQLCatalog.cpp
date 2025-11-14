@@ -3,11 +3,16 @@
 namespace BuzzHouse
 {
 
+String SQLColumn::getColumnName() const
+{
+    return "c" + std::to_string(cname);
+}
+
 void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
 {
-    if (add_params && isReplicatedOrSharedDatabase())
+    if (add_params && isReplicatedDatabase())
     {
-        chassert(de->params_size() == 0 && this->nparams == 0);
+        chassert(de->params_size() == 0);
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
@@ -107,7 +112,19 @@ String SQLBase::getTableName(const bool full) const
     {
         res += "test.";
     }
-    res += "t" + std::to_string(tname);
+    res += this->prefix + std::to_string(tname);
+    return res;
+}
+
+String SQLBase::getFullName(const bool setdbname) const
+{
+    String res;
+
+    if (db || setdbname)
+    {
+        res += getDatabaseName() + ".";
+    }
+    res += getTableName();
     return res;
 }
 
@@ -187,7 +204,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
                         cat = &sc.unity_catalog.value();
                         break;
                     default:
-                        chassert(0);
+                        UNREACHABLE();
                 }
                 next_bucket_path = fmt::format(
                     "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
@@ -322,8 +339,8 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
     {
         return fmt::format("/aflight{}", tname);
     }
-    chassert(0);
-    return "";
+
+    UNREACHABLE();
 }
 
 String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
@@ -367,21 +384,9 @@ size_t SQLTable::numberOfInsertableColumns() const
     return res;
 }
 
-String SQLTable::getFullName(const bool setdbname) const
+String ColumnPathChain::columnPathRef(const String & quote) const
 {
-    String res;
-
-    if (db || setdbname)
-    {
-        res += getDatabaseName() + ".";
-    }
-    res += getTableName();
-    return res;
-}
-
-String ColumnPathChain::columnPathRef() const
-{
-    String res = "`";
+    String res = quote;
 
     for (size_t i = 0; i < path.size(); i++)
     {
@@ -391,7 +396,7 @@ String ColumnPathChain::columnPathRef() const
         }
         res += path[i].cname;
     }
-    res += "`";
+    res += quote;
     return res;
 }
 

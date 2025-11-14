@@ -2264,6 +2264,124 @@ public:
     }
 };
 
+namespace
+{
+struct CumeDistState
+{
+    RowNumber start_row;
+    UInt64 current_partition_rows = 0;
+};
+}
+
+struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistState>
+{
+public:
+    WindowFunctionCumeDist(const std::string & name_,
+            const DataTypes & argument_types_, const Array & parameters_)
+        : StatefulWindowFunction(name_, argument_types_, parameters_, std::make_shared<DataTypeFloat64>())
+    {}
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    bool checkWindowFrameType(const WindowTransform * transform) const override
+    {
+        auto default_window_frame = getDefaultFrame();
+        if (transform->window_description.frame != default_window_frame)
+        {
+            LOG_ERROR(
+                getLogger("WindowFunctionCumeDist"),
+                "Window frame for function 'cume_dist' should be '{}'", default_window_frame->toString());
+            return false;
+        }
+        return true;
+    }
+
+    std::optional<WindowFrame> getDefaultFrame() const override
+    {
+        WindowFrame frame;
+        frame.type = WindowFrame::FrameType::RANGE;
+        frame.begin_type = WindowFrame::BoundaryType::Unbounded;
+        frame.end_type = WindowFrame::BoundaryType::Unbounded;
+        return frame;
+    }
+
+    void windowInsertResultInto(const WindowTransform * transform, size_t function_index) const override
+    {
+        auto & state = getWorkspaceState(transform, function_index);
+        if (WindowFunctionHelpers::checkPartitionEnterFirstRow(transform))
+        {
+            state.current_partition_rows = 0;
+            state.start_row = transform->current_row;
+        }
+
+        insertPeerGroupEndRowNumberIntoColumn(transform, function_index);
+        state.current_partition_rows++;
+
+        if (!WindowFunctionHelpers::checkPartitionEnterLastRow(transform))
+        {
+            return;
+        }
+
+        UInt64 remaining_rows = state.current_partition_rows;
+        Float64 cume_dist_denominator = remaining_rows;
+
+        while (remaining_rows > 0)
+        {
+            auto block_rows_number = transform->blockRowsNumber(state.start_row);
+            auto available_block_rows = block_rows_number - state.start_row.row;
+            if (available_block_rows <= remaining_rows)
+            {
+                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
+                for (size_t i = state.start_row.row; i < block_rows_number; ++i)
+                    data[i] = data[i] / cume_dist_denominator;
+
+                state.start_row.block++;
+                state.start_row.row = 0;
+                remaining_rows -= available_block_rows;
+            }
+            else
+            {
+                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
+                for (size_t i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
+                {
+                    data[i] = data[i] / cume_dist_denominator;
+                }
+                state.start_row.row += remaining_rows;
+                remaining_rows = 0;
+            }
+        }
+    }
+
+
+    inline CumeDistState & getWorkspaceState(const WindowTransform * transform, size_t function_index) const
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        return getState(workspace);
+    }
+
+    inline void insertPeerGroupEndRowNumberIntoColumn(const WindowTransform * transform, size_t function_index) const
+    {
+        // Calculate the peer group end row number by finding the last row in the current peer group
+        UInt64 peer_group_end_row_number = transform->current_row_number;
+        RowNumber check_row = transform->current_row;
+
+        // Advance through all rows that are peers with the current row
+        while (true)
+        {
+            RowNumber next = transform->nextRowNumber(check_row);
+            if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
+                break;
+            check_row = next;
+            peer_group_end_row_number++;
+        }
+
+        auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
+        assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(peer_group_end_row_number));
+    }
+};
+
 // ClickHouse-specific variant of lag/lead that respects the window frame.
 template <bool is_lead>
 struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
@@ -2325,7 +2443,7 @@ struct WindowFunctionLagLeadInFrame final : public StatelessWindowFunction
 
         auto get_cast_func = [from = argument_types[2], to = argument_types[0]]
         {
-            return createInternalCast({from, {}}, to, CastType::accurate, {});
+            return createInternalCast({from, {}}, to, CastType::accurate, {}, nullptr);
         };
 
         func_cast = get_cast_func();
@@ -2673,6 +2791,13 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
         }, properties});
 
     factory.registerAlias("percent_rank", "percentRank", AggregateFunctionFactory::Case::Insensitive);
+
+    factory.registerFunction("cume_dist", {[](const std::string & name,
+            const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            return std::make_shared<WindowFunctionCumeDist>(name, argument_types,
+                parameters);
+        }, properties});
 
     factory.registerFunction("row_number", {[](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)

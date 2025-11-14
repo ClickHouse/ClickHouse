@@ -16,6 +16,7 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <lz4.h>
+#include <arrow/util/crc32.h>
 
 #if USE_SNAPPY
 #include <snappy.h>
@@ -29,6 +30,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace DB::Parquet
@@ -177,7 +179,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     prefetcher.readSync(buf.data(), initial_read_size, file_size - initial_read_size);
 
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Not a parquet file (wrong magic bytes at the end of file)");
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
 
     int32_t metadata_size_i32;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
@@ -217,7 +219,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     ///      present. Instead, data_page_offset points to the dictionary page.
     ///  (2) Old DuckDB versions (<= 0.10.2) wrote incorrect data_page_offset when dictionary is
     ///      present.
-    /// We work around (1) in initializePage by allowing dictionary page in place of data page.
+    /// We work around (1) in initializeDataPage by allowing dictionary page in place of data page.
     /// We work around (2) here by converting it to case (1):
     ///   data_page_offset = dictionary_page_offset
     ///   dictionary_page_offset.reset()
@@ -769,8 +771,9 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
 bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
-    parq::PageHeader header;
-    size_t header_size = deserializeThriftStruct(header, data.data(), data.size());
+    const char * data_ptr = data.data();
+    const char * data_end = data.data() + data.size();
+    auto [header, page_data] = decodeAndCheckPageHeader(data_ptr, data_end);
 
     if (header.type != parq::PageType::DICTIONARY_PAGE)
     {
@@ -781,7 +784,7 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
         return false;
     }
 
-    decodeDictionaryPageImpl(header, data.subspan(header_size), column, column_info);
+    decodeDictionaryPageImpl(header, page_data, column, column_info);
     return true;
 }
 
@@ -789,7 +792,6 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
 {
     chassert(header.type == parq::PageType::DICTIONARY_PAGE);
 
-    /// TODO [parquet]: Check checksum.
     size_t compressed_page_size = size_t(header.compressed_page_size);
     if (header.compressed_page_size < 0 || compressed_page_size > data.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Dictionary page size out of bounds: {} > {}", header.compressed_page_size, data.size());
@@ -998,7 +1000,7 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
                 const auto [start, end] = col.row_ranges_after_column_index[i];
                 chassert(start < end);
                 chassert(!i || start > prev_end);
-                prev_end = end;
+                prev_end = end;  /// NOLINT(clang-analyzer-deadcode.DeadStores)
 
                 events.emplace_back(start, +1);
                 events.emplace_back(end, -1);
@@ -1394,7 +1396,7 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
 
         auto data = prefetcher.getRangeData(page_info.prefetch);
         const char * ptr = data.data();
-        if (!initializePage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
+        if (!initializeDataPage(ptr, ptr + data.size(), first_row_idx, page_info.end_row_idx, row_idx, column, column_info))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Page doesn't contain requested row");
         found_page = true;
     }
@@ -1416,12 +1418,33 @@ void Reader::skipToRow(size_t row_idx, ColumnChunk & column, const PrimitiveColu
         chassert(column.next_page_offset <= all_pages.size());
         const char * ptr = all_pages.data() + column.next_page_offset;
         const char * end = all_pages.data() + all_pages.size();
-        initializePage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
+        initializeDataPage(ptr, end, page.next_row_idx, /*end_row_idx=*/ std::nullopt, row_idx, column, column_info);
         column.next_page_offset = ptr - all_pages.data();
     }
 }
 
-bool Reader::initializePage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
+std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHeader(const char * & data_ptr, const char * data_end) const
+{
+    parq::PageHeader header;
+    data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
+    size_t compressed_page_size = size_t(header.compressed_page_size);
+    if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
+
+    std::span page_data(data_ptr, compressed_page_size);
+    data_ptr += compressed_page_size;
+
+    if (header.__isset.crc && options.format.parquet.verify_checksums)
+    {
+        uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
+        if (crc != uint32_t(header.crc))
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
+    }
+
+    return {header, page_data};
+}
+
+bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, size_t next_row_idx, std::optional<size_t> end_row_idx, size_t target_row_idx, ColumnChunk & column, const PrimitiveColumnInfo & column_info)
 {
     PageState & page = column.page;
     /// We reuse PageState instance across pages to reuse memory in buffers like decompressed_buf.
@@ -1438,13 +1461,7 @@ bool Reader::initializePage(const char * & data_ptr, const char * data_end, size
     /// Decode page header.
 
     parq::PageHeader header;
-    data_ptr += deserializeThriftStruct(header, data_ptr, data_end - data_ptr);
-    /// TODO [parquet]: Check checksum.
-    size_t compressed_page_size = size_t(header.compressed_page_size);
-    if (header.compressed_page_size < 0 || compressed_page_size > size_t(data_end - data_ptr))
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Page size out of bounds: {} > {}", header.compressed_page_size, data_end - data_ptr);
-    page.data = std::span(data_ptr, compressed_page_size);
-    data_ptr += compressed_page_size;
+    std::tie(header, page.data) = decodeAndCheckPageHeader(data_ptr, data_end);
 
     /// Check if all rows of the page are filtered out, if we have enough information.
 
@@ -1538,7 +1555,7 @@ bool Reader::initializePage(const char * & data_ptr, const char * data_end, size
             page.codec = parq::CompressionCodec::UNCOMPRESSED;
         }
 
-        if (encoded_def_size + encoded_rep_size > compressed_page_size)
+        if (encoded_def_size + encoded_rep_size > page.data.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Page data is too short (def+rep)");
         encoded_rep = page.data.data();
         encoded_def = page.data.data() + encoded_rep_size;

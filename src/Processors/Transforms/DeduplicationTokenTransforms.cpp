@@ -227,7 +227,7 @@ void ResetTokenTransform::transform(Chunk & chunk)
             ErrorCodes::LOGICAL_ERROR,
             "TokenInfo is expected for consumed chunk in ResetTokenTransform");
 
-    token_info->reset();
+    (*token_info).reset();
 }
 
 }
