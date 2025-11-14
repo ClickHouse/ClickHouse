@@ -279,6 +279,20 @@
             display: inline-block;
         }
 
+        .table-addendum-elem
+        {
+            display: block;
+            &:hover {
+                text-decoration: 1px underline dotted var(--element-background-color);
+            }
+        }
+
+        #main
+        {
+            grid-area: main;
+            padding: 0.5rem;
+        }
+
         #controls
         {
             /* When a page will be scrolled horizontally due to large table size, keep controls in place. */
@@ -1122,25 +1136,42 @@ async function loadTables(server_address, user, password, database, container) {
         let table_addendum = document.createElement('span');
         table_addendum.className = 'table-addendum';
 
-        let addendum = '';
-        if (+elem.total_bytes) addendum += formatReadableBytes(elem.total_bytes) + '\n';
-        if (+elem.total_rows) addendum += formatReadableRows(elem.total_rows) + ' rows\n';
-        addendum += elem.engine;
-        table_addendum.append(addendum);
-
-        table.appendChild(table_link);
-        table.appendChild(table_addendum);
-        tables_elem.appendChild(table);
-
-        table.addEventListener('click', e => {
-            const value = `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`;
+        const set_query_or_run = (e, value) => {
             if (query_area.value == value) {
                 /// Double click will run the query.
                 post();
             } else {
                 query_area.value = value;
             }
-        });
+            e.stopPropagation();
+        }
+
+        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = '${database}' AND table = '${elem.table}'`);
+
+        if (+elem.total_bytes) {
+            let bytes_elem = document.createElement('span');
+            bytes_elem.className = 'table-addendum-elem';
+            bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
+            bytes_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(bytes_elem);
+        }
+        if (+elem.total_rows) {
+            let rows_elem = document.createElement('span');
+            rows_elem.className = 'table-addendum-elem';
+            rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
+            rows_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(rows_elem);
+        }
+        let engine_elem = document.createElement('span');
+        engine_elem.textContent = elem.engine;
+        engine_elem.className = 'table-addendum-elem';
+        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        table_addendum.append(engine_elem);
+
+        table.appendChild(table_link);
+        table.appendChild(table_addendum);
+        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        tables_elem.appendChild(table);
     }
 
     if (json.data.length == 0) {
