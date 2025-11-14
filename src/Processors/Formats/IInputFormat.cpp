@@ -82,7 +82,6 @@ void IInputFormat::onFinish()
 
 void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
 {
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not skip chunks for format {}", getName());
 }
 
 }
