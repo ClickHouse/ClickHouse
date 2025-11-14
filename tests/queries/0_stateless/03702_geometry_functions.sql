@@ -2,6 +2,7 @@ SET allow_suspicious_variant_types = 1;
 
 DROP TABLE IF EXISTS geo_dst;
 DROP TABLE IF EXISTS geo;
+DROP TABLE IF EXISTS variant_table;
 
 CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
 
@@ -12,6 +13,23 @@ INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 
 INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
 INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
 INSERT INTO geo_dst SELECT readWkt(geom) FROM geo ORDER BY id;
+INSERT INTO geo_dst VALUES (NULL);
 
 SELECT perimeterCartesian(geom) FROM geo_dst;
 SELECT areaCartesian(geom) FROM geo_dst;
+
+CREATE TABLE variant_table
+(
+    id Int32,
+    data Variant(UInt64, String, Array(String), Tuple(String, UInt32))
+)
+ENGINE = Memory();
+
+INSERT INTO variant_table VALUES (1, 123);
+
+SELECT perimeterCartesian(data) FROM variant_table; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT areaCartesian(data) FROM variant_table; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT perimeterCartesian(id, data) FROM variant_table; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT areaCartesian(id, data) FROM variant_table; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT perimeterCartesian(id) FROM variant_table; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT areaCartesian(id) FROM variant_table; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

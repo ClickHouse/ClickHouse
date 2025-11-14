@@ -60,7 +60,7 @@ REGISTER_FUNCTION(Area)
         )";
         FunctionDocumentation::Syntax syntax = "areaCartesian(object)";
         FunctionDocumentation::Arguments arguments = {
-            {"object", "geometry object", {"Variant"}}
+            {"object", "geometry object", {"Geometry"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
             "Returns the area of the object.",
@@ -80,7 +80,7 @@ REGISTER_FUNCTION(Area)
         )";
         FunctionDocumentation::Syntax syntax = "areaSpherical(object)";
         FunctionDocumentation::Arguments arguments = {
-            {"object", "geometry object", {"Variant"}}
+            {"object", "geometry object", {"Geometry"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
             "Returns the area of the object.",

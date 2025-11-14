@@ -93,6 +93,28 @@ MultiPolygon<Point> getMultiPolygonFromField(const Field & field)
     return polygon;
 }
 
+enum class GeometryColumnType
+{
+    Linestring = 0,
+    MultiLinestring = 1,
+    MultiPolygon = 2,
+    Point = 3,
+    Polygon = 4,
+    Ring = 5,
+    Null = 255
+};
+
+static constexpr GeometryColumnType AllGeometryColumnType[] = {
+    GeometryColumnType::Linestring,
+    GeometryColumnType::MultiLinestring,
+    GeometryColumnType::MultiPolygon,
+    GeometryColumnType::Point,
+    GeometryColumnType::Polygon,
+    GeometryColumnType::Ring,
+    GeometryColumnType::Null,
+};
+
+
 template <typename Point, typename FunctionToCalculate>
 class FunctionGeometry : public IFunction
 {
@@ -123,7 +145,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (checkAndGetDataType<DataTypeVariant>(arguments[0].get()) == nullptr)
+        if (arguments[0]->getName() != "Geometry")
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be Variant (Geometry)");
         }
@@ -145,51 +167,58 @@ public:
         res_data.reserve(input_rows_count);
 
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
+        Field field;
+        const auto & descriptors = column_variant.getLocalDiscriminators();
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            Field field;
             column_variant.get(i, field);
-            const auto & descriptors = column_variant.getLocalDiscriminatorsColumn();
-            auto type = descriptors.getUInt(i);
-            if (type == 0)
+            auto type = static_cast<GeometryColumnType>(descriptors[i]);
+            if (std::find(std::begin(AllGeometryColumnType), std::end(AllGeometryColumnType), type) == std::end(AllGeometryColumnType))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
+
+            switch (type)
             {
-                // Linestring
-                LineString<Point> linestring = getLineStringFromField<Point>(field);
-                res_data.push_back(static_cast<Float64>(FunctionToCalculate()(linestring)));
-            }
-            else if (type == 1)
-            {
-                // MultiLinestring
-                MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
-                res_data.push_back(static_cast<Float64>(FunctionToCalculate()(multilinestring)));
-            }
-            else if (type == 2)
-            {
-                // MultiPolygon
-                MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
-                res_data.push_back(static_cast<Float64>(FunctionToCalculate()(multipolygon)));
-            }
-            else if (type == 3)
-            {
-                // Point
-                Point point = getPointFromField<Point>(field);
-                res_data.push_back(static_cast<Float64>(FunctionToCalculate()(point)));
-            }
-            else if (type == 4)
-            {
-                // Polygon
-                Polygon<Point> polygon = getPolygonFromField<Point>(field);
-                res_data.push_back(static_cast<Float64>(FunctionToCalculate()(polygon)));
-            }
-            else if (type == 5)
-            {
-                // Ring
-                Ring<Point> ring = getRingFromField<Point>(field);
-                res_data.push_back(static_cast<Float64>(boost::geometry::perimeter(ring)));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry");
+                case GeometryColumnType::Linestring:
+                {
+                    LineString<Point> linestring = getLineStringFromField<Point>(field);
+                    res_data.push_back(FunctionToCalculate()(linestring));
+                    break;
+                }
+                case GeometryColumnType::MultiLinestring:
+                {
+                    MultiLineString<Point> multilinestring = getMultiLineStringFromField<Point>(field);
+                    res_data.push_back(FunctionToCalculate()(multilinestring));
+                    break;
+                }
+                case GeometryColumnType::MultiPolygon:
+                {
+                    MultiPolygon<Point> multipolygon = getMultiPolygonFromField<Point>(field);
+                    res_data.push_back(FunctionToCalculate()(multipolygon));
+                    break;
+                }
+                case GeometryColumnType::Point:
+                {
+                    Point point = getPointFromField<Point>(field);
+                    res_data.push_back(FunctionToCalculate()(point));
+                    break;
+                }
+                case GeometryColumnType::Polygon:
+                {
+                    Polygon<Point> polygon = getPolygonFromField<Point>(field);
+                    res_data.push_back(FunctionToCalculate()(polygon));
+                    break;
+                }
+                case GeometryColumnType::Ring:
+                {
+                    Ring<Point> ring = getRingFromField<Point>(field);
+                    res_data.push_back(FunctionToCalculate()(ring));
+                    break;
+                }
+                case GeometryColumnType::Null:
+                {
+                    res_data.push_back(0);
+                    break;
+                }
             }
         }
 
