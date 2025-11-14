@@ -79,8 +79,6 @@ public:
 
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
-
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
