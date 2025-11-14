@@ -7,7 +7,7 @@ from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
 
 
 def main():
@@ -15,12 +15,12 @@ def main():
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseProc()
-    shell_log_file = f"{temp_dir}/buzzing.log"
-    buzz_log_file = f"{temp_dir}/fuzzer_out.sql"
-    buzz_config_file = f"{temp_dir}/fuzz.json"
+    shell_log_file = Path(f"{temp_dir}/buzzing.log")
+    buzz_log_file = Path(f"{temp_dir}/fuzzer_out.sql")
+    buzz_config_file = Path(f"{temp_dir}/fuzz.json")
 
-    Path(buzz_log_file).touch()
-    Path(buzz_config_file).touch()
+    buzz_log_file.touch()
+    buzz_config_file.touch()
 
     if res:
         print("Install ClickHouse")
@@ -196,9 +196,9 @@ def main():
             "enable_force_settings": random.choice([True, False]),
             # Don't compare for correctness yet, false positives maybe
             "use_dump_table_oracle": random.randint(0, 1),
-            "test_with_fill": False, # Creating too many issues
+            "test_with_fill": False,  # Creating too many issues
             "compare_success_results": False,  # This can give false positives, so disable it
-            "allow_infinite_tables": False, # Creating too many issues
+            "allow_infinite_tables": False,  # Creating too many issues
             "allow_hardcoded_inserts": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
             "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
@@ -290,21 +290,69 @@ def main():
         # If ClickHouse got OOM killed, ignore the result
         # On SIGTERM due to timeout, exit code is 143, ignore it
         oom_check = ch.check_ch_is_oom_killed()
-        results.append(
-            Result.create_from(
-                name="Buzzing result",
-                status=(
-                    Result.Status.SUCCESS
-                    if (
-                        run in (0, 143) or (oom_check is not None and oom_check.is_ok())
-                    )
-                    else Result.Status.FAILED
-                ),
-                info=Shell.get_output(f"tail -300 {shell_log_file}"),
-                stopwatch=stop_watch,
-            )
+
+        next_result = Result.create_from(
+            name="Buzzing result",
+            status=(
+                Result.Status.SUCCESS
+                if (run in (0, 143) or (oom_check is not None and oom_check.is_ok()))
+                else Result.Status.FAILED
+            ),
+            info=Shell.get_output(f"tail -300 {shell_log_file}"),
+            stopwatch=stop_watch,
         )
+        results.append(next_result)
         res = res and results[-1].is_ok()
+
+        if not res:
+            fuzzer_query = ""
+            stack_trace = ""
+            info = ""
+            workspace_path = temp_dir / "workspace"
+
+            dmesg_log = workspace_path / "dmesg.log"
+            fuzzer_log = workspace_path / "fuzzer.log"
+            fatal_log = workspace_path / "fatal.log"
+
+            paths = [
+                workspace_path / "core.zst",
+                workspace_path / "dmesg.log",
+                fatal_log,
+                workspace_path / "stderr.log",
+                workspace_path / "server.log",
+                workspace_path / "fuzzer_out.sql",
+                fuzzer_log,
+                dmesg_log,
+            ]
+
+            if fuzzer_log.exists():
+                fuzzer_query = StackTraceReader.get_fuzzer_query(fuzzer_log)
+                if fuzzer_query:
+                    info = f"Query: {fuzzer_query}"
+                else:
+                    info = "Fuzzer log:\n ~~~\n" + Shell.get_output(
+                        f"tail {fuzzer_log}", verbose=False
+                    )
+                info += "\n---\n"
+            if fatal_log.exists():
+                stack_trace = StackTraceReader.get_stack_trace(fatal_log)
+                if stack_trace:
+                    info += "Stack trace:\n" + stack_trace
+            results[-1].info = info
+
+            if Shell.check(f"dmesg > {dmesg_log}"):
+                results.append(
+                    Result.from_commands_run(
+                        name="OOM in dmesg",
+                        command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+                    )
+                )
+            else:
+                print("WARNING: dmesg not enabled")
+
+            for file in paths:
+                if file.exists():
+                    next_result.set_files(file)
 
     Result.create_from(
         results=results,
