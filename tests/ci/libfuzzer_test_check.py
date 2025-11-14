@@ -149,8 +149,12 @@ def download_corpus(path):
     for zip_file in corpus_path.glob("*.zip"):
         target_dir = corpus_path / zip_file.stem
         target_dir.mkdir(exist_ok=True)
-        with zipfile.ZipFile(zip_file, "r") as zf:
-            zf.extractall(target_dir)
+        try:
+            with zipfile.ZipFile(zip_file, "r") as zf:
+                zf.extractall(target_dir)
+        except Exception:
+            logging.info("Failed to unzip %s", zip_file)
+            raise
         zip_file.unlink()
         units = len(list(target_dir.glob("*")))
         total_units += units
