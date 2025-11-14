@@ -407,7 +407,7 @@ bool MsgPackVisitor::start_array(size_t size) // NOLINT
 
         ColumnTuple & column_tuple = assert_cast<ColumnTuple &>(info_stack.top().column);
         /// Push nested columns into stack in reverse order.
-        for (ssize_t i = nested_types.size() - 1; i >= 0; --i)
+        for (ssize_t i = static_cast<ssize_t>(nested_types.size()) - 1; i >= 0; --i)
             info_stack.push(Info{column_tuple.getColumn(i), nested_types[i], true, std::nullopt, nullptr});
 
         /// There are no nested columns to grow, so we must explicitly increment the column size.
