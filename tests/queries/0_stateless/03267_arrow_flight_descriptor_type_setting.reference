@@ -1,3 +1,0 @@
-arrow_flight_request_descriptor_type	path	0	Type of descriptor to use for Arrow Flight requests. \'path\' sends the dataset name as a path descriptor. \'command\' sends a SQL query as a command descriptor (required for Dremio).\n\nPossible values:\n- \'path\' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)\n- \'command\' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
-path
-command
