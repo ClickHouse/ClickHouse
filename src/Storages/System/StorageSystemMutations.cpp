@@ -50,6 +50,7 @@ ColumnsDescription StorageSystemMutations::getColumnsDescription()
         { "latest_fail_time",             std::make_shared<DataTypeDateTime>(), "The date and time of the most recent part mutation failure."},
         { "latest_fail_reason",           std::make_shared<DataTypeString>(), "The exception message that caused the most recent part mutation failure."},
         { "latest_fail_error_code_name",  std::make_shared<DataTypeString>(), "The error code of the exception that caused the most recent part mutation failure."},
+        { "parts_in_progress_names",      std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of names of data parts that are being mutated."},
     };
 }
 
@@ -152,6 +153,11 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             for (const String & part_name : status.parts_to_do_names)
                 parts_to_do_names.emplace_back(part_name);
 
+            Array parts_in_progress_names;
+            parts_to_do_names.reserve(status.parts_in_progress_names.size());
+            for (const String & part_name : status.parts_in_progress_names)
+                parts_in_progress_names.emplace_back(part_name);
+
             size_t col_num = 0;
             res_columns[col_num++]->insert(database);
             res_columns[col_num++]->insert(table);
@@ -169,6 +175,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[col_num++]->insert(UInt64(status.latest_fail_time));
             res_columns[col_num++]->insert(status.latest_fail_reason);
             res_columns[col_num++]->insert(status.latest_fail_error_code_name);
+            res_columns[col_num++]->insert(parts_in_progress_names);
         }
     }
 }

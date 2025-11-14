@@ -563,6 +563,9 @@ CurrentlyMergingPartsTagger::CurrentlyMergingPartsTagger(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Tagging already tagged part {}. This is a bug.", part->name);
     }
     storage.currently_merging_mutating_parts.insert(future_part->parts.begin(), future_part->parts.end());
+
+    if (is_mutation)
+        storage.currently_mutating_part_future_versions[future_part->parts[0]] = future_part->part_info.mutation;
 }
 
 
@@ -576,6 +579,7 @@ void CurrentlyMergingPartsTagger::finalize()
         if (!storage.currently_merging_mutating_parts.contains(part))
             std::terminate();
         storage.currently_merging_mutating_parts.erase(part);
+        storage.currently_mutating_part_future_versions.erase(part);
     }
 
     storage.currently_processing_in_background_condition.notify_all();
@@ -987,6 +991,13 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
+        Names parts_in_progress_names;
+        for (const auto &[part, future_version] : currently_mutating_part_future_versions) {
+            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version) {
+                parts_in_progress_names.push_back(part->name);
+            }
+        }
+
         for (const MutationCommand & command : *entry.commands)
         {
             result.push_back(MergeTreeMutationStatus
@@ -1001,6 +1012,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
                 entry.latest_fail_error_code_name,
+                parts_in_progress_names,
             });
         }
     }
