@@ -201,7 +201,12 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                 if (!typeid_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get()))
                 {
                     if (replicas_plan_top_node)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Top node for parallel replicas plan is already found");
+                    {
+                        // TODO(nickitat): support multiple read steps with parallel replicas
+                        // throw Exception(ErrorCodes::LOGICAL_ERROR, "Top node for parallel replicas plan is already found");
+                        LOG_DEBUG(getLogger("optimizeTree"), "Top node for parallel replicas plan is already found");
+                        return nullptr;
+                    }
 
                     replicas_plan_top_node = node;
                 }
@@ -249,7 +254,10 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find step with matching hash in single-node plan");
+        // TODO(nickitat): support multiple read steps with parallel replicas
+        // throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find step with matching hash in single-node plan");
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
+        return std::make_pair(nullptr, 0);
     }
     else
     {
@@ -282,7 +290,8 @@ void considerEnablingParallelReplicas(
 
     [[maybe_unused]] const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
         = findCorrespondingNodeInSingleNodePlan(*final_node_in_replica_plan, *plan_with_parallel_replicas->getRootNode(), root);
-    chassert(corresponding_node_in_single_replica_plan);
+    if (!corresponding_node_in_single_replica_plan)
+        return;
 
     /// Now we need to set cache keys (i.e. enable statistics collection) for both steps: the top node and the reading step.
     {

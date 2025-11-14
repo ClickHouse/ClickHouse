@@ -17,6 +17,8 @@ struct IQueryPlanStep::Serialization
     // the `final` value differs for `AggregatingStep` in single-node and distributed query plans.
     // This breaks matching by hash.
     bool skip_final_flag = false;
+    // The same situation as above.
+    bool skip_cache_key = false;
 };
 
 struct SerializedSetsRegistry;
