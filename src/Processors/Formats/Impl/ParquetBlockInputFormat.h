@@ -62,7 +62,7 @@ struct ParquetFileBucketInfo : public FileBucketInfo
     String getIdentifier() const override;
     String getFormatName() const override
     {
-        return "PARQUET";
+        return "Parquet";
     }
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;

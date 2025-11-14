@@ -639,7 +639,7 @@ ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_gro
 
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
-    instances.emplace("PARQUET", std::make_shared<ParquetFileBucketInfo>());
+    instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
 }
 
 ParquetBlockInputFormat::ParquetBlockInputFormat(
@@ -1434,7 +1434,7 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
-        "PARQUET",
+        "Parquet",
         []
         {
             return std::make_shared<ParquetFileBucketInfo>();
