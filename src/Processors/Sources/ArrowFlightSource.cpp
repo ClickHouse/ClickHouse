@@ -30,10 +30,9 @@ ArrowFlightSource::ArrowFlightSource(
     ContextPtr context_)
     : ISource(std::make_shared<const Block>(sample_block_.cloneEmpty()))
     , connection(connection_)
-    , context(context_)
     , sample_block(sample_block_)
 {
-    initializeEndpoints(dataset_name_);
+    initializeEndpoints(dataset_name_, context_);
 }
 
 ArrowFlightSource::ArrowFlightSource(
@@ -61,7 +60,7 @@ ArrowFlightSource::ArrowFlightSource(
 ArrowFlightSource::~ArrowFlightSource() = default;
 
 
-void ArrowFlightSource::initializeEndpoints(const String & dataset_name_)
+void ArrowFlightSource::initializeEndpoints(const String & dataset_name_, ContextPtr context)
 {
     auto client = connection->getClient();
     auto options = connection->getOptions();

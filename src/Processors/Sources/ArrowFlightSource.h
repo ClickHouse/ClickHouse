@@ -26,12 +26,11 @@ protected:
     Chunk generate() override;
 
 private:
-    void initializeEndpoints(const String & dataset_name_);
+    void initializeEndpoints(const String & dataset_name_, ContextPtr context);
     bool nextEndpoint();
     void initializeSchema();
 
     std::shared_ptr<ArrowFlightConnection> connection;
-    ContextPtr context;
 
     Block sample_block;
     std::vector<arrow::flight::FlightEndpoint> endpoints;
