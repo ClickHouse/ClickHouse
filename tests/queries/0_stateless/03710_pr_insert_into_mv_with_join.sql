@@ -17,7 +17,10 @@ INSERT INTO n2 SELECT number, -number FROM numbers(10);
 SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_replicas='test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- inserting into n1 (left table) triggers JOIN in the materialized view
+INSERT INTO n1 values(0, '11');
 INSERT INTO n1 SELECT number, toString(number) FROM numbers(10);
+
+SELECT * FROM n1_n2_join ORDER BY ALL;
 
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS n1_n2_join;
