@@ -245,7 +245,7 @@
         .table-addendum
         {
             position: absolute;
-            z-index: 1;
+            z-index: 999;
             display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
@@ -530,13 +530,15 @@
             display: none;
             position: absolute;
             user-select: none;
-            right: 0;
-            top: -1.25em;
+            left: 0;
+            top: -1px;
+            transform: translateY(-100%);
             font-size: 75%;
             font-weight: normal;
             color: var(--misc-text-color);
-            z-index: 1;
             background: var(--element-background-color);
+            max-height: 5em;
+            white-space: pre;
         }
 
         th:hover .type-hint
