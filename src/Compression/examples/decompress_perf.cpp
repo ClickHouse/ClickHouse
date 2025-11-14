@@ -1,22 +1,19 @@
-#include <cstring>
 #include <iomanip>
+#include <iostream>
+
 #include <base/types.h>
 #include <lz4.h>
 
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromFileDescriptor.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/MMapReadBufferFromFileDescriptor.h>
+#include <IO/MMapReadBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 #include <Compression/LZ4_decompress_faster.h>
-#include <IO/copyData.h>
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
-#include <Common/memcpySmall.h>
 #include <base/unaligned.h>
 
 
@@ -48,7 +45,6 @@ protected:
     /// Variant for reference implementation of LZ4.
     static constexpr ssize_t LZ4_REFERENCE = -3;
 
-    LZ4::StreamStatistics stream_stat;
     LZ4::PerformanceStatistics perf_stat;
 
     size_t readCompressedData(size_t & size_decompressed, size_t & size_compressed_without_checksum)
@@ -101,6 +97,10 @@ protected:
     {
         UInt8 method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
 
+        // std::cout << "Compressed " << size_compressed_without_checksum;
+        // std::cout << " Decompressed " << size_decompressed;
+        // std::cout << " Ratio " << static_cast<Float64>(size_compressed_without_checksum) / size_decompressed << std::endl;
+
         if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
         {
             //LZ4::statistics(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed, stat);
@@ -124,12 +124,11 @@ protected:
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
     FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant_)
-        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_), perf_stat(variant)
+        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant_)
     {
+        perf_stat.choose_method = variant;
     }
 
-    LZ4::StreamStatistics getStreamStatistics() const { return stream_stat; }
-    LZ4::PerformanceStatistics getPerformanceStatistics() const { return perf_stat; }
 };
 
 
@@ -180,78 +179,36 @@ try
 {
     using namespace DB;
 
-    /** -3 - use reference implementation of LZ4
-      * -2 - run all algorithms in round robin fashion
-      * -1 - automatically detect best algorithm based on statistics
-      * 0..3 - run specified algorithm
-      */
-    ssize_t variant = argc < 2 ? -1 : parse<ssize_t>(argv[1]);
-
-    MMapReadBufferFromFileDescriptor in(STDIN_FILENO, 0);
-//    ReadBufferFromFileDescriptor in(STDIN_FILENO);
-    FasterCompressedReadBuffer decompressing_in(in, variant);
-//    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-//    HashingWriteBuffer hashing_out(out);
-
-    Stopwatch watch;
-//    copyData(decompressing_in, /*hashing_*/out);
-    while (!decompressing_in.eof())
+    if (argc < 2 || argc > 4)
     {
-        decompressing_in.position() = decompressing_in.buffer().end();
-        decompressing_in.next();
+        std::cerr << "Usage: " << argv[0] << " <file> [times] [variant]\n";
+        return 1;
     }
-    watch.stop();
+    size_t times = argc < 3 ? 1 : parse<size_t>(argv[2]);
+    ssize_t variant = argc < 4 ? -1 : parse<ssize_t>(argv[3]);
 
-    std::cout << std::fixed << std::setprecision(3)
-        << watch.elapsed() * 1000 / decompressing_in.count()
-        << '\n';
+    std::vector<UInt64> runs;
 
-/*
-//    auto hash = hashing_out.getHash();
-
-    double seconds = watch.elapsedSeconds();
-    std::cerr << std::fixed << std::setprecision(3)
-        << "Elapsed: " << seconds
-        << ", " << formatReadableSizeWithBinarySuffix(in.count()) << " compressed"
-        << ", " << formatReadableSizeWithBinarySuffix(decompressing_in.count()) << " decompressed"
-        << ", ratio: " << static_cast<double>(decompressing_in.count()) / in.count()
-        << ", " << formatReadableSizeWithBinarySuffix(in.count() / seconds) << "/sec. compressed"
-        << ", " << formatReadableSizeWithBinarySuffix(decompressing_in.count() / seconds) << "/sec. decompressed"
-//        << ", checksum: " << hash.first << "_" << hash.second
-        << "\n";
-
-//    decompressing_in.getStatistics().print();
-
-    LZ4::PerformanceStatistics perf_stat = decompressing_in.getPerformanceStatistics();
-
-    std::optional<size_t> best_variant;
-    double best_variant_mean = 0;
-
-    for (size_t i = 0; i < LZ4::PerformanceStatistics::NUM_ELEMENTS; ++i)
+    for (size_t i = 0; i < times; i++)
     {
-        const LZ4::PerformanceStatistics::Element & elem = perf_stat.data[i];
+        MMapReadBufferFromFile in(argv[1], 0);
+        FasterCompressedReadBuffer decompressing_in(in, variant);
 
-        if (elem.count)
+        Stopwatch watch;
+        while (!decompressing_in.eof())
         {
-            double mean = elem.mean();
-
-            std::cerr << "Variant " << i << ": "
-                << "count: " << elem.count
-                << ", mean ns/b: " << 1000000000.0 * mean << " (" << formatReadableSizeWithBinarySuffix(1 / mean) << "/sec.)"
-                << ", sigma ns/b: " << 1000000000.0 * elem.sigma()
-                << "\n";
-
-            if (!best_variant || mean < best_variant_mean)
-            {
-                best_variant_mean = mean;
-                best_variant = i;
-            }
+            decompressing_in.position() = decompressing_in.buffer().end();
+            decompressing_in.next();
         }
+        watch.stop();
+        runs.push_back(watch.elapsed());
     }
 
-    if (best_variant)
-        std::cerr << "Best variant: " << *best_variant << "\n";
-*/
+    /// MIN / MAX / AVG
+    UInt64 min = *std::min_element(runs.begin(), runs.end());
+    UInt64 max = *std::max_element(runs.begin(), runs.end());
+    UInt64 avg = std::accumulate(runs.begin(), runs.end(), UInt64(0)) / runs.size();
+    std::cout << min << " " << max << " " << avg << '\n';
 
     return 0;
 }

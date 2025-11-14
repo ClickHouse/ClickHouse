@@ -134,7 +134,7 @@ bool ClientEmbedded::isEmbeeddedClient() const
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
-    setThreadName("LocalServerPty");
+    DB::setThreadName(ThreadName::LOCAL_SERVER_PTY);
 
     output_stream << std::fixed << std::setprecision(3);
     error_stream << std::fixed << std::setprecision(3);

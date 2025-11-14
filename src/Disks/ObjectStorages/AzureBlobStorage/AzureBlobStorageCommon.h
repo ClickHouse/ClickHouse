@@ -64,6 +64,7 @@ struct Endpoint
     String container_name;
     String prefix;
     String sas_auth;
+    String additional_params;
     std::optional<bool> container_already_exists;
 
     String getContainerEndpoint() const
@@ -81,6 +82,9 @@ struct Endpoint
         if (!sas_auth.empty())
             url += "?" + sas_auth;
 
+        if (!additional_params.empty())
+            url += "?" + additional_params;
+
         return url;
     }
 
@@ -93,6 +97,9 @@ struct Endpoint
 
         if (!sas_auth.empty())
             url += "?" + sas_auth;
+
+        if (!additional_params.empty())
+            url += "?" + additional_params;
 
         return url;
     }

@@ -30,6 +30,8 @@ public:
         DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_VECTOR_SIMILARITY_INDEX_CACHE,
         DROP_TEXT_INDEX_DICTIONARY_CACHE,
+        DROP_TEXT_INDEX_HEADER_CACHE,
+        DROP_TEXT_INDEX_POSTINGS_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CONDITION_CACHE,
         DROP_QUERY_CACHE,
@@ -174,7 +176,7 @@ public:
 
     std::vector<String> src_replicas;
 
-    Strings logs;
+    std::vector<std::pair<String, String>> tables;
 
     ServerType server_type;
 
@@ -192,6 +194,7 @@ public:
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }
         if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (query_settings) { res->query_settings = query_settings->clone(); res->children.push_back(res->query_settings); }
+        if (backup_source) { res->backup_source = backup_source->clone(); res->children.push_back(res->backup_source); }
 
         return res;
     }

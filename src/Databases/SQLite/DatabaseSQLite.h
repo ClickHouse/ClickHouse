@@ -38,7 +38,7 @@ public:
 
     void shutdown() override {}
 
-    void alterDatabaseComment(const AlterCommand & command) override;
+    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
