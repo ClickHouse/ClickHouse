@@ -12,7 +12,7 @@ Calculates the `arg` and `val` value for a minimum `val` value. If there are mul
 Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note
-The only difference between `argMin` is that `argAndMin` returns both argumnet and value.
+The only difference with `argMin` is that `argAndMin` returns both argument and value.
 :::
 
 **Syntax**
