@@ -128,14 +128,6 @@ private:
         LRUFileCachePriority & queue,
         const CachePriorityGuard::WriteLock & lock,
         const CacheStateGuard::Lock &);
-
-    EvictionInfoPtr collectEvictionInfoImpl(
-        size_t size,
-        size_t elements,
-        IFileCachePriority::Iterator * reservee,
-        bool is_total_space_cleanup,
-        const CacheStateGuard::Lock & lock,
-        std::optional<bool> in_protected);
 };
 
 class SLRUFileCachePriority::SLRUIterator : public IFileCachePriority::Iterator

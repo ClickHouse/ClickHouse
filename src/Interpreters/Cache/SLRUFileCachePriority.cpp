@@ -182,17 +182,6 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfo(
     bool is_total_space_cleanup,
     const CacheStateGuard::Lock & lock)
 {
-    return collectEvictionInfoImpl(size, elements, reservee, is_total_space_cleanup, lock, std::nullopt);
-}
-
-EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
-    size_t size,
-    size_t elements,
-    IFileCachePriority::Iterator * reservee,
-    bool is_total_space_cleanup,
-    const CacheStateGuard::Lock & lock,
-    std::optional<bool> in_protected)
-{
     if (!size && !elements)
         return std::make_unique<EvictionInfo>();
 
@@ -228,13 +217,9 @@ EvictionInfoPtr SLRUFileCachePriority::collectEvictionInfoImpl(
         return info;
     }
 
-    bool evict_in_protected = in_protected.value_or(false);
+    bool evict_in_protected = false;
     SLRUIterator * slru_iterator = nullptr;
-    if (evict_in_protected)
-    {
-        chassert(!reservee);
-    }
-    else if (reservee)
+    if (reservee)
     {
         slru_iterator = assert_cast<SLRUIterator *>(reservee->getNestedOrThis());
         evict_in_protected = slru_iterator->is_protected;
@@ -587,13 +572,12 @@ bool SLRUFileCachePriority::tryIncreasePriority(
     std::unique_ptr<EvictionInfo> downgrade_info;
     {
         auto lock = state_guard.lock();
-        downgrade_info = collectEvictionInfoImpl(
+        downgrade_info = protected_queue.collectEvictionInfo(
             entry->size,
             /* elements */1,
             /* reservee */nullptr,
             /* is_total_space_cleanup */false,
-            lock,
-            /* in_protected */true);
+            lock);
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
         LOG_TEST(
