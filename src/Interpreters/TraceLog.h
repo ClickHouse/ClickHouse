@@ -54,7 +54,7 @@ struct TraceLogElement
     std::optional<String> function_name{};
     std::optional<String> handler{};
     std::optional<Int8> entry_type{};
-    std::optional<UInt64> duration_microseconds{};
+    std::optional<UInt64> duration_nanoseconds{};
 
     static std::string name() { return "TraceLog"; }
     static ColumnsDescription getColumnsDescription();

@@ -210,7 +210,7 @@ void TraceCollector::run()
                     .function_name = std::nullopt,
                     .handler = std::nullopt,
                     .entry_type = std::nullopt,
-                    .duration_microseconds = std::nullopt,
+                    .duration_nanoseconds = std::nullopt,
                 };
                 trace_log->add(std::move(element));
             }

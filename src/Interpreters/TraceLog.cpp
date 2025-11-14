@@ -106,7 +106,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
         {"function_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, name of the instrumented function."},
         {"handler", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "For trace type Instrumentation, handler of the instrumented function."},
         {"entry_type", std::make_shared<DataTypeNullable>(entry_type_enum), "For trace type Instrumentation, entry type of the instrumented function."},
-        {"duration_microseconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For trace type Instrumentation, time the function was running for in microseconds."},
+        {"duration_nanoseconds", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "For trace type Instrumentation, time the function was running for in nanoseconds."},
     };
 }
 
@@ -272,7 +272,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(function_name.has_value() ? function_name.value() : Field());
     columns[i++]->insert(handler.has_value() ? handler.value() : Field());
     columns[i++]->insert(entry_type.has_value() ? entry_type.value() : Field());
-    columns[i++]->insert(duration_microseconds.has_value() ? duration_microseconds.value() : Field());
+    columns[i++]->insert(duration_nanoseconds.has_value() ? duration_nanoseconds.value() : Field());
 }
 
 }

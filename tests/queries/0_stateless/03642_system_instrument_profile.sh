@@ -29,8 +29,8 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM FLUSH LOGS system.trace_log;
 
     SELECT '-- Check the Entrys and Exits';
-    SELECT entry_type, duration_microseconds FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Entry' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
-    SELECT entry_type, duration_microseconds > 0 FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Exit' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
+    SELECT entry_type, duration_nanoseconds FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Entry' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
+    SELECT entry_type, duration_nanoseconds > 0 FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Exit' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
 """
 
 query_id="${CLICKHOUSE_DATABASE}_profile_recursive"

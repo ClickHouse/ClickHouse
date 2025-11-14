@@ -54,7 +54,7 @@ Columns:
 - `function_name` ([Nullable(String)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, name of the instrumented function.
 - `handler` ([Nullable(String)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, handler of the instrumented function.
 - `entry_type` ([Nullable(Enum('Entry' = 0, 'Exit' = 1))](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, entry type of the trace.
-- `duration_microseconds` ([Nullable(UInt32)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, time the function was running for in microseconds.
+- `duration_nanoseconds` ([Nullable(UInt64)](../../sql-reference/data-types/nullable.md)), For trace type Instrumentation, time the function was running for in nanoseconds.
 
 The symbolization can be enabled or disabled in the `symbolize` under `trace_log` in the server's configuration file.
 
@@ -90,10 +90,10 @@ function_id:             231255
 function_name:           DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
 handler:                 profile
 entry_type:              Exit
-duration_microseconds:   58
+duration_nanoseconds:   58435
 ```
 
-The profiling information can be converted easily to Chrome's Event Trace Format creating the following query in a `chrome_trace.sql` file:
+The profiling data can be converted to Chrome's Event Trace Format with the following query. Save the query to a `chrome_trace.sql` file:
 
 ```sql
 WITH traces AS (

@@ -435,14 +435,21 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
 {
     using namespace std::chrono;
 
+    struct ProfileElement
+    {
+        TraceLogElement element;
+        high_resolution_clock::time_point time;
+    };
+
     /// This is the easiest way to do store the elements, because otherwise we'd need to have a mutex to protect a
     /// shared std::unordered_map. However, there might be a race condition in which this handler is already triggered
     /// on entry and the function is unpatched immediately afterwards. That's fine, since we're using the instrumented
     /// point ID to know for sure whether this execution is tight to the stored element or not.
     /// We also remove the element once we realize it's from a different generation, but it's not cleared until then.
-    static thread_local std::unordered_map<Int32, std::stack<TraceLogElement>> active_elements;
+    static thread_local std::unordered_map<Int32, std::stack<ProfileElement>> profile_elements;
 
-    auto now = std::chrono::system_clock::now();
+    auto now_high_res = std::chrono::high_resolution_clock::now();
+    auto now_system_clock = std::chrono::system_clock::now();
 
     LOG_TRACE(logger, "Profile ({}, function_id {})", instrumented_point.function_name, instrumented_point.function_id);
 
@@ -454,31 +461,33 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
             if (auto log = instrumented_point.context->getTraceLog())
                 log->add(element);
         }
-        active_elements[instrumented_point.function_id].push(std::move(element));
+        profile_elements[instrumented_point.function_id].emplace(std::move(element), now_high_res);
+
     }
     else if (entry_type == XRayEntryType::EXIT)
     {
-        auto it = active_elements.find(instrumented_point.function_id);
-        if (it != active_elements.end())
+        auto it = profile_elements.find(instrumented_point.function_id);
+        if (it != profile_elements.end())
         {
-            auto & element = it->second.top();
+            auto & top_entry = it->second.top();
+            auto & element = top_entry.element;
+            auto previous_time = top_entry.time;
 
             if (element.instrumented_point_id != instrumented_point.id)
             {
                 LOG_TRACE(logger, "Profile exit called for a different ID than the one set up. "
                     "Current ID is {}, but stored ID is {}. Instrumented point: {}",
                     instrumented_point.id, element.instrumented_point_id, instrumented_point.toString());
-                active_elements.erase(it);
+                profile_elements.erase(it);
                 return;
             }
 
-            auto now_us = duration_cast<microseconds>(now.time_since_epoch()).count();
-            auto start_us = Int64(element.event_time_microseconds);
+            auto now_us = duration_cast<microseconds>(now_system_clock.time_since_epoch()).count();
 
-            element.event_time = time_t(duration_cast<seconds>(now.time_since_epoch()).count());
+            element.event_time = time_t(duration_cast<seconds>(now_system_clock.time_since_epoch()).count());
             element.event_time_microseconds = Decimal64(now_us);
-            element.timestamp_ns = duration_cast<nanoseconds>(now.time_since_epoch()).count();
-            element.duration_microseconds = Decimal64(now_us - start_us);
+            element.timestamp_ns = duration_cast<nanoseconds>(now_system_clock.time_since_epoch()).count();
+            element.duration_nanoseconds = duration_cast<nanoseconds>(now_high_res - previous_time).count();
             element.entry_type = XRayEntryType::EXIT;
 
             if (instrumented_point.context)
@@ -490,7 +499,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
             it->second.pop();
 
             if (it->second.empty())
-                active_elements.erase(it);
+                profile_elements.erase(it);
         }
     }
 }
