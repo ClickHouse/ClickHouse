@@ -215,6 +215,12 @@ public:
         return create(variant_column_ptr->filter(filt, result_size_hint), variant_info, max_dynamic_types, global_max_dynamic_types);
     }
 
+    void filter(const Filter & filt) override
+    {
+        variant_column_ptr->filter(filt);
+        statistics.reset();
+    }
+
     void expand(const Filter & mask, bool inverted) override
     {
         variant_column_ptr->expand(mask, inverted);
