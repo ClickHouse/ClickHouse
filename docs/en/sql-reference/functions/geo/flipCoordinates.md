@@ -4,6 +4,7 @@ sidebar_label: 'Flip Coordinates'
 sidebar_position: 63
 slug: /sql-reference/functions/geo/flipCoordinates
 title: 'Flipping Coordinates'
+doc_type: 'reference'
 ---
 
 ## flipCoordinates {#flipcoordinates}
