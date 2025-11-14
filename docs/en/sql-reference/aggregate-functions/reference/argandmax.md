@@ -12,7 +12,7 @@ Calculates the `arg` and `val` value for a maximum `val` value. If there are mul
 Both parts the `arg` and the `max` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 :::note 
-The only difference between `argMax` is that `argAndMax` returns both argumnet and value.
+The only difference with `argMax` is that `argAndMax` returns both argument and value.
 :::
 
 **Syntax**
