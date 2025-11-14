@@ -77,7 +77,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
             if (!object_info->getObjectMetadata())
             {
-                auto meta = object_storage->tryGetObjectMetadata(path);
+                auto meta = object_storage->tryGetObjectMetadata(path, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
             }
