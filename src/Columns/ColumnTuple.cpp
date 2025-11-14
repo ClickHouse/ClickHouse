@@ -373,6 +373,12 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
 
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
+    if (columns.empty())
+    {
+        *memory = 0;
+        return memory + 1;
+    }
+
     for (const auto & column : columns)
         memory = column->serializeValueIntoMemory(n, memory);
 
@@ -381,6 +387,9 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 
 std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 {
+    if (columns.empty())
+        return 1;
+
     size_t res = 0;
     for (const auto & column : columns)
     {
