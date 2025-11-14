@@ -111,6 +111,30 @@ InConversion buildInConversion(
     return {std::move(lhs_dag), std::move(future_set)};
 }
 
+static void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
+{
+    for (const auto *& key : keys)
+    {
+        if (auto it = node_map.find(key); it != node_map.end())
+            key = it->second;
+    }
+}
+
+static ActionsDAG cloneSubDAGWithHeader(const SharedHeader & stream_header, ActionsDAG second_dag)
+{
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName());
+
+    auto outputs = second_dag.getOutputs();
+
+    ActionsDAG::NodeMapping node_map;
+    dag.mergeInplace(std::move(second_dag), node_map, true);
+    remapNodes(outputs, node_map);
+
+    dag.getOutputs() = outputs;
+
+    return dag;
+}
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -142,7 +166,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (join_operator.expression.empty())
         return 0;
 
-
     /// Only equality expressions are supported.
     std::vector<std::pair<JoinActionRef, JoinActionRef>> key_pairs;
     for (const auto & predicate : join_operator.expression)
@@ -159,40 +182,16 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return 0;
     }
 
-    const auto & join_output_header = join->getOutputHeader();
-
-    const auto & left_input_header = join->getInputHeaders().front();
-    const auto & right_input_header = join->getInputHeaders().back();
-
     bool build_set_from_left_part = false;
 
+    auto join_output_actions = join->getOutputActions();
     /// Check output columns come from one side.
-    {
-        auto hasAnyInSet = [](const SharedHeader & sub, const SharedHeader & super)
-        {
-            for (const auto & column : *sub)
-                if (super->has(column.name))
-                    return true;
-            return false;
-        };
+    if (!isInnerOrLeft(join_operator.kind) || std::ranges::any_of(join_output_actions, &JoinActionRef::fromRight))
+        return 0;
 
-        if (isInnerOrLeft(join_operator.kind) && !hasAnyInSet(right_input_header, join_output_header))
-        {
-            /// Transform right to IN
-        }
-        else
-            return 0;
-    }
-
-    /// Check input and output type.
-    {
-        const auto & output_header = join->getOutputHeader();
-        for (const auto & column_type_and_name : *output_header)
-        {
-            if (!left_input_header->getByName(column_type_and_name.name).type->equals(*column_type_and_name.type))
-                return 0;
-        }
-    }
+    /// Check input and output type match
+    if (!join->typeChangingSides().empty())
+        return 0;
 
     // {
     //     WriteBufferFromOwnString buf;
@@ -214,9 +213,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
     auto * lhs_in_node = parent_node->children.at(0);
-    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes);
+    makeExpressionNodeOnTopOf(*lhs_in_node, std::move(left_pre_join_actions), nodes, makeDescription("Calculate join left keys"));
     auto * rhs_in_node = parent_node->children.at(1);
-    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes);
+    makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes, makeDescription("Calculate join right keys"));
     parent_node->children.pop_back();
 
     /// Join equality does not match Nulls.
@@ -239,18 +238,22 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         lhs_in_node = &nodes.emplace_back(QueryPlan::Node{std::move(step), {lhs_in_node}});
     }
 
+    auto output_header = lhs_in_node->step->getOutputHeader();
     auto creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
-        lhs_in_node->step->getOutputHeader(),
+        output_header,
         PreparedSets::Subqueries{std::move(in_conversion.set)},
         settings.network_transfer_limits,
         nullptr);
 
+    auto join_output_actions_dag = cloneSubDAGWithHeader(output_header, JoinExpressionActions::getSubDAG(join_output_actions));
     creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimiation");
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};
 
-    /// JoinLogical is replaced to [Expression(left_pre_join_actions), Expression(IN), DelayedCreatingSets]
-    return 4;
+    makeExpressionNodeOnTopOf(*parent_node, std::move(join_output_actions_dag), nodes, makeDescription("Join output actions"));
+
+    /// JoinLogical is replaced to [Expression(left_pre_join_actions), Expression(IN), DelayedCreatingSets, Expression(join_output_actions)]
+    return 5;
 }
 
 }
