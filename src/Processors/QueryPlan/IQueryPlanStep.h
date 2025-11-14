@@ -122,11 +122,11 @@ public:
     /// Returns true if the step has implemented removeUnusedColumns.
     virtual bool canRemoveUnusedColumns() const { return false; }
 
-    enum class UnusedColumnRemovalResult
+    enum class RemovedUnusedColumns
     {
-        NothingChanged,
-        UpdatedButKeptInputs,
-        RemovedInputs
+        None,
+        OutputOnly,
+        OutputAndInput
     };
 
     /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
@@ -135,7 +135,7 @@ public:
     /// required_outputs and might contain some other columns too.
     /// Can be used only if canRemoveUnusedColumns returns true.
     /// The order of the remaining outputs must be preserved.
-    virtual UnusedColumnRemovalResult removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
+    virtual RemovedUnusedColumns removeUnusedColumns(NameMultiSet /*required_outputs*/, bool /*remove_inputs*/);
 
     /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
     virtual bool canRemoveColumnsFromOutput() const;

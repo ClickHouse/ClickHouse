@@ -105,7 +105,7 @@ bool ExpressionStep::canRemoveUnusedColumns() const
     return !hasDuplicatedNamesInInputOrOutputs(actions_dag);
 }
 
-IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
+IQueryPlanStep::RemovedUnusedColumns ExpressionStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in ExpressionStep");
@@ -150,7 +150,7 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
     // If the actions are not updated and no outputs has to be removed, then there is nothing to update
     // Note: required_outputs must be a subset of already existing outputs
     if (!updated_actions && output_header->columns() == required_output_count)
-        return UnusedColumnRemovalResult::NothingChanged;
+        return RemovedUnusedColumns::None;
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
@@ -170,12 +170,12 @@ IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(Na
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
 
-        return UnusedColumnRemovalResult::RemovedInputs;
+        return RemovedUnusedColumns::OutputAndInput;
     }
 
     updateOutputHeader();
 
-    return UnusedColumnRemovalResult::UpdatedButKeptInputs;
+    return RemovedUnusedColumns::OutputOnly;
 }
 
 bool ExpressionStep::canRemoveColumnsFromOutput() const

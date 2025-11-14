@@ -331,7 +331,7 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
     return !hasDuplicatedNamesInInputOrOutputs(*expression_actions.getActionsDAG());
 }
 
-IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
+IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
 {
     auto & actions_dag = *expression_actions.getActionsDAG();
     const auto input_count_before = actions_dag.getInputs().size();
@@ -412,7 +412,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
         });
 
     if (!removed_any_actions && !removed_any_output)
-        return UnusedColumnRemovalResult::NothingChanged;
+        return RemovedUnusedColumns::None;
 
     actions_dag.getOutputs().swap(new_outputs);
     actions_after_join = std::move(new_actions_after_join);
@@ -436,7 +436,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
     {
         update_source_mapping();
         updateOutputHeader();
-        return UnusedColumnRemovalResult::UpdatedButKeptInputs;
+        return RemovedUnusedColumns::OutputOnly;
     }
 
     /// Once we support repeated input/output names, we have to make sure the order of columns in input headers
@@ -465,7 +465,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(N
     updateInputHeaders(std::move(new_input_headers));
     updateOutputHeader();
 
-    return UnusedColumnRemovalResult::RemovedInputs;
+    return RemovedUnusedColumns::OutputAndInput;
 }
 
 bool JoinStepLogical::canRemoveColumnsFromOutput() const

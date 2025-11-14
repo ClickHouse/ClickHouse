@@ -88,14 +88,14 @@ bool canAllChildrenCanRemoveOutputs(const QueryPlan::Node & node)
         [](const QueryPlan::Node * child) { return child->step->canRemoveUnusedColumns() && child->step->canRemoveColumnsFromOutput(); });
 }
 
-bool updatedAnything(const IQueryPlanStep::UnusedColumnRemovalResult & result)
+bool updatedAnything(const IQueryPlanStep::RemovedUnusedColumns & result)
 {
-    return result != IQueryPlanStep::UnusedColumnRemovalResult::NothingChanged;
+    return result != IQueryPlanStep::RemovedUnusedColumns::None;
 }
 
-bool removedAnyInput(const IQueryPlanStep::UnusedColumnRemovalResult & result)
+bool removedAnyInput(const IQueryPlanStep::RemovedUnusedColumns & result)
 {
-    return result == IQueryPlanStep::UnusedColumnRemovalResult::RemovedInputs;
+    return result == IQueryPlanStep::RemovedUnusedColumns::OutputAndInput;
 }
 
 RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, QueryPlan::Node & node)
