@@ -26,7 +26,7 @@ The following query calculates `resets` values on the grid [90, 105, 120, 135, 1
 
 ```sql
 WITH
-    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window paramater
+    -- NOTE: the gap between 130 and 190 is to show how values are filled for ts = 180 according to window parameter
     [110, 120, 130, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
     [1, 3, 2, 6, 6, 4, 2, 0]::Array(Float32) AS values, -- array of values corresponding to timestamps above
     90 AS start_ts,       -- start of timestamp grid

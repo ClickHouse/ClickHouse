@@ -25,7 +25,7 @@ class SerializationSparse final : public ISerialization
 public:
     explicit SerializationSparse(const SerializationPtr & nested_);
 
-    Kind getKind() const override { return Kind::SPARSE; }
+    KindStack getKindStack() const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

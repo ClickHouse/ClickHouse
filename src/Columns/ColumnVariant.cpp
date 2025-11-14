@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
@@ -406,13 +407,17 @@ void ColumnVariant::get(size_t n, Field & res) const
         variants[discr]->get(offsetAt(n), res);
 }
 
-std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
+DataTypePtr ColumnVariant::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     Discriminator discr = localDiscriminatorAt(n);
     if (discr == NULL_DISCRIMINATOR)
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+    {
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+    }
 
-    return variants[discr]->getValueNameAndType(offsetAt(n));
+    return variants[discr]->getValueNameAndTypeImpl(name_buf, offsetAt(n), options);
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -1072,7 +1077,17 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
         }
 
         size_t new_size = new_variants[*non_empty_local_discr]->size();
-        return ColumnVariant::create(local_discriminators->cloneResized(new_size), offsets->cloneResized(new_size), std::move(new_variants), local_to_global_discriminators);
+        if (new_size <= size())
+            return ColumnVariant::create(local_discriminators->cloneResized(new_size), offsets->cloneResized(new_size), std::move(new_variants), local_to_global_discriminators);
+
+        auto new_discriminators = mutate(local_discriminators);
+        assert_cast<ColumnDiscriminators &>(*new_discriminators).getData().resize_fill(new_size, *non_empty_local_discr);
+        auto new_offsets = mutate(offsets);
+        auto & new_offsets_data = assert_cast<ColumnOffsets &>(*new_offsets).getData();
+        new_offsets_data.resize(new_size);
+        for (size_t i = size(); i != new_size; ++i)
+            new_offsets_data[i] = new_offsets_data[ssize_t(i) - 1] + 1;
+        return ColumnVariant::create(std::move(new_discriminators), std::move(new_offsets), std::move(new_variants), local_to_global_discriminators);
     }
 
     return selectIndexImpl(*this, indexes, limit);
@@ -1081,47 +1096,41 @@ ColumnPtr ColumnVariant::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnVariant::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    /// First, apply indexes for local_discriminators and offsets.
-    ColumnPtr new_local_discriminators = assert_cast<const ColumnDiscriminators &>(*local_discriminators).indexImpl(indexes, limit);
-    ColumnPtr new_offsets = assert_cast<const ColumnOffsets &>(*offsets).indexImpl(indexes, limit);
-    const auto & new_local_discriminators_data =  assert_cast<const ColumnDiscriminators &>(*new_local_discriminators).getData();
-    const auto & new_offsets_data = assert_cast<const ColumnOffsets &>(*new_offsets).getData();
-    /// Then, create permutation for each variant.
-    const size_t num_variants = variants.size();
-    std::vector<Permutation> nested_perms(num_variants);
-    /// If there is no limit, we know the size of each permutation
-    /// in advance and can use reserve.
+    assert(limit <= indexes.size());
     if (limit == 0)
+        return cloneEmpty();
+
+    /// Create indexes for each variant.
+    const size_t num_variants = variants.size();
+    std::vector<MutableColumnPtr> variant_indexes_columns(num_variants);
+    std::vector<ColumnUInt64::Container *> variant_indexes_data(num_variants);
+    for (size_t i = 0; i != num_variants; ++i)
     {
-        for (size_t i = 0; i != num_variants; ++i)
-            nested_perms[i].reserve_exact(variants[i]->size());
+        variant_indexes_columns[i] = ColumnUInt64::create();
+        variant_indexes_data[i] = &assert_cast<ColumnUInt64 &>(*variant_indexes_columns[i]).getData();
     }
 
-    for (size_t i = 0; i != new_local_discriminators_data.size(); ++i)
+    const auto & local_discriminators_data = getLocalDiscriminators();
+    const auto & offsets_data = getOffsets();
+    for (size_t i = 0; i != limit; ++i)
     {
-        Discriminator discr = new_local_discriminators_data[i];
+        auto discr = local_discriminators_data[indexes[i]];
         if (discr != NULL_DISCRIMINATOR)
-            nested_perms[discr].push_back(new_offsets_data[i]);
+            variant_indexes_data[discr]->push_back(offsets_data[indexes[i]]);
     }
 
+    ColumnPtr new_local_discriminators = assert_cast<const ColumnDiscriminators &>(*local_discriminators).indexImpl(indexes, limit);
     Columns new_variants;
     new_variants.reserve(num_variants);
     for (size_t i = 0; i != num_variants; ++i)
     {
         /// Check if no values from this variant were selected.
-        if (nested_perms[i].empty())
-        {
+        if (variant_indexes_data[i]->empty())
             new_variants.emplace_back(variants[i]->cloneEmpty());
-        }
         else
-        {
-            size_t nested_limit = nested_perms[i].size() == variants[i]->size() ? 0 : nested_perms[i].size();
-            new_variants.emplace_back(variants[i]->permute(nested_perms[i], nested_limit));
-        }
+            new_variants.emplace_back(variants[i]->index(*variant_indexes_columns[i], 0));
     }
 
-    /// We cannot use new_offsets column as an offset column, because it became invalid after variants permutation.
-    /// New offsets column will be created in constructor.
     return ColumnVariant::create(new_local_discriminators, new_variants, local_to_global_discriminators);
 }
 
@@ -1204,7 +1213,7 @@ ColumnPtr ColumnVariant::replicate(const Offsets & replicate_offsets) const
     return ColumnVariant::create(new_local_discriminators, new_variants, local_to_global_discriminators);
 }
 
-MutableColumns ColumnVariant::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns ColumnVariant::scatter(size_t num_columns, const Selector & selector) const
 {
     const size_t num_variants = variants.size();
 
@@ -1748,7 +1757,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
@@ -1765,7 +1774,7 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source
     }
 
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

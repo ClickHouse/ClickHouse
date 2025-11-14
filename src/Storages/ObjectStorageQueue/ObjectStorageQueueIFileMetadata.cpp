@@ -377,7 +377,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reset non-processing state: {}", state);
 
     SCOPE_EXIT({
-        file_status->reset();
+        (*file_status).reset();
     });
 
     Coordination::Requests requests;

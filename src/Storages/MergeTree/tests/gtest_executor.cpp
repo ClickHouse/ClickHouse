@@ -1,14 +1,15 @@
 #include <gtest/gtest.h>
 
-#include <atomic>
-#include <barrier>
-#include <memory>
-#include <random>
-#include <functional>
-
 #include <Common/Exception.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
+
+#include <atomic>
+#include <barrier>
+#include <functional>
+#include <memory>
+#include <random>
+#include <thread>
 
 
 using namespace DB;
@@ -115,7 +116,7 @@ TEST(Executor, Simple)
 {
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         1, // threads
         100, // max_tasks
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
@@ -162,7 +163,7 @@ TEST(Executor, RemoveTasks)
 
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         tasks_kinds,
         tasks_kinds * batch,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
@@ -207,7 +208,7 @@ TEST(Executor, RemoveTasksStress)
 
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         tasks_kinds,
         tasks_kinds * batch * (schedulers_count + removers_count),
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
@@ -262,7 +263,7 @@ TEST(Executor, UpdatePolicy)
 {
     auto executor = std::make_shared<DB::MergeTreeBackgroundExecutor<DynamicRuntimeQueue>>
     (
-        "GTest",
+        ThreadName::TEST_SCHEDULER,
         1, // threads
         100, // max_tasks
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
