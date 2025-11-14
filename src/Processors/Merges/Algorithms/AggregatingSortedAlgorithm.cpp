@@ -142,8 +142,9 @@ AggregatingSortedAlgorithm::SimpleAggregateDescription::~SimpleAggregateDescript
 AggregatingSortedAlgorithm::AggregatingMergedData::AggregatingMergedData(
     UInt64 max_block_size_rows_,
     UInt64 max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_,
     ColumnsDefinition & def_)
-    : MergedData(false, max_block_size_rows_, max_block_size_bytes_), def(def_)
+    : MergedData(false, max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_), def(def_)
 {
 }
 
@@ -257,15 +258,17 @@ AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     size_t num_inputs,
     SortDescription description_,
     size_t max_block_size_rows_,
-    size_t max_block_size_bytes_)
+    size_t max_block_size_bytes_,
+    std::optional<size_t> max_dynamic_subcolumns_)
     : IMergingAlgorithmWithDelayedChunk(header_, num_inputs, description_)
     , columns_definition(defineColumns(*header_, description_))
-    , merged_data(max_block_size_rows_, max_block_size_bytes_, columns_definition)
+    , merged_data(max_block_size_rows_, max_block_size_bytes_, max_dynamic_subcolumns_, columns_definition)
 {
 }
 
 void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 {
+    removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
     merged_data.initialize(*header, inputs);
 
@@ -278,6 +281,7 @@ void AggregatingSortedAlgorithm::initialize(Inputs inputs)
 
 void AggregatingSortedAlgorithm::consume(Input & input, size_t source_num)
 {
+    removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
     preprocessChunk(input.chunk, columns_definition);
     updateCursor(input, source_num);

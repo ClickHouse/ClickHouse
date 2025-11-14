@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
+from typing import List, Tuple
 
 from ci.jobs.scripts.integration_tests_configs import IMAGES_ENV, get_optimal_test_batch
 from ci.praktika.info import Info
@@ -14,10 +15,9 @@ temp_path = f"{repo_dir}/ci/tmp"
 MAX_FAILS_BEFORE_DROP = 5
 OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 ncpu = Utils.cpu_count()
-mem_gb = round(Utils.physical_memory() / (1024**3), 1)
+mem_gb = round(Utils.physical_memory() // (1024**3), 1)
 MAX_CPUS_PER_WORKER = 4
 MAX_MEM_PER_WORKER = 7
-MAX_WORKERS = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
 
 def _start_docker_in_docker():
@@ -73,11 +73,66 @@ def parse_args():
         type=str,
         default="",
     )
+    parser.add_argument(
+        "--workers",
+        help="Optional. Number of parallel workers for pytest",
+        default=None,
+        type=int,
+    )
     return parser.parse_args()
 
 
 FLAKY_CHECK_TEST_REPEAT_COUNT = 3
 FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
+
+
+def tests_to_run(
+    batch_num: int, total_batches: int, args_test: List[str], workers: int
+) -> Tuple[List[str], List[str]]:
+    if args_test:
+        batch_num = 1
+        total_batches = 1
+
+    test_files = [
+        str(p.relative_to("./tests/integration/"))
+        for p in Path("./tests/integration/").glob("test_*/test*.py")
+    ]
+
+    assert len(test_files) > 100
+
+    parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
+        test_files, total_batches, batch_num, workers
+    )
+    if not args_test:
+        return parallel_test_modules, sequential_test_modules
+
+    # there are following possible values for args.test:
+    # 1) test suit (e.g. test_directory or test_directory/)
+    # 2) test module (e.g. test_directory/test_module or test_directory/test_module.py)
+    # 3) test case (e.g. test_directory/test_module.py::test_case or test_directory/test_module::test_case[test_param])
+    def test_match(test_file: str, test_arg: str) -> bool:
+        if "/" not in test_arg:
+            return f"{test_arg}/" in test_file
+        if test_arg.endswith(".py"):
+            return test_file == test_arg
+        test_arg = test_arg.split("::", maxsplit=1)[0]
+        return test_file.removesuffix(".py") == test_arg.removesuffix(".py")
+
+    parallel_tests = []
+    sequential_tests = []
+    for test_arg in args_test:
+        matched = False
+        for test_file in parallel_test_modules:
+            if test_match(test_file, test_arg):
+                parallel_tests.append(test_arg)
+                matched = True
+        for test_file in sequential_test_modules:
+            if test_match(test_file, test_arg):
+                sequential_tests.append(test_arg)
+                matched = True
+        assert matched, f"Test [{test_arg}] not found"
+
+    return parallel_tests, sequential_tests
 
 
 def main():
@@ -92,7 +147,6 @@ def main():
     is_bugfix_validation = False
     is_parallel = False
     is_sequential = False
-    workers = MAX_WORKERS
     java_path = Shell.get_output(
         "update-alternatives --config java | sed -n 's/.*(providing \/usr\/bin\/java): //p'",
         verbose=True,
@@ -113,7 +167,6 @@ def main():
             use_distributed_plan = True
         elif to == "flaky":
             is_flaky_check = True
-            args.count = FLAKY_CHECK_TEST_REPEAT_COUNT
         elif to == "parallel":
             is_parallel = True
         elif to == "sequential":
@@ -123,8 +176,15 @@ def main():
         else:
             assert False, f"Unknown job option [{to}]"
 
-    if args.count:
-        repeat_option = f"--count {args.count} --random-order"
+    if args.count or is_flaky_check:
+        repeat_option = (
+            f"--count {args.count or FLAKY_CHECK_TEST_REPEAT_COUNT} --random-order"
+        )
+
+    if args.workers:
+        workers = args.workers
+    else:
+        workers = min(ncpu // MAX_CPUS_PER_WORKER, mem_gb // MAX_MEM_PER_WORKER) or 1
 
     changed_test_modules = []
     if is_bugfix_validation or is_flaky_check:
@@ -185,28 +245,8 @@ def main():
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
-    test_files = []
-    for dir_name in os.listdir("./tests/integration/"):
-        if dir_name.startswith("test_"):
-            test_files.extend(
-                [
-                    os.path.join(dir_name, file_name)
-                    for file_name in os.listdir(
-                        os.path.join("./tests/integration/", dir_name)
-                    )
-                    if file_name.endswith(".py") and file_name.startswith("test")
-                ]
-            )
-    test_files = [
-        f"{dir_name}/{file_name}".replace("./tests/integration/", "")
-        for dir_name, file_name in [
-            test_file.rsplit("/", 1) for test_file in test_files
-        ]
-    ]
-    assert len(test_files) > 100
-
-    parallel_test_modules, sequential_test_modules = get_optimal_test_batch(
-        test_files, total_batches, batch_num, workers
+    parallel_test_modules, sequential_test_modules = tests_to_run(
+        batch_num, total_batches, args.test, workers
     )
 
     if is_bugfix_validation or is_flaky_check:
@@ -249,67 +289,52 @@ def main():
         "JAVA_PATH": java_path,
     }
     test_results = []
-    files = []
+    failed_tests_files = []
 
     has_error = False
     error_info = []
 
-    if args.test:
-        test_result_specific = Result.from_pytest_run(
-            command=f"{' '.join(args.test)} {'--pdb' if args.debug else ''} {repeat_option}",
-            cwd="./tests/integration/",
-            env=test_env,
-            pytest_report_file=f"{temp_path}/pytest.jsonl",
-        )
-        test_results.extend(test_result_specific.results)
-        if test_result_specific.files:
-            files.extend(test_result_specific.files)
-    else:
-        module_repeat_cnt = 1 if not is_flaky_check else FLAKY_CHECK_MODULE_REPEAT_COUNT
-        if parallel_test_modules:
-            for attempt in range(module_repeat_cnt):
-                test_result_parallel = Result.from_pytest_run(
-                    command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
-                    cwd="./tests/integration/",
-                    env=test_env,
-                    pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
+    module_repeat_cnt = 1 if not is_flaky_check else FLAKY_CHECK_MODULE_REPEAT_COUNT
+    if parallel_test_modules:
+        for attempt in range(module_repeat_cnt):
+            test_result_parallel = Result.from_pytest_run(
+                command=f"{' '.join(reversed(parallel_test_modules))} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option}",
+                cwd="./tests/integration/",
+                env=test_env,
+                pytest_report_file=f"{temp_path}/pytest_parallel.jsonl",
+            )
+            if is_flaky_check and not test_result_parallel.is_ok():
+                print(
+                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                 )
-                if not test_result_parallel.is_ok():
-                    print(
-                        f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
-                    )
-                    break
-            test_results.extend(test_result_parallel.results)
-            if test_result_parallel.files:
-                files.extend(test_result_parallel.files)
-            if test_result_parallel.is_error():
-                has_error = True
-                error_info.append(test_result_parallel.info)
+                break
+        test_results.extend(test_result_parallel.results)
+        if test_result_parallel.files:
+            failed_tests_files.extend(test_result_parallel.files)
+        if test_result_parallel.is_error():
+            has_error = True
+            error_info.append(test_result_parallel.info)
 
-        fail_num = len([r for r in test_results if not r.is_ok()])
-        if (
-            sequential_test_modules
-            and fail_num < MAX_FAILS_BEFORE_DROP
-            and not has_error
-        ):
-            for attempt in range(module_repeat_cnt):
-                test_result_sequential = Result.from_pytest_run(
-                    command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
-                    env=test_env,
-                    cwd="./tests/integration/",
-                    pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+    fail_num = len([r for r in test_results if not r.is_ok()])
+    if sequential_test_modules and fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
+        for attempt in range(module_repeat_cnt):
+            test_result_sequential = Result.from_pytest_run(
+                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile",
+                env=test_env,
+                cwd="./tests/integration/",
+                pytest_report_file=f"{temp_path}/pytest_sequential.jsonl",
+            )
+            if is_flaky_check and not test_result_sequential.is_ok():
+                print(
+                    f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
                 )
-                if not test_result_sequential.is_ok():
-                    print(
-                        f"Flaky check: Test run fails after attempt [{attempt+1}/{module_repeat_cnt}] - break"
-                    )
-                    break
-            test_results.extend(test_result_sequential.results)
-            if test_result_sequential.files:
-                files.extend(test_result_sequential.files)
-            if test_result_sequential.is_error():
-                has_error = True
-                error_info.append(test_result_sequential.info)
+                break
+        test_results.extend(test_result_sequential.results)
+        if test_result_sequential.files:
+            failed_tests_files.extend(test_result_sequential.files)
+        if test_result_sequential.is_error():
+            has_error = True
+            error_info.append(test_result_sequential.info)
 
     # Remove iptables rule added in tests
     Shell.check("sudo iptables -D DOCKER-USER 1 ||:", verbose=True)
@@ -317,7 +342,7 @@ def main():
     if not info.is_local_run:
         print("Dumping dmesg")
         Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        files.append("dmesg.log")
+        failed_tests_files.append("dmesg.log")
         with open("dmesg.log", "rb") as dmesg:
             dmesg = dmesg.read()
             if (
@@ -331,16 +356,27 @@ def main():
                     )
                 )
 
+    files = []
     if not info.is_local_run:
         failed_suits = []
+        # Collect docker compose configs used in tests
+        config_files = [
+            str(p)
+            for p in Path("./tests/integration/").glob("test_*/_instances*/*/configs/")
+        ]
         for test_result in test_results:
             if not test_result.is_ok() and ".py" in test_result.name:
                 failed_suits.append(test_result.name.split("/")[0])
         failed_suits = list(set(failed_suits))
         for failed_suit in failed_suits:
-            files.append(f"tests/integration/{failed_suit}")
+            failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        files = [Utils.compress_files_gz(files, f"{temp_path}/logs.tar.gz")]
+        files.append(
+            Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
+        )
+        files.append(
+            Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
+        )
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
 

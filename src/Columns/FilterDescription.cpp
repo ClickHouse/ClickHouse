@@ -62,41 +62,35 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     }
 }
 
-/// Here we check for ColumnUInt8.
-/// If the argument has a different type, convert it to ColumnUInt8.
-/// If the argument is ColumnUInt8, check if we own it to avoid copying.
-/// Fill the filter if we own the column and can modify the data later.
-/// For ColumnUInt8 which is shared, return the fererence to existing filter.
-static const IColumnFilter & unpackOrConvertFilter(ColumnPtr & column, std::optional<IColumnFilter> & filter)
+/// Extracts or converts filter data out of ColumnVector<some int or float>.
+/// If we own the resulting filter, returns it and possibly resets `column` to nullptr.
+/// If `column` is a shared ColumnUInt8, returns nullopt.
+static std::optional<IColumnFilter> unpackOrConvertFilter(ColumnPtr & column)
 {
-    if (const auto * column_uint8 = typeid_cast<const ColumnUInt8 *>(column.get()))
+    if (typeid_cast<const ColumnUInt8 *>(column.get()))
     {
         if (column->use_count() == 1)
         {
+            /// Move the data out of the column so that the caller can mutate it without copying.
             auto mut_col = IColumn::mutate(std::move(column));
-            filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
-            return *filter;
+            auto filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
+            column = nullptr;
+            return std::make_optional(std::move(filter));
         }
         else
-            return column_uint8->getData();
+            return std::nullopt;
     }
 
     IColumnFilter res(column->size());
     if (!tryConvertAnyColumnToBool(*column, res))
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Illegal type {} of column for filter. Must be Number or Nullable(Number).", column->getName());
-    filter = std::move(res);
-    return *filter;
+    return std::make_optional(std::move(res));
 }
 
-FilterDescription::FilterDescription(const IColumn & column_)
+ColumnPtr FilterDescription::preprocessFilterColumn(ColumnPtr column)
 {
-    ColumnPtr column = column_.getPtr();
-    if (column_.isSparse())
-        column = column_.convertToFullColumnIfSparse();
-
-    if (column_.lowCardinality())
-        column = column_.convertToFullColumnIfLowCardinality();
+    column = column->convertToFullIfNeeded();
 
     ColumnPtr null_map_column;
     if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
@@ -105,10 +99,7 @@ FilterDescription::FilterDescription(const IColumn & column_)
         column = nullable_column->getNestedColumnPtr();
     }
 
-    std::optional<IColumnFilter> column_filter;
-    /// We pass argument by reference, so for UInt8 or Nullable(UInt8) column we return the reference to existing filter.
-    /// If the conversion or cast happened, column_filter will contain the newly-created data, so we avoid extra copying.
-    data = &unpackOrConvertFilter(column, column_filter);
+    auto column_filter = unpackOrConvertFilter(column);
 
     if (null_map_column)
     {
@@ -117,7 +108,6 @@ FilterDescription::FilterDescription(const IColumn & column_)
             /// If we don't own the filter yet, the copy will happen here.
             auto mut_col = IColumn::mutate(std::move(column));
             column_filter = std::move(assert_cast<ColumnUInt8 &>(*mut_col).getData());
-            data = &*column_filter;
         }
 
         const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
@@ -138,9 +128,16 @@ FilterDescription::FilterDescription(const IColumn & column_)
     {
         auto col = ColumnUInt8::create();
         col->getData() = std::move(*column_filter);
-        data = &col->getData();
-        data_holder = std::move(col);
+        column = std::move(col);
     }
+
+    return column; // NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
+}
+
+FilterDescription::FilterDescription(const IColumn & column_)
+{
+    data_holder = preprocessFilterColumn(column_.getPtr());
+    data = &assert_cast<const ColumnUInt8 &>(*data_holder).getData();
 }
 
 ColumnPtr FilterDescription::filter(const IColumn & column, ssize_t result_size_hint) const

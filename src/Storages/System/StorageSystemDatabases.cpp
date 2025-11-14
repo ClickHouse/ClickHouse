@@ -12,10 +12,17 @@
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
+}
+
 
 ColumnsDescription StorageSystemDatabases::getColumnsDescription()
 {
@@ -113,8 +120,8 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
-
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto & settings = context->getSettingsRef();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     ColumnPtr filtered_databases_column = getFilteredDatabases(databases, predicate, context);
 
     for (size_t i = 0; i < filtered_databases_column->size(); ++i)

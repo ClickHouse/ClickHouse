@@ -131,7 +131,7 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
 
 void Prefetcher::finalizeRanges()
 {
-    bool already_finalized = ranges_finalized.exchange(true);
+    bool already_finalized = ranges_finalized.exchange(true);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
     chassert(!already_finalized);
     auto & ranges = range_sets[0].ranges;
     std::sort(ranges.begin(), ranges.end(), [](const RangeState & a, const RangeState & b)

@@ -464,7 +464,7 @@ void FlatDictionary::updateData()
             if (!block.rows())
                 continue;
 
-            convertToFullIfSparse(block);
+            removeSpecialColumnRepresentations(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)

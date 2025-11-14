@@ -6,11 +6,11 @@ description: 'Replaces all rows with the same primary key (or more accurately, w
 sidebar_label: 'AggregatingMergeTree'
 sidebar_position: 60
 slug: /engines/table-engines/mergetree-family/aggregatingmergetree
-title: 'AggregatingMergeTree'
+title: 'AggregatingMergeTree table engine'
 doc_type: 'reference'
 ---
 
-# AggregatingMergeTree
+# AggregatingMergeTree table engine
 
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
@@ -169,7 +169,7 @@ Run the `SELECT` query again, which will return the following output:
 
 In some cases, you might want to avoid pre-aggregating rows at insert time to shift the cost of aggregation from insert time
 to merge time. Ordinarily, it is necessary to include the columns which are not part of the aggregation in the `GROUP BY` 
-clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeaggregation) 
+clause of the materialized view definition to avoid an error. However, you can make use of the [`initializeAggregation`](/sql-reference/functions/other-functions#initializeAggregation) 
 function with setting `optimize_on_insert = 0` (it is turned on by default) to achieve this. Use of `GROUP BY` 
 is no longer required in this case:
 

@@ -24,12 +24,11 @@ namespace DB::Parquet
 {
 
 // TODO [parquet]:
-//  * column_mapper
-//  * allow_geoparquet_parser
-//  * test on files from https://github.com/apache/parquet-testing
+//  * either multistage PREWHERE or make query optimizer selectively move parts of the condition to prewhere instead of the whole condition
+//  * test on files from https://github.com/apache/parquet-testing and https://www.timestored.com/data/sample/parquet
+//  * look at issues in 00900_long_parquet_load.sh
 //  * check fields for false sharing, add cacheline padding as needed
 //  * make sure userspace page cache read buffer supports readBigAt
-//  * assert that memory usage is zero at the end, the reset()s are easy to miss
 //  * support newer parquet versions: https://github.com/apache/parquet-format/blob/master/CHANGES.md
 //  * make writer write DataPageV2
 //  * make writer write PageEncodingStats
@@ -37,8 +36,6 @@ namespace DB::Parquet
 //  * try adding [[unlikely]] to all ifs
 //  * try adding __restrict to pointers on hot paths
 //  * support or deprecate the preserve-order setting
-//  * stats (reuse the ones from the other PR?)
-//     - number of row groups that were split into chunks
 //  * add comments everywhere
 //  * progress indication and estimating bytes to read; allow negative total_bytes_to_read?
 //  * cache FileMetaData in something like SchemaCache
@@ -156,7 +153,7 @@ struct Reader
         size_t column_idx;
         /// Index in parquet `schema` (in FileMetaData).
         size_t schema_idx;
-        String name;
+        String name; // possibly mapped by ColumnMapper (e.g. using iceberg metadata)
         PageDecoderInfo decoder;
 
         DataTypePtr raw_decoded_type; // not Nullable
@@ -192,7 +189,7 @@ struct Reader
 
     struct OutputColumnInfo
     {
-        String name;
+        String name; // possibly mapped by ColumnMapper
         /// Range in primitive_columns.
         size_t primitive_start = 0;
         size_t primitive_end = 0;
@@ -455,8 +452,10 @@ struct Reader
     size_t total_primitive_columns_in_file = 0;
     std::vector<OutputColumnInfo> output_columns;
     /// Maps idx_in_output_block to index in output_columns. I.e.:
-    /// sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
-    std::vector<size_t> sample_block_to_output_columns_idx;
+    ///     sample_block_to_output_columns_idx[output_columns[i].idx_in_output_block] = i
+    /// nullopt if the column is produced by PREWHERE expression:
+    ///     prewhere_steps[?].idx_in_output_block == i
+    std::vector<std::optional<size_t>> sample_block_to_output_columns_idx;
 
     /// sample_block with maybe some columns added at the end.
     /// The added columns are used as inputs to prewhere expression, then discarded.

@@ -26,10 +26,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_STATISTICS;
+    extern const int INCORRECT_QUERY;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 enum StatisticsFileVersion : UInt16
@@ -95,22 +97,22 @@ void ColumnStatistics::merge(const ColumnStatisticsPtr & other)
 
 UInt64 IStatistics::estimateCardinality() const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Cardinality estimation is not implemented for this type of statistics");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
 }
 
 Float64 IStatistics::estimateEqual(const Field & /*val*/) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Equality estimation is not implemented for this type of statistics");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Equality estimation is not implemented for this type of statistics");
 }
 
 Float64 IStatistics::estimateLess(const Field & /*val*/) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Less-than estimation is not implemented for this type of statistics");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Less-than estimation is not implemented for this type of statistics");
 }
 
 Float64 IStatistics::estimateRange(const Range & /*range*/) const
 {
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Range estimation is not implemented for this type of statistics");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Range estimation is not implemented for this type of statistics");
 }
 
 /// Notes:
@@ -253,7 +255,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     UInt16 version;
     readIntBinary(version, buf);
     if (version != V0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown file format version: {}", version);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
@@ -342,7 +344,7 @@ void MergeTreeStatisticsFactory::validate(const ColumnStatisticsDescription & st
     {
         auto it = validators.find(type);
         if (it == validators.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", type);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", type);
 
         if (!it->second(desc, data_type))
             throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type '{}' does not support data type type {}", type, data_type->getName());
@@ -358,7 +360,7 @@ ColumnStatisticsDescription MergeTreeStatisticsFactory::cloneWithSupportedStatis
     {
         auto it = validators.find(entry.first);
         if (it == validators.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown statistic type '{}'", entry.first);
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Unknown statistic type '{}'", entry.first);
 
         if (it->second(entry.second, data_type))
             result.types_to_desc.insert(entry);

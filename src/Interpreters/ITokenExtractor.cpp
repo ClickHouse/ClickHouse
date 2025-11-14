@@ -20,31 +20,6 @@ namespace ErrorCodes
 namespace DB
 {
 
-std::vector<std::string_view> ITokenExtractor::getTokensView(const char * data, size_t length) const
-{
-    std::vector<std::string_view> tokens;
-
-    size_t cur = 0;
-    size_t token_start = 0;
-    size_t token_len = 0;
-
-    while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
-        tokens.emplace_back(data + token_start, token_len);
-
-    return tokens;
-}
-
-std::vector<std::string_view> NgramTokenExtractor::getTokensView(const char * data, size_t length) const
-{
-    if (length == 0)
-        return {};
-
-    if (length < n)
-        return std::vector<std::string_view>{{data, length}};
-
-    return ITokenExtractor::getTokensView(data, length);
-}
-
 bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
@@ -296,11 +271,6 @@ void DefaultTokenExtractor::substringToTokens(const char * data, size_t length, 
     }
 }
 
-SplitTokenExtractor::SplitTokenExtractor(const std::vector<String> & separators_)
-    : separators(separators_)
-{
-}
-
 namespace
 {
 
@@ -352,14 +322,6 @@ bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*lengt
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
-std::vector<std::string_view> NoOpTokenExtractor::getTokensView(const char * data, size_t length) const
-{
-    if (length == 0)
-        return {};
-
-    return {{data, length}};
-}
-
 bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     if (*pos == 0)
@@ -378,7 +340,8 @@ bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length
 }
 
 SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
-    : sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
+    : ITokenExtractorHelper(Type::SparseGram)
+    , sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
 {
 }
 

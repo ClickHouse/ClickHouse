@@ -1,16 +1,16 @@
 1
-Filter column: __text_index_idx_text_hasToken_0 (removed)
+Filter column: __text_index_idx_text_hasToken_085e7413c29346061f4779aace56199c (removed)
 Name: idx_text
 1
 Filter column: hasToken(lower(__table1.text), _CAST(\'hello\'_String, \'String\'_String)) (removed)
 1
-Filter column: __text_index_idx_text_hasAllTokens_0 (removed)
+Filter column: __text_index_idx_text_hasAllTokens_88af2da9d2b54687e40fc54faa64dcf6 (removed)
 Name: idx_text
 1
 Filter column: hasToken(__table1.text, \'Hello\'_String) (removed)
 1
-Filter column: __text_index_idx_text_hasToken_0 (removed)
+Filter column: __text_index_idx_text_hasToken_0e8aab2b09caebd5246da95a37cab465 (removed)
 Name: idx_text
 1
-Filter column: __text_index_idx_text_hasAllTokens_0 (removed)
+Filter column: __text_index_idx_text_hasAllTokens_7ae13ebd9e5d86daabbd76a520971ef3 (removed)
 Name: idx_text

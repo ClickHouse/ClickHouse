@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 #include <Common/CacheBase.h>
@@ -18,9 +18,16 @@
 namespace DB
 {
 
-class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
+
+struct ObjectMetadataEntry
+{
+    uint64_t file_size;
+    time_t last_modified;
+};
+using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
+using ObjectMetadataCachePtr = std::shared_ptr<CacheBase<UInt128, ObjectMetadataEntry>>;
 
 /// Object storage is used as a filesystem, in a limited form:
 /// - no directory concept, files only
@@ -38,18 +45,11 @@ private:
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
 protected:
-    struct ObjectMetadataEntry
-    {
-        uint64_t file_size;
-        time_t last_modified;
-    };
-    using ObjectMetadataEntryPtr = std::shared_ptr<ObjectMetadataEntry>;
-
     ObjectStoragePtr object_storage;
     const String storage_path_prefix;
     const String storage_path_full;
 
-    mutable std::optional<CacheBase<UInt128, ObjectMetadataEntry>> object_metadata_cache;
+    mutable ObjectMetadataCachePtr object_metadata_cache;
 
     mutable SharedMutex metadata_mutex;
 
@@ -88,8 +88,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
-
     bool isReadOnly() const override { return true; }
 
 private:
@@ -99,8 +97,8 @@ protected:
     /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
 
-    /// Returns a map of virtual filesystem paths to paths in the object storage.
-    virtual std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const { throwNotImplemented(); }
+    /// Returns an in-memory virtual filesystem tree.
+    virtual std::shared_ptr<InMemoryDirectoryTree> getFsTree() const { throwNotImplemented(); }
 
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };
@@ -143,6 +141,7 @@ public:
 
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
+    void removeRecursive(const std::string &) override;
 
     /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;

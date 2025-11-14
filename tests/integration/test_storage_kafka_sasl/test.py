@@ -5,8 +5,11 @@ from helpers.config_cluster import kafka_sasl_user, kafka_sasl_pass
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    with_kafka_sasl=True
+    main_configs=["configs/sasl_settings.xml"],
+    with_kafka_sasl=True,
+    stay_alive=True,
 )
+
 
 def get_kafka_producer(port):
     errors = []
@@ -72,3 +75,31 @@ def test_kafka_sasl(kafka_cluster):
     producer.flush()
 
     assert_eq_with_retry(instance, "SELECT value FROM test.messages", "test123")
+
+
+def test_kafka_sasl_settings_precedence(kafka_cluster):
+    # Test that SASL related settings in create query override those in config
+    config_with_wrong_passwords = """
+    <clickhouse>
+    <kafka>
+        <security_protocol>plaintext</security_protocol>
+        <sasl_mechanism>SCRAM-SHA-256</sasl_mechanism>
+        <sasl_username>wrong_user</sasl_username>
+        <sasl_password>wrong_password</sasl_password>
+        <consumer>
+            <security_protocol>ssl</security_protocol>
+            <sasl_mechanism>SCRAM-SHA-512</sasl_mechanism>
+            <sasl_username>wrong_user_2</sasl_username>
+            <sasl_password>wrong_password_2</sasl_password>
+        </consumer>
+    </kafka>
+</clickhouse>
+"""
+    config_file_path = "/etc/clickhouse-server/config.d/sasl_settings.xml"
+
+    try:
+        with instance.with_replace_config(config_file_path, config_with_wrong_passwords):
+            instance.restart_clickhouse()
+            test_kafka_sasl(kafka_cluster)
+    finally:
+        instance.restart_clickhouse()
