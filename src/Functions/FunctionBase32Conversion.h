@@ -14,7 +14,7 @@ struct Base32EncodeTraits
         auto const src_length = src_column.getChars().size();
         /// Every 5 bytes becomes 8 bytes in base32
         /// Add padding for incomplete blocks and round up
-        return ((src_length + 4) / 5) * 8 + src_column.size() * 7;
+        return ((src_length + src_column.size() * 4) / 5) * 8;
     }
 
     static size_t perform(std::string_view src, UInt8 * dst)
