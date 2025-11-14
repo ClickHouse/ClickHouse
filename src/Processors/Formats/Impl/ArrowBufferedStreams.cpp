@@ -182,7 +182,7 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
 RandomAccessFileFromRandomAccessReadBuffer::RandomAccessFileFromRandomAccessReadBuffer(SeekableReadBuffer & in_, size_t file_size_, std::shared_ptr<ThreadPool> io_pool_) : in(in_), file_size(file_size_), io_pool(std::move(io_pool_))
 {
     if (io_pool)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, "ArrowFile");
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(*io_pool, ThreadName::ARROW_FILE);
 }
 
 arrow::Result<int64_t> RandomAccessFileFromRandomAccessReadBuffer::GetSize()

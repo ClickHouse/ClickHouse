@@ -382,7 +382,7 @@ namespace
                 {
                     send_data_threads.emplace_back([thread_group, task = std::move(send_data_task), this]() mutable
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "SendToShellCmd");
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::SEND_TO_SHELL_CMD);
 
                         try
                         {
