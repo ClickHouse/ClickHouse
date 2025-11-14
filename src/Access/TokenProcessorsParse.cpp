@@ -36,15 +36,17 @@ std::unique_ptr<DB::ITokenProcessor> ITokenProcessor::parseTokenProcessor(
 
         if (is_static_key && !is_static_jwks && !is_remote_jwks)  /// StaticKeyJwtProcessor
         {
-            return std::make_unique<StaticKeyJwtProcessor>(processor_name, token_cache_lifetime, username_claim,
-                                                           config.getString(prefix + ".claims", ""),
-                                                           Poco::toLower(config.getString(prefix + ".algo")),
-                                                           config.getString(prefix + ".static_key", ""),
-                                                           config.getBool(prefix + ".static_key_in_base64", false),
-                                                           config.getString(prefix + ".public_key", ""),
-                                                           config.getString(prefix + ".private_key", ""),
-                                                           config.getString(prefix + ".public_key_password", ""),
-                                                           config.getString(prefix + ".private_key_password", ""));
+            StaticKeyJwtParams params;
+            params.algo = Poco::toLower(config.getString(prefix + ".algo"));
+            params.static_key = config.getString(prefix + ".static_key", "");
+            params.static_key_in_base64 = config.getBool(prefix + ".static_key_in_base64", false);
+            params.public_key = config.getString(prefix + ".public_key", "");
+            params.private_key = config.getString(prefix + ".private_key", "");
+            params.public_key_password = config.getString(prefix + ".public_key_password", "");
+            params.private_key_password = config.getString(prefix + ".private_key_password", "");
+            params.claims = config.getString(prefix + ".claims", "");
+
+            return std::make_unique<StaticKeyJwtProcessor>(processor_name, token_cache_lifetime, username_claim, params);
         }
         else if (!is_static_key && is_static_jwks && !is_remote_jwks)
         {

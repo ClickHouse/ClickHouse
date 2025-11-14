@@ -11,6 +11,8 @@
 namespace DB
 {
 
+using JWKSType = jwt::jwks<jwt::traits::kazuho_picojson>;
+
 /// JWKS (JSON Web Key Set) is a kind of a set of public keys that are used to validate JWT authenticity locally.
 /// They are usually exposed by identity providers (e.g. Keycloak) via a well-known URI (usually /.well-known/jwks.json)
 /// This interface is responsible for managing JWKS. Retrieving, caching and refreshing of JWKS happens here.
@@ -20,7 +22,7 @@ class IJWKSProvider
 public:
     virtual ~IJWKSProvider() = default;
 
-    virtual jwt::jwks<jwt::traits::kazuho_picojson> getJWKS() = 0;
+    virtual JWKSType getJWKS() = 0;
 };
 
 class JWKSClient : public IJWKSProvider
@@ -34,14 +36,14 @@ public:
     JWKSClient &operator=(const JWKSClient &) = delete;
     JWKSClient &operator=(JWKSClient &&) = delete;
 
-    jwt::jwks<jwt::traits::kazuho_picojson> getJWKS() override;
+    JWKSType getJWKS() override;
 
 private:
     size_t refresh_timeout;
     Poco::URI jwks_uri;
 
     std::shared_mutex mutex;
-    jwt::jwks<jwt::traits::kazuho_picojson> cached_jwks;
+    JWKSType cached_jwks;
     std::chrono::time_point<std::chrono::high_resolution_clock> last_request_send;
 };
 
@@ -59,12 +61,12 @@ public:
     explicit StaticJWKS(const StaticJWKSParams &params);
 
 private:
-    jwt::jwks<jwt::traits::kazuho_picojson> getJWKS() override
+    JWKSType getJWKS() override
     {
         return jwks;
     }
 
-    jwt::jwks<jwt::traits::kazuho_picojson> jwks;
+    JWKSType jwks;
 };
 
 }

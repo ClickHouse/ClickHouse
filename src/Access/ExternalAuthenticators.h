@@ -70,7 +70,7 @@ private:
     mutable LDAPCaches ldap_caches TSA_GUARDED_BY(mutex) ;
     std::optional<GSSAcceptorContext::Params> kerberos_params TSA_GUARDED_BY(mutex) ;
     std::unordered_map<String, HTTPAuthClientParams> http_auth_servers TSA_GUARDED_BY(mutex) ;
-    mutable std::unordered_map<String, std::unique_ptr<ITokenProcessor>> token_processors TSA_GUARDED_BY(mutex) ;s
+    mutable std::unordered_map<String, std::unique_ptr<ITokenProcessor>> token_processors TSA_GUARDED_BY(mutex) ;
 
     bool checkCredentialsAgainstProcessor(const ITokenProcessor & processor,
                                           TokenCredentials & credentials) const TSA_REQUIRES(mutex);

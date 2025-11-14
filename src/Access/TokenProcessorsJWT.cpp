@@ -158,36 +158,21 @@ bool check_claims(const String & claims, const picojson::value::object & payload
 
 }
 
-namespace
-{
-std::set<String> parseGroupsFromJsonArray(picojson::array groups_array)
-{
-    std::set<String> external_groups_names;
-
-    for (const auto & group : groups_array)
-    {
-        if (group.is<std::string>())
-            external_groups_names.insert(group.get<std::string>());
-    }
-
-    return external_groups_names;
-}
-}
-
 StaticKeyJwtProcessor::StaticKeyJwtProcessor(const String & processor_name_,
                                              UInt64 token_cache_lifetime_,
                                              const String & username_claim_,
-                                             const String & claims_,
-                                             const String & algo,
-                                             const String & static_key,
-                                             bool static_key_in_base64,
-                                             const String & public_key,
-                                             const String & private_key,
-                                             const String & public_key_password,
-                                             const String & private_key_password)
+                                             const StaticKeyJwtParams & params)
                                              : ITokenProcessor(processor_name_, token_cache_lifetime_, username_claim_),
-                                             claims(claims_)
+                                             claims(params.claims)
 {
+    const String & algo = params.algo;
+    const String & static_key = params.static_key;
+    bool static_key_in_base64 = params.static_key_in_base64;
+    const String & public_key = params.public_key;
+    const String & private_key = params.private_key;
+    const String & public_key_password = params.public_key_password;
+    const String & private_key_password = params.private_key_password;
+
     if (algo == "ps256"   ||
         algo == "ps384"   ||
         algo == "ps512"   ||

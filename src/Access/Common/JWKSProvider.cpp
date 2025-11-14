@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
 }
 
-jwt::jwks<jwt::traits::kazuho_picojson> JWKSClient::getJWKS()
+JWKSType JWKSClient::getJWKS()
 {
     std::shared_lock lock(mutex);
 
@@ -27,7 +27,7 @@ jwt::jwks<jwt::traits::kazuho_picojson> JWKSClient::getJWKS()
 
     if (diff < refresh_timeout)
     {
-        jwt::jwks <jwt::traits::kazuho_picojson> result(cached_jwks);
+        JWKSType result(cached_jwks);
         return result;
     }
 
@@ -58,7 +58,7 @@ jwt::jwks<jwt::traits::kazuho_picojson> JWKSClient::getJWKS()
 
     last_request_send = std::chrono::high_resolution_clock::now();
 
-    jwt::jwks<jwt::traits::kazuho_picojson> parsed_jwks;
+    JWKSType parsed_jwks;
 
     try
     {
