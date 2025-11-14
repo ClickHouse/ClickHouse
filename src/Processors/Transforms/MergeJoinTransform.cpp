@@ -392,7 +392,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
 
     // should match the structure of sample_block (after materialization)
     convertToFullIfConst(chunk);
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
 
     current_chunk = std::move(chunk);
     cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), current_chunk.getNumRows(), desc);
@@ -428,6 +428,9 @@ String FullMergeJoinCursor::dump() const
         fmt::join(row_dump, ", "));
 }
 
+/// clang-tidy-21 false positive, loses track during the brace-initialization of the std::array.
+/// error: Potential leak of memory pointed to by field '__value_' [clang-analyzer-cplusplus.NewDeleteLeaks,-warnings-as-errors]
+/// NOLINTBEGIN(clang-analyzer-cplusplus.NewDeleteLeaks)
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinKind kind_,
     JoinStrictness strictness_,
@@ -462,6 +465,7 @@ MergeJoinAlgorithm::MergeJoinAlgorithm(
         createCursor(*input_headers[1], on_clause_.key_names_right, strictness),
     };
 }
+/// NOLINTEND(clang-analyzer-cplusplus.NewDeleteLeaks)
 
 MergeJoinAlgorithm::MergeJoinAlgorithm(
     JoinPtr join_ptr,

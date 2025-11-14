@@ -205,7 +205,7 @@ public:
         res = (*this)[n];
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
 
     UInt64 get64(size_t n) const override;
 

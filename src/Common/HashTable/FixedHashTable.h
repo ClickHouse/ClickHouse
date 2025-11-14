@@ -52,14 +52,14 @@ struct FixedHashTableCell
 template <typename Cell>
 struct FixedHashTableStoredSize
 {
-    size_t m_size = 0;
+    std::atomic<size_t> m_size = 0;
 
-    size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size; }
-    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size == 0; }
+    size_t getSize(const Cell *, const typename Cell::State &, size_t) const { return m_size.load(); }
+    bool isEmpty(const Cell *, const typename Cell::State &, size_t) const { return m_size.load() == 0; }
 
-    void increaseSize() { ++m_size; }
-    void clearSize() { m_size = 0; }
-    void setSize(size_t to) { m_size = to; }
+    void increaseSize() { m_size.fetch_add(1); }
+    void clearSize() { m_size.store(0); }
+    void setSize(size_t to) { m_size.store(to); }
 };
 
 template <typename Cell>
@@ -118,6 +118,7 @@ class FixedHashTable : private boost::noncopyable, protected Allocator, protecte
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
     /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
     bool only_emplace_was_used_to_insert_data = true;
+    bool disable_min_max_optimization = false;
     size_t min = NUM_CELLS - 1;
     size_t max = 0;
 
@@ -131,6 +132,11 @@ protected:
     Cell * buf; /// A piece of memory for all elements.
 
     void alloc() { buf = reinterpret_cast<Cell *>(Allocator::alloc(NUM_CELLS * sizeof(Cell))); }
+
+    std::pair<UInt32, UInt32> getMinMaxIndex() const
+    {
+        return {min, max};
+    }
 
     void free()
     {
@@ -348,8 +354,13 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
-        if (x < min) min = x;
-        if (x > max) max = x;
+
+        if (!disable_min_max_optimization)
+        {
+            if (x < min) min = x;
+            if (x > max) max = x;
+        }
+
         this->increaseSize();
     }
 
@@ -379,7 +390,15 @@ public:
 
     /// Decide if we use the min/max optimization. `max < min` means the FixedHashtable is empty. The flag `only_emplace_was_used_to_insert_data`
     /// will check if the FixedHashTable will only use `emplace()` to insert the raw data.
-    bool ALWAYS_INLINE canUseMinMaxOptimization() const { return ((max >= min) && only_emplace_was_used_to_insert_data); }
+    /// `disable_min_max_optimization` means that the min/max optimization is disabled.
+    bool ALWAYS_INLINE canUseMinMaxOptimization() const
+    {
+        return (max >= min) &&  only_emplace_was_used_to_insert_data && !disable_min_max_optimization;
+    }
+
+    /// min/max optimization has to be disabled when FixedHashTable is used concurrently in certain scenarios.
+    /// For example, when aggregator merges single level aggregation state in parallel.
+    void ALWAYS_INLINE disableMinMaxOptimization() { disable_min_max_optimization = true; }
 
     const Cell * ALWAYS_INLINE firstPopulatedCell() const
     {
