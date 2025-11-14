@@ -40,6 +40,7 @@ set(ICUUC_SOURCES
 "${ICU_SOURCE_DIR}/common/errorcode.cpp"
 "${ICU_SOURCE_DIR}/common/filteredbrk.cpp"
 "${ICU_SOURCE_DIR}/common/filterednormalizer2.cpp"
+"${ICU_SOURCE_DIR}/common/fixedstring.cpp"
 "${ICU_SOURCE_DIR}/common/icudataver.cpp"
 "${ICU_SOURCE_DIR}/common/icuplug.cpp"
 "${ICU_SOURCE_DIR}/common/loadednormalizer2impl.cpp"
