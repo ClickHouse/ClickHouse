@@ -10,7 +10,7 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 template <bool is_plain_column = false>
@@ -40,8 +40,7 @@ static void deserializeAndInsert(StringRef str, IColumn & data_to)
         data_to.deserializeAndInsertAggregationStateValueFromArena(in);
         if (!in.eof())
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Extra bytes ({}) found after deserializing aggregation state",
-                in.available());
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Extra bytes ({}) found after deserializing aggregation state", in.available());
         }
     }
 }
