@@ -228,6 +228,8 @@ class ClickHouseProc:
         Start ClickHouse server with config installed with _install_config()
         """
         print(f"Starting ClickHouse server")
+        # check binary available and do decompression in the meantime
+        assert Shell.check("clickhouse --version", verbose=True)
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
         self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
         print("Command: ", self.start_cmd)
@@ -273,10 +275,8 @@ profiles:
         res = self._install_light()
         if not res:
             return False
-        # TODO figure out which ones are needed
         commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.ch_config_dir}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.ch_config_dir}/config.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
         ]
 
         c1 = """
@@ -296,13 +296,11 @@ profiles:
     <core_path>$PWD</core_path>
 </clickhouse>
 """
-        file_path = (
-            f"{self.ch_config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        )
+        file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{self.ch_config_dir}/config.d/core.xml"
+        file_path = f"{temp_dir}/config.d/core.xml"
         with open(file_path, "w") as file:
             file.write(c2)
         res = True
@@ -809,6 +807,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
 
+    def check_ch_is_oom_killed(self):
+        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
+            return Result.from_commands_run(
+                name="OOM in dmesg",
+                command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+            )
+        else:
+            return None
+
     def check_fatal_messages_in_logs(self):
         results = []
 
@@ -867,15 +874,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
-        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
-            results.append(
-                Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                )
-            )
-        else:
+        oom_check = self.check_ch_is_oom_killed()
+        if oom_check is None:
             print("WARNING: dmesg not enabled")
+        else:
+            results.append(oom_check)
         if Path(self.GDB_LOG).is_file():
             results.append(
                 Result.from_commands_run(

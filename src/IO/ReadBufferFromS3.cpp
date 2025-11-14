@@ -192,10 +192,14 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
-        stop_reason = fmt::format("EOF (read offset: {}/{})", offset.load(), read_until_position.load());
+        stop_reason = fmt::format("EOF (read offset: {}/{}, restricted seek: {})",
+                                  offset.load(), read_until_position.load(), restricted_seek);
         release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
+        /// We could get EOF only if read_until_position is not set,
+        /// otherwise we'd quit before impl->next().
+        chassert(!read_until_position);
         return false;
     }
 
