@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"cluster_table_function_split_granularity", "file", "file", "New setting."},
+            {"cluster_table_function_buckets_batch_size", 0, 0, "New setting."},
             {"arrow_flight_request_descriptor_type", "path", "path", "New setting. Type of descriptor to use for Arrow Flight requests: 'path' or 'command'. Dremio requires 'command'."},
             {"send_profile_events", true, true, "New setting. Whether to send profile events to the clients."},
             {"into_outfile_create_parent_directories", false, false, "New setting"},
