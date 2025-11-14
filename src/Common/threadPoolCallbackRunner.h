@@ -26,13 +26,13 @@ using ThreadPoolCallbackRunnerUnsafe = std::function<std::future<Result>(Callbac
 
 /// Creates CallbackRunner that runs every callback with 'pool->scheduleOrThrowOnError()'.
 template <typename Result, typename Callback = std::function<Result()>>
-ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, const std::string & thread_name)
+ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
     return [my_pool = &pool, thread_group = CurrentThread::getGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
         auto task = std::make_shared<std::packaged_task<Result()>>([thread_group, thread_name, my_callback = std::move(callback)]() mutable -> Result
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+            ThreadGroupSwitcher switcher(thread_group, thread_name);
 
             SCOPE_EXIT_SAFE(
             {
@@ -56,7 +56,7 @@ ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(
 }
 
 template <typename Result, typename T>
-std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, const std::string & thread_name, Priority priority = {})
+std::future<Result> scheduleFromThreadPoolUnsafe(T && task, ThreadPool & pool, ThreadName thread_name, Priority priority = {})
 {
     auto schedule = threadPoolCallbackRunnerUnsafe<Result, T>(pool, thread_name);
     return schedule(std::move(task), priority); /// NOLINT
@@ -71,7 +71,7 @@ class ThreadPoolCallbackRunnerLocal final
     static_assert(!std::is_same_v<PoolT, GlobalThreadPool>, "Scheduling tasks directly on GlobalThreadPool is not allowed because it doesn't set up CurrentThread. Create a new ThreadPool (local or in SharedThreadPools.h) or use ThreadFromGlobalPool.");
 
     PoolT & pool;
-    std::string thread_name;
+    ThreadName thread_name;
 
     enum TaskState
     {
@@ -101,7 +101,7 @@ class ThreadPoolCallbackRunnerLocal final
 
     /// Set promise result for non-void callbacks
     template <typename Function, typename FunctionResult>
-    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, const std::string & thread_name)
+    static void executeCallback(std::promise<FunctionResult> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
@@ -109,7 +109,7 @@ class ThreadPoolCallbackRunnerLocal final
         {
             FunctionResult res;
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+                ThreadGroupSwitcher switcher(thread_group, thread_name);
                 res = callback();
                 callback = {};
             }
@@ -124,14 +124,14 @@ class ThreadPoolCallbackRunnerLocal final
 
     /// Set promise result for void callbacks
     template <typename Function>
-    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, const std::string & thread_name)
+    static void executeCallback(std::promise<void> & promise, Function && callback, ThreadGroupPtr thread_group, ThreadName thread_name)
     {
         /// Release callback before setting value to the promise to avoid
         /// destruction of captured resources after waitForAllToFinish returns.
         try
         {
             {
-                ThreadGroupSwitcher switcher(thread_group, thread_name.c_str());
+                ThreadGroupSwitcher switcher(thread_group, thread_name);
                 callback();
                 callback = {};
             }
@@ -145,7 +145,7 @@ class ThreadPoolCallbackRunnerLocal final
     }
 
 public:
-    ThreadPoolCallbackRunnerLocal(PoolT & pool_, const std::string & thread_name_)
+    ThreadPoolCallbackRunnerLocal(PoolT & pool_, ThreadName thread_name_)
         : pool(pool_)
         , thread_name(thread_name_)
     {
@@ -256,7 +256,7 @@ public:
         mode = Mode::Manual;
     }
 
-    void initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_);
+    void initThreadPool(ThreadPool & pool_, size_t max_threads_, ThreadName thread_name_, ThreadGroupPtr thread_group_);
 
     /// Manual or Disabled.
     explicit ThreadPoolCallbackRunnerFast(Mode mode_);
@@ -286,7 +286,7 @@ private:
     Mode mode = Mode::Disabled;
     ThreadPool * pool = nullptr;
     size_t max_threads = 0;
-    std::string thread_name;
+    ThreadName thread_name;
     ThreadGroupPtr thread_group;
 
     std::mutex mutex;
@@ -391,7 +391,7 @@ private:
     std::condition_variable cv;
 };
 
-extern template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool &, const std::string &);
+extern template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool & thread_pool, ThreadName thread_name);
 extern template class ThreadPoolCallbackRunnerLocal<void>;
 
 }

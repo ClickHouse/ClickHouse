@@ -183,6 +183,7 @@ private:
 
     /// Disk where log is stored
     DiskPtr disk;
+    const bool disk_supports_writing_with_append;
 
     bool stopped{false};
 

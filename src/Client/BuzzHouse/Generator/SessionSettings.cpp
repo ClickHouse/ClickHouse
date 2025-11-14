@@ -375,7 +375,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"delta_lake_throw_on_engine_predicate_error", trueOrFalseSettingNoOracle},
     /// {"deduplicate_blocks_in_dependent_materialized_views", trueOrFalseSettingNoOracle},
     /// {"describe_compact_output", trueOrFalseSettingNoOracle},
-    {"describe_extend_object_types", trueOrFalseSettingNoOracle},
     {"describe_include_subcolumns", trueOrFalseSettingNoOracle},
     {"describe_include_virtual_columns", trueOrFalseSettingNoOracle},
     {"distinct_overflow_mode", overflowSetting},
@@ -619,7 +618,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_named_collections_queries", trueOrFalseSettingNoOracle},
     {"ignore_on_cluster_for_replicated_udf_queries", trueOrFalseSettingNoOracle},
     {"implicit_select", trueOrFalseSettingNoOracle},
-    {"implicit_transaction", trueOrFalseSettingNoOracle},
     {"input_format_allow_errors_num", CHSetting(highRange, {}, false)},
     {"input_format_allow_errors_ratio", CHSetting(probRange, {}, false)},
     {"input_format_allow_seeks", trueOrFalseSettingNoOracle},
@@ -1184,6 +1182,8 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_skip_indexes_if_final_exact_mode", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
     {"use_text_index_dictionary_cache", trueOrFalseSetting},
+    {"use_text_index_header_cache", trueOrFalseSetting},
+    {"use_text_index_postings_cache", trueOrFalseSetting},
     {"use_variant_as_common_type", CHSetting(trueOrFalse, {"0", "1"}, true)},
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
@@ -1249,6 +1249,10 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
     for (auto & setting : serverSettings2)
     {
         serverSettings.emplace(std::move(setting));
+    }
+    if (fc.allow_transactions)
+    {
+        serverSettings.insert({{"implicit_transaction", trueOrFalseSettingNoOracle}});
     }
 
     /// When measuring performance use bigger block sizes

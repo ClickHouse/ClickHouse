@@ -144,7 +144,8 @@ struct AggregateFunctionUniqExactData
     using Key = T;
 
     /// When creating, the hash table must be small.
-    using SingleLevelSet = HashSet<Key, HashCRC32<Key>, HashTableGrower<4>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 4)>>;
+    static constexpr size_t initial_size_degree = 4;
+    using SingleLevelSet = HashSetWithStackMemory<Key, HashCRC32<Key>, initial_size_degree>;
     using TwoLevelSet = TwoLevelHashSet<Key, HashCRC32<Key>>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -164,7 +165,8 @@ struct AggregateFunctionUniqExactData<String, is_able_to_parallelize_merge_>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+    static constexpr size_t initial_size_degree = 3;
+    using SingleLevelSet = HashSetWithStackMemory<Key, UInt128TrivialHash, initial_size_degree>;
     using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 
@@ -184,7 +186,8 @@ struct AggregateFunctionUniqExactData<IPv6, is_able_to_parallelize_merge_>
     using Key = UInt128;
 
     /// When creating, the hash table must be small.
-    using SingleLevelSet = HashSet<Key, UInt128TrivialHash, HashTableGrower<3>, HashTableAllocatorWithStackMemory<sizeof(Key) * (1 << 3)>>;
+    static constexpr size_t initial_size_degree = 3;
+    using SingleLevelSet = HashSetWithStackMemory<Key, UInt128TrivialHash, initial_size_degree>;
     using TwoLevelSet = TwoLevelHashSet<Key, UInt128TrivialHash>;
     using Set = UniqExactSet<SingleLevelSet, TwoLevelSet>;
 

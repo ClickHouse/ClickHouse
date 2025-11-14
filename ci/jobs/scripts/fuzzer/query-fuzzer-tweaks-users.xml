@@ -32,16 +32,75 @@
                     <readonly/>
                 </enable_analyzer>
 
-                <!-- This feature is broken, deprecated and will be removed. We don't want more reports about it -->
-                <allow_experimental_object_type>
-                    <readonly/>
-                </allow_experimental_object_type>
-
                 <!-- Prevent stack overflow -->
                 <max_ast_depth>
                     <readonly/>
                 </max_ast_depth>
             </constraints>
+
+            <!-- Allow all experimental features by default -->
+            <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
+            <allow_ddl>1</allow_ddl>
+            <allow_distributed_ddl>1</allow_distributed_ddl>
+            <allow_drop_detached>1</allow_drop_detached>
+            <allow_experimental_bfloat16_type>1</allow_experimental_bfloat16_type>
+            <allow_experimental_codecs>1</allow_experimental_codecs>
+            <allow_experimental_correlated_subqueries>1</allow_experimental_correlated_subqueries>
+            <allow_experimental_database_glue_catalog>1</allow_experimental_database_glue_catalog>
+            <allow_experimental_database_iceberg>1</allow_experimental_database_iceberg>
+            <allow_experimental_database_hms_catalog>1</allow_experimental_database_hms_catalog>
+            <allow_experimental_database_materialized_postgresql>1</allow_experimental_database_materialized_postgresql>
+            <allow_experimental_database_unity_catalog>1</allow_experimental_database_unity_catalog>
+            <allow_experimental_delta_kernel_rs>1</allow_experimental_delta_kernel_rs>
+            <allow_experimental_dynamic_type>1</allow_experimental_dynamic_type>
+            <allow_experimental_full_text_index>1</allow_experimental_full_text_index>
+            <allow_experimental_funnel_functions>1</allow_experimental_funnel_functions>
+            <allow_experimental_hash_functions>1</allow_experimental_hash_functions>
+            <allow_experimental_inverted_index>1</allow_experimental_inverted_index>
+            <allow_experimental_join_condition>1</allow_experimental_join_condition>
+            <allow_experimental_join_right_table_sorting>1</allow_experimental_join_right_table_sorting>
+            <allow_experimental_json_type>1</allow_experimental_json_type>
+            <allow_experimental_kafka_offsets_storage_in_keeper>1</allow_experimental_kafka_offsets_storage_in_keeper>
+            <allow_experimental_kusto_dialect>1</allow_experimental_kusto_dialect>
+            <allow_experimental_lightweight_update>1</allow_experimental_lightweight_update>
+            <allow_experimental_live_view>1</allow_experimental_live_view>
+            <allow_experimental_materialized_postgresql_table>1</allow_experimental_materialized_postgresql_table>
+            <allow_experimental_nlp_functions>1</allow_experimental_nlp_functions>
+            <allow_experimental_prql_dialect>1</allow_experimental_prql_dialect>
+            <allow_experimental_shared_set_join>1</allow_experimental_shared_set_join>
+            <allow_experimental_statistics>1</allow_experimental_statistics>
+            <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+            <allow_experimental_time_series_table>1</allow_experimental_time_series_table>
+            <allow_experimental_time_time64_type>1</allow_experimental_time_time64_type>
+            <allow_experimental_ts_to_grid_aggregate_function>1</allow_experimental_ts_to_grid_aggregate_function>
+            <allow_experimental_variant_type>1</allow_experimental_variant_type>
+            <allow_experimental_vector_similarity_index>1</allow_experimental_vector_similarity_index>
+            <allow_introspection_functions>1</allow_introspection_functions>
+            <allow_materialized_view_with_bad_select>1</allow_materialized_view_with_bad_select>
+            <allow_named_collection_override_by_default>1</allow_named_collection_override_by_default>
+            <allow_non_metadata_alters>1</allow_non_metadata_alters>
+            <allow_nonconst_timezone_arguments>1</allow_nonconst_timezone_arguments>
+            <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
+            <allow_nondeterministic_optimize_skip_unused_shards>1</allow_nondeterministic_optimize_skip_unused_shards>
+            <allow_not_comparable_types_in_comparison_functions>1</allow_not_comparable_types_in_comparison_functions>
+            <allow_not_comparable_types_in_order_by>1</allow_not_comparable_types_in_order_by>
+            <allow_settings_after_format_in_insert>1</allow_settings_after_format_in_insert>
+            <allow_suspicious_codecs>1</allow_suspicious_codecs>
+            <allow_suspicious_fixed_string_types>1</allow_suspicious_fixed_string_types>
+            <allow_suspicious_indices>1</allow_suspicious_indices>
+            <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+            <allow_suspicious_primary_key>1</allow_suspicious_primary_key>
+            <allow_suspicious_ttl_expressions>1</allow_suspicious_ttl_expressions>
+            <allow_suspicious_types_in_group_by>1</allow_suspicious_types_in_group_by>
+            <allow_suspicious_types_in_order_by>1</allow_suspicious_types_in_order_by>
+            <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
+            <enable_deflate_qpl_codec>1</enable_deflate_qpl_codec>
+            <enable_lightweight_delete>1</enable_lightweight_delete>
+            <enable_order_by_all>1</enable_order_by_all>
+            <enable_positional_arguments>1</enable_positional_arguments>
+            <enable_time_time64_type>1</enable_time_time64_type>
+            <enable_zstd_qat_codec>1</enable_zstd_qat_codec>
+            <input_format_parquet_allow_geoparquet_parser>1</input_format_parquet_allow_geoparquet_parser>
         </default>
     </profiles>
 </clickhouse>

@@ -245,7 +245,7 @@
         .table-addendum
         {
             position: absolute;
-            z-index: 1;
+            z-index: 999;
             display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
@@ -271,6 +271,14 @@
         .table:hover .table-addendum
         {
             display: inline-block;
+        }
+
+        .table-addendum-elem
+        {
+            display: block;
+            &:hover {
+                text-decoration: 1px underline dotted var(--element-background-color);
+            }
         }
 
         #main
@@ -530,13 +538,15 @@
             display: none;
             position: absolute;
             user-select: none;
-            right: 0;
-            top: -1.25em;
+            left: 0;
+            top: -1px;
+            transform: translateY(-100%);
             font-size: 75%;
             font-weight: normal;
             color: var(--misc-text-color);
-            z-index: 1;
             background: var(--element-background-color);
+            max-height: 5em;
+            white-space: pre;
         }
 
         th:hover .type-hint
@@ -1003,25 +1013,42 @@ async function loadTables(server_address, user, password, database, container) {
         let table_addendum = document.createElement('span');
         table_addendum.className = 'table-addendum';
 
-        let addendum = '';
-        if (+elem.total_bytes) addendum += formatReadableBytes(elem.total_bytes) + '\n';
-        if (+elem.total_rows) addendum += formatReadableRows(elem.total_rows) + ' rows\n';
-        addendum += elem.engine;
-        table_addendum.append(addendum);
-
-        table.appendChild(table_link);
-        table.appendChild(table_addendum);
-        tables_elem.appendChild(table);
-
-        table.addEventListener('click', e => {
-            const value = `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`;
+        const set_query_or_run = (e, value) => {
             if (query_area.value == value) {
                 /// Double click will run the query.
                 post();
             } else {
                 query_area.value = value;
             }
-        });
+            e.stopPropagation();
+        }
+
+        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = '${database}' AND table = '${elem.table}'`);
+
+        if (+elem.total_bytes) {
+            let bytes_elem = document.createElement('span');
+            bytes_elem.className = 'table-addendum-elem';
+            bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
+            bytes_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(bytes_elem);
+        }
+        if (+elem.total_rows) {
+            let rows_elem = document.createElement('span');
+            rows_elem.className = 'table-addendum-elem';
+            rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
+            rows_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(rows_elem);
+        }
+        let engine_elem = document.createElement('span');
+        engine_elem.textContent = elem.engine;
+        engine_elem.className = 'table-addendum-elem';
+        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        table_addendum.append(engine_elem);
+
+        table.appendChild(table_link);
+        table.appendChild(table_addendum);
+        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        tables_elem.appendChild(table);
     }
 
     if (json.data.length == 0) {

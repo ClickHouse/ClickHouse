@@ -1248,7 +1248,7 @@ void MutationsInterpreter::addStageIfNeeded(std::optional<UInt64> mutation_versi
 void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_stages, bool dry_run)
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, settings.can_execute);
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withExtendedObjects().withVirtuals();
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals();
 
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
 

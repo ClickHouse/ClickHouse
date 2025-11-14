@@ -226,7 +226,8 @@ private:
         const ColumnsWithTypeAndName & cols_src,
         const NameToTypeMap & type_mapping,
         JoinTableSide table_side,
-        NameToNameMap & key_column_rename);
+        NameToNameMap & key_column_rename,
+        const ContextPtr & context);
 
     std::optional<ActionsDAG> applyNullsafeWrapper(
         const ColumnsWithTypeAndName & cols_src,
@@ -236,7 +237,8 @@ private:
 
     std::optional<ActionsDAG> applyJoinUseNullsConversion(
         const ColumnsWithTypeAndName & cols_src,
-        const NameToNameMap & key_column_rename);
+        const NameToNameMap & key_column_rename,
+        const ContextPtr & context);
 
     void applyRename(JoinTableSide side, const NameToNameMap & name_map);
 
@@ -407,7 +409,8 @@ public:
     std::pair<std::optional<ActionsDAG>, std::optional<ActionsDAG>>
     createConvertingActions(
         const ColumnsWithTypeAndName & left_sample_columns,
-        const ColumnsWithTypeAndName & right_sample_columns);
+        const ColumnsWithTypeAndName & right_sample_columns,
+        const ContextPtr & context);
 
     void setAsofInequality(ASOFJoinInequality inequality) { asof_inequality = inequality; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }

@@ -155,7 +155,7 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
         if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
             query_scope.emplace(my_context);
 
-        setThreadName("Suggest");
+        setThreadName(ThreadName::SUGGEST);
 
         for (size_t retry = 0; retry < 10; ++retry)
         {

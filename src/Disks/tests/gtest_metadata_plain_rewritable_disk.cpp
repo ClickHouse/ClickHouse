@@ -1415,3 +1415,162 @@ TEST_F(MetadataPlainRewritableDiskTest, CreateHardLinkRootFiles)
         "./CreateHardLinkRootFiles/__root/f2",
     }));
 }
+
+TEST_F(MetadataPlainRewritableDiskTest, MoveVirtual)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("MoveVirtual");
+    auto object_storage = getObjectStorage("MoveVirtual");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C/D/E");
+        tx->createDirectoryRecursive("/A/B/C/X/Y");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/X"));
+
+    EXPECT_EQ(listAllBlobs("MoveVirtual"), std::vector<std::string>({
+        "./MoveVirtual/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./MoveVirtual/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+    }));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("/A/B/C", "/A/B/H");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/X"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/H"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/H/D"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/H/X"));
+
+    metadata = restartMetadataStorage("MoveVirtual");
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/X"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/H"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/H/D"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/H/X"));
+
+    EXPECT_EQ(listAllBlobs("MoveVirtual"), std::vector<std::string>({
+        "./MoveVirtual/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./MoveVirtual/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+    }));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, RemoveRecursiveVirtual)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("RemoveRecursiveVirtual");
+    auto object_storage = getObjectStorage("RemoveRecursiveVirtual");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C/D/E");
+        tx->createDirectoryRecursive("/A/B/C/X/Y");
+        tx->createDirectoryRecursive("/A/B/C/K/L");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/X"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/K"));
+
+    EXPECT_EQ(listAllBlobs("RemoveRecursiveVirtual"), std::vector<std::string>({
+        "./RemoveRecursiveVirtual/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./RemoveRecursiveVirtual/__meta/wcageakzukwtfkvkwibqrfhzrrlubsbg/prefix.path",
+        "./RemoveRecursiveVirtual/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+    }));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("/A/B/C/D");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D/E"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/X"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/K"));
+
+    metadata = restartMetadataStorage("RemoveRecursiveVirtual");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D/E"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/X"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/K"));
+
+    EXPECT_EQ(listAllBlobs("RemoveRecursiveVirtual"), std::vector<std::string>({
+        "./RemoveRecursiveVirtual/__meta/wcageakzukwtfkvkwibqrfhzrrlubsbg/prefix.path",
+        "./RemoveRecursiveVirtual/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+    }));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeRecursive("/A/B/C");
+        tx->commit();
+    }
+
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B"));
+
+    metadata = restartMetadataStorage("RemoveRecursiveVirtual");
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B"));
+
+    EXPECT_EQ(listAllBlobs("RemoveRecursiveVirtual"), std::vector<std::string>({}));
+}
+
+TEST_F(MetadataPlainRewritableDiskTest, VirtualSubpathTrim)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("VirtualSubpathTrim");
+    auto object_storage = getObjectStorage("VirtualSubpathTrim");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectoryRecursive("/A/B/C");
+        tx->createDirectoryRecursive("/A/B/C/D/E");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C/D/E"));
+
+    EXPECT_EQ(listAllBlobs("VirtualSubpathTrim"), std::vector<std::string>({
+        "./VirtualSubpathTrim/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+        "./VirtualSubpathTrim/__meta/ykwvvchguqasvfnkikaqtiebknfzafwv/prefix.path",
+    }));
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->removeDirectory("/A/B/C/D/E");
+        tx->commit();
+    }
+
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D/E"));
+
+    metadata = restartMetadataStorage("VirtualSubpathTrim");
+    EXPECT_TRUE(metadata->existsDirectory("/A/B/C"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D"));
+    EXPECT_FALSE(metadata->existsDirectory("/A/B/C/D/E"));
+
+    EXPECT_EQ(listAllBlobs("VirtualSubpathTrim"), std::vector<std::string>({
+        "./VirtualSubpathTrim/__meta/faefxnlkbtfqgxcbfqfjtztsocaqrnqn/prefix.path",
+    }));
+}

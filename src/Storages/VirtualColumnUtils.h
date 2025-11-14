@@ -58,7 +58,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 /// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
 /// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
 /// count optimization will be mistakenly applied to the query.
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result = true);
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, const ContextPtr & context, bool allow_partial_result = true);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -75,7 +75,7 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns);
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns = {});
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context, const NamesAndTypesList & hive_columns = {});
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
 
@@ -101,6 +101,7 @@ struct VirtualsForFileLikeStorage
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
+    const std::map<String, String> * tags { nullptr };
     std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
 };
 

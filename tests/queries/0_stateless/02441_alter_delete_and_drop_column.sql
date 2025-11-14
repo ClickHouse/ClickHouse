@@ -3,9 +3,9 @@
 
 create table mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
 set insert_keeper_fault_injection_probability=0;
+system stop merges mut;
 insert into mut values (1, 2, 3), (10, 20, 30);
 
-system stop merges mut;
 alter table mut delete where n = 10;
 
 -- a funny way to wait for a MUTATE_PART to be assigned

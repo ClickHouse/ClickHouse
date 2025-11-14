@@ -37,7 +37,7 @@ EXCLUDE=(
     02716_data.parquet
 )
 
-for NAME in $(find "$DATA_DIR"/*.parquet -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do
+for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do
     echo "=== Try load data from $NAME"
 
     # We want to read the file once and get both a hash of the whole data and a sample of a few

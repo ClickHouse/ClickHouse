@@ -47,12 +47,12 @@ using FunctionDivide = BinaryArithmeticOverloadResolver<DivideFloatingImpl, Name
 REGISTER_FUNCTION(Divide)
 {
     FunctionDocumentation::Description description = R"(
-    Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/sql-reference/data-types/float).
-    Integer division is provided by the `intDiv` function.
+Calculates the quotient of two values `a` and `b`. The result type is always [Float64](/sql-reference/data-types/float).
+Integer division is provided by the `intDiv` function.
 
-    :::note
-    Division by `0` returns `inf`, `-inf`, or `nan`.
-    :::
+:::note
+Division by `0` returns `inf`, `-inf`, or `nan`.
+:::
     )";
     FunctionDocumentation::Syntax syntax = "divide(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "Dividend"};

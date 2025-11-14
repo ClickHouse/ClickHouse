@@ -340,16 +340,15 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
 {
     bool can_use_32bit_part_offset = ranges.parent_ranges.max_part_offset <= std::numeric_limits<UInt32>::max();
 
-    /// Prepare the read processor with the current part and its read ranges.
-    /// This sets up internal state needed to read the projection data.
-    assert_cast<MergeTreeProjectionIndexSelectAlgorithm &>(*processor->algorithm).preparePartToRead(&ranges);
+    auto task = projection_index_read_pool->getTask(ranges);
+    MergeTreeProjectionIndexSelectAlgorithm algorithm;
     auto res = can_use_32bit_part_offset ? ProjectionIndexBitmap::create32() : ProjectionIndexBitmap::create64();
 
     /// Start reading chunks from the projection index reader.
     /// Each chunk contains a column of UInt64 offsets that we insert into the bitmap.
-    while (true)
+    while (!processor->is_cancelled && !task->isFinished())
     {
-        auto chunk = processor->read();
+        auto chunk = processor->readCurrentTask(*task, algorithm);
         if (chunk.chunk)
         {
             if (chunk.chunk.getNumRows() > 0)
@@ -380,9 +379,6 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
                     add_offsets(UInt64{});
             }
         }
-
-        if (chunk.is_finished)
-            break;
     }
 
     /// If the read was cancelled, return nullptr to avoid using an incomplete index bitmap.

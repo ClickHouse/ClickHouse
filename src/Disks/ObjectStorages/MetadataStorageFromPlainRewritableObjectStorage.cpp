@@ -55,7 +55,7 @@ constexpr auto ROOT_FOLDER_TOKEN = "__root";
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 {
     ThreadPool & pool = getIOThreadPool().get();
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "PlainRWMetaLoad");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
 
@@ -97,7 +97,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
         /// unlike blob storage, which has no concept of directories, therefore existsOrHasAnyChild
         /// is not applicable.
         auto common_key_prefix = fs::path(object_storage->getCommonKeyPrefix()) / "";
-        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0)->isValid();
+        bool has_data = object_storage->isRemote() ? object_storage->existsOrHasAnyChild(common_key_prefix) : object_storage->iterate(common_key_prefix, 0, /*with_tags=*/ false)->isValid();
         /// No metadata directory: legacy layout is likely in use.
         if (has_data && !has_metadata)
         {
@@ -116,10 +116,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
     try
     {
         /// Root folder is a special case. Files are stored as /__root/{file-name}.
-        for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(std::filesystem::path(object_storage->getCommonKeyPrefix()) / ROOT_FOLDER_TOKEN, 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
             remote_layout[""].file_names.insert(fs::path(iterator->current()->getPath()).filename());
 
-        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0); iterator->isValid(); iterator->next())
+        for (auto iterator = object_storage->iterate(metadata_key_prefix, 0, /*with_tags=*/ false); iterator->isValid(); iterator->next())
         {
             auto file = iterator->current();
             String path = file->getPath();
@@ -150,7 +150,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
 
             runner([remote_metadata_path, remote_path, path, metadata = file->metadata, &log, &settings, this, &remote_layout, &remote_layout_mutex]
             {
-                setThreadName("PlainRWMetaLoad");
+                DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
                 StoredObject object{path};
                 String local_path;
@@ -171,7 +171,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load)
                     /// Load the list of files inside the directory.
                     fs::path full_remote_path = object_storage->getCommonKeyPrefix() / remote_path;
                     size_t full_prefix_length = full_remote_path.string().size() + 1; /// common/key/prefix/randomlygenerated/
-                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0); dir_iterator->isValid(); dir_iterator->next())
+                    for (auto dir_iterator = object_storage->iterate(full_remote_path, 0, /*with_tags=*/ false); dir_iterator->isValid(); dir_iterator->next())
                     {
                         auto remote_file = dir_iterator->current();
                         String remote_file_path = remote_file->getPath();
@@ -278,13 +278,6 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsFileOrDirectory(cons
     return existsDirectory(path) || existsFile(path);
 }
 
-bool MetadataStorageFromPlainRewritableObjectStorage::supportsPartitionCommand(const PartitionCommand & command) const
-{
-    return command.type == PartitionCommand::DROP_PARTITION || command.type == PartitionCommand::DROP_DETACHED_PARTITION
-        || command.type == PartitionCommand::ATTACH_PARTITION || command.type == PartitionCommand::MOVE_PARTITION
-        || command.type == PartitionCommand::REPLACE_PARTITION;
-}
-
 bool MetadataStorageFromPlainRewritableObjectStorage::existsFile(const std::string & path) const
 {
     return fs_tree->existsFile(path);
@@ -304,10 +297,11 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
 {
     if (auto [exists, remote_info] = fs_tree->existsDirectory(path); exists)
     {
-        if (!remote_info)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
+        if (remote_info)
+            return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
 
-        return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
+        /// Let's return something in this case to unblock fs garbage cleanup.
+        return Poco::Timestamp::fromEpochTime(0);
     }
 
     if (auto object_metadata = getObjectMetadataEntryWithCache(path))

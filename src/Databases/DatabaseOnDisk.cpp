@@ -735,7 +735,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
-                setThreadName("DatabaseOnDisk");
+                DB::setThreadName(ThreadName::DATABASE_ON_DISK);
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);
@@ -927,9 +927,9 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
 
-void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
+void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const

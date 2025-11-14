@@ -81,7 +81,7 @@ public:
         if (!filter)
             return DataTypeUInt8().createColumnConst(input_rows_count, true);
 
-        auto data_column = arguments[1].column;
+        const auto & data_column = arguments[1];
 
         return filter->find(data_column);
     }

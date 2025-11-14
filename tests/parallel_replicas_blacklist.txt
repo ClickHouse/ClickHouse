@@ -100,8 +100,6 @@
 
     CANNOT_PARSE_TEXT
 02771_ignore_data_skipping_indices
-    minor: Object('json')   Cannot parse string 'str' as Int8: syntax error at begin of string. Note: there are toInt8OrZero and toInt8OrNull functions, which returns zero/NULL instead of throwing exception.: While executing Remote. (CANNOT_PARSE_TEXT) (in query: SELECT * FROM t_json_race WHERE 0 IN (SELECT sleep(0.05)) FORMAT Null
-01825_type_json_schema_race_long
 
     order is never guaranteed
     https://github.com/ClickHouse/ClickHouse/issues/63203
@@ -171,12 +169,6 @@
     https://github.com/ClickHouse/ClickHouse/issues/80440
     MULTIPLE_EXPRESSIONS_FOR_ALIAS
 03121_analyzer_filed_redefenition_in_subquery
-
-    Correlated subqueries are not supported
-    Cannot clone ReadFromPreparedSource plan step. (NOT_IMPLEMENTED)
-03448_analyzer_correlated_subquery_in_projection
-03412_analyzer_correlated_subquery_bug
-03399_analyzer_correlated_subquery
 
     Transactions
 02421_truncate_isolation_no_merges

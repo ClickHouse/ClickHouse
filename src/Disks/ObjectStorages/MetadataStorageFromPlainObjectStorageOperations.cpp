@@ -109,7 +109,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
     auto event = object_storage->getMetadataStorageMetrics().directory_created;
     ProfileEvents::increment(event);
-    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path);
+    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path, /*with_tags=*/ false);
     fs_tree.recordDirectoryPath(path, DirectoryRemoteInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
     created_directory = true;
 }
@@ -203,12 +203,12 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
     constexpr bool validate_content = false;
 #endif
 
-    if (auto [exists, remote_info] = fs_tree.existsDirectory(path_from); !exists)
+    if (!fs_tree.existsDirectory(path_from).first)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path_from);
-    else if (!remote_info.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path_from);
     else if (fs_tree.existsDirectory(path_to).first)
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory '{}' already exists", path_to);
+    else if (path_from == "/")
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't move root folder");
 
     from_tree_info = fs_tree.getSubtreeRemoteInfo(path_from);
 
@@ -268,13 +268,12 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute( /* 
     auto [exists, remote_info] = fs_tree.existsDirectory(path);
     if (!exists)
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", path);
-    else if (!remote_info.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", path);
     else if (auto children = fs_tree.listDirectory(path); !children.empty())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Directory '{}' is not empty. Children: [{}]", path, fmt::join(children, ", "));
     else if (path == "/")
         return;
 
+    chassert(remote_info.has_value());
     info = std::move(remote_info.value());
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation"), "Removing directory '{}'", path);

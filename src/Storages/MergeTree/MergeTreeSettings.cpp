@@ -254,6 +254,9 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
+    DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
+    Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
+    )", 0) \
     DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.

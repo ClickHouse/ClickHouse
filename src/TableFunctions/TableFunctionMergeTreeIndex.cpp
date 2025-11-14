@@ -109,7 +109,8 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
 
 static NameSet getAllPossibleStreamNames(
     const NameAndTypePair & column,
-    const MergeTreeDataPartsVector & data_parts)
+    const MergeTreeDataPartsVector & data_parts,
+    const MergeTreeSettingsPtr & storage_settings)
 {
     NameSet all_streams;
 
@@ -121,7 +122,7 @@ static NameSet getAllPossibleStreamNames(
 
     auto callback = [&](const auto & substream_path)
     {
-        auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
+        auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
         all_streams.insert(Nested::concatenateName(stream_name, "mark"));
     };
 
@@ -181,10 +182,11 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
 
         auto data_parts = merge_tree->getDataPartsVectorForInternalUsage();
         auto columns_list = Nested::convertToSubcolumns(metadata_snapshot->getColumns().getAllPhysical());
+        const auto & storage_settings = merge_tree->getSettings();
 
         for (const auto & column : columns_list)
         {
-            auto all_streams = getAllPossibleStreamNames(column, data_parts);
+            auto all_streams = getAllPossibleStreamNames(column, data_parts, storage_settings);
             for (const auto & stream_name : all_streams)
             {
                 /// There may be shared substreams of columns (e.g. for Nested type)

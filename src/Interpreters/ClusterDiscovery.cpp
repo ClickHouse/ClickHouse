@@ -631,7 +631,7 @@ void ClusterDiscovery::start()
 /// Returns `true` on graceful shutdown (no restart required)
 bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 {
-    setThreadName("ClusterDiscover");
+    DB::setThreadName(ThreadName::CLUSTER_DISCOVERY);
     LOG_DEBUG(log, "Worker thread started");
 
     using namespace std::chrono_literals;

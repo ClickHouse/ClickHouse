@@ -393,21 +393,21 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect("MetricLog", collect_interval_milliseconds);
+        metric_log->startCollect(ThreadName::METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (transposed_metric_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        transposed_metric_log->startCollect("TMetricLog", collect_interval_milliseconds);
+        transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
                                                                 DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect("ErrorLog", collect_interval_milliseconds);
+        error_log->startCollect(ThreadName::ERROR_LOG, collect_interval_milliseconds);
     }
 
     if (crash_log)
@@ -419,7 +419,7 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     {
         size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
                                                                 DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        aggregated_zookeeper_log->startCollect("AggregatedZooKeeperLog", collect_interval_milliseconds);
+        aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 }
 
@@ -463,7 +463,7 @@ constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
 }
 }
 
-void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors)
+void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names, bool should_prepare_tables_anyway, bool ignore_errors)
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
@@ -498,7 +498,10 @@ void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_any
 
         for (const auto & name : names)
         {
-            String log_name = getLowerCaseAndRemoveUnderscores(name);
+            if (!name.first.empty() && name.first != "system")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}.{}' does not exist", name.first, name.second);
+
+            String log_name = getLowerCaseAndRemoveUnderscores(name.second);
 
             auto it = logs_map.find(log_name);
             if (it == logs_map.end())
@@ -540,7 +543,7 @@ void SystemLogs::flushImpl(const Strings & names, bool should_prepare_tables_any
     }
 }
 
-void SystemLogs::flush(const Strings & names)
+void SystemLogs::flush(const std::vector<std::pair<String, String>> & names)
 {
     flushImpl(names, /*should_prepare_tables_anyway=*/ true, /*ignore_errors=*/ false);
 }
@@ -594,7 +597,7 @@ void SystemLog<LogElement>::shutdown()
 template <typename LogElement>
 void SystemLog<LogElement>::savingThreadFunction()
 {
-    setThreadName("SystemLogFlush");
+    DB::setThreadName(ThreadName::SYSTEM_LOG_FLUSH);
 
     while (true)
     {

@@ -1,0 +1,217 @@
+Expression ((Project names + Projection))
+  Limit (preliminary LIMIT)
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromMemoryStorage
+Expression ((Project names + Projection))
+Input headers: #0
+               __table1.x Int32
+               __table1.y String
+  Limit (preliminary LIMIT)
+  Input headers: #0
+                 __table1.x Int32
+                 __table1.y String
+    Filter ((WHERE + Change column names to column identifiers))
+    Input headers: #0
+                   x Int32
+                   y String
+      ReadFromMemoryStorage
+      Input headers: No input headers
+Expression ((Project names + Projection))
+Header: x Int32
+        y String
+  Limit (preliminary LIMIT)
+  Header: __table1.x Int32
+          __table1.y String
+    Filter ((WHERE + Change column names to column identifiers))
+    Header: __table1.x Int32
+            __table1.y String
+      ReadFromMemoryStorage
+      Header: x Int32
+              y String
+Expression ((Project names + Projection))
+Header: x Int32
+        y String
+Input headers: #0
+               __table1.x Int32
+               __table1.y String
+  Limit (preliminary LIMIT)
+  Header: __table1.x Int32
+          __table1.y String
+  Input headers: #0
+                 __table1.x Int32
+                 __table1.y String
+    Filter ((WHERE + Change column names to column identifiers))
+    Header: __table1.x Int32
+            __table1.y String
+    Input headers: #0
+                   x Int32
+                   y String
+      ReadFromMemoryStorage
+      Header: x Int32
+              y String
+      Input headers: No input headers
+Union
+Header: x Int32
+        y String
+        t2.y String
+Input headers: #0
+               x Int32
+               y String
+               t2.y String
+               #1
+               x Int32
+               y String
+               t2.y String
+  Expression ((Project names + Projection))
+  Header: x Int32
+          y String
+          t2.y String
+  Input headers: #0
+                 __table2.x Int32
+                 __table2.y String
+                 __table3.y String
+    Limit (preliminary LIMIT)
+    Header: __table2.x Int32
+            __table2.y String
+            __table3.y String
+    Input headers: #0
+                   __table2.x Int32
+                   __table2.y String
+                   __table3.y String
+      Filter (WHERE)
+      Header: __table2.x Int32
+              __table2.y String
+              __table3.y String
+      Input headers: #0
+                     __table2.x Int32
+                     __table2.y String
+                     __table3.y String
+        Expression (Post Join Actions)
+        Header: __table2.x Int32
+                __table2.y String
+                __table3.y String
+        Input headers: #0
+                       __table2.x Int32
+                       __table2.y String
+                       __table3.y String
+          Join
+          Header: __table2.x Int32
+                  __table2.y String
+                  __table3.y String
+          Input headers: #0
+                         __table2.x Int32
+                         __table2.y String
+                         #1
+                         __table3.x Int32
+                         __table3.y String
+            Expression (Left Pre Join Actions)
+            Header: __table2.x Int32
+                    __table2.y String
+            Input headers: #0
+                           __table2.x Int32
+                           __table2.y String
+              Expression (Change column names to column identifiers)
+              Header: __table2.x Int32
+                      __table2.y String
+              Input headers: #0
+                             x Int32
+                             y String
+                ReadFromMemoryStorage
+                Header: x Int32
+                        y String
+                Input headers: No input headers
+            Expression (Right Pre Join Actions)
+            Header: __table3.x Int32
+                    __table3.y String
+            Input headers: #0
+                           __table3.y String
+                           __table3.x Int32
+              Expression (Change column names to column identifiers)
+              Header: __table3.y String
+                      __table3.x Int32
+              Input headers: #0
+                             y String
+                             x Int32
+                ReadFromMemoryStorage
+                Header: y String
+                        x Int32
+                Input headers: No input headers
+  Expression ((Conversion before UNION + (Project names + Projection)))
+  Header: x Int32
+          y String
+          t2.y String
+  Input headers: #0
+                 __table5.x Int32
+                 __table5.y String
+                 __table6.y String
+    Limit (preliminary LIMIT)
+    Header: __table5.x Int32
+            __table5.y String
+            __table6.y String
+    Input headers: #0
+                   __table5.x Int32
+                   __table5.y String
+                   __table6.y String
+      Filter (WHERE)
+      Header: __table5.x Int32
+              __table5.y String
+              __table6.y String
+      Input headers: #0
+                     __table5.x Int32
+                     __table5.y String
+                     __table6.y String
+        Expression (Post Join Actions)
+        Header: __table5.x Int32
+                __table5.y String
+                __table6.y String
+        Input headers: #0
+                       __table5.x Int32
+                       __table5.y String
+                       __table6.y String
+          Join
+          Header: __table5.x Int32
+                  __table5.y String
+                  __table6.y String
+          Input headers: #0
+                         __table5.x Int32
+                         __table5.y String
+                         #1
+                         __table6.x Int32
+                         __table6.y String
+            Expression (Left Pre Join Actions)
+            Header: __table5.x Int32
+                    __table5.y String
+            Input headers: #0
+                           __table5.x Int32
+                           __table5.y String
+              Expression (Change column names to column identifiers)
+              Header: __table5.x Int32
+                      __table5.y String
+              Input headers: #0
+                             x Int32
+                             y String
+                ReadFromMemoryStorage
+                Header: x Int32
+                        y String
+                Input headers: No input headers
+            Expression (Right Pre Join Actions)
+            Header: __table6.x Int32
+                    __table6.y String
+            Input headers: #0
+                           __table6.y String
+                           __table6.x Int32
+              Expression (Change column names to column identifiers)
+              Header: __table6.y String
+                      __table6.x Int32
+              Input headers: #0
+                             y String
+                             x Int32
+                ReadFromMemoryStorage
+                Header: y String
+                        x Int32
+                Input headers: No input headers
+[\n  {\n    "Plan": {\n      "Node Type": "Expression",\n      "Node Id": "Expression_7",\n      "Description": "(Project names + Projection)",\n      "Plans": [\n        {\n          "Node Type": "Limit",\n          "Node Id": "Limit_4",\n          "Description": "preliminary LIMIT",\n          "Plans": [\n            {\n              "Node Type": "Filter",\n              "Node Id": "Filter_6",\n              "Description": "(WHERE + Change column names to column identifiers)",\n              "Plans": [\n                {\n                  "Node Type": "ReadFromMemoryStorage",\n                  "Node Id": "ReadFromMemoryStorage_0"\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]
+[\n  {\n    "Plan": {\n      "Node Type": "Expression",\n      "Node Id": "Expression_7",\n      "Description": "(Project names + Projection)",\n      "Input Headers": [\n        [\n          {\n            "Name": "__table1.x",\n            "Type": "Int32"\n          },\n          {\n            "Name": "__table1.y",\n            "Type": "String"\n          }\n        ]\n      ],\n      "Plans": [\n        {\n          "Node Type": "Limit",\n          "Node Id": "Limit_4",\n          "Description": "preliminary LIMIT",\n          "Input Headers": [\n            [\n              {\n                "Name": "__table1.x",\n                "Type": "Int32"\n              },\n              {\n                "Name": "__table1.y",\n                "Type": "String"\n              }\n            ]\n          ],\n          "Plans": [\n            {\n              "Node Type": "Filter",\n              "Node Id": "Filter_6",\n              "Description": "(WHERE + Change column names to column identifiers)",\n              "Input Headers": [\n                [\n                  {\n                    "Name": "x",\n                    "Type": "Int32"\n                  },\n                  {\n                    "Name": "y",\n                    "Type": "String"\n                  }\n                ]\n              ],\n              "Plans": [\n                {\n                  "Node Type": "ReadFromMemoryStorage",\n                  "Node Id": "ReadFromMemoryStorage_0"\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]
+[\n  {\n    "Plan": {\n      "Node Type": "Expression",\n      "Node Id": "Expression_7",\n      "Description": "(Project names + Projection)",\n      "Header": [\n        {\n          "Name": "x",\n          "Type": "Int32"\n        },\n        {\n          "Name": "y",\n          "Type": "String"\n        }\n      ],\n      "Plans": [\n        {\n          "Node Type": "Limit",\n          "Node Id": "Limit_4",\n          "Description": "preliminary LIMIT",\n          "Header": [\n            {\n              "Name": "__table1.x",\n              "Type": "Int32"\n            },\n            {\n              "Name": "__table1.y",\n              "Type": "String"\n            }\n          ],\n          "Plans": [\n            {\n              "Node Type": "Filter",\n              "Node Id": "Filter_6",\n              "Description": "(WHERE + Change column names to column identifiers)",\n              "Header": [\n                {\n                  "Name": "__table1.x",\n                  "Type": "Int32"\n                },\n                {\n                  "Name": "__table1.y",\n                  "Type": "String"\n                }\n              ],\n              "Plans": [\n                {\n                  "Node Type": "ReadFromMemoryStorage",\n                  "Node Id": "ReadFromMemoryStorage_0",\n                  "Header": [\n                    {\n                      "Name": "x",\n                      "Type": "Int32"\n                    },\n                    {\n                      "Name": "y",\n                      "Type": "String"\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]
+[\n  {\n    "Plan": {\n      "Node Type": "Expression",\n      "Node Id": "Expression_7",\n      "Description": "(Project names + Projection)",\n      "Header": [\n        {\n          "Name": "x",\n          "Type": "Int32"\n        },\n        {\n          "Name": "y",\n          "Type": "String"\n        }\n      ],\n      "Input Headers": [\n        [\n          {\n            "Name": "__table1.x",\n            "Type": "Int32"\n          },\n          {\n            "Name": "__table1.y",\n            "Type": "String"\n          }\n        ]\n      ],\n      "Plans": [\n        {\n          "Node Type": "Limit",\n          "Node Id": "Limit_4",\n          "Description": "preliminary LIMIT",\n          "Header": [\n            {\n              "Name": "__table1.x",\n              "Type": "Int32"\n            },\n            {\n              "Name": "__table1.y",\n              "Type": "String"\n            }\n          ],\n          "Input Headers": [\n            [\n              {\n                "Name": "__table1.x",\n                "Type": "Int32"\n              },\n              {\n                "Name": "__table1.y",\n                "Type": "String"\n              }\n            ]\n          ],\n          "Plans": [\n            {\n              "Node Type": "Filter",\n              "Node Id": "Filter_6",\n              "Description": "(WHERE + Change column names to column identifiers)",\n              "Header": [\n                {\n                  "Name": "__table1.x",\n                  "Type": "Int32"\n                },\n                {\n                  "Name": "__table1.y",\n                  "Type": "String"\n                }\n              ],\n              "Input Headers": [\n                [\n                  {\n                    "Name": "x",\n                    "Type": "Int32"\n                  },\n                  {\n                    "Name": "y",\n                    "Type": "String"\n                  }\n                ]\n              ],\n              "Plans": [\n                {\n                  "Node Type": "ReadFromMemoryStorage",\n                  "Node Id": "ReadFromMemoryStorage_0",\n                  "Header": [\n                    {\n                      "Name": "x",\n                      "Type": "Int32"\n                    },\n                    {\n                      "Name": "y",\n                      "Type": "String"\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]
+[\n  {\n    "Plan": {\n      "Node Type": "Union",\n      "Node Id": "Union_19",\n      "Header": [\n        {\n          "Name": "x",\n          "Type": "Int32"\n        },\n        {\n          "Name": "y",\n          "Type": "String"\n        },\n        {\n          "Name": "t2.y",\n          "Type": "String"\n        }\n      ],\n      "Input Headers": [\n        [\n          {\n            "Name": "x",\n            "Type": "Int32"\n          },\n          {\n            "Name": "y",\n            "Type": "String"\n          },\n          {\n            "Name": "t2.y",\n            "Type": "String"\n          }\n        ],\n        [\n          {\n            "Name": "x",\n            "Type": "Int32"\n          },\n          {\n            "Name": "y",\n            "Type": "String"\n          },\n          {\n            "Name": "t2.y",\n            "Type": "String"\n          }\n        ]\n      ],\n      "Plans": [\n        {\n          "Node Type": "Expression",\n          "Node Id": "Expression_20",\n          "Description": "(Project names + Projection)",\n          "Header": [\n            {\n              "Name": "x",\n              "Type": "Int32"\n            },\n            {\n              "Name": "y",\n              "Type": "String"\n            },\n            {\n              "Name": "t2.y",\n              "Type": "String"\n            }\n          ],\n          "Input Headers": [\n            [\n              {\n                "Name": "__table2.x",\n                "Type": "Int32"\n              },\n              {\n                "Name": "__table2.y",\n                "Type": "String"\n              },\n              {\n                "Name": "__table3.y",\n                "Type": "String"\n              }\n            ]\n          ],\n          "Plans": [\n            {\n              "Node Type": "Limit",\n              "Node Id": "Limit_7",\n              "Description": "preliminary LIMIT",\n              "Header": [\n                {\n                  "Name": "__table2.x",\n                  "Type": "Int32"\n                },\n                {\n                  "Name": "__table2.y",\n                  "Type": "String"\n                },\n                {\n                  "Name": "__table3.y",\n                  "Type": "String"\n                }\n              ],\n              "Input Headers": [\n                [\n                  {\n                    "Name": "__table2.x",\n                    "Type": "Int32"\n                  },\n                  {\n                    "Name": "__table2.y",\n                    "Type": "String"\n                  },\n                  {\n                    "Name": "__table3.y",\n                    "Type": "String"\n                  }\n                ]\n              ],\n              "Plans": [\n                {\n                  "Node Type": "Filter",\n                  "Node Id": "Filter_5",\n                  "Description": "WHERE",\n                  "Header": [\n                    {\n                      "Name": "__table2.x",\n                      "Type": "Int32"\n                    },\n                    {\n                      "Name": "__table2.y",\n                      "Type": "String"\n                    },\n                    {\n                      "Name": "__table3.y",\n                      "Type": "String"\n                    }\n                  ],\n                  "Input Headers": [\n                    [\n                      {\n                        "Name": "__table2.x",\n                        "Type": "Int32"\n                      },\n                      {\n                        "Name": "__table2.y",\n                        "Type": "String"\n                      },\n                      {\n                        "Name": "__table3.y",\n                        "Type": "String"\n                      }\n                    ]\n                  ],\n                  "Plans": [\n                    {\n                      "Node Type": "Expression",\n                      "Node Id": "Expression_27",\n                      "Description": "Post Join Actions",\n                      "Header": [\n                        {\n                          "Name": "__table2.x",\n                          "Type": "Int32"\n                        },\n                        {\n                          "Name": "__table2.y",\n                          "Type": "String"\n                        },\n                        {\n                          "Name": "__table3.y",\n                          "Type": "String"\n                        }\n                      ],\n                      "Input Headers": [\n                        [\n                          {\n                            "Name": "__table2.x",\n                            "Type": "Int32"\n                          },\n                          {\n                            "Name": "__table2.y",\n                            "Type": "String"\n                          },\n                          {\n                            "Name": "__table3.y",\n                            "Type": "String"\n                          }\n                        ]\n                      ],\n                      "Plans": [\n                        {\n                          "Node Type": "Join",\n                          "Node Id": "Join_26",\n                          "Header": [\n                            {\n                              "Name": "__table2.x",\n                              "Type": "Int32"\n                            },\n                            {\n                              "Name": "__table2.y",\n                              "Type": "String"\n                            },\n                            {\n                              "Name": "__table3.y",\n                              "Type": "String"\n                            }\n                          ],\n                          "Input Headers": [\n                            [\n                              {\n                                "Name": "__table2.x",\n                                "Type": "Int32"\n                              },\n                              {\n                                "Name": "__table2.y",\n                                "Type": "String"\n                              }\n                            ],\n                            [\n                              {\n                                "Name": "__table3.x",\n                                "Type": "Int32"\n                              },\n                              {\n                                "Name": "__table3.y",\n                                "Type": "String"\n                              }\n                            ]\n                          ],\n                          "Plans": [\n                            {\n                              "Node Type": "Expression",\n                              "Node Id": "Expression_24",\n                              "Description": "Left Pre Join Actions",\n                              "Header": [\n                                {\n                                  "Name": "__table2.x",\n                                  "Type": "Int32"\n                                },\n                                {\n                                  "Name": "__table2.y",\n                                  "Type": "String"\n                                }\n                              ],\n                              "Input Headers": [\n                                [\n                                  {\n                                    "Name": "__table2.x",\n                                    "Type": "Int32"\n                                  },\n                                  {\n                                    "Name": "__table2.y",\n                                    "Type": "String"\n                                  }\n                                ]\n                              ],\n                              "Plans": [\n                                {\n                                  "Node Type": "Expression",\n                                  "Node Id": "Expression_1",\n                                  "Description": "Change column names to column identifiers",\n                                  "Header": [\n                                    {\n                                      "Name": "__table2.x",\n                                      "Type": "Int32"\n                                    },\n                                    {\n                                      "Name": "__table2.y",\n                                      "Type": "String"\n                                    }\n                                  ],\n                                  "Input Headers": [\n                                    [\n                                      {\n                                        "Name": "x",\n                                        "Type": "Int32"\n                                      },\n                                      {\n                                        "Name": "y",\n                                        "Type": "String"\n                                      }\n                                    ]\n                                  ],\n                                  "Plans": [\n                                    {\n                                      "Node Type": "ReadFromMemoryStorage",\n                                      "Node Id": "ReadFromMemoryStorage_0",\n                                      "Header": [\n                                        {\n                                          "Name": "x",\n                                          "Type": "Int32"\n                                        },\n                                        {\n                                          "Name": "y",\n                                          "Type": "String"\n                                        }\n                                      ]\n                                    }\n                                  ]\n                                }\n                              ]\n                            },\n                            {\n                              "Node Type": "Expression",\n                              "Node Id": "Expression_25",\n                              "Description": "Right Pre Join Actions",\n                              "Header": [\n                                {\n                                  "Name": "__table3.x",\n                                  "Type": "Int32"\n                                },\n                                {\n                                  "Name": "__table3.y",\n                                  "Type": "String"\n                                }\n                              ],\n                              "Input Headers": [\n                                [\n                                  {\n                                    "Name": "__table3.y",\n                                    "Type": "String"\n                                  },\n                                  {\n                                    "Name": "__table3.x",\n                                    "Type": "Int32"\n                                  }\n                                ]\n                              ],\n                              "Plans": [\n                                {\n                                  "Node Type": "Expression",\n                                  "Node Id": "Expression_3",\n                                  "Description": "Change column names to column identifiers",\n                                  "Header": [\n                                    {\n                                      "Name": "__table3.y",\n                                      "Type": "String"\n                                    },\n                                    {\n                                      "Name": "__table3.x",\n                                      "Type": "Int32"\n                                    }\n                                  ],\n                                  "Input Headers": [\n                                    [\n                                      {\n                                        "Name": "y",\n                                        "Type": "String"\n                                      },\n                                      {\n                                        "Name": "x",\n                                        "Type": "Int32"\n                                      }\n                                    ]\n                                  ],\n                                  "Plans": [\n                                    {\n                                      "Node Type": "ReadFromMemoryStorage",\n                                      "Node Id": "ReadFromMemoryStorage_2",\n                                      "Header": [\n                                        {\n                                          "Name": "y",\n                                          "Type": "String"\n                                        },\n                                        {\n                                          "Name": "x",\n                                          "Type": "Int32"\n                                        }\n                                      ]\n                                    }\n                                  ]\n                                }\n                              ]\n                            }\n                          ]\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        },\n        {\n          "Node Type": "Expression",\n          "Node Id": "Expression_22",\n          "Description": "(Conversion before UNION + (Project names + Projection))",\n          "Header": [\n            {\n              "Name": "x",\n              "Type": "Int32"\n            },\n            {\n              "Name": "y",\n              "Type": "String"\n            },\n            {\n              "Name": "t2.y",\n              "Type": "String"\n            }\n          ],\n          "Input Headers": [\n            [\n              {\n                "Name": "__table5.x",\n                "Type": "Int32"\n              },\n              {\n                "Name": "__table5.y",\n                "Type": "String"\n              },\n              {\n                "Name": "__table6.y",\n                "Type": "String"\n              }\n            ]\n          ],\n          "Plans": [\n            {\n              "Node Type": "Limit",\n              "Node Id": "Limit_16",\n              "Description": "preliminary LIMIT",\n              "Header": [\n                {\n                  "Name": "__table5.x",\n                  "Type": "Int32"\n                },\n                {\n                  "Name": "__table5.y",\n                  "Type": "String"\n                },\n                {\n                  "Name": "__table6.y",\n                  "Type": "String"\n                }\n              ],\n              "Input Headers": [\n                [\n                  {\n                    "Name": "__table5.x",\n                    "Type": "Int32"\n                  },\n                  {\n                    "Name": "__table5.y",\n                    "Type": "String"\n                  },\n                  {\n                    "Name": "__table6.y",\n                    "Type": "String"\n                  }\n                ]\n              ],\n              "Plans": [\n                {\n                  "Node Type": "Filter",\n                  "Node Id": "Filter_14",\n                  "Description": "WHERE",\n                  "Header": [\n                    {\n                      "Name": "__table5.x",\n                      "Type": "Int32"\n                    },\n                    {\n                      "Name": "__table5.y",\n                      "Type": "String"\n                    },\n                    {\n                      "Name": "__table6.y",\n                      "Type": "String"\n                    }\n                  ],\n                  "Input Headers": [\n                    [\n                      {\n                        "Name": "__table5.x",\n                        "Type": "Int32"\n                      },\n                      {\n                        "Name": "__table5.y",\n                        "Type": "String"\n                      },\n                      {\n                        "Name": "__table6.y",\n                        "Type": "String"\n                      }\n                    ]\n                  ],\n                  "Plans": [\n                    {\n                      "Node Type": "Expression",\n                      "Node Id": "Expression_32",\n                      "Description": "Post Join Actions",\n                      "Header": [\n                        {\n                          "Name": "__table5.x",\n                          "Type": "Int32"\n                        },\n                        {\n                          "Name": "__table5.y",\n                          "Type": "String"\n                        },\n                        {\n                          "Name": "__table6.y",\n                          "Type": "String"\n                        }\n                      ],\n                      "Input Headers": [\n                        [\n                          {\n                            "Name": "__table5.x",\n                            "Type": "Int32"\n                          },\n                          {\n                            "Name": "__table5.y",\n                            "Type": "String"\n                          },\n                          {\n                            "Name": "__table6.y",\n                            "Type": "String"\n                          }\n                        ]\n                      ],\n                      "Plans": [\n                        {\n                          "Node Type": "Join",\n                          "Node Id": "Join_31",\n                          "Header": [\n                            {\n                              "Name": "__table5.x",\n                              "Type": "Int32"\n                            },\n                            {\n                              "Name": "__table5.y",\n                              "Type": "String"\n                            },\n                            {\n                              "Name": "__table6.y",\n                              "Type": "String"\n                            }\n                          ],\n                          "Input Headers": [\n                            [\n                              {\n                                "Name": "__table5.x",\n                                "Type": "Int32"\n                              },\n                              {\n                                "Name": "__table5.y",\n                                "Type": "String"\n                              }\n                            ],\n                            [\n                              {\n                                "Name": "__table6.x",\n                                "Type": "Int32"\n                              },\n                              {\n                                "Name": "__table6.y",\n                                "Type": "String"\n                              }\n                            ]\n                          ],\n                          "Plans": [\n                            {\n                              "Node Type": "Expression",\n                              "Node Id": "Expression_29",\n                              "Description": "Left Pre Join Actions",\n                              "Header": [\n                                {\n                                  "Name": "__table5.x",\n                                  "Type": "Int32"\n                                },\n                                {\n                                  "Name": "__table5.y",\n                                  "Type": "String"\n                                }\n                              ],\n                              "Input Headers": [\n                                [\n                                  {\n                                    "Name": "__table5.x",\n                                    "Type": "Int32"\n                                  },\n                                  {\n                                    "Name": "__table5.y",\n                                    "Type": "String"\n                                  }\n                                ]\n                              ],\n                              "Plans": [\n                                {\n                                  "Node Type": "Expression",\n                                  "Node Id": "Expression_10",\n                                  "Description": "Change column names to column identifiers",\n                                  "Header": [\n                                    {\n                                      "Name": "__table5.x",\n                                      "Type": "Int32"\n                                    },\n                                    {\n                                      "Name": "__table5.y",\n                                      "Type": "String"\n                                    }\n                                  ],\n                                  "Input Headers": [\n                                    [\n                                      {\n                                        "Name": "x",\n                                        "Type": "Int32"\n                                      },\n                                      {\n                                        "Name": "y",\n                                        "Type": "String"\n                                      }\n                                    ]\n                                  ],\n                                  "Plans": [\n                                    {\n                                      "Node Type": "ReadFromMemoryStorage",\n                                      "Node Id": "ReadFromMemoryStorage_9",\n                                      "Header": [\n                                        {\n                                          "Name": "x",\n                                          "Type": "Int32"\n                                        },\n                                        {\n                                          "Name": "y",\n                                          "Type": "String"\n                                        }\n                                      ]\n                                    }\n                                  ]\n                                }\n                              ]\n                            },\n                            {\n                              "Node Type": "Expression",\n                              "Node Id": "Expression_30",\n                              "Description": "Right Pre Join Actions",\n                              "Header": [\n                                {\n                                  "Name": "__table6.x",\n                                  "Type": "Int32"\n                                },\n                                {\n                                  "Name": "__table6.y",\n                                  "Type": "String"\n                                }\n                              ],\n                              "Input Headers": [\n                                [\n                                  {\n                                    "Name": "__table6.y",\n                                    "Type": "String"\n                                  },\n                                  {\n                                    "Name": "__table6.x",\n                                    "Type": "Int32"\n                                  }\n                                ]\n                              ],\n                              "Plans": [\n                                {\n                                  "Node Type": "Expression",\n                                  "Node Id": "Expression_12",\n                                  "Description": "Change column names to column identifiers",\n                                  "Header": [\n                                    {\n                                      "Name": "__table6.y",\n                                      "Type": "String"\n                                    },\n                                    {\n                                      "Name": "__table6.x",\n                                      "Type": "Int32"\n                                    }\n                                  ],\n                                  "Input Headers": [\n                                    [\n                                      {\n                                        "Name": "y",\n                                        "Type": "String"\n                                      },\n                                      {\n                                        "Name": "x",\n                                        "Type": "Int32"\n                                      }\n                                    ]\n                                  ],\n                                  "Plans": [\n                                    {\n                                      "Node Type": "ReadFromMemoryStorage",\n                                      "Node Id": "ReadFromMemoryStorage_11",\n                                      "Header": [\n                                        {\n                                          "Name": "y",\n                                          "Type": "String"\n                                        },\n                                        {\n                                          "Name": "x",\n                                          "Type": "Int32"\n                                        }\n                                      ]\n                                    }\n                                  ]\n                                }\n                              ]\n                            }\n                          ]\n                        }\n                      ]\n                    }\n                  ]\n                }\n              ]\n            }\n          ]\n        }\n      ]\n    }\n  }\n]

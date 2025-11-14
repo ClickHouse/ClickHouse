@@ -110,6 +110,10 @@ Clears the text index dictionary cache.
 
 Clears the text index header cache.
 
+## SYSTEM DROP TEXT INDEX POSTINGS CACHE {#drop-text-index-postings-cache}
+
+Clears the text index postings cache.
+
 ## SYSTEM DROP REPLICA {#drop-replica}
 
 Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:

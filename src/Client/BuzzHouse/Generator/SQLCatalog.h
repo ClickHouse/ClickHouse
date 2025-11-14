@@ -134,6 +134,8 @@ public:
     ~SQLColumn() { delete tp; }
 
     bool canBeInserted() const { return !dmod.has_value() || dmod.value() == DModifier::DEF_DEFAULT; }
+
+    String getColumnName() const;
 };
 
 struct SQLIndex
@@ -196,6 +198,7 @@ public:
 struct SQLBase
 {
 public:
+    String prefix;
     bool is_temp = false, is_deterministic = false, has_metadata = false, has_partition_by = false, random_engine = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
@@ -209,6 +212,10 @@ public:
     IntegrationCall integration = IntegrationCall::None;
 
     SQLBase() = default;
+    explicit SQLBase(const String && p)
+        : prefix(p)
+    {
+    }
     virtual ~SQLBase() = default;
     SQLBase(const SQLBase &) = default;
     SQLBase & operator=(const SQLBase &) = default;
@@ -358,6 +365,8 @@ public:
 
     String getTableName(bool full = true) const;
 
+    String getFullName(bool setdbname) const;
+
     String getSparkCatalogName() const;
 
     void setTablePath(RandomGenerator & rg, const FuzzConfig & fc, bool has_dolor);
@@ -373,6 +382,31 @@ public:
     LakeStorage getPossibleLakeStorage() const { return db ? db->storage : LakeStorage::All; }
 
     LakeFormat getPossibleLakeFormat() const { return db ? db->format : LakeFormat::All; }
+
+    static void
+    setName(ExprSchemaTable * est, const String & prefix, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+    {
+        String res;
+
+        if (database || setdbname)
+        {
+            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
+        }
+        if (database && database->catalog != LakeCatalog::None)
+        {
+            res += "test.";
+        }
+        res += prefix + std::to_string(name);
+        est->mutable_table()->set_table(std::move(res));
+    }
+
+    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLBase::setName(est, this->prefix, setdbname, db, tname); }
+
+    void setName(TableEngine * te) const
+    {
+        te->add_params()->mutable_database()->set_database(getDatabaseName());
+        te->add_params()->mutable_table()->set_table(getTableName());
+    }
 };
 
 struct SQLTable : SQLBase
@@ -383,6 +417,11 @@ public:
     std::unordered_map<uint32_t, SQLIndex> idxs, staged_idxs;
     std::unordered_set<uint32_t> projs, staged_projs, constrs, staged_constrs;
     std::unordered_map<uint32_t, String> frozen_partitions;
+
+    SQLTable()
+        : SQLBase("t")
+    {
+    }
 
     size_t numberOfInsertableColumns() const;
 
@@ -397,32 +436,6 @@ public:
     }
 
     bool hasVersionColumn() const { return teng == TableEngineValues::VersionedCollapsingMergeTree; }
-
-    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
-    {
-        String res;
-
-        if (database || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
-        }
-        if (database && database->catalog != LakeCatalog::None)
-        {
-            res += "test.";
-        }
-        res += "t" + std::to_string(name);
-        est->mutable_table()->set_table(std::move(res));
-    }
-
-    String getFullName(bool setdbname) const;
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLTable::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database(getDatabaseName());
-        te->add_params()->mutable_table()->set_table(getTableName());
-    }
 };
 
 struct SQLView : SQLBase
@@ -432,21 +445,9 @@ public:
     uint32_t staged_ncols = 0;
     std::unordered_set<uint32_t> cols;
 
-    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+    SQLView()
+        : SQLBase("v")
     {
-        if (database || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(name));
-    }
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLView::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database(getDatabaseName());
-        te->add_params()->mutable_table()->set_table("v" + std::to_string(tname));
     }
 
     bool supportsFinal() const { return !this->is_materialized; }
@@ -457,21 +458,9 @@ struct SQLDictionary : SQLBase
 public:
     std::unordered_map<uint32_t, SQLColumn> cols;
 
-    static void setName(ExprSchemaTable * est, const bool setdbname, std::shared_ptr<SQLDatabase> database, const uint32_t name)
+    SQLDictionary()
+        : SQLBase("d")
     {
-        if (database || setdbname)
-        {
-            est->mutable_database()->set_database("d" + (database ? std::to_string(database->dname) : "efault"));
-        }
-        est->mutable_table()->set_table("d" + std::to_string(name));
-    }
-
-    void setName(ExprSchemaTable * est, const bool setdbname) const { SQLDictionary::setName(est, setdbname, db, tname); }
-
-    void setName(TableEngine * te) const
-    {
-        te->add_params()->mutable_database()->set_database(getDatabaseName());
-        te->add_params()->mutable_table()->set_table("d" + std::to_string(tname));
     }
 
     bool supportsFinal() const { return false; }
@@ -523,7 +512,7 @@ public:
 
     SQLType * getBottomType() const { return path[path.size() - 1].tp; }
 
-    String columnPathRef() const;
+    String columnPathRef(const String & quote = "`") const;
 };
 
 }

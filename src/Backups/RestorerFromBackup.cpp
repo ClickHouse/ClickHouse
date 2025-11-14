@@ -20,6 +20,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
+#include <Common/setThreadName.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
@@ -254,7 +255,7 @@ void RestorerFromBackup::setStage(const String & new_stage, const String & messa
     }
 }
 
-void RestorerFromBackup::schedule(std::function<void()> && task_, const char * thread_name_)
+void RestorerFromBackup::schedule(std::function<void()> && task_, ThreadName thread_name_)
 {
     if (exception_caught)
         return;
@@ -406,7 +407,7 @@ void RestorerFromBackup::findTableInBackup(const QualifiedTableName & table_name
 {
     schedule(
         [this, table_name_in_backup, skip_if_inner_table, partitions]() { findTableInBackupImpl(table_name_in_backup, skip_if_inner_table, partitions); },
-        "Restore_FindTbl");
+        ThreadName::RESTORE_FIND_TABLE);
 }
 
 void RestorerFromBackup::findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions)
@@ -509,7 +510,7 @@ void RestorerFromBackup::findDatabaseInBackup(const String & database_name_in_ba
 {
     schedule(
         [this, database_name_in_backup, except_table_names]() { findDatabaseInBackupImpl(database_name_in_backup, except_table_names); },
-        "Restore_FindDB");
+        ThreadName::RESTORE_FIND_TABLE);
 }
 
 void RestorerFromBackup::findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names)
@@ -765,7 +766,7 @@ void RestorerFromBackup::createAndCheckDatabase(const String & database_name)
 {
     schedule(
         [this, database_name]() { createAndCheckDatabaseImpl(database_name); },
-        "Restore_MakeDB");
+        ThreadName::RESTORE_MAKE_DATABASE);
 }
 
 void RestorerFromBackup::createAndCheckDatabaseImpl(const String & database_name)
@@ -997,7 +998,7 @@ void RestorerFromBackup::createAndCheckTable(const QualifiedTableName & table_na
 {
     schedule(
         [this, table_name]() { createAndCheckTableImpl(table_name); },
-        "Restore_MakeTbl");
+        ThreadName::RESTORE_MAKE_TABLE);
 }
 
 void RestorerFromBackup::createAndCheckTableImpl(const QualifiedTableName & table_name)
@@ -1184,7 +1185,7 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
 
     schedule(
         [this, table_name, storage, data_path_in_backup, partitions]() { insertDataToTableImpl(table_name, storage, data_path_in_backup, partitions); },
-        "Restore_TblData");
+        ThreadName::RESTORE_TABLE_DATA);
 }
 
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
@@ -1240,7 +1241,7 @@ void RestorerFromBackup::runDataRestoreTasks()
             break;
 
         for (auto & task : tasks_to_run)
-            schedule(std::move(task), "Restore_TblTask");
+            schedule(std::move(task), ThreadName::RESTORE_TABLE_TASK);
 
         waitFutures();
     }
