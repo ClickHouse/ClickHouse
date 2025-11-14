@@ -2,7 +2,7 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromMemory.h>
-#include "IO/ReadBufferFromString.h"
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/Arena.h>
 #include <Core/Field.h>
@@ -319,7 +319,7 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    ReadBufferFromString in({ref1.data, static_cast<size_t>(pos - ref1.data)});
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
     col_object2.deserializeAndInsertFromArena(in);
     col_object2.deserializeAndInsertFromArena(in);
     col_object2.deserializeAndInsertFromArena(in);
