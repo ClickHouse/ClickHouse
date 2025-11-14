@@ -14,7 +14,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
@@ -893,7 +892,6 @@ template class IColumnHelper<ColumnQBit, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
 template class IColumnHelper<ColumnSparse, IColumn>;
 template class IColumnHelper<ColumnReplicated, IColumn>;
-template class IColumnHelper<ColumnObjectDeprecated, IColumn>;
 template class IColumnHelper<ColumnAggregateFunction, IColumn>;
 template class IColumnHelper<ColumnFunction, IColumn>;
 template class IColumnHelper<ColumnCompressed, IColumn>;

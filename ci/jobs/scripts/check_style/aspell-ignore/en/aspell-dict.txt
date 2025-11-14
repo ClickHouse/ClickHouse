@@ -864,6 +864,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -920,6 +921,7 @@ Poess
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostLinks

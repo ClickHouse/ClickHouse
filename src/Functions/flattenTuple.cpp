@@ -2,7 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/flattenTuple.h>
 #include <Columns/ColumnTuple.h>
 
 namespace DB
@@ -37,13 +37,7 @@ public:
                 "Tuple argument for function '{}' must be named. Got '{}'",
                 getName(), type->getName());
 
-        auto [paths, types] = flattenTuple(type);
-        Names names;
-        names.reserve(paths.size());
-        for (const auto & path : paths)
-            names.push_back(path.getPath());
-
-        return std::make_shared<DataTypeTuple>(types, names);
+        return flattenTuple(type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override

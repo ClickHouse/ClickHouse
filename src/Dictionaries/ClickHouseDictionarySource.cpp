@@ -183,7 +183,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     if (configuration.is_local)
     {
         pipeline = executeQuery(query, context_copy, QueryFlags{ .internal = true }).second.pipeline;
-        pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName());
+        pipeline.convertStructureTo(empty_sample_block->getColumnsWithTypeAndName(), context_copy);
     }
     else
     {
