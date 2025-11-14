@@ -67,6 +67,12 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     const auto & sort_description = sorting_step->getSortDescription();
 
+    /// TODO : It should be possible to keep the optimization in  multi-column sort e.g
+    /// ORDER BY EventDate, Priority, Status LIMIT 100. If the first column has a minmax
+    /// index, it will be good to use.
+    if (sort_description.size() > 1)
+       return 0;
+
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
     if (!sort_column.type->isValueRepresentedByNumber())
         return 0;

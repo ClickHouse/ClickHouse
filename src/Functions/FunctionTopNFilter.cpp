@@ -77,6 +77,11 @@ public:
             auto  & filter_data = filter->getData();
             filter_data.resize(input_rows_count);
 
+            /// The next lines are the key! Will the (compareColumn() + for loop
+            /// to set filter_data[i]) be cheaper than (other predicates + sorting) ?
+            /// e.g URL like '%google%' looks costly and optimization should help in
+            /// SELECT * FROM hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10.
+            /// Can we avoid the for loop?
             arguments[0].column->compareColumn(*threshold_column, 0, nullptr, compare_results, direction, 1);
             for (size_t i = 0; i < input_rows_count; ++i)
             {

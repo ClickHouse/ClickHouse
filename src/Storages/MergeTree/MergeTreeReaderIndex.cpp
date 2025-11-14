@@ -102,7 +102,7 @@ bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_m
             if (skip_index_read_result->min_max_index_for_top_n) /// index may not have been materialized for this part
             {
                 auto granule_num = skip_index_read_result->min_max_index_for_top_n->granules_map[mark];
-                if (skip_index_read_result->threshold_tracker->isValueInsideThreshold(
+                if (!skip_index_read_result->threshold_tracker->isValueInsideThreshold(
                         skip_index_read_result->min_max_index_for_top_n->granules[granule_num].min_or_max_value))
                     return true;
             }

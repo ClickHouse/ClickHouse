@@ -359,11 +359,14 @@ void MergeSortingTransform::remerge()
     chunks = std::move(new_chunks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
-    if (threshold_tracker && sum_rows_in_blocks >= limit && chunks.size() == 1)
+
+    /// Publish the updated TopN value if optimization is ON
+    if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
     {
         Field value;
         chunks[0].getColumns()[0]->get(limit - 1, value);
         threshold_tracker->testAndSet(value);
+        LOG_DEBUG(log, "TopN threshold tracker is updated");
     }
 }
 
