@@ -357,7 +357,7 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
-    if (data_file_name_generator != BackupDataFileNameGeneratorType::None)
+    if (data_file_name_generator != BackupDataFileNameGeneratorType::Unspecified)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
 

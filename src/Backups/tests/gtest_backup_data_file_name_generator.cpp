@@ -22,11 +22,11 @@ BackupFileInfo makeFileInfo(const std::string & name, UInt128 checksum)
 }
 }
 
-TEST(BackupDataFileNameGeneratorTest, NoGeneratorProvided)
+TEST(BackupDataFileNameGeneratorTest, FirstFileNameGenerator)
 {
     auto prefix_length = 4;
     auto info = makeFileInfo("data.bin", UInt128(0x1234ABCDULL) << 96);
-    auto path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::None, prefix_length);
+    auto path = getBackupDataFileName(info, BackupDataFileNameGeneratorType::FirstFileName, prefix_length);
 
     EXPECT_EQ(path, "data.bin");
 }

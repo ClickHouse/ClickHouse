@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 
 #include <filesystem>
+#include <base/defines.h>
 #include <base/hex.h>
 
 namespace fs = std::filesystem;
@@ -23,6 +24,8 @@ getBackupDataFileName(const BackupFileInfo & file_info, BackupDataFileNameGenera
 {
     switch (data_file_name_generator)
     {
+        case BackupDataFileNameGeneratorType::FirstFileName:
+            return file_info.file_name;
         case BackupDataFileNameGeneratorType::Checksum: {
             if (file_info.checksum == 0)
                 throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Backup checksum should not be zero ({})", file_info.file_name);
@@ -36,7 +39,7 @@ getBackupDataFileName(const BackupFileInfo & file_info, BackupDataFileNameGenera
             return (fs::path(prefix) / suffix).string();
         }
         default:
-            return file_info.file_name;
+            UNREACHABLE();
     }
 }
 

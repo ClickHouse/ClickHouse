@@ -388,5 +388,7 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     BackupDataFileNameGeneratorType,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"", BackupDataFileNameGeneratorType::None}, {"checksum", BackupDataFileNameGeneratorType::Checksum}})
+    {{"", BackupDataFileNameGeneratorType::Unspecified},
+     {"first_file_name", BackupDataFileNameGeneratorType::FirstFileName},
+     {"checksum", BackupDataFileNameGeneratorType::Checksum}})
 }
