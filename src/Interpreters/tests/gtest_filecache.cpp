@@ -752,7 +752,7 @@ TEST_F(FileCacheTest, LRUPolicy)
                 cv.wait(lock, [&]{ return lets_start_download; });
             }
 
-            holder.reset();
+            holder = nullptr;
             other_1.join();
             ASSERT_TRUE(file_segment->state() == DB::FileSegment::State::DOWNLOADED);
         }
@@ -1067,7 +1067,7 @@ try
 
         ASSERT_GT(stream->write(generateBlock(100)), 0);
 
-        some_data_holder.reset();
+        some_data_holder = nullptr;
 
         stream->write(generateBlock(2000));
 

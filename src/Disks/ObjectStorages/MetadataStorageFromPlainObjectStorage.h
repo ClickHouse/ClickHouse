@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
 #include <Common/CacheBase.h>
@@ -18,7 +18,6 @@
 namespace DB
 {
 
-class InMemoryDirectoryPathMap;
 struct UnlinkMetadataFileOperationOutcome;
 using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
 
@@ -89,8 +88,6 @@ public:
 
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
-
     bool isReadOnly() const override { return true; }
 
 private:
@@ -100,8 +97,8 @@ protected:
     /// Get the object storage prefix for storing metadata files.
     virtual std::string getMetadataKeyPrefix() const { return object_storage->getCommonKeyPrefix(); }
 
-    /// Returns a map of virtual filesystem paths to paths in the object storage.
-    virtual std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const { throwNotImplemented(); }
+    /// Returns an in-memory virtual filesystem tree.
+    virtual std::shared_ptr<InMemoryDirectoryTree> getFsTree() const { throwNotImplemented(); }
 
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 };

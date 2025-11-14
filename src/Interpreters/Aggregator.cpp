@@ -721,9 +721,9 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
-            if (std::tuple_size<KeysNullMap<UInt128>>::value + keys_bytes <= 16)
+            if (std::tuple_size_v<KeysNullMap<UInt128>> + keys_bytes <= 16)
                 return AggregatedDataVariants::Type::nullable_keys128;
-            if (std::tuple_size<KeysNullMap<UInt256>>::value + keys_bytes <= 32)
+            if (std::tuple_size_v<KeysNullMap<UInt256>> + keys_bytes <= 32)
                 return AggregatedDataVariants::Type::nullable_keys256;
         }
 
@@ -2676,7 +2676,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -3653,7 +3653,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)

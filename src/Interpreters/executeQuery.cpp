@@ -124,6 +124,7 @@ namespace Setting
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsOverflowMode join_overflow_mode;
     extern const SettingsString log_comment;
@@ -559,7 +560,7 @@ void logQueryMetricLogFinish(ContextPtr context, bool internal, String query_id,
 
 static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pulling_pipeline, const ProgressCallback & progress_callback, QueryStatusPtr process_list_elem)
 {
-    ResultProgress res(0, 0);
+    ResultProgress res(0, 0, 0);
 
     if (pulling_pipeline)
     {
@@ -571,6 +572,10 @@ static ResultProgress flushQueryProgress(const QueryPipeline & pipeline, bool pu
         res.result_rows = progress_out.written_rows;
         res.result_bytes = progress_out.written_bytes;
     }
+
+    /// Report same memory_usage in X-ClickHouse-Summary as in query_log
+    if (process_list_elem)
+        res.memory_usage = std::max<Int64>(process_list_elem->getInfo().peak_memory_usage, 0);
 
     if (progress_callback)
     {
@@ -1826,7 +1831,6 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 void executeQuery(
     ReadBuffer & istr,
     WriteBuffer & ostr,
-    bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
@@ -1836,14 +1840,13 @@ void executeQuery(
     HTTPContinueCallback http_continue_callback)
 {
     executeQuery(
-        wrapReadBufferReference(istr), ostr, allow_into_outfile, context, std::move(set_result_details), flags,
+        wrapReadBufferReference(istr), ostr, context, std::move(set_result_details), flags,
         output_format_settings, std::move(handle_exception_in_output_format), std::move(query_finish_callback), std::move(http_continue_callback));
 }
 
 void executeQuery(
     ReadBufferUniquePtr istr,
     WriteBuffer & ostr,
-    bool allow_into_outfile,
     ContextMutablePtr context,
     SetResultDetailsFunc set_result_details,
     QueryFlags flags,
@@ -2022,7 +2025,6 @@ void executeQuery(
     auto & pipeline = streams.pipeline;
     bool pulling_pipeline = pipeline.pulling();
 
-    std::unique_ptr<WriteBuffer> compressed_buffer;
     try
     {
         if (pipeline.pushing())
@@ -2039,29 +2041,11 @@ void executeQuery(
 
             WriteBuffer * out_buf = &ostr;
             if (ast_query_with_output && ast_query_with_output->out_file)
-            {
-                if (!allow_into_outfile)
-                    throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
-
-                const auto & out_file = typeid_cast<const ASTLiteral &>(*ast_query_with_output->out_file).value.safeGet<std::string>();
-
-                std::string compression_method;
-                if (ast_query_with_output->compression)
-                {
-                    const auto & compression_method_node = ast_query_with_output->compression->as<ASTLiteral &>();
-                    compression_method = compression_method_node.value.safeGet<std::string>();
-                }
-                const auto & settings = context->getSettingsRef();
-                compressed_buffer = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_EXCL | O_CREAT),
-                    chooseCompressionMethod(out_file, compression_method),
-                    /* compression level = */ static_cast<int>(settings[Setting::output_format_compression_level]),
-                    /* zstd_window_log = */ static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
-            }
+                throw Exception(ErrorCodes::INTO_OUTFILE_NOT_ALLOWED, "INTO OUTFILE is not allowed");
 
             output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
                 format_name,
-                compressed_buffer ? *compressed_buffer : *out_buf,
+                *out_buf,
                 materializeBlock(pipeline.getHeader()),
                 context,
                 output_format_settings);
@@ -2140,6 +2124,9 @@ void executeQuery(
     if (implicit_tcl_executor->transactionRunning())
         implicit_tcl_executor->commit(context);
 
+    /// We release query slot here to make sure client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
+    context->releaseQuerySlot();
+
     /// The order is important here:
     /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
     /// - then we flush the progress (to flush result_rows/result_bytes)
@@ -2173,7 +2160,7 @@ void executeQuery(
         std::rethrow_exception(exception_ptr);
 }
 
-void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel)
 {
     try
     {
@@ -2184,7 +2171,15 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Query pipeline requires output, but no output buffer provided, it's a bug");
 
         streams.pipeline.setProgressCallback(context->getProgressCallback());
+
         CompletedPipelineExecutor executor(streams.pipeline);
+
+        if (auto callback = context->getInteractiveCancelCallback(); callback && with_interactive_cancel)
+        {
+            auto interactive_delay = context->getSettingsRef()[Setting::interactive_delay];
+            executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+        }
+
         executor.execute();
     }
     catch (...)
