@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.stack_trace_reader import StackTraceReader
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
