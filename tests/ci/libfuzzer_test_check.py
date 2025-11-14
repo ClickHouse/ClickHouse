@@ -147,6 +147,7 @@ def download_corpus(path):
     total_units = 0
 
     for zip_file in corpus_path.glob("*.zip"):
+        logging.info("Deploying corpus %s", zip_file.stem)
         target_dir = corpus_path / zip_file.stem
         target_dir.mkdir(exist_ok=True)
         try:
