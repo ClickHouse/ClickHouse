@@ -256,6 +256,9 @@ Chunk KafkaSource::generateImpl()
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+
                 dead_letter_queue->add(DeadLetterQueueElement{
                         .table_engine = DeadLetterQueueElement::StreamType::Kafka,
                         .event_time = timeInSeconds(time_now),

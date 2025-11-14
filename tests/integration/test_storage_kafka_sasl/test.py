@@ -103,3 +103,43 @@ def test_kafka_sasl_settings_precedence(kafka_cluster):
             test_kafka_sasl(kafka_cluster)
     finally:
         instance.restart_clickhouse()
+
+
+# ClickHouse may crash when the table is created with an option to put
+# broken messages to a dead letter queue, while the table
+# system.dead_letter_queue is not configured.
+def test_dead_letter_segfault(kafka_cluster):
+    instance.query(
+        f"""
+        DROP DATABASE IF EXISTS segfault SYNC;
+        CREATE DATABASE segfault;
+
+        CREATE TABLE segfault.kafka_sasl (key int, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka_sasl:19092',
+                     kafka_security_protocol = 'sasl_plaintext',
+                     kafka_sasl_mechanism = 'PLAIN',
+                     kafka_sasl_username = '{kafka_sasl_user}',
+                     kafka_sasl_password = '{kafka_sasl_pass}',
+                     kafka_topic_list = 'topic1',
+                     kafka_group_name = 'group1',
+                     kafka_format = 'JSONEachRow',
+                     kafka_handle_error_mode = 'dead_letter_queue';
+
+        CREATE TABLE segfault.messages (key int, value String) ENGINE = MergeTree ORDER BY key;
+
+        CREATE MATERIALIZED VIEW segfault.kafka_consumer TO segfault.messages (key int, value String)
+        AS SELECT key, value FROM segfault.kafka_sasl;
+        """
+    )
+
+    producer = get_kafka_producer(kafka_cluster.kafka_sasl_port)
+    producer.send(topic="topic1", value='{"key":1, "value":"test123"}')
+    producer.send(topic="topic1", value='{"ping":"pong", "answer":42}')
+    producer.send(topic="topic1", value='1')
+    producer.send(topic="topic1", value='2')
+    producer.send(topic="topic1", value='3')
+
+    producer.flush()
+
+    instance.query("SELECT * FROM segfault.messages")
