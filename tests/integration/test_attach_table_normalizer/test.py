@@ -35,7 +35,8 @@ def test_attach_substr(started_cluster):
 
     # Clear filesystem cache to avoid caching issues
     db_disk_name = get_database_disk_name(node)
-    node.query(f"SYSTEM DROP DISK METADATA CACHE {db_disk_name}")
+    if db_disk_name != "default":
+        node.query(f"SYSTEM DROP DISK METADATA CACHE {db_disk_name}")
 
     # Attach table file
     node.query("ATTACH TABLE file")
@@ -57,7 +58,8 @@ def test_attach_substr_restart(started_cluster):
 
     # Clear filesystem cache to avoid caching issues
     db_disk_name = get_database_disk_name(node)
-    node.query(f"SYSTEM DROP DISK METADATA CACHE {db_disk_name}")
+    if db_disk_name != "default":
+        node.query(f"SYSTEM DROP DISK METADATA CACHE {db_disk_name}")
 
     # Restart clickhouse
     node.restart_clickhouse(kill=True)
