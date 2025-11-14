@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
+            {"arrow_flight_request_descriptor_type", "path", "path", "New setting. Type of descriptor to use for Arrow Flight requests: 'path' or 'command'. Dremio requires 'command'."},
             {"send_profile_events", true, true, "New setting. Whether to send profile events to the clients."},
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
@@ -61,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
+            {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {

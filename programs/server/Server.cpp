@@ -1044,6 +1044,33 @@ try
     Stopwatch startup_watch;
     Poco::Logger * log = &logger();
 
+    const size_t physical_server_memory = getMemoryAmount();
+
+    LOG_INFO(
+        log,
+        "Available RAM: {}; logical cores: {}; used cores: {}.",
+        formatReadableSizeWithBinarySuffix(physical_server_memory),
+        std::thread::hardware_concurrency(),
+        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
+    );
+
+#if defined(__x86_64__)
+    String cpu_info;
+#define COLLECT_FLAG(X) \
+    if (CPU::have##X()) \
+    {                   \
+        if (!cpu_info.empty()) \
+            cpu_info += ", ";  \
+        cpu_info += #X; \
+    }
+
+    CPU_ID_ENUMERATE(COLLECT_FLAG)
+#undef COLLECT_FLAG
+
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
+#endif
+
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
@@ -1056,35 +1083,44 @@ try
 
     if (config().getBool("mlock_executable", false))
     {
-        if (hasLinuxCapability(CAP_IPC_LOCK))
+        size_t min_physical_server_memory_to_mlock = config().getUInt64("mlock_executable_min_total_memory_amount_bytes", 5'000'000'000);
+        if (physical_server_memory >= min_physical_server_memory_to_mlock)
         {
-            try
+            if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                /// Get the memory area with (current) code segment.
-                /// It's better to lock only the code segment instead of calling "mlockall",
-                /// because otherwise debug info will be also locked in memory, and it can be huge.
-                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+                try
+                {
+                    /// Get the memory area with (current) code segment.
+                    /// It's better to lock only the code segment instead of calling "mlockall",
+                    /// because otherwise debug info will be also locked in memory, and it can be huge.
+                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
 
-                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlock(addr, len))
-                    LOG_WARNING(log, "Failed mlock: {}", errnoToString());
-                else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                    if (0 != mlock(addr, len))
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
+                    else
+                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                }
             }
-            catch (...)
+            else
             {
-                LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                LOG_INFO(
+                    log,
+                    "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.",
+                    executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
             }
         }
         else
         {
-            LOG_INFO(
-                log,
-                "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                " It could happen due to incorrect ClickHouse package installation."
-                " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
-                " Note that it will not work on 'nosuid' mounted filesystems.",
-                executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
+            LOG_INFO(log, "Skip mlock for the clickhouse executable, because the total memory in the system ({}) is less than the minimum configured threshold (`mlock_executable_min_total_memory_amount_bytes` = {})",
+                ReadableSize(physical_server_memory), ReadableSize(min_physical_server_memory_to_mlock));
         }
     }
 #endif
@@ -1203,32 +1239,6 @@ try
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
-#endif
-
-    const size_t physical_server_memory = getMemoryAmount();
-
-    LOG_INFO(
-        log,
-        "Available RAM: {}; logical cores: {}; used cores: {}.",
-        formatReadableSizeWithBinarySuffix(physical_server_memory),
-        std::thread::hardware_concurrency(),
-        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
-    );
-
-#if defined(__x86_64__)
-    String cpu_info;
-#define COLLECT_FLAG(X) \
-    if (CPU::have##X()) \
-    {                   \
-        if (!cpu_info.empty()) \
-            cpu_info += ", ";  \
-        cpu_info += #X; \
-    }
-
-    CPU_ID_ENUMERATE(COLLECT_FLAG)
-#undef COLLECT_FLAG
-
-    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
     bool has_trace_collector = false;
