@@ -461,8 +461,9 @@ void SortingStep::fullSort(
 void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     SCOPE_EXIT_SAFE({
-        pipeline.addSimpleTransform([&](const SharedHeader & header)
-                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+        if (dataflow_cache_updater)
+            pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
     });
 
     /// We consider that a caller has more information what type of sorting to apply.
