@@ -81,10 +81,11 @@ SELECT * FROM test;
 │ d    │ ᴺᵁᴸᴸ │
 └──────┴──────┘
 
-SELECT argAndMax(a, b), max(b) FROM test;
-┌─argAndMax(a, b)─┬─max(b)─┐
-│ ('b',2)         │      3 │ -- argAndMax = ('b',2) because it the first not Null value, max(b) is from another row!
-└─────────────────┴────────┘
+SELECT argMax(a, b), argAndMax(a, b), max(b) FROM test;
+┌─argMax(a, b)─┬─argAndMax(a, b)─┬─max(b)─┐
+│ b            │ ('b',2)         │      3 │ -- argMax = b because it the first not Null value, max(b) is from another row!
+└──────────────┴─────────────────┴────────┘
+
 SELECT argAndMax(tuple(a), b) FROM test;
 ┌─argAndMax((a), b)─┐
 │ ((NULL),3)        │-- The a `Tuple` that contains only a `NULL` value is not `NULL`, so the aggregate functions won't skip that row because of that `NULL` value

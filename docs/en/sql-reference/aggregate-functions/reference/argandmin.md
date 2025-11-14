@@ -81,10 +81,10 @@ SELECT * FROM test;
 │ d    │ ᴺᵁᴸᴸ │
 └──────┴──────┘
 
-SELECT argAndMin(a, b), min(b) FROM test;
-┌─argAndMin(a, b)─┬─min(b)─┐
-│ ('a',1)         │      0 │ -- argMin = a because it's the first not `NULL` value, min(b) is from another row!
-└─────────────────┴────────┘
+SELECT argMin(a,b), argAndMin(a, b), min(b) FROM test;
+┌─argMin(a, b)─┬─argAndMin(a, b)─┬─min(b)─┐
+│ a            │ ('a',1)         │      0 │ -- argMin = a because it's the first not `NULL` value, min(b) is from another row!
+└──────────────┴─────────────────┴────────┘
 
 SELECT argAndMin(tuple(a), b) FROM test;
 ┌─argAndMin((a), b)─┐
