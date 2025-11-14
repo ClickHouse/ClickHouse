@@ -256,7 +256,7 @@ Extracts the first string in `haystack` that matches the regexp pattern and corr
     )";
     FunctionDocumentation::Syntax syntax = "regexpExtract(haystack, pattern[, index])";
     FunctionDocumentation::Arguments arguments = {
-        {"haystack", "String, in which regexp pattern will to be matched.", {"String"}},
+        {"haystack", "String, in which regexp pattern will be matched.", {"String"}},
         {"pattern", "String, regexp expression. `pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.", {"const String"}},
         {"index", "Optional. An integer number greater or equal 0 with default 1. It represents which regex group to extract.", {"(U)Int*"}},
     };
