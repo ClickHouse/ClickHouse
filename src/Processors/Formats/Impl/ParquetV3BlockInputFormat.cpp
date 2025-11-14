@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/SharedThreadPools.h>
