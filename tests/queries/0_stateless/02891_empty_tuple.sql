@@ -14,7 +14,10 @@ drop table x;
 
 drop table if exists x;
 
-create table x (i Nullable(Tuple())) engine MergeTree order by (); -- { serverError 43 }
+create table x (i Nullable(Tuple())) engine MergeTree order by ();
+
+drop table x;
+
 create table x (i LowCardinality(Tuple())) engine MergeTree order by (); -- { serverError 43 }
 create table x (i Tuple(), j Array(Tuple())) engine MergeTree order by ();
 
