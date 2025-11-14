@@ -516,7 +516,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & que
         if (remaining_tokens.contains(token))
             return true;
     }
-    return query.tokens.empty();
+    return false;
 }
 
 bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & query) const
@@ -526,7 +526,7 @@ bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & qu
         if (!remaining_tokens.contains(token))
             return false;
     }
-    return true;
+    return !query.tokens.empty(); // return false in case of no tokens
 }
 
 void MergeTreeIndexGranuleText::resetAfterAnalysis()
