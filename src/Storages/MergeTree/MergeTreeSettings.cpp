@@ -863,6 +863,9 @@ namespace ErrorCodes
     DECLARE(Milliseconds, sleep_before_commit_local_part_in_replicated_table_ms, 0, R"(
     For testing. Do not change it.
     )", 0) \
+    DECLARE(Bool, do_not_run_schedule_data_processing_job, 0, R"(
+    For testing. Do not change it.
+    )", 0) \
     DECLARE(Bool, optimize_row_order, false, R"(
     Controls if the row order should be optimized during inserts to improve the
     compressability of the newly inserted table part.

@@ -104,6 +104,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsBool do_not_run_schedule_data_processing_job;
 }
 
 namespace ErrorCodes
@@ -1547,6 +1548,9 @@ UInt32 StorageMergeTree::getMaxLevelInBetween(const PartProperties & left, const
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     if (shutdown_called)
+        return false;
+
+    if ((*getSettings())[MergeTreeSetting::do_not_run_schedule_data_processing_job])
         return false;
 
     assert(!isStaticStorage());
