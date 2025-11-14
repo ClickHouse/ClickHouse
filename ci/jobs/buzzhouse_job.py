@@ -196,9 +196,9 @@ def main():
             "enable_force_settings": random.choice([True, False]),
             # Don't compare for correctness yet, false positives maybe
             "use_dump_table_oracle": random.randint(0, 1),
-            "test_with_fill": False, # Creating too many issues
+            "test_with_fill": False,  # Creating too many issues
             "compare_success_results": False,  # This can give false positives, so disable it
-            "allow_infinite_tables": False, # Creating too many issues
+            "allow_infinite_tables": False,  # Creating too many issues
             "allow_hardcoded_inserts": random.choice([True, False]),
             # These are the error codes that I disallow at the moment
             "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",

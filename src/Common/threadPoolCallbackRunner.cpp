@@ -70,6 +70,7 @@ void ThreadPoolCallbackRunnerFast::operator()(std::function<void()> f)
     {
         std::unique_lock lock(mutex);
         queue.push_back(std::move(f));
+
         startMoreThreadsIfNeeded(active_tasks_, lock);
     }
 
@@ -93,23 +94,35 @@ void ThreadPoolCallbackRunnerFast::bulkSchedule(std::vector<std::function<void()
     if (mode == Mode::Disabled)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread pool runner is not initialized");
 
-    size_t active_tasks_ = fs.size() + active_tasks.fetch_add(fs.size(), std::memory_order_relaxed);
+    size_t n = fs.size();
+    size_t active_tasks_ = n + active_tasks.fetch_add(n, std::memory_order_relaxed);
 
     {
         std::unique_lock lock(mutex);
         queue.insert(queue.end(), std::move_iterator(fs.begin()), std::move_iterator(fs.end()));
-        startMoreThreadsIfNeeded(active_tasks_, lock);
+
+        try
+        {
+            startMoreThreadsIfNeeded(active_tasks_, lock);
+        }
+        catch (...)
+        {
+            /// Keep `queue` consistent with `queue_size`.
+            queue.erase(queue.end() - n, queue.end());
+            active_tasks.fetch_sub(n, std::memory_order_relaxed);
+            throw;
+        }
     }
 
     if (mode == Mode::ThreadPool)
     {
 #ifdef OS_LINUX
-        UInt32 prev_size = queue_size.fetch_add(fs.size(), std::memory_order_release);
+        UInt32 prev_size = queue_size.fetch_add(n, std::memory_order_release);
         if (prev_size < max_threads)
-            futexWake(&queue_size, fs.size());
+            futexWake(&queue_size, n);
 #else
-        if (fs.size() < 4)
-            for (size_t i = 0; i < fs.size(); ++i)
+        if (n < 4)
+            for (size_t i = 0; i < n; ++i)
                 queue_cv.notify_one();
         else
             queue_cv.notify_all();

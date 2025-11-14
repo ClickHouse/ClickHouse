@@ -222,6 +222,11 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"merge_max_block_size", highRangeSetting},
     {"merge_max_block_size_bytes", bytesRangeSetting},
     {"merge_max_bytes_to_prewarm_cache", bytesRangeSetting},
+    {"merge_max_dynamic_subcolumns_in_wide_part",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); },
+         {"0", "1", "2", "8", "10", "100"},
+         false)},
     {"merge_selector_algorithm",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)

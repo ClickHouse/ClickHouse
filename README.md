@@ -47,7 +47,12 @@ You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-even
 
 Upcoming meetups
 * [Bogota Meetup](https://www.meetup.com/clickhouse-latinoamerica/events/311069048) - November 13, 2025
+* [Seoul Meetup](https://www.meetup.com/clickhouse-seoul-user-group/events/311633023/) - November 18, 2025
+* [Mumbai Meetup](https://www.meetup.com/clickhouse-mumbai-user-group/events/311852373/) - November 22, 2025
+* [Bangkok Meetup](https://www.meetup.com/clickhouse-thailand-meetup-group/events/311852739/) - November 25, 2025
 * [Warsaw Meetup](https://www.meetup.com/clickhouse-poland-user-group/events/311309076) - November 26, 2025
+* [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/311988089/) - December 9, 2025
+* [Tokyo Meetup](https://www.meetup.com/clickhouse-tokyo-user-group/events/311974739/) - December 15, 2025
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/311868191) - December 29, 2025
 
 Recent meetups
