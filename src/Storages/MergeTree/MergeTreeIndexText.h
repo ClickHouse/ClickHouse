@@ -178,7 +178,7 @@ struct DictionaryBlockBase
     bool empty() const;
     size_t size() const;
 
-    size_t upperBound(const std::string_view token) const;
+    size_t upperBound(std::string_view token) const;
 };
 
 struct DictionaryBlock : public DictionaryBlockBase
