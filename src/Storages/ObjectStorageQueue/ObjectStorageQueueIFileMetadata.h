@@ -57,7 +57,7 @@ public:
     /// Helper structure for storing the flag of presence or absence of a node in the keeper.
     struct HiveLastProcessedFileInfo
     {
-        /// Flag if node exists. For existing node need to call `set`, for non-existes - `create`.
+        /// Flag if node exists. For existing node need to call `set`, for non-existing - `create`.
         bool exists;
         /// Last processed path for some hive partition.
         std::string file_path;
@@ -75,7 +75,7 @@ public:
         /// Last processed path for some hive partition.
         std::string file_path;
         /// Position of record in `requests` list with keeper commands.
-        /// Used to avoid double creation Keeper node with same path.
+        /// Used to avoid double creation of Keeper node with same path.
         /// Instead more actual record overrides old one in the `requests` list.
         size_t index;
     };
