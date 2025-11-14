@@ -769,7 +769,7 @@ class ClickHouseCluster:
         # available when with_hashicorp_vault == True
         self.hashicorp_vault_host = "hashicorpvault"
         self.hashicorp_vault_ip = None
-        self.hashicorp_vault_cert_dir = p.abspath(p.join(self.base_dir, "configs"))
+        self.hashicorp_vault_cert_dir = p.abspath(p.join(self.instances_dir, "certs"))
         self.hashicorp_vault_logs_dir = p.abspath(p.join(self.instances_dir, "logs"))
 
         # available when with_postgres == True
@@ -2030,6 +2030,7 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             with_glue_catalog=with_glue_catalog,
             with_hms_catalog=with_hms_catalog,
+            with_hashicorp_vault=with_hashicorp_vault,
             use_old_analyzer=use_old_analyzer,
             use_distributed_plan=use_distributed_plan,
             server_bin_path=self.server_bin_path,
@@ -3240,6 +3241,7 @@ class ClickHouseCluster:
                 logging.debug("Generating certificates for HashiCorp Vault")
                 env = os.environ.copy()
                 env["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+                os.mkdir(self.hashicorp_vault_cert_dir)
                 run_and_check(
                     p.join(self.base_dir, "hashi_corp_vault_certs.sh"),
                     env=env,
@@ -3709,7 +3711,7 @@ class ClickHouseCluster:
                 env = os.environ.copy()
                 env["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
                 env["HASHICORP_VAULT_LOGS_DIR"] = self.hashicorp_vault_logs_dir
-                os.makedirs(self.hashicorp_vault_logs_dir)
+                os.makedirs(self.hashicorp_vault_logs_dir, exist_ok=True)
                 os.chmod(self.hashicorp_vault_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 vault_start_cmd = self.base_vault_cmd + common_opts
                 run_and_check(vault_start_cmd)
@@ -4093,6 +4095,7 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         with_glue_catalog,
         with_hms_catalog,
+        with_hashicorp_vault,
         use_old_analyzer,
         use_distributed_plan,
         server_bin_path,
@@ -4202,6 +4205,7 @@ class ClickHouseInstance:
         self.with_hive = with_hive
         self.with_coredns = with_coredns
         self.coredns_config_dir = p.abspath(p.join(base_path, "coredns_config"))
+        self.with_hashicorp_vault = with_hashicorp_vault
         self.use_old_analyzer = use_old_analyzer
         self.use_distributed_plan = use_distributed_plan
         self.randomize_settings = randomize_settings
@@ -5427,6 +5431,13 @@ class ClickHouseInstance:
         if self.with_coredns:
             shutil.copytree(
                 self.coredns_config_dir, p.abspath(p.join(self.path, "coredns_config"))
+            )
+
+        if self.with_hashicorp_vault:
+            shutil.copytree(
+                self.cluster.hashicorp_vault_cert_dir,
+                self.config_d_dir,
+                dirs_exist_ok=True,
             )
 
         metrika_xml = ""

@@ -7,9 +7,6 @@ instance = cluster.add_instance(
     "instance",
     main_configs=[
         "configs/config_cert.xml",
-        "configs/client.key",
-        "configs/client.crt",
-        "configs/ca.crt",
     ],
     user_configs=["configs/users.xml"],
     with_hashicorp_vault=True,

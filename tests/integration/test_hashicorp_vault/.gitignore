@@ -1,5 +1,0 @@
-configs/*.cnf
-configs/*.csr
-configs/*.crt
-configs/*.key
-configs/ca.srl

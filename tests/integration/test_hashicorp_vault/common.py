@@ -70,7 +70,7 @@ def vault_startup_command_cert(cluster):
     send_post_request(cluster, "sys/auth/cert", payload, 204)
 
     # create CA certificate role
-    client_crt = read_cert(f"{cluster.base_dir}/configs/client.crt")
+    client_crt = read_cert(f"{cluster.hashicorp_vault_cert_dir}/client.crt")
     payload = {"certificate": f"{client_crt}", "display_name": "client"}
     path = "auth/cert/certs/client"
     custom_headers = {
@@ -78,13 +78,12 @@ def vault_startup_command_cert(cluster):
     }
     response = requests.post(
         f"https://{cluster.hashicorp_vault_ip}:8210/v1/{path}",
-        # f"https://hashicorpvault:8210/v1/{path}",
         json=payload,
         headers=custom_headers,
         cert=(
-            f"{cluster.base_dir}/configs/client.crt",
-            f"{cluster.base_dir}/configs/client.key",
+            f"{cluster.hashicorp_vault_cert_dir}/client.crt",
+            f"{cluster.hashicorp_vault_cert_dir}/client.key",
         ),
-        verify=f"{cluster.base_dir}/configs/ca.crt",
+        verify=f"{cluster.hashicorp_vault_cert_dir}/ca.crt",
     )
     assert response.status_code == 204
