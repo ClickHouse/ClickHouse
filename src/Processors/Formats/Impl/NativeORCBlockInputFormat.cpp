@@ -62,7 +62,7 @@ ORCInputStream::ORCInputStream(SeekableReadBuffer & in_, size_t file_size_, bool
     : in(in_), file_size(file_size_), supports_read_at(use_prefetch && in_.supportsReadAt())
 {
     if (supports_read_at)
-        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ORCFile");
+        async_runner = threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::ORC_FILE);
 }
 
 UInt64 ORCInputStream::getLength() const
