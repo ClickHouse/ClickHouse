@@ -230,10 +230,13 @@ public:
 
     ASTPtr clone() const override;
 
+    void writeJSON(WriteBuffer & buf, size_t indent) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override;
+    String getTypeString() const;
 };
 
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
@@ -276,6 +279,8 @@ public:
     }
 
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
+
+    void writeJSON(WriteBuffer & buf, size_t indent) const override;
 
 protected:
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
