@@ -382,7 +382,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     auto context = getContext();
 
     // disable parallel replicas for inserts if enabled
-    // the insert can trigger update for depenent materialized views
+    // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
     if (context->canUseParallelReplicasOnInitiator())
     {
@@ -688,7 +688,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto context = getContext();
 
     // disable parallel replicas for inserts if enabled
-    // the insert can trigger update for depenent materialized views
+    // the insert can trigger update for dependent materialized views
     // using parallel replicas in this context is unnecessary
     if (context->canUseParallelReplicasOnInitiator())
     {
