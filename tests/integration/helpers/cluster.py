@@ -769,6 +769,8 @@ class ClickHouseCluster:
         # available when with_hashicorp_vault == True
         self.hashicorp_vault_host = "hashicorpvault"
         self.hashicorp_vault_ip = None
+        self.hashicorp_vault_cert_dir = p.abspath(p.join(self.base_dir, "configs"))
+        self.hashicorp_vault_logs_dir = p.abspath(p.join(self.instances_dir, "logs"))
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"
@@ -1773,6 +1775,8 @@ class ClickHouseCluster:
 
     def setup_hashicorp_vault(self, instance, env_variables, docker_compose_yml_dir):
         self.with_hashicorp_vault = True
+        env_variables["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+        env_variables["HASHICORP_VAULT_LOGS_DIR"] = self.hashicorp_vault_logs_dir
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_hashicorp_vault.yml")]
@@ -3232,6 +3236,17 @@ class ClickHouseCluster:
             logging.warning("Cleanup failed:{e}")
 
         try:
+            if self.with_hashicorp_vault and self.base_vault_cmd:
+                logging.debug("Generating certificates for HashiCorp Vault")
+                env = os.environ.copy()
+                env["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+                run_and_check(
+                    p.join(self.base_dir, "hashi_corp_vault_certs.sh"),
+                    env=env,
+                    detach=False,
+                    nothrow=False,
+                )
+
             for instance in list(self.instances.values()):
                 logging.debug(f"Setup directory for instance: {instance.name}")
                 instance.create_dir()
@@ -3690,6 +3705,12 @@ class ClickHouseCluster:
                 self.wait_ytsaurus_to_start()
 
             if self.with_hashicorp_vault and self.base_vault_cmd:
+                logging.debug("Setup HashiCorp Vaule")
+                env = os.environ.copy()
+                env["HASHICORP_VAULT_CERT_DIR"] = self.hashicorp_vault_cert_dir
+                env["HASHICORP_VAULT_LOGS_DIR"] = self.hashicorp_vault_logs_dir
+                os.makedirs(self.hashicorp_vault_logs_dir)
+                os.chmod(self.hashicorp_vault_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 vault_start_cmd = self.base_vault_cmd + common_opts
                 run_and_check(vault_start_cmd)
                 self.wait_vault_to_start()
