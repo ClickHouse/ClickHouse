@@ -114,6 +114,8 @@ RemoveChildrenOutputResult removeChildrenOutputs(QueryPlan::Nodes & nodes, Query
             = updatedAnything(child_step->removeUnusedColumns(getNameMultiSetFromNames(parent_inputs[child_id]->getNames()), false));
 
         // As removeUnusedColumns might leave additional columns in the output, we have get rid of those outputs by adding a new ExpressionStep
+        // Right now this is mostly relevant for JoinStepLogical, as it must keep at least one column in its output, even if its parent requires no input.
+        // However in the future we might have other steps with similar behavior.
         if (updated_anything)
         {
             const auto added_discarding_step = addDiscardingExpressionStepIfNeeded(nodes, node, child_id);
