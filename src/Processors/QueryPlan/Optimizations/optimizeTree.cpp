@@ -262,7 +262,6 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 return std::make_pair(nopr_node, nopr_hash);
             }
         }
-        // TODO(nickitat): support multiple read steps with parallel replicas
         // throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find step with matching hash in single-node plan");
         LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
         return std::make_pair(nullptr, 0);
@@ -306,13 +305,16 @@ void considerEnablingParallelReplicas(
         const auto * reading_step = corresponding_node_in_single_replica_plan;
         while (reading_step && !reading_step->children.empty())
         {
-            // TODO(nickitat): Support multiple reading steps (e.g. multiple tables in JOIN).
             if (reading_step->children.size() > 1)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected single child while searching for ReadFromMergeTree, got {} children for step {}",
-                    reading_step->children.size(),
-                    reading_step->step->getName());
+            {
+                // TODO(nickitat): Support multiple reading steps (e.g. multiple tables in JOIN).
+                // throw Exception(
+                //     ErrorCodes::LOGICAL_ERROR,
+                //     "Expected single child while searching for ReadFromMergeTree, got {} children for step {}",
+                //     reading_step->children.size(),
+                //     reading_step->step->getName());
+                return;
+            }
             reading_step = reading_step->children.front();
         }
 
