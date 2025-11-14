@@ -53,6 +53,7 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
+    `is_shared_catalog_cluster` UInt8,
     `is_active` Nullable(UInt8),
     `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
