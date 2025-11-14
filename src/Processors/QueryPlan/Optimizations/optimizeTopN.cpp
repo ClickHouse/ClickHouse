@@ -81,18 +81,23 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     auto sort_column_name = sort_description.front().column_name.substr(sort_description.front().column_name.find('.') + 1);
 
-    NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
     TopNThresholdTrackerPtr threshold_tracker = nullptr;
 
     int direction = sort_description.front().direction;
 
-    /// If no WHERE clause, threshold filtering optimization not required.
-    if (settings.use_top_n_dynamic_filtering && where_clause)
+    if ((settings.use_skip_indexes_for_top_n &&
+            read_from_mergetree_step->isSkipIndexAvailableForTopN(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
+        (settings.use_top_n_dynamic_filtering && filter_step))
     {
         threshold_tracker = std::make_shared<TopNThresholdTracker>(direction);
         sorting_step->setTopNThresholdTracker(threshold_tracker);
+    }
 
+    if  (settings.use_top_n_dynamic_filtering && filter_step &&
+         !read_from_mergetree_step->getPrewhereInfo())
+    {
         auto new_prewhere_info = std::make_shared<PrewhereInfo>();
+        NameAndTypePair sort_column_name_and_type(sort_column_name, sort_column.type);
         new_prewhere_info->prewhere_actions = ActionsDAG({sort_column_name_and_type});
 
         /// Cannot use get() because need to pass an argument to constructor
@@ -105,8 +110,7 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
-        LOG_TRACE(getLogger(""), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
-        /// TODO : handle existing prewhere
+        LOG_TRACE(getLogger("optimzeTopN"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
         read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
     }
 

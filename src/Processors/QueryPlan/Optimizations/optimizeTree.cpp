@@ -52,7 +52,9 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.use_skip_indexes_for_top_n,
         optimization_settings.use_top_n_dynamic_filtering,
+        optimization_settings.use_skip_indexes_on_data_read,
     };
 
     while (!stack.empty())
@@ -173,7 +175,9 @@ void optimizeTreeSecondPass(
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.use_skip_indexes_for_top_n,
         optimization_settings.use_top_n_dynamic_filtering,
+        optimization_settings.use_skip_indexes_on_data_read,
     };
 
     Stack stack;

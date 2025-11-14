@@ -304,6 +304,7 @@ public:
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator() const;
 
     void setTopNColumn(const TopNFilterInfo & top_n_filter_info_) { top_n_filter_info = top_n_filter_info_; }
+    bool isSkipIndexAvailableForTopN(const String & sort_column) const;
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 

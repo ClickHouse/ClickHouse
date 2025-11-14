@@ -42,7 +42,9 @@ struct Optimization
         size_t use_index_for_in_with_subqueries_max_values;
         SizeLimits network_transfer_limits;
 
+        bool use_skip_indexes_for_top_n;
         bool use_top_n_dynamic_filtering;
+        bool use_skip_indexes_on_data_read;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -136,7 +138,7 @@ inline const auto & getOptimizations()
         {tryConvertJoinToIn, "convertJoinToIn", &QueryPlanOptimizationSettings::convert_join_to_in},
         {tryMergeFilterIntoJoinCondition, "mergeFilterIntoJoinCondition", &QueryPlanOptimizationSettings::merge_filter_into_join_condition},
         {tryConvertAnyJoinToSemiOrAntiJoin, "convertAnyJoinToSemiOrAntiJoin", &QueryPlanOptimizationSettings::convert_any_join_to_semi_or_anti_join},
-        {tryOptimizeTopN, "tryOptimizeTopN", &QueryPlanOptimizationSettings::try_use_top_n_pushdown},
+        {tryOptimizeTopN, "tryOptimizeTopN", &QueryPlanOptimizationSettings::try_use_top_n_optimization},
     }};
 
     return optimizations;

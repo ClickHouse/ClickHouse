@@ -1922,7 +1922,7 @@ static void buildIndexes(
         if (settings[Setting::use_skip_indexes_for_top_n] && canSkipIndexBeUsedForTopNFiltering(index_helper))
         {
             skip_indexes.skip_index_for_top_n_filtering = index_helper;
-            if (settings[Setting::use_top_n_dynamic_filtering])
+            if (settings[Setting::use_skip_indexes_on_data_read])
                 skip_indexes.threshold_tracker = top_n_filter_info->threshold_tracker;
         }
     }
@@ -3416,6 +3416,21 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
 {
     return data.getConditionSelectivityEstimator(getParts(), getContext());
+}
+
+bool ReadFromMergeTree::isSkipIndexAvailableForTopN(const String & sort_column) const
+{
+    const auto & all_indexes = storage_snapshot->metadata->getSecondaryIndices();
+
+    if (all_indexes.empty())
+        return false;
+
+    for (const auto & index : all_indexes)
+    {
+        if (index.column_names.size() == 1 && index.column_names[0] == sort_column && index.type == "minmax")
+            return true;
+    }
+    return false;
 }
 
 }

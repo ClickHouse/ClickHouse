@@ -120,7 +120,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     convert_join_to_in = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_join_to_in];
     merge_filter_into_join_condition = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filter_into_join_condition];
     convert_any_join_to_semi_or_anti_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_any_join_to_semi_or_anti_join];
-    try_use_top_n_pushdown = from[Setting::use_skip_indexes_for_top_n] || from[Setting::use_top_n_dynamic_filtering];
+    try_use_top_n_optimization = from[Setting::use_skip_indexes_for_top_n] || from[Setting::use_top_n_dynamic_filtering];
 
     bool use_parallel_replicas = from[Setting::allow_experimental_parallel_reading_from_replicas] && from[Setting::max_parallel_replicas] > 1;
     query_plan_optimize_join_order_limit = use_parallel_replicas ? 0 : from[Setting::query_plan_optimize_join_order_limit];
@@ -175,7 +175,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
+    use_skip_indexes_for_top_n = from[Setting::use_skip_indexes_for_top_n];
     use_top_n_dynamic_filtering = from[Setting::use_top_n_dynamic_filtering];
+    use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
     prepared_sets_cache = std::move(prepared_sets_cache_);
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class

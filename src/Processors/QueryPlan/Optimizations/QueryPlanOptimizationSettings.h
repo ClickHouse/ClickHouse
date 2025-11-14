@@ -59,7 +59,7 @@ struct QueryPlanOptimizationSettings
     bool merge_filter_into_join_condition;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
-    bool try_use_top_n_pushdown;
+    bool try_use_top_n_optimization;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -118,7 +118,9 @@ struct QueryPlanOptimizationSettings
     /// If full text search using index in payload is enabled.
     bool direct_read_from_text_index;
 
+    bool use_skip_indexes_for_top_n;
     bool use_top_n_dynamic_filtering;
+    bool use_skip_indexes_on_data_read;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 
