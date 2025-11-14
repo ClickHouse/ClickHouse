@@ -25,6 +25,6 @@ $CLICKHOUSE_CLIENT -q """
     SELECT entry_type FROM system.instrumentation;
     SYSTEM INSTRUMENT REMOVE ALL;
     SYSTEM FLUSH LOGS system.trace_log;
-    SELECT entry_type, duration_microseconds FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Entry' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%QueryMetricLog::startQuery%', symbols);
-    SELECT entry_type, duration_microseconds > 0 FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Exit' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%QueryMetricLog::startQuery%', symbols);
+    SELECT entry_type, duration_microseconds FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Entry' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
+    SELECT entry_type, duration_microseconds > 0 FROM system.trace_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND trace_type = 'Instrumentation' AND handler = 'profile' AND entry_type = 'Exit' AND function_name LIKE '%QueryMetricLog::startQuery%' AND arrayExists(x -> x LIKE '%dispatchHandler%', symbols);
 """
