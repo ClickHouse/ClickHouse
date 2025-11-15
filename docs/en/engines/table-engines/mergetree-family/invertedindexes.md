@@ -423,7 +423,9 @@ SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 ```
 
-## Direct read {#direct-read}
+## Performance Tuning {#performance-tuning}
+
+### Direct read {#direct-read}
 
 Certain types of text queries can be speed up significantly by an optimization called "direct read".
 More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
@@ -498,17 +500,17 @@ Positions:
 The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
 If this column is present, then direct read is used.
 
-## Tuning the text index {#tuning-the-text-index}
-
 Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
 
 They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache) and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) respectively. By default, they are disabled.
 
 Refer the following server settings to configure the cache.
 
-### Server Settings {#text-index-tuning-server-settings}
+### Caching {#caching}
 
-#### Dictionary blocks cache settings {#text-index-tuning-dictionary-blocks-cache}
+Different caches are available to buffer parts of the text index in-memory:
+
+#### Dictionary blocks cache settings {#caching-dictionary}
 
 | Setting                                                                                                                                                  | Description                                                                                                       | Default      |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------|
@@ -517,7 +519,7 @@ Refer the following server settings to configure the cache.
 | [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                        | `1'000'000`  |
 | [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.     | `0.5`        |
 
-#### Header cache settings {#text-index-tuning-header-cache}
+#### Header cache settings {#caching-header}
 
 | Setting                                                                                                                              | Description                                                                                             | Default      |
 |--------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
@@ -526,7 +528,7 @@ Refer the following server settings to configure the cache.
 | [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)   | Maximum number of deserialized headers in cache.                                                        | `100'000`    |
 | [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)     | The size of the protected queue in the text index header cache relative to the cache\'s total size.     | `0.5`        |
 
-#### Posting lists cache settings {#text-index-tuning-posting-lists-cache}
+#### Posting lists cache settings {#caching-posting-lists}
 
 | Setting                                                                                                                               | Description                                                                                             | Default      |
 |---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
