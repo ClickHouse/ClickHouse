@@ -56,6 +56,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace DB

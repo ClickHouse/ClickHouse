@@ -1,6 +1,7 @@
 #include <memory>
 #include <optional>
 #include <Core/Settings.h>
+#include <Common/setThreadName.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
@@ -29,8 +30,10 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <boost/operators.hpp>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <Disks/IO/ReadBufferFromDistributedCache.h>
@@ -38,7 +41,8 @@
 #endif
 
 #include <fmt/ranges.h>
-
+#include <Common/ProfileEvents.h>
+#include <Core/SettingsEnums.h>
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -65,6 +69,7 @@ namespace Setting
     extern const SettingsBool use_iceberg_partition_pruning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsBool table_engine_read_through_distributed_cache;
+    extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
 }
 
 namespace ErrorCodes
@@ -199,13 +204,22 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
         if (filter_actions_dag)
         {
-            return std::make_shared<ObjectIteratorWithPathAndFileFilter>(
+            iter = std::make_shared<ObjectIteratorWithPathAndFileFilter>(
                 std::move(iter),
                 *filter_actions_dag,
                 virtual_columns,
                 hive_columns,
                 configuration->getNamespace(),
                 local_context);
+        }
+        if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
+        {
+            iter = std::make_shared<ObjectIteratorSplitByBuckets>(
+                std::move(iter),
+                configuration->format,
+                object_storage,
+                local_context
+            );
         }
         return iter;
     }
@@ -587,6 +601,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method,
             need_only_count);
 
+        input_format->setBucketsToRead(object_info->file_bucket_info);
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)

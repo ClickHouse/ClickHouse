@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -888,7 +889,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
+        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length, true);
 }
 
 }

@@ -237,7 +237,11 @@ def main():
         if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
             link_arch = "aarch64" if Utils.is_arm() else "amd64"
             link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
-            Shell.run(f"wget -nv -P {temp_dir} {link_to_master_head_binary}", verbose=True, strict=True)
+            Shell.run(
+                f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
+                verbose=True,
+                strict=True,
+            )
     elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
         ch_path = str(Path(args.path).absolute())
@@ -265,7 +269,9 @@ def main():
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if not is_bugfix_validation and not info.is_local_run:
+    if is_coverage or is_bugfix_validation or info.is_local_run:
+        # not needed for these job flavors
+        # moreover it updates/rewrites inverted Tests status for bugfix validation check which should stay inverted
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -422,20 +428,23 @@ def main():
         if not info.is_local_run:
             CH.stop_log_exports()
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
-        results.append(ft_res_processor.run())
+        test_result = ft_res_processor.run()
         debug_files += ft_res_processor.debug_files
-        test_result = results[-1]
+        results.append(test_result)
 
         # invert result status for bugfix validation
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
+                r.set_label("xfail")
                 if r.status == Result.StatusExtended.FAIL:
+                    r.status = Result.StatusExtended.OK
                     has_failure = True
-                    break
+                elif r.status == Result.StatusExtended.OK:
+                    r.status = Result.StatusExtended.FAIL
             if not has_failure:
                 print("Failed to reproduce the bug")
-                results[-1].set_failed()
+                results[-1].set_failed().set_info("Failed to reproduce the bug")
             else:
                 results[-1].set_success()
 
