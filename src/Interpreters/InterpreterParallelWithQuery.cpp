@@ -122,6 +122,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
     auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
+
     auto & pipeline = query_io.pipeline;
 
     if (!pipeline.initialized())
@@ -152,7 +153,9 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
 
     chassert(pipeline.completed());
     std::lock_guard lock{mutex};
-    combined_pipeline.addCompletedPipeline(std::move(pipeline));
+    combined_pipeline.addCompletedPipeline(pipeline);
+
+    io_holders.push_back(std::move(query_io));
 
     /// TODO: Special processing for ON CLUSTER queries and also for queries related to a replicated database is required.
 }
@@ -164,8 +167,24 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     if (!combined_pipeline.initialized())
         return; /// `combined_pipeline` is empty, skipping
 
-    CompletedPipelineExecutor executor(combined_pipeline);
-    executor.execute();
+    try
+    {
+        CompletedPipelineExecutor executor(combined_pipeline);
+        executor.execute();
+    }
+    catch (...)
+    {
+        for (auto & io : io_holders)
+        {
+            io.onException();
+        }
+        throw;
+    }
+
+    for (auto & io : io_holders)
+    {
+        io.onFinish();
+    }
 }
 
 
