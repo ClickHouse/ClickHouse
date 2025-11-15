@@ -1211,7 +1211,7 @@ static BlockIO executeQueryImpl(
         }
         else
         {
-            query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+            query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
@@ -1222,7 +1222,7 @@ static BlockIO executeQueryImpl(
         if (query.empty())
             query.assign(begin, std::min(end - begin, static_cast<ptrdiff_t>(max_query_size)));
 
-        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length);
+        query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
 
         if (!internal)
