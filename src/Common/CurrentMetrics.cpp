@@ -462,6 +462,11 @@
     M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
+    \
+    M(HashJoinInMemoryBytes, "Total memory usage in bytes for hash tables and right table data in Hash Join operations") \
+    M(HashJoinInMemoryRows, "Total number of rows stored in memory from right table data in Hash Join operations") \
+    M(HashJoinInstancesCount, "Total number of active Hash Join instances") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

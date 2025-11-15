@@ -22,6 +22,15 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
+#include <Common/CurrentMetrics.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric HashJoinInMemoryBytes;
+    extern const Metric HashJoinInMemoryRows;
+    extern const Metric HashJoinInstancesCount;
+}
 
 namespace DB
 {
@@ -392,6 +401,10 @@ public:
 
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
+
+        CurrentMetrics::Increment metric_bytes{CurrentMetrics::HashJoinInMemoryBytes, 0};
+        CurrentMetrics::Increment metric_rows{CurrentMetrics::HashJoinInMemoryRows, 0};
+        CurrentMetrics::Increment metric_instances{CurrentMetrics::HashJoinInstancesCount, 1};
 
         size_t allocated_size = 0;
         size_t nullmaps_allocated_size = 0;

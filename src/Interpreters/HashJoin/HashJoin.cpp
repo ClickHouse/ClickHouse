@@ -12,7 +12,6 @@
 #include <Common/StackTrace.h>
 #include <Common/logger_useful.h>
 
-
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -460,6 +459,9 @@ size_t HashJoin::getTotalRowCount() const
                 kind, strictness, map, prefer_use_maps_all, [&](auto, auto, auto & map_) { res += map_.getTotalRowCount(data->type); });
         }
     }
+
+    /// We call this function often enough, so keep metric up to date here.
+    data->metric_rows.changeTo(res);
     return res;
 }
 
@@ -516,6 +518,9 @@ size_t HashJoin::getTotalByteCount() const
                 [&](auto, auto, auto & map_) { res += map_.getTotalByteCountImpl(data->type); });
         }
     }
+
+    /// We call this function often enough, so keep metric up to date here.
+    data->metric_bytes.changeTo(res);
     return res;
 }
 
@@ -815,7 +820,6 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
             if (!check_limits)
                 return true;
 
-            /// TODO: Do not calculate them every time
             total_rows = getTotalRowCount();
             total_bytes = getTotalByteCount();
         }
@@ -1884,4 +1888,5 @@ void HashJoin::onBuildPhaseFinish()
 
     LOG_TRACE(log, "{}Join data is built, {} and {} rows in hash table", instance_log_id, ReadableSize(getTotalByteCount()), getTotalRowCount());
 }
+
 }
