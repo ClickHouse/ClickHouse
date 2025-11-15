@@ -166,11 +166,11 @@ auto sizeOfRanges(const RangesWithStep & rs)
 class NumbersRangedSource : public ISource
 {
 public:
-    /// Represent a position in Ranges list.
+    /// Represent a position in `Ranges` list.
     struct RangesPos
     {
-        size_t offset_in_ranges;
-        UInt128 offset_in_range;
+        size_t offset_in_ranges; /// which range in the vector
+        UInt128 offset_in_range; /// how many values already consumed inside that range
     };
 
     struct RangesState
@@ -197,7 +197,7 @@ public:
 
     String getName() const override { return "NumbersRange"; }
 
-protected:
+private:
     /// Find the data range in ranges and return how many item found.
     /// If no data left in ranges return 0.
     UInt64 findRanges(RangesPos & start, RangesPos & end, UInt64 base_block_size_)
@@ -205,7 +205,7 @@ protected:
         std::lock_guard lock(ranges_state->mutex);
 
 
-        UInt64 need = base_block_size_;
+        UInt64 maximum_can_take = base_block_size_;
         UInt64 size = 0; /// how many item found.
 
         /// find start
@@ -213,33 +213,36 @@ protected:
         end = start;
 
         /// find end
-        while (need != 0)
+        while (maximum_can_take != 0)
         {
-            UInt128 can_provide = end.offset_in_ranges == ranges.size() ? static_cast<UInt128>(0)
-                                                                        : ranges[end.offset_in_ranges].size - end.offset_in_range;
-            if (can_provide == 0)
-                break;
+            if (end.offset_in_ranges == ranges.size())
+                break; /// no ranges left at all
 
-            if (can_provide > need)
+
+            auto & current_range = ranges[end.offset_in_ranges];
+
+            UInt128 remaining_in_current_range = current_range.size - end.offset_in_range;
+
+            chassert(remaining_in_current_range > 0);
+
+            UInt128 take128 = std::min<UInt128>(remaining_in_current_range, maximum_can_take);
+
+            UInt64 take = static_cast<UInt64>(take128);
+
+            /// Advance 'end' by 'take' elements inside this range.
+            chassert(end.offset_in_range + take <= current_range.size);
+
+            end.offset_in_range += take;
+
+            /// If we've exactly exhausted this range, move to the next one.
+            if (end.offset_in_range == current_range.size)
             {
-                end.offset_in_range += need;
-                size += need;
-                need = 0;
-            }
-            else if (can_provide == need)
-            {
-                end.offset_in_ranges++;
+                ++end.offset_in_ranges;
                 end.offset_in_range = 0;
-                size += need;
-                need = 0;
             }
-            else
-            {
-                end.offset_in_ranges++;
-                end.offset_in_range = 0;
-                size += static_cast<UInt64>(can_provide);
-                need -= static_cast<UInt64>(can_provide);
-            }
+
+            size += take;
+            maximum_can_take -= take;
         }
 
         ranges_state->pos = end;
@@ -247,6 +250,7 @@ protected:
         return size;
     }
 
+protected:
     Chunk generate() override
     {
         if (ranges.empty())
@@ -258,81 +262,66 @@ protected:
         RangesPos end;
         auto block_size = findRanges(start, end, base_block_size);
 
+        chassert(block_size <= base_block_size);
+
+        /// No data left.
         if (!block_size)
             return {};
+
+        chassert(start.offset_in_ranges < ranges.size());
+        chassert(end.offset_in_ranges <= ranges.size());
+        chassert(start.offset_in_ranges <= end.offset_in_ranges);
 
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
 
-        /// This will accelerates the code.
         UInt64 * pos = vec.data();
 
         UInt64 provided = 0;
         RangesPos cursor = start;
 
-        while (block_size - provided != 0)
+        while (provided < block_size)
         {
-            UInt64 need = block_size - provided;
+            chassert(cursor.offset_in_ranges < ranges.size());
+
             auto & range = ranges[cursor.offset_in_ranges];
 
-            UInt128 can_provide = cursor.offset_in_ranges == end.offset_in_ranges
-                ? end.offset_in_range - cursor.offset_in_range
-                : range.size - cursor.offset_in_range;
+            /// How many items from the current range belong to this block starting at cursor.
+            UInt128 can_provide = (cursor.offset_in_ranges == end.offset_in_ranges) ? (end.offset_in_range - cursor.offset_in_range)
+                                                                                    : (range.size - cursor.offset_in_range);
 
-            /// set value to block
-            auto set_value = [&pos, this](UInt128 & start_value, UInt128 & end_value)
-            {
-                if (end_value > std::numeric_limits<UInt64>::max())
-                {
-                    while (start_value < end_value)
-                    {
-                        *(pos++) = start_value;
-                        start_value += this->step;
-                    }
-                }
-                else
-                {
-                    auto start_value_64 = static_cast<UInt64>(start_value);
-                    auto end_value_64 = static_cast<UInt64>(end_value);
-                    auto size = (end_value_64 - start_value_64) / this->step;
-                    iotaWithStepOptimized(pos, static_cast<size_t>(size), start_value_64, step);
-                    pos += size;
-                }
-            };
+            UInt64 need = block_size - provided;
 
-            if (can_provide > need)
-            {
-                UInt64 start_value = range.left + cursor.offset_in_range * step;
-                /// end_value will never overflow
-                iotaWithStepOptimized(pos, static_cast<size_t>(need), start_value, step);
-                pos += need;
-                provided += need;
-                cursor.offset_in_range += need;
-            }
-            else if (can_provide == need)
-            {
-                /// to avoid UInt64 overflow
-                UInt128 start_value = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
-                UInt128 end_value = start_value + need * step;
-                set_value(start_value, end_value);
+            chassert(can_provide > 0 && can_provide <= need);
 
-                provided += need;
-                cursor.offset_in_ranges++;
-                cursor.offset_in_range = 0;
+            UInt64 take = static_cast<UInt64>(can_provide);
+
+            /// Compute logical start value (in 128-bit to avoid overflow), then narrow to UInt64 for the column.
+            UInt128 start_value_128 = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
+
+            chassert(start_value_128 <= std::numeric_limits<UInt64>::max());
+            UInt64 start_value = static_cast<UInt64>(start_value_128);
+
+            iotaWithStepOptimized<UInt64>(pos, take, start_value, step);
+            pos += take;
+            provided += take;
+
+            if (cursor.offset_in_ranges == end.offset_in_ranges)
+            {
+                /// We are in the final range for this block: cursor moves towards `end`.
+                cursor.offset_in_range += take;
+                chassert(cursor.offset_in_range == end.offset_in_range);
             }
             else
             {
-                /// to avoid UInt64 overflow
-                UInt128 start_value = static_cast<UInt128>(range.left) + cursor.offset_in_range * step;
-                UInt128 end_value = start_value + can_provide * step;
-                set_value(start_value, end_value);
-
-                provided += static_cast<UInt64>(can_provide);
+                /// We consumed the whole tail of this range for this block; move to the next range.
+                chassert(cursor.offset_in_range + take == range.size);
                 cursor.offset_in_ranges++;
                 cursor.offset_in_range = 0;
             }
         }
 
+        chassert(provided == block_size);
         chassert(block_size == UInt64(pos - vec.begin()));
         progress(column->size(), column->byteSize());
 
