@@ -25,8 +25,6 @@ std::optional<std::string> getClientConfigPath(const std::string & home_path)
         names.emplace_back(home_path + "/.config/clickhouse-client/config");
         names.emplace_back(home_path + "/.clickhouse-client/config");
     }
-    if (!home_path.empty())
-        names.emplace_back(home_path + "/.clickhouse-client/config");
     names.emplace_back("/etc/clickhouse-client/config");
 
     for (const auto & name : names)
