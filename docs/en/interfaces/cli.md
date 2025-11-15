@@ -422,10 +422,19 @@ clickhouse-client
 
 #### Configuration file {#ai-sql-generation-configuration-file}
 
-For more control over AI settings, configure them in your ClickHouse Client configuration file located at:
+For more control over AI settings, configure them in your ClickHouse Client configuration file.
+The client now follows the XDG Base Directory Specification by default:
+
+If set, $XDG_CONFIG_HOME is used:
+- `$XDG_CONFIG_HOME/clickhouse-client/config.xml` (XML format)
+- `$XDG_CONFIG_HOME/clickhouse-client/config.yaml` (YAML format)
+If `$XDG_CONFIG_HOME` is not set, ClickHouse will use:
+- `~/.config/clickhouse-client/config.xml` (XML format)
+- `~/.config/clickhouse-client/config.yaml` (YAML format)
+Legacy fallback (still supported for backward compatibility):
 - `~/.clickhouse-client/config.xml` (XML format)
 - `~/.clickhouse-client/config.yaml` (YAML format)
-- Or specify a custom location with `--config-file`
+You can always override the configuration path manually using `--config-file`
 
 <Tabs>
   <TabItem value="xml" label="XML" default>
