@@ -375,8 +375,13 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
 ///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
 void shrinkRanges(RangesWithStep & ranges, size_t size)
 {
+    if (size == 0)
+    {
+        ranges.clear();
+        return;
+    }
+
     chassert(!ranges.empty());
-    chassert(size > 0);
 
 #ifndef NDEBUG
     {
