@@ -11,7 +11,7 @@ class StackTraceReader(object):
         lines = []
         stack_trace_pattern = re.compile(r"<Fatal> BaseDaemon: \d{1,2}\. ")
 
-        with open(file_path, "r") as file:
+        with open(file_path, "r", errors="replace") as file:
             all_lines = file.readlines()
 
         # Only process last max_lines lines
@@ -42,7 +42,7 @@ class StackTraceReader(object):
     def get_fuzzer_query(fuzzer_log, max_lines=200):
         assert Path(fuzzer_log).is_file(), f"File {fuzzer_log} does not exist"
 
-        with open(fuzzer_log, "r") as file:
+        with open(fuzzer_log, "r", errors="replace") as file:
             all_lines = file.readlines()
 
         # Only process last max_lines lines

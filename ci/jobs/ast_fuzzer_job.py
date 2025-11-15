@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.generate_test import FuzzerTestGenerator
 from ci.jobs.scripts.stack_trace_reader import StackTraceReader
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -77,12 +78,13 @@ def main():
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"
     fatal_log = workspace_path / "fatal.log"
+    server_log = workspace_path / "server.log"
     paths = [
         workspace_path / "core.zst",
         workspace_path / "dmesg.log",
         fatal_log,
         workspace_path / "stderr.log",
-        workspace_path / "server.log",
+        server_log,
         workspace_path / "fuzzer_out.sql",
         fuzzer_log,
         dmesg_log,
@@ -107,22 +109,52 @@ def main():
         ]
 
     if not result.is_ok():
-        info = f"Error: {result.name}\n"
-        info += "---\n\n"
+        info = ""
+        error_output = Shell.get_output(
+            f"rg --text -A 10 -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' {server_log} | head -n50"
+        )
+        if error_output:
+            error_lines = error_output.splitlines()
+            for i, line in enumerate(error_lines):
+                if "] {" in line and "} <" in line:
+                    error_lines = error_lines[:i]
+                    break
+            error_output = "\n".join(error_lines)
+            info += f"Error:\n{error_output}\n"
+
         if fuzzer_log.exists():
             fuzzer_query = StackTraceReader.get_fuzzer_query(fuzzer_log)
             if fuzzer_query:
-                info += f"Query: {fuzzer_query}"
                 info += "---\n\n"
+                info += f"Query: {fuzzer_query}\n"
 
-            info = "Fuzzer log (last 30 lines):\n" + Shell.get_output(
-                f"tail -n30 {fuzzer_log}", verbose=False
-            )
             info += "---\n\n"
+            info += (
+                "Fuzzer log (last 30 lines):\n"
+                + Shell.get_output(f"tail -n30 {fuzzer_log}", verbose=False)
+                + "\n"
+            )
+
         if fatal_log.exists():
             stack_trace = StackTraceReader.get_stack_trace(fatal_log)
             if stack_trace:
-                info += "Stack trace:\n" + stack_trace
+                info += "---\n\n"
+                info += "Stack trace:\n" + stack_trace + "\n"
+
+        info += "---\n\n"
+        try:
+            fuzzer_test_generator = FuzzerTestGenerator(
+                str(server_log), str(fuzzer_log)
+            )
+            reproduce_commands = fuzzer_test_generator.get_reproduce_commands()
+            if reproduce_commands:
+                info += (
+                    "Reproduce commands (in-progress, if not successful, please ping ci-team or fix yourself):\n"
+                    + "\n".join(reproduce_commands)
+                )
+        except Exception as e:
+            info += "Failed to generate reproduce commands: " + str(e)
+
         if result.results:
             result.results[-1].info = info
         else:
