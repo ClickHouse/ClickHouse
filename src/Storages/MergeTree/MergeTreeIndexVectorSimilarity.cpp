@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
+#include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>

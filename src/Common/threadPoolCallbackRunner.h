@@ -3,7 +3,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
 #include <exception>
 #include <future>
 
@@ -14,6 +13,8 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
+
+enum class ThreadName : uint8_t;
 
 /// High-order function to run callbacks (functions with 'void()' signature) somewhere asynchronously.
 template <typename Result, typename Callback = std::function<Result()>>

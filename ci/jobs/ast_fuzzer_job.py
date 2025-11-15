@@ -102,10 +102,10 @@ def main():
             pass
     except:
         result.set_status(Result.Status.ERROR)
-        result.results = [Result(name="Unknown error", status=Result.Status.ERROR)]
+        result.results = [
+            Result(name="Unknown error", status=Result.StatusExtended.ERROR)
+        ]
 
-    fuzzer_query = ""
-    stack_trace = ""
     info = ""
     if not result.is_ok():
         if fuzzer_log.exists():
