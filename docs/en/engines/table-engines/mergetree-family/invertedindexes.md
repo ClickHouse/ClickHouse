@@ -423,36 +423,7 @@ SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 ```
 
-## Implementation {#implementation}
-
-### Index layout {#index-layout}
-
-Each text index consists of two (abstract) data structures:
-- a dictionary which maps each token to a postings list, and
-- a set of postings lists, each representing a set of row numbers.
-
-Since a text index is a skip index, these data structures exist logically per index granule.
-
-During index creation, three files are created (per part):
-
-**Dictionary blocks file (.dct)**
-
-The tokens in an index granule are sorted and stored in dictionary blocks of 128 tokens each (the block size is configurable by parameter `dictionary_block_size`).
-A dictionary blocks file (.dct) consists all the dictionary blocks of all index granules in a part.
-
-**Index granules file (.idx)**
-
-The index granules file contains for each dictionary block the block's first token, its relative offset in the dictionary blocks file, and a bloom filter for all tokens in the block.
-This sparse index structure is similar to ClickHouse's [sparse primary key index](https://clickhouse.com/docs/guides/best-practices/sparse-primary-indexes)).
-The bloom filter allows to skip dictionary blocks early if the searched token is not contained in a dictionary block.
-
-**Postings lists file (.pst)**
-
-The posting lists for all tokens are laid out sequentially in the postings list file.
-To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
-If the cardinality of a posting list is less than 16 (configurable by parameter `max_cardinality_for_embedded_postings`), it is embedded into the dictionary.
-
-### Direct read {#direct-read}
+## Direct read {#direct-read}
 
 Certain types of text queries can be speed up significantly by an optimization called "direct read".
 More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
@@ -563,6 +534,33 @@ Refer the following server settings to configure the cache.
 | [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            | `2147483648` |
 | [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       | `1'000'000`  |
 | [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   | `0.5`        |
+
+## Implementation Details {#implementation}
+
+Each text index consists of two (abstract) data structures:
+- a dictionary which maps each token to a postings list, and
+- a set of postings lists, each representing a set of row numbers.
+
+Since a text index is a skip index, these data structures exist logically per index granule.
+
+During index creation, three files are created (per part):
+
+**Dictionary blocks file (.dct)**
+
+The tokens in an index granule are sorted and stored in dictionary blocks of 128 tokens each (the block size is configurable by parameter `dictionary_block_size`).
+A dictionary blocks file (.dct) consists all the dictionary blocks of all index granules in a part.
+
+**Index granules file (.idx)**
+
+The index granules file contains for each dictionary block the block's first token, its relative offset in the dictionary blocks file, and a bloom filter for all tokens in the block.
+This sparse index structure is similar to ClickHouse's [sparse primary key index](https://clickhouse.com/docs/guides/best-practices/sparse-primary-indexes)).
+The bloom filter allows to skip dictionary blocks early if the searched token is not contained in a dictionary block.
+
+**Postings lists file (.pst)**
+
+The posting lists for all tokens are laid out sequentially in the postings list file.
+To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
+If the cardinality of a posting list is less than 16 (configurable by parameter `max_cardinality_for_embedded_postings`), it is embedded into the dictionary.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
