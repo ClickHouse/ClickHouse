@@ -1,4 +1,4 @@
--- Tags: stateful, long, no-parallel, no-asan, no-tsan, no-ubsan
+-- Tags: stateful, long, no-parallel, no-asan, no-tsan, no-ubsan, no-msan
 -- no-*san: too long.
 
 DROP TABLE IF EXISTS hits_text;
