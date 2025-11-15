@@ -120,9 +120,9 @@ private:
 
 struct RangeWithStep
 {
-    UInt64 left;
-    UInt64 step;
-    UInt128 size;
+    UInt64 left;    /// first value in the range
+    UInt64 step;    /// step between values
+    UInt128 size;   /// how many values in this range
 };
 
 using RangesWithStep = std::vector<RangeWithStep>;
