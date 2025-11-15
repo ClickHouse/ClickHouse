@@ -16,7 +16,7 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No formatter names provided");
 
         if (formatter == "json")
-            return std::make_shared<IASTJSONFormatter>();
+            return std::make_shared<ASTJSONFormatter>();
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown AST formatter name: {}", formatter);
     }

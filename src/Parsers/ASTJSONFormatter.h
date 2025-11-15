@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class IASTJSONFormatter : public IASTFormatter
+class ASTJSONFormatter : public IASTFormatter
 {
 public:
     void format(const IAST & ast, WriteBuffer & buf) override { ast.writeJSON(buf, 0); }
