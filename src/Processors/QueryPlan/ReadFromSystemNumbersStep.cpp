@@ -364,7 +364,23 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, UInt64 limit_length
 ///     For example: ranges: [1, 5], [8, 100]; size: 7, we will get [1, 5], [8, 9]
 void shrinkRanges(RangesWithStep & ranges, size_t size)
 {
+    chassert(!ranges.empty());
+    chassert(size > 0);
+
+#ifndef NDEBUG
+    {
+        UInt128 total_size{};
+        for (const auto & r : ranges)
+        {
+            chassert(r.size > 0);
+            total_size += r.size;
+        }
+        chassert(static_cast<UInt128>(size) <= total_size);
+    }
+#endif
+
     size_t last_range_idx = 0;
+    [[maybe_unused]] bool found = false; /// for invariant checking only
     for (size_t i = 0; i < ranges.size(); i++)
     {
         auto range_size = ranges[i].size;
@@ -382,8 +398,13 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
         auto & range = ranges[i];
         range.size = static_cast<UInt128>(size);
         last_range_idx = i;
+        found = true;
         break;
     }
+
+    /// With the preconditions above, we must have found a truncation point.
+    chassert(found);
+    chassert(last_range_idx < ranges.size());
 
     /// delete the additional ranges
     ranges.erase(ranges.begin() + (last_range_idx + 1), ranges.end());
