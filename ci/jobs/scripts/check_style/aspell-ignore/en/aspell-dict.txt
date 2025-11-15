@@ -1699,7 +1699,6 @@ const
 constexpr
 consumptio
 contrib
-conv
 conversio
 convertCharset
 cooldown
