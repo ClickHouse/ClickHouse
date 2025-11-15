@@ -67,7 +67,7 @@ struct ManifestFileEntry
     Int64 added_sequence_number;
 
     Int64 snapshot_id;
-    Int64 schema_id;
+    Int32 schema_id;
 
     DB::Row partition_key_value;
     PartitionSpecification common_partition_specification;

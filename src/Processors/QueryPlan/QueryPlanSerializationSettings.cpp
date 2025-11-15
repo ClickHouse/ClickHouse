@@ -91,6 +91,7 @@ namespace DB
     DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, "Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded if switches to bloom filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512 * 1024, "Size in bytes of a bloom filter used as JOIN runtime filter.", 0) \
     DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, "Number of hash functions in a bloom filter used as JOIN runtime filter.", 0) \
+    DECLARE(Bool, enable_lazy_columns_replication, false, "When enabled, replication of columns data during ARRAY JOIN and JOIN is performed lazily", 0) \
 
 
 // clang-format on

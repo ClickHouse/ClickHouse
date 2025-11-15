@@ -143,7 +143,7 @@
     M(S3CopyObject) \
     M(S3ListObjects) \
     M(S3HeadObject) \
-    M(S3GetObjectAttributes) \
+    M(S3GetObjectTagging) \
     M(S3CreateMultipartUpload) \
     M(S3UploadPartCopy) \
     M(S3UploadPart) \
@@ -169,7 +169,7 @@
     M(DiskS3CopyObject) \
     M(DiskS3ListObjects) \
     M(DiskS3HeadObject) \
-    M(DiskS3GetObjectAttributes) \
+    M(DiskS3GetObjectTagging) \
     M(DiskS3CreateMultipartUpload) \
     M(DiskS3UploadPartCopy) \
     M(DiskS3UploadPart) \
@@ -397,10 +397,30 @@ extern const std::vector<Metric> keeper_metrics
 #undef M
 }
 
+#define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
+    M(KeeperServerPreprocessRequestDurationMetricFamily) \
+    M(KeeperServerProcessRequestDuration) \
+    M(KeeperServerQueueDurationMetricFamily) \
+    M(KeeperServerSendDurationMetricFamily) \
+
+
 namespace HistogramMetrics
 {
-    std::vector<MetricFamily *> keeper_histograms;
+#define M(NAME) extern MetricFamily &(NAME);
+    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+#undef M
+
+
+std::vector<MetricFamily *> keeper_histograms
+{
+#define M(NAME) &(NAME),
+    APPLY_FOR_KEEPER_HISTOGRAMS(M)
+#undef M
+};
+
 }
+
+#undef APPLY_FOR_KEEPER_HISTOGRAMS
 
 namespace DimensionalMetrics
 {

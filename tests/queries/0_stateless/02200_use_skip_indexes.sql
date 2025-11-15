@@ -1,7 +1,3 @@
-SET use_query_condition_cache = 0;
--- Force using skip indexes in planning to make test deterministic with max_rows_to_read.
-SET use_skip_indexes_on_data_read = 0;
-
 CREATE TABLE data_02200 (
     key Int,
     value Int,
@@ -10,6 +6,9 @@ CREATE TABLE data_02200 (
 Engine=MergeTree()
 ORDER BY key
 PARTITION BY key;
+
+set use_query_condition_cache = false;
+set use_skip_indexes_on_data_read = false;
 
 INSERT INTO data_02200 SELECT number, number FROM numbers(10);
 
