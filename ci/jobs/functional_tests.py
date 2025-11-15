@@ -436,12 +436,15 @@ def main():
         if is_bugfix_validation:
             has_failure = False
             for r in results[-1].results:
+                r.set_label("xfail")
                 if r.status == Result.StatusExtended.FAIL:
+                    r.status = Result.StatusExtended.OK
                     has_failure = True
-                    break
+                elif r.status == Result.StatusExtended.OK:
+                    r.status = Result.StatusExtended.FAIL
             if not has_failure:
                 print("Failed to reproduce the bug")
-                results[-1].set_failed()
+                results[-1].set_failed().set_info("Failed to reproduce the bug")
             else:
                 results[-1].set_success()
 
