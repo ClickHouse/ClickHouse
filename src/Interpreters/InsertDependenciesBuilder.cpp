@@ -669,7 +669,8 @@ private:
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),

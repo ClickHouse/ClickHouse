@@ -56,6 +56,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace DB
@@ -479,7 +480,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
 
         UInt32 max_log_ptr = parse<UInt32>(max_log_ptr_zk.data);
 
-        ReplicasInfo replicas_info;
+        std::vector<ReplicaInfo> replicas_info;
         replicas_info.resize((zk_res.size() - 1) / 2);
 
         size_t global_replica_index = 0;
@@ -508,7 +509,7 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
             }
         }
 
-        return replicas_info;
+        return ReplicasInfo{.replicas = replicas_info, .replicas_belong_to_shared_catalog = false};
     }
     catch (...)
     {
@@ -1640,7 +1641,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     auto allow_concurrent_table_creation = getContext()->getServerSettings()[ServerSetting::max_database_replicated_create_table_thread_pool_size] != 1;
     auto tables_to_create_by_level = tables_dependencies.getTablesSplitByDependencyLevel();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), "CreateTables");
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseReplicatedCreateTablesThreadPool().get(), ThreadName::CREATE_TABLES);
 
     for (const auto & tables_to_create : tables_to_create_by_level)
     {

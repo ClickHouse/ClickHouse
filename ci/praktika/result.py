@@ -425,13 +425,11 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_skipped():
+                if result_.is_skipped() and result.is_dropped():
                     # job was skipped in workflow configuration by a user' hook
                     print(
                         f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
-                    if not result.is_dropped():
-                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
@@ -527,15 +525,14 @@ class Result(MetaClasses.Serializable):
                 f"chmod +x {unit_tests_path}",
                 command,
             ],
-            with_log=with_log,
         )
         is_error = not result.is_ok()
         status, results, info = ResultTranslator.from_gtest()
         result.set_status(status).set_results(results).set_info(info)
-        if is_error:
+        if is_error and result.is_ok():
             # test cases can be OK but gtest binary run failed, for instance due to sanitizer error
             result.set_info("gtest binary run has non-zero exit code - see logs")
-            result.set_status(Result.Status.FAILED)
+            result.set_status(Result.Status.ERROR)
         return result
 
     @classmethod

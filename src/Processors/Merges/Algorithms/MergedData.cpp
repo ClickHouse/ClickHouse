@@ -35,7 +35,7 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         if (is_replicated[i])
             columns[i] = ColumnReplicated::create(std::move(columns[i]));
         if (columns[i]->hasDynamicStructure())
-            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
+            columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i], max_dynamic_subcolumns);
     }
 }
 

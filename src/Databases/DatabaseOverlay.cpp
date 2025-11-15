@@ -2,6 +2,7 @@
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>

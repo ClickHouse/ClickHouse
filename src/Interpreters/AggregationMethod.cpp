@@ -118,7 +118,7 @@ void AggregationMethodKeysFixed<TData, has_nullable_keys, has_low_cardinality,co
 {
     size_t keys_size = key_columns.size();
 
-    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size<KeysNullMap<Key>>::value : 0;
+    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
     /// In any hash key value, column values to be read start just after the bitmap, if it exists.
     size_t pos = bitmap_size;
 

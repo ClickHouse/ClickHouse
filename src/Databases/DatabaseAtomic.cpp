@@ -15,6 +15,7 @@
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace fs = std::filesystem;
