@@ -302,7 +302,7 @@ class Targeting:
                 info += f"  {file_}:{line} -> symbol: {symbol[:70]}...\n"
                 if len(tests) > max_tests_per_symbol:
                     info += f" select {max_tests_per_symbol} random tests out of {len(tests)}\n"
-                tests = sample(tests, max_tests_per_symbol)
+                    tests = sample(tests, max_tests_per_symbol)
             selected_tests.update(tests)
             for test in tests[:10]:
                 info += f"  - {test}\n"
