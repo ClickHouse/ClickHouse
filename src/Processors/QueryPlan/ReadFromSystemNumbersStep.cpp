@@ -346,18 +346,29 @@ private:
 namespace
 {
 /// Whether we should push limit down to scan.
-bool shouldPushdownLimit(const SelectQueryInfo & query_info, UInt64 limit_length)
+bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
-    if (!query_info.query)
+    /// Reject negative, fractional, and zero limits for pushdown
+    if (lim_info.is_limit_length_negative
+        || lim_info.fractional_limit > 0
+        || lim_info.fractional_offset > 0
+        || lim_info.limit_length == 0)
         return false;
 
+    chassert(query_info.query);
+
     const auto & query = query_info.query->as<ASTSelectQuery &>();
+
     /// Just ignore some minor cases, such as:
     ///     select * from system.numbers order by number asc limit 10
-    return !query.distinct && !query.limitBy() && !query_info.has_order_by
+    return !query.distinct
+        && !query.limitBy()
+        && !query_info.has_order_by
         && !query_info.need_aggregate
-        /// For new analyzer, window will be delete from AST, so we should not use query.window()
-        && !query_info.has_window && !query_info.additional_filter_ast && (limit_length > 0 && !query.limit_with_ties);
+        /// For new analyzer, window will be deleted from AST, so we should not use query.window()
+        && !query_info.has_window
+        && !query_info.additional_filter_ast
+        && !query.limit_with_ties;
 }
 
 /// Shrink ranges to size.
@@ -418,10 +429,7 @@ std::optional<size_t> getLimitFromQueryInfo(const SelectQueryInfo & query_info, 
 
     const auto lim_info = InterpreterSelectQuery::getLimitLengthAndOffset(query_info.query->as<ASTSelectQuery &>(), context);
 
-    if (lim_info.is_limit_length_negative || lim_info.fractional_limit > 0 || lim_info.fractional_offset > 0)
-        return {};
-
-    if (!shouldPushdownLimit(query_info, lim_info.limit_length))
+    if (!shouldPushdownLimit(query_info, lim_info))
         return {};
 
     return lim_info.limit_length + lim_info.limit_offset;
