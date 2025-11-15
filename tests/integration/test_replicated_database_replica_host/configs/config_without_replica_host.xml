@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- Use interserver_http_host instead of replica_host -->
+    <interserver_http_host>interserver.node2.com</interserver_http_host>
+    <interserver_http_port>9009</interserver_http_port>
+
+    <!-- Disable async loading for deterministic testing -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>

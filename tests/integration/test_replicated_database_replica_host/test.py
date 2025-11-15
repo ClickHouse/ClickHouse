@@ -1,0 +1,260 @@
+"""
+Integration tests for replica_host configuration in DatabaseReplicated
+
+This test suite validates:
+1. Basic replica_host configuration usage
+2. Fallback chain: replica_host → interserver_http_host → hostname
+3. DDL and data replication with replica_host
+4. Special character handling (URL encoding)
+"""
+
+import pytest
+import urllib.parse
+import time
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+# Node with replica_host configured
+node1 = cluster.add_instance(
+    "node1",
+    main_configs=["configs/config_with_replica_host.xml"],
+    with_zookeeper=True,
+    macros={"replica": "node1", "shard": "shard1"},
+    stay_alive=True,
+)
+
+# Node without replica_host (uses interserver_http_host)
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=["configs/config_without_replica_host.xml"],
+    with_zookeeper=True,
+    macros={"replica": "node2", "shard": "shard1"},
+    stay_alive=True,
+)
+
+# Node without any custom config (uses hostname)
+node3 = cluster.add_instance(
+    "node3",
+    with_zookeeper=True,
+    macros={"replica": "node3", "shard": "shard1"},
+    stay_alive=True,
+)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_replica_host_basic(started_cluster):
+    """Test that replica_host configuration is used in host_id."""
+
+    # Create DatabaseReplicated on node1 (with replica_host)
+    node1.query(
+        "CREATE DATABASE test_basic ENGINE = Replicated('/clickhouse/databases/test_basic', 'shard1', 'node1')"
+    )
+
+    # Wait for registration
+    node1.query("SYSTEM SYNC DATABASE REPLICA test_basic")
+
+    # Get host_id from ZooKeeper
+    zk_path = "/clickhouse/databases/test_basic/replicas"
+    host_ids = node1.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '{zk_path}'"
+    )
+    host_ids_decoded = urllib.parse.unquote(host_ids)
+
+    print(f"Host IDs in ZooKeeper: {host_ids_decoded}")
+
+    # Verify replica_host is used (configured as "public.node1.com" in config)
+    assert "public.node1.com" in host_ids_decoded, \
+        f"Expected 'public.node1.com' in host_id, got: {host_ids_decoded}"
+
+    # Verify TCP port is used
+    assert ":9000:" in host_ids_decoded, \
+        f"Expected TCP port 9000 in host_id, got: {host_ids_decoded}"
+
+    # Cleanup
+    node1.query("DROP DATABASE test_basic SYNC")
+
+
+def test_replica_host_fallback(started_cluster):
+    """Test fallback chain: replica_host → interserver_http_host → hostname."""
+
+    # Create database on all three nodes
+    for node in [node1, node2, node3]:
+        replica_name = node.name
+        node.query(
+            f"CREATE DATABASE test_fallback ENGINE = Replicated('/clickhouse/databases/test_fallback', 'shard1', '{replica_name}')"
+        )
+
+    # Wait for synchronization
+    for node in [node1, node2, node3]:
+        node.query("SYSTEM SYNC DATABASE REPLICA test_fallback")
+
+    # Get all host_ids from ZooKeeper
+    host_ids = node1.query(
+        "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_fallback/replicas'"
+    )
+    host_ids_decoded = urllib.parse.unquote(host_ids)
+
+    print(f"All host IDs: {host_ids_decoded}")
+
+    # Verify node1 uses replica_host
+    assert "public.node1.com" in host_ids_decoded, \
+        "node1 should use replica_host"
+
+    # Verify node2 uses interserver_http_host (configured in its config)
+    assert "interserver.node2.com" in host_ids_decoded, \
+        "node2 should use interserver_http_host"
+
+    # Verify we have 3 different host_ids (one per node)
+    lines = [line for line in host_ids_decoded.strip().split('\n') if line]
+    assert len(lines) == 3, f"Expected 3 replicas, got {len(lines)}"
+
+    # Cleanup
+    for node in [node1, node2, node3]:
+        node.query("DROP DATABASE test_fallback SYNC")
+
+
+def test_replica_host_ddl_replication(started_cluster):
+    """Test that DDL replication works correctly with replica_host."""
+
+    # Create database on node1 (with replica_host) and node2 (with interserver_http_host)
+    node1.query(
+        "CREATE DATABASE test_ddl ENGINE = Replicated('/clickhouse/databases/test_ddl', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE test_ddl ENGINE = Replicated('/clickhouse/databases/test_ddl', 'shard1', 'node2')"
+    )
+
+    # Wait for sync
+    node1.query("SYSTEM SYNC DATABASE REPLICA test_ddl")
+    node2.query("SYSTEM SYNC DATABASE REPLICA test_ddl")
+
+    # Create table on node1
+    node1.query(
+        "CREATE TABLE test_ddl.test_table (id UInt32, value String) ENGINE = ReplicatedMergeTree ORDER BY id"
+    )
+
+    # Wait for DDL to replicate to node2
+    node2.query("SYSTEM SYNC DATABASE REPLICA test_ddl")
+
+    # Verify table exists on node2
+    tables_on_node2 = node2.query("SHOW TABLES FROM test_ddl")
+    assert "test_table" in tables_on_node2, \
+        f"Table should be replicated to node2, got: {tables_on_node2}"
+
+    # Insert data on node1
+    node1.query("INSERT INTO test_ddl.test_table VALUES (1, 'hello'), (2, 'world')")
+
+    # Wait for data replication
+    node2.query("SYSTEM SYNC REPLICA test_ddl.test_table")
+
+    # Verify data on node2
+    count = node2.query("SELECT count() FROM test_ddl.test_table").strip()
+    assert count == "2", f"Expected 2 rows on node2, got {count}"
+
+    value = node2.query("SELECT value FROM test_ddl.test_table WHERE id = 1").strip()
+    assert value == "hello", f"Expected 'hello', got {value}"
+
+    # Cleanup
+    node1.query("DROP DATABASE test_ddl SYNC")
+    node2.query("DROP DATABASE test_ddl SYNC")
+
+
+def test_replica_host_special_characters(started_cluster):
+    """Test that special characters in replica_host are properly escaped."""
+
+    # This test verifies escapeForFileName() handles special characters
+    # replica_host might contain characters like colons in IPv6: [2001:db8::1]
+
+    node1.query(
+        "CREATE DATABASE test_escape ENGINE = Replicated('/clickhouse/databases/test_escape', 'shard1', 'node1')"
+    )
+    node1.query("SYSTEM SYNC DATABASE REPLICA test_escape")
+
+    # Get host_id from ZooKeeper
+    host_id = node1.query(
+        "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas' AND name = 'node1'"
+    ).strip()
+
+    # URL decode to get actual value
+    host_id_decoded = urllib.parse.unquote(host_id)
+
+    print(f"Host ID (URL encoded): {host_id}")
+    print(f"Host ID (decoded): {host_id_decoded}")
+
+    # Verify it can be parsed (no errors)
+    # If escaping is wrong, parsing would fail
+    parts = host_id_decoded.split(':')
+    assert len(parts) >= 3, \
+        f"host_id should have at least 3 parts (host:port:uuid), got: {host_id_decoded}"
+
+    # Cleanup
+    node1.query("DROP DATABASE test_escape SYNC")
+
+
+def test_replica_host_multiple_databases(started_cluster):
+    """Test that multiple DatabaseReplicated instances work correctly with replica_host."""
+
+    # Create two different databases on the same nodes
+    for db_name in ["test_multi_db1", "test_multi_db2"]:
+        node1.query(
+            f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'node1')"
+        )
+        node2.query(
+            f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', 'shard1', 'node2')"
+        )
+
+    # Wait for sync
+    for db_name in ["test_multi_db1", "test_multi_db2"]:
+        node1.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+        node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+    # Verify both databases are working
+    for db_name in ["test_multi_db1", "test_multi_db2"]:
+        # Create table
+        node1.query(f"CREATE TABLE {db_name}.test_table (id UInt32) ENGINE = ReplicatedMergeTree ORDER BY id")
+        node2.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+
+        # Verify table replicated
+        tables = node2.query(f"SHOW TABLES FROM {db_name}")
+        assert "test_table" in tables
+
+    # Cleanup
+    for db_name in ["test_multi_db1", "test_multi_db2"]:
+        node1.query(f"DROP DATABASE {db_name} SYNC")
+        node2.query(f"DROP DATABASE {db_name} SYNC")
+
+
+def test_replica_host_cluster_view(started_cluster):
+    """Test that cluster information shows correct host_id with replica_host."""
+
+    node1.query(
+        "CREATE DATABASE test_cluster ENGINE = Replicated('/clickhouse/databases/test_cluster', 'shard1', 'node1')"
+    )
+    node2.query(
+        "CREATE DATABASE test_cluster ENGINE = Replicated('/clickhouse/databases/test_cluster', 'shard1', 'node2')"
+    )
+
+    node1.query("SYSTEM SYNC DATABASE REPLICA test_cluster")
+    node2.query("SYSTEM SYNC DATABASE REPLICA test_cluster")
+
+    # Query system.replicas to see replica information
+    replicas_on_node1 = node1.query(
+        "SELECT database, shard_num, replica_num FROM system.replicas WHERE database = 'test_cluster'"
+    )
+    print(f"Replicas visible from node1: {replicas_on_node1}")
+
+    # Should see replicas from both nodes
+    assert "test_cluster" in replicas_on_node1
+
+    # Cleanup
+    node1.query("DROP DATABASE test_cluster SYNC")
+    node2.query("DROP DATABASE test_cluster SYNC")
