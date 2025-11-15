@@ -16,43 +16,35 @@ class ResourceAllocation;
 ///     ^       ^       ^
 ///  decrease  wait  approve
 ///
-/// 1) Request is reset and allocation is enqueued using IAllocationQueue::decreaseAllocation().
+/// 1) Request is prepared and allocation is enqueued using IAllocationQueue::decreaseAllocation().
 /// 2) Request is waiting to be processed by the scheduler thread.
-/// 3) Whenever request is approved by the scheduler, DecreaseRequest::execute() is called.
+/// 3) Whenever request is approved by the scheduler, ResourceAllocation::decreaseApproved() is called.
 ///
 /// Every ResourceAllocation may have zero or one pending DecreaseRequest.
-/// From execute() allocation is allowed to call IAllocationQueue::decreaseAllocation() again
+/// From decreaseApproved() allocation is allowed to call IAllocationQueue::decreaseAllocation() again
 /// to request further decrease of allocation if necessary.
-class DecreaseRequest
+class DecreaseRequest final
 {
 public:
-    // Allocation decrease size.
+    /// Allocation associated with this request.
+    ResourceAllocation & allocation;
+
+    /// Allocation decrease size.
+    /// It must be greater than zero and remain constant until decreaseApproved().
     ResourceCost size;
 
-    /// Allocation associated with this request.
-    ResourceAllocation * const allocation = nullptr;
-
-    /// When allocation is being decreased to zero, it is automatically removed after this request is executed.
+    /// When allocation is being decreased to zero, it is automatically removed after decreaseApproved().
     bool removing_allocation = false;
 
-    explicit DecreaseRequest(ResourceAllocation * allocation_, ResourceCost size_ = 1)
+    explicit DecreaseRequest(ResourceAllocation & allocation_)
         : allocation(allocation_)
-    {
-        reset(size_);
-    }
+    {}
 
-    /// The object may be reused again after reset().
-    void reset(ResourceCost size_)
+    void prepare(ResourceCost size_, bool removing_allocation_)
     {
         size = size_;
-        removing_allocation = false;
+        removing_allocation = removing_allocation_;
     }
-
-    virtual ~DecreaseRequest() = default;
-
-    /// Callback to trigger on approval of the request.
-    /// IMPORTANT: it is called from scheduler thread and must be fast.
-    virtual void execute() = 0;
 };
 
 }

@@ -43,20 +43,30 @@ public:
 
         explicit operator bool() const { return attached || detached || increase || decrease; }
 
-        Update & setAttached(ISpaceSharedNode * new_attached) { attached = new_attached; return *this; }
-        Update & setDetached(ISpaceSharedNode * new_detached) { detached = new_detached; return *this; }
-        Update & setIncrease(IncreaseRequest * new_increase) { increase = new_increase; return *this; }
-        Update & setDecrease(DecreaseRequest * new_decrease) { decrease = new_decrease; return *this; }
-        Update & resetAttached() { attached = nullptr; return *this; }
-        Update & resetDetached() { detached = nullptr; return *this; }
-        Update & resetIncrease() { increase = std::nullopt; return *this; }
-        Update & resetDecrease() { decrease = std::nullopt; return *this; }
+        Update & setAttached(ISpaceSharedNode * new_attached) & noexcept { attached = new_attached; return *this; }
+        Update & setDetached(ISpaceSharedNode * new_detached) & noexcept { detached = new_detached; return *this; }
+        Update & setIncrease(IncreaseRequest * new_increase) & noexcept { increase = new_increase; return *this; }
+        Update & setDecrease(DecreaseRequest * new_decrease) & noexcept { decrease = new_decrease; return *this; }
+        Update & resetAttached() & noexcept { attached = nullptr; return *this; }
+        Update & resetDetached() & noexcept { detached = nullptr; return *this; }
+        Update & resetIncrease() & noexcept { increase = std::nullopt; return *this; }
+        Update & resetDecrease() & noexcept { decrease = std::nullopt; return *this; }
+
+        // To keep Update().setXXX() methods usable in rvalue context and avoid copies
+        Update && setAttached(ISpaceSharedNode * new_attached) && noexcept { attached = new_attached; return std::move(*this); }
+        Update && setDetached(ISpaceSharedNode * new_detached) && noexcept { detached = new_detached; return std::move(*this); }
+        Update && setIncrease(IncreaseRequest * new_increase) && noexcept { increase = new_increase; return std::move(*this); }
+        Update && setDecrease(DecreaseRequest * new_decrease) && noexcept { decrease = new_decrease; return std::move(*this); }
+        Update && resetAttached() && noexcept { attached = nullptr; return std::move(*this); }
+        Update && resetDetached() && noexcept { detached = nullptr; return std::move(*this); }
+        Update && resetIncrease() && noexcept { increase = std::nullopt; return std::move(*this); }
+        Update && resetDecrease() && noexcept { decrease = std::nullopt; return std::move(*this); }
     };
 
     /// Propagate updates from a child to this node.
     /// It is called when child's requests is changed or canceled (set to nullptr) or a subtree structure is changed.
     /// Recursively propagates to parents if necessary.
-    virtual void propagateUpdate(ISpaceSharedNode & from_child, Update update) = 0;
+    virtual void propagateUpdate(ISpaceSharedNode & from_child, Update && update) = 0;
 
     /// Approves and removes current `increase` from this node or its children.
     /// Updates `increase` field to the next request to be processed.
@@ -72,9 +82,15 @@ public:
     ///    <-- killing order --
     virtual ResourceAllocation * selectAllocationToKill() = 0;
 
+protected:
     ISpaceSharedNode & castParent() const
     {
         return static_cast<ISpaceSharedNode &>(*parent);
+    }
+
+    void propagate(Update && update)
+    {
+        castParent().propagateUpdate(*this, std::move(update));
     }
 };
 

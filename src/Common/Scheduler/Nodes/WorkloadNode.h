@@ -830,9 +830,8 @@ private:
             return nullptr;
     }
 
-    void propagateUpdate(ISpaceSharedNode & from_child, Update update) override
+    void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override
     {
-        chassert(parent);
         chassert(&from_child == child.get());
         if (update.attached)
             allocated += update.attached->allocated;
@@ -842,8 +841,8 @@ private:
             increase = *update.increase;
         if (update.decrease)
             decrease = *update.decrease;
-        if (update)
-            castParent().propagateUpdate(*this, update);
+        if (parent && update)
+            propagate(std::move(update));
     }
 
     void approveIncrease() override

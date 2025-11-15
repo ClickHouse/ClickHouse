@@ -3,7 +3,6 @@
 #include <Common/Scheduler/CostUnit.h>
 
 #include <base/types.h>
-#include <exception>
 
 namespace DB
 {
@@ -17,48 +16,36 @@ class ResourceAllocation;
 ///     ^       ^       ^
 ///  increase  wait  approve
 ///
-/// 1) Request is reset and allocation is enqueued using IAllocationQueue::increaseAllocation().
+/// 1) Request is prepared and allocation is enqueued using IAllocationQueue::increaseAllocation().
 /// 2) Allocation competes with others for resource; effectively just waiting in a queue.
-/// 3) Whenever request is approved by the scheduler, IncreaseRequest::execute() is called.
+/// 3) Whenever request is approved by the scheduler, ResourceAllocation::increaseApproved() is called.
 ///
 /// Every ResourceAllocation may have zero or one pending IncreaseRequest.
-/// From execute() allocation is allowed to call IAllocationQueue::increaseAllocation() again
+/// From increaseApproved() allocation is allowed to call IAllocationQueue::increaseAllocation() again
 /// to request further increase of allocation if necessary.
-class IncreaseRequest
+class IncreaseRequest final
 {
 public:
-    /// Allocation increase size.
-    /// It must be greater than zero and remain constant until `execute()`.
-    ResourceCost size;
-
     /// Allocation associated with this request.
-    ResourceAllocation * const allocation = nullptr;
+    ResourceAllocation & allocation;
+
+    /// Allocation increase size.
+    /// It must be greater than zero and remain constant until increaseApproved().
+    ResourceCost size;
 
     /// When allocation is inserted into a queue, allocation should be increased from zero to its initial size.
     /// During this period allocation is pending (i.e. not yet running).
     bool pending_allocation = false;
 
-    explicit IncreaseRequest(ResourceAllocation * allocation_, ResourceCost size_ = 1)
+    explicit IncreaseRequest(ResourceAllocation & allocation_)
         : allocation(allocation_)
-    {
-        reset(size_);
-    }
+    {}
 
-    /// The object may be reused again after reset().
-    void reset(ResourceCost size_)
+    void prepare(ResourceCost size_, bool pending_allocation_)
     {
         size = size_;
-        pending_allocation = false;
+        pending_allocation = pending_allocation_;
     }
-
-    virtual ~IncreaseRequest() = default;
-
-    /// Callback to trigger on approval of the request.
-    /// IMPORTANT: it is called from scheduler thread and must be fast.
-    virtual void execute() = 0;
-
-    /// Callback to trigger an error in case if resource is unavailable.
-    virtual void failed(const std::exception_ptr & ptr) = 0;
 };
 
 }

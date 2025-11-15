@@ -96,10 +96,9 @@ public:
         return max_allocated;
     }
 
-    void propagateUpdate(ISpaceSharedNode & from_child, Update update) override
+    void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override
     {
         chassert(&from_child == child.get());
-        chassert(parent);
         bool reapply_constraint = false;
         if (update.attached)
         {
@@ -128,8 +127,8 @@ public:
             else
                 update.resetDecrease();
         }
-        if (update)
-            castParent().propagateUpdate(*this, update);
+        if (parent && update)
+            propagate(std::move(update));
     }
 
 private:
@@ -149,7 +148,7 @@ private:
                     {
                         // It is important not to kill allocation due to pending allocation in the same queue
                         if (!new_increase->pending_allocation // Kill due to running allocation increase
-                            || &candidate_to_kill->queue != &new_increase->allocation->queue) // Or kills allocation from a different queue
+                            || &candidate_to_kill->queue != &new_increase->allocation.queue) // Or kills allocation from a different queue
                         {
                             allocation_to_kill = candidate_to_kill;
                             allocation_to_kill->killAllocation(std::make_exception_ptr(
@@ -191,13 +190,12 @@ private:
         allocated -= decrease->size;
 
         // Check if allocation being killed released all its resources
-        if (decrease->allocation == allocation_to_kill && decrease->removing_allocation)
+        if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
             allocation_to_kill = nullptr;
 
         // Check if we can now process pending increase request
-        bool increase_set = setIncrease(child->increase, true);
-        if (increase_set)
-            castParent().propagateUpdate(*this, Update().setIncrease(increase));
+        if (setIncrease(child->increase, true))
+            propagate(Update().setIncrease(increase));
 
         decrease = nullptr;
     }

@@ -74,8 +74,7 @@ public:
 
         if (initial_size > 0) // Enqueue as a pending new allocation
         {
-            allocation.increase.reset(initial_size);
-            allocation.increase.pending_allocation = true;
+            allocation.increase.prepare(initial_size, true);
             pending_allocations.push_back(allocation);
             pending_allocations_size += initial_size;
             if (&allocation == &*pending_allocations.begin() && increasing_allocations.empty()) // Only if it should be processed next
@@ -93,7 +92,7 @@ public:
         ensureUsable();
 
         chassert(!allocation.increasing_hook.is_linked());
-        allocation.increase.reset(increase_size);
+        allocation.increase.prepare(increase_size, false);
         increasing_allocations.insert(allocation);
         if (&allocation == &*increasing_allocations.begin()) // Only if it should be processed next
             scheduleActivation();
@@ -101,7 +100,7 @@ public:
 
     void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) override
     {
-        chassert(decrease_size >= 0);
+        chassert(decrease_size > 0);
 
         std::lock_guard lock(mutex);
         chassert(!allocation.decreasing_hook.is_linked());
@@ -123,18 +122,11 @@ public:
         /// Only detached queue can be purged to keep parents consistent it also means there is no scheduled activation
         chassert(parent == nullptr);
 
-        // Fail all increase requests
+        // Fail all allocations
         for (ResourceAllocation & allocation : pending_allocations)
-            allocation.increase.failed(std::make_exception_ptr(
+            allocation.allocationFailed(std::make_exception_ptr(
                 Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
                     "Queue for pending allocation is about to be destructed")));
-        for (ResourceAllocation & allocation : increasing_allocations)
-            allocation.increase.failed(std::make_exception_ptr(
-                Exception(ErrorCodes::INVALID_SCHEDULER_NODE,
-                    "Queue for running allocation is about to be destructed")));
-
-        for (ResourceAllocation & allocation : running_allocations)
-            allocation.onQueuePurge();
 
         // NOTE: Queue never owns allocations, so they are not destructed here, just detached
         pending_allocations.clear();
@@ -203,7 +195,7 @@ public:
                 {
                     pending_allocations.erase(pending_allocations.iterator_to(allocation));
                     pending_allocations_size -= allocation.increase.size;
-                    allocation.increase.failed(cancel_error);
+                    allocation.allocationFailed(cancel_error);
                 }
                 else if (allocation.running_hook.is_linked()) // Allocation is already running - retry removal
                     decreaseRunningAllocation<true>(allocation, 0);
@@ -221,10 +213,10 @@ public:
 
         // Propagate update to parent
         if (update)
-            castParent().propagateUpdate(*this, update);
+            propagate(std::move(update));
     }
 
-    void propagateUpdate(ISpaceSharedNode &, Update) override
+    void propagateUpdate(ISpaceSharedNode &, Update &&) override
     {
         chassert(false);
     }
@@ -245,11 +237,7 @@ private:
     template <bool from_activation = false>
     void decreaseRunningAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) // TSA_REQUIRES(mutex)
     {
-        if (decrease_size == 0)
-            decrease_size = allocation.allocated;
-        allocation.decrease.reset(-decrease_size);
-        if (decrease_size == allocation.allocated)
-            allocation.decrease.removing_allocation = true;
+        allocation.decrease.prepare(decrease_size, decrease_size == allocation.allocated);
         decreasing_allocations.push_back(allocation);
         if constexpr (!from_activation)
             if (&allocation == &*decreasing_allocations.begin()) // Only if it should be processed next (i.e. size = 1)
@@ -259,7 +247,7 @@ private:
     void applyIncrease() // TSA_REQUIRES(mutex)
     {
         chassert(increase);
-        ResourceAllocation & allocation = *increase->allocation;
+        ResourceAllocation & allocation = increase->allocation;
         if (allocation.allocated == 0)
         {
             pending_allocations.erase(pending_allocations.iterator_to(allocation));
@@ -274,22 +262,35 @@ private:
         allocated += increase->size;
         allocation.allocated += increase->size;
         running_allocations.insert(allocation);
-        increase->execute(); // NOTE: this may re-enter increaseAllocation()
+        increase->allocation.increaseApproved(*increase); // NOTE: this may re-enter increaseAllocation()
         increase = nullptr;
     }
 
     void applyDecrease() // TSA_REQUIRES(mutex)
     {
         chassert(decrease);
-        ResourceAllocation & allocation = *decrease->allocation;
+        ResourceAllocation & allocation = decrease->allocation;
         decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
         // We need to remove from running allocations to update the key
         running_allocations.erase(running_allocations.iterator_to(allocation));
+        bool is_increasing = allocation.increasing_hook.is_linked();
+        if (is_increasing) // remove to update the key
+            increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
         allocated -= decrease->size;
         allocation.allocated -= decrease->size;
         if (allocation.allocated > 0)
+        {
             running_allocations.insert(allocation);
-        decrease->execute(); // NOTE: this may re-enter decreaseAllocation()
+            if (is_increasing)
+                increasing_allocations.insert(allocation);
+        }
+        if (is_increasing)
+        {
+            // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
+            if (setIncrease())
+                propagate(Update().setIncrease(increase));
+        }
+        decrease->allocation.decreaseApproved(*decrease); // NOTE: this may re-enter decreaseAllocation()
         decrease = nullptr;
     }
 
@@ -323,7 +324,7 @@ private:
     }
 
     /// Protects all the following fields
-    /// NOTE: we need recursive mutex because request's execute() may interact with the queue again
+    /// NOTE: we need recursive mutex because increaseApproved()/decreaseApproved() may interact with the queue again
     std::recursive_mutex mutex;
 
     Int64 max_queued; /// Limit on the number of pending allocation

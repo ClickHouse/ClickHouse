@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Common/Scheduler/ResourceLink.h"
 #include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/ISpaceSharedNode.h>
 
@@ -20,22 +19,22 @@ public:
     /// If `initial_size` is zero, allocation is approved immediately.
     /// Otherwise allocation is pending until ResourceAllocation::increase::execute() call.
     /// It throws exception if allocation is invalid or rejected.
-    /// May return an error through ResourceAllocation::increase::failed() callback if allocation is rejected later.
+    /// May return an error through ResourceAllocation::failed() callback if allocation is rejected later.
     virtual void insertAllocation(ResourceAllocation & allocation, ResourceCost initial_size) = 0;
 
     /// Requests to increase the size of an existing allocation by `increase_size`.
     /// Note that this request should be executed by the scheduler thread to be approved.
-    /// On approval allocation.increase_request.execute() will be called.
-    /// If increase is not possible, allocation.increase_request.failed() will be called.
+    /// On approval allocation.increaseApproved() will be called.
+    /// If increase is not possible, allocation.failed() will be called.
     /// `increase_size` must be positive.
     virtual void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) = 0;
 
     /// Requests to decrease the size of an existing allocation by `decrease_size`.
     /// Note that this request should be executed by the scheduler thread.
-    /// To confirm the decrease allocation.decrease_request.execute() will be called.
+    /// To confirm the decrease allocation.decreaseApproved() will be called.
     /// If allocation is decreased to zero it is automatically removed from the queue.
-    /// If a pending allocation is decreased (to remove) an allocation.increase_request.failed() will be called.
-    /// `decrease_size` may be set to zero to remove the allocation completely.
+    /// If a pending allocation is decreased (to remove) an allocation.failed() will be called.
+    /// `decrease_size` must be positive.
     virtual void decreaseAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) = 0;
 
     /// Kill all the resource allocations in queue, fails all the pending requests and marks this queue as not usable.

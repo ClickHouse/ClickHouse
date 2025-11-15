@@ -15,10 +15,14 @@
 #include <Common/ThreadPool.h>
 #include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/CPULeaseAllocation.h>
+#include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ErrorCodes.h>
 
 #include <base/scope_guard.h>
 
@@ -43,8 +47,18 @@
 #define DBG_PRINT(...) UNUSED(__VA_ARGS__)
 #endif
 
-using namespace DB;
+namespace DB
+{
 
+    namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int RESOURCE_ACCESS_DENIED;
+}
+
+}
+
+using namespace DB;
 namespace ProfileEvents
 {
     extern const Event ConcurrencyControlUpscales;
@@ -59,6 +73,7 @@ namespace CurrentMetrics
     extern const Metric ConcurrencyControlAcquired;
     extern const Metric ConcurrencyControlPreempted;
 }
+
 
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
@@ -1710,4 +1725,243 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingThrottlingAndFairn
     }
 
     t.wait();
+}
+
+struct TestAllocation : public ResourceAllocation
+{
+private:
+    struct TestIncreaseRequest;
+    friend struct TestIncreaseRequest;
+    struct TestDecreaseRequest;
+    friend struct TestDecreaseRequest;
+
+public:
+    TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size)
+        : ResourceAllocation(*link.allocation_queue)
+        , name(name_)
+    {
+        chassert(link.allocation_queue);
+        DBG_PRINT("{}: New allocation, initial size = {}", name, initial_size);
+        real_size = initial_size;
+        queue.insertAllocation(*this, initial_size);
+        if (initial_size > 0)
+            increase_enqueued = true;
+    }
+
+    ~TestAllocation() override
+    {
+        std::unique_lock lock(mutex);
+        if (removed)
+        {
+            chassert(allocated_size == 0);
+            DBG_PRINT("{}: Destroying removed allocation", name);
+            return;
+        }
+        if (fail_reason)
+        {
+            DBG_PRINT("{}: Destroying failed allocation", name);
+            return;
+        }
+        real_size = 0;
+        chassert(allocated_size > 0);
+        DBG_PRINT("{}: Removing allocation... size = {}. killed = {}", name, allocated_size, kill_reason ? "1" : "0");
+        queue.decreaseAllocation(*this, allocated_size);
+        cv.wait(lock, [this]() { return allocated_size == 0; });
+        DBG_PRINT("{}: Allocation removed", name);
+    }
+
+    void setSize(ResourceCost new_real_size)
+    {
+        std::unique_lock lock(mutex);
+        DBG_PRINT("{}: Set size from {} to {}", name, real_size, new_real_size);
+        real_size = new_real_size;
+        syncSize();
+    }
+
+    void waitSync()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued && real_size == allocated_size); });
+        if (fail_reason)
+            std::rethrow_exception(fail_reason);
+        DBG_PRINT("{}: Waiting done. size = {}", name, allocated_size);
+    }
+
+    void waitKilled()
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [this] { return kill_reason; });
+        DBG_PRINT("{}: Waiting killed done. size = {}. failed = {}. killed = {}", name, allocated_size, fail_reason ? "1" : "0", kill_reason ? "1" : "0");
+        ASSERT_EQ(kill_reason != nullptr, true);
+    }
+
+private: // interaction with the scheduler thread
+    void killAllocation(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        DBG_PRINT("{}: Kill allocation at size = {}", name, allocated_size);
+        kill_reason = reason;
+        real_size = 0; // Initiate deallocation
+        syncSize();
+    }
+
+    void syncSize()
+    {
+        if (!fail_reason && real_size > allocated_size && !increase_enqueued)
+        {
+            DBG_PRINT("{}: Increase allocation by {}", name, real_size - allocated_size);
+            chassert(!removed);
+            queue.increaseAllocation(*this, real_size - allocated_size);
+            increase_enqueued = true;
+        }
+        else if (!fail_reason && real_size < allocated_size && !decrease_enqueued)
+        {
+            DBG_PRINT("{}: Decrease allocation by {}", name, allocated_size - real_size);
+            chassert(!removed);
+            queue.decreaseAllocation(*this, allocated_size - real_size);
+            decrease_enqueued = true;
+        }
+        else if (real_size == allocated_size)
+        {
+            DBG_PRINT("{}: Synced at size {}", name, real_size);
+            cv.notify_all(); // notify dtor or waitSync
+        }
+    }
+
+    void increaseApproved(const IncreaseRequest & increase) override
+    {
+        std::unique_lock lock(mutex);
+        allocated_size += increase.size;
+        increase_enqueued = false;
+        DBG_PRINT("{}: Approved increase by {}. size = {}", name, increase.size, allocated_size);
+        syncSize();
+    }
+
+    void decreaseApproved(const DecreaseRequest & decrease) override
+    {
+        std::unique_lock lock(mutex);
+        chassert(allocated_size >= decrease.size);
+        allocated_size -= decrease.size;
+        decrease_enqueued = false;
+        if (decrease.removing_allocation)
+            removed = true;
+        DBG_PRINT("{}: Approved decrease by {}. size = {}", name, decrease.size, allocated_size);
+        syncSize();
+    }
+
+    void allocationFailed(const std::exception_ptr & reason) override
+    {
+        std::unique_lock lock(mutex);
+        DBG_PRINT("{}: Allocation failed", name);
+        fail_reason = reason;
+        allocated_size = 0;
+        cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge)
+    }
+
+    /// Protects all the fields in this allocation that may be accessed from the scheduler thread (depend on derived class).
+    /// NOTE: Lock ordering: first queue.mutex, then allocation.mutex
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    String name;
+    std::exception_ptr kill_reason;
+    std::exception_ptr fail_reason;
+    bool increase_enqueued = false;
+    bool decrease_enqueued = false;
+    bool removed = false;
+    ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
+    ResourceCost real_size = 0; // real size of the resource used by the allocation
+};
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all"); // TODO(serxa): support usual set of suffixes like 'M', 'Mi' etc.
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "A1", 10);
+        TestAllocation a2(link, "A2", 20);
+        TestAllocation a3(link, "A3", 30);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        a1.setSize(20);
+        a2.setSize(30);
+        a3.setSize(10);
+
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100"); // TODO(serxa): support usual set of suffixes like 'M', 'Mi' etc.
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "SelfKiller", 50);
+        a1.setSize(100);
+        a1.waitSync();
+        a1.setSize(150); // Exceeds limit
+        a1.waitKilled();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "ToBeKilled", 80);
+        TestAllocation a2(link, "Killer", 10);
+        a1.waitSync();
+        a2.waitSync();
+        a2.setSize(50); // Exceeds limit
+        a1.waitKilled();
+        a2.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationHugeIncreaseDoesNotKillOthers)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "NotToBeKilled", 80);
+        TestAllocation a2(link, "SelfKiller", 10);
+        a1.waitSync();
+        a2.waitSync();
+        a2.setSize(100500); // Exceeds limit, and new size is the largest among all allocations, while old size was not
+        a2.waitKilled();
+    }
 }

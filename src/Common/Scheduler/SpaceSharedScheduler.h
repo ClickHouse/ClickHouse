@@ -31,7 +31,7 @@ public:
     }
 
     /// Runs separate scheduler thread
-    void start(const String & name)
+    void start(ThreadName name)
     {
         if (!scheduler.joinable())
             scheduler = ThreadFromGlobalPool([this, name] { schedulerThread(name); });
@@ -104,7 +104,7 @@ public:
         return nullptr;
     }
 
-    void propagateUpdate(ISpaceSharedNode & from_child, Update update) override
+    void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override
     {
         chassert(&from_child == child.get());
         if (update.attached)
@@ -142,9 +142,9 @@ public:
     }
 
 private:
-    void schedulerThread(const String & name)
+    void schedulerThread(ThreadName name)
     {
-        setThreadName(name.c_str(), true);
+        setThreadName(name);
         while (!stop_flag.load())
         {
             if (events.tryProcess()) // Priority 0: process events
