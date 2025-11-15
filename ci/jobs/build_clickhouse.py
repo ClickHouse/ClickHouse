@@ -64,6 +64,44 @@ class JobStages(metaclass=MetaClasses.WithIter):
     UPLOAD_PROFILE_DATA = "profile"
 
 
+def should_use_submodules_sh(build_type: str) -> bool:
+    COMPATIBLE_JOBS = [
+        BuildTypes.AMD_ASAN,
+        BuildTypes.AMD_BINARY,
+        BuildTypes.AMD_COMPAT,
+        BuildTypes.AMD_COVERAGE,
+        BuildTypes.AMD_DEBUG,
+        BuildTypes.AMD_MSAN,
+        BuildTypes.AMD_MUSL,
+        BuildTypes.AMD_RELEASE,
+        BuildTypes.AMD_TIDY,
+        BuildTypes.AMD_TSAN,
+        BuildTypes.AMD_UBSAN,
+        BuildTypes.ARM_ASAN,
+        BuildTypes.ARM_BINARY,
+        BuildTypes.ARM_RELEASE,
+        BuildTypes.ARM_TIDY,
+        BuildTypes.ARM_TSAN,
+        BuildTypes.ARM_V80COMPAT,
+        BuildTypes.FUZZERS,
+        BuildTypes.LOONGARCH64,
+    ]
+
+    NOT_COMPATIBLE_JOBS = [
+        BuildTypes.AMD_DARWIN,
+        BuildTypes.AMD_FREEBSD,
+        BuildTypes.ARM_DARWIN,
+        BuildTypes.PPC64LE,
+        BuildTypes.RISCV64,
+        BuildTypes.S390X,
+    ]
+
+    assert (
+        build_type in COMPATIBLE_JOBS + NOT_COMPATIBLE_JOBS
+    ), f"Please decide whether the script should be used for type '{build_type}' or not"
+    return build_type in COMPATIBLE_JOBS
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
@@ -145,8 +183,14 @@ def main():
             res = Shell.check(
                 f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
+
+            def get_command_to_use():
+                if should_use_submodules_sh(build_type):
+                    return "contrib/update-submodules.sh --max-procs 10"
+                return "git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch"
+
             res = res and Shell.check(
-                f"contrib/update-submodules.sh --max-procs 10",
+                get_command_to_use(),
                 retries=3,
             )
             return res
