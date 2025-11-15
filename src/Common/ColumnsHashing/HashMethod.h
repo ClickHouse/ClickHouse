@@ -92,7 +92,14 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
 
     const FieldType * getKeyData() const { return reinterpret_cast<const FieldType *>(vec); }
 
-    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodOneNumber called" << std::endl; return {}; }
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        auto int_res = unalignedLoad<FieldType>(vec + row * sizeof(FieldType));
+        std::cout << "HashMethodOneNumber called, result=" << static_cast<int64_t>(int_res) << std::endl;
+        Field result{int_res};
+        std::cout << "result object created" << std::endl;
+        return {result};
+    }
 };
 
 
@@ -150,7 +157,17 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
         }
     }
 
-    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodString called" << std::endl; return {}; }
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        String key(
+            reinterpret_cast<const char*>(chars + offsets[row - 1]),
+            offsets[row] - offsets[row - 1] - 1
+        );
+        std::cout << "HashMethodString called, key=" << key << std::endl;
+        Field result{key};
+        std::cout << "result object created" << std::endl;
+        return {result};
+    }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
@@ -211,7 +228,17 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
         }
     }
 
-    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodFixedString called" << std::endl; return {}; }
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        String key(
+            reinterpret_cast<const char*>(&(*chars)[row * n]),
+            n
+        );
+        std::cout << "HashMethodFixedString called, key=" << key << std::endl;
+        Field result{key};
+        std::cout << "result object created" << std::endl;
+        return {result};
+    }
 
 protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
@@ -382,7 +409,20 @@ struct HashMethodKeysFixed
         }
     }
 
-    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodKeysFixed called" << std::endl; return {}; }
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        auto bitmap = Base::createBitmap(row);
+        // Converting a bitmap to a string just so that we can create a Field from it, because it can't be created from a bitmap (std::array).
+        // TODO construct Field from bitmap.
+        String s;
+        s.reserve(bitmap.size());
+        for (size_t i = 0; i < bitmap.size(); ++i)
+            s += static_cast<char>(bitmap[i]);
+        std::cout << "HashMethodFixedString called, s.size()=" << s.size() << std::endl;
+        Field result{s};
+        std::cout << "result object created" << std::endl;
+        return {result};
+    }
 
     static std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
     {
@@ -437,7 +477,14 @@ struct HashMethodHashed
         return hash128(row, key_columns.size(), key_columns);
     }
 
-    std::vector<Field> getFields(size_t, Arena &) const { std::cout << "HashMethodHashed called" << std::endl; return {}; }
+    std::vector<Field> getFields(size_t row, Arena &) const
+    {
+        auto hash = hash128(row, key_columns.size(), key_columns);
+        std::cout << "HashMethodFixedString called, (double)hash=" << static_cast<double>(hash) << std::endl;
+        Field result{hash};
+        std::cout << "result object created" << std::endl;
+        return {result};
+    }
 };
 
 }

@@ -963,6 +963,8 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    // Тут *result.NAME это method
+    // NAME это key8, key16, key32, key_string, ...
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
             executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
@@ -1063,14 +1065,6 @@ struct HasImpls : std::false_type {};
 
 template <typename T>
 struct HasImpls<T, std::void_t<decltype(std::declval<const T&>().impls)>> : std::true_type {};
-
-static size_t roundUpToPow2(size_t a)
-{
-    size_t pow2 = 1;
-    while (pow2 < a)
-        pow2 *= 2;
-    return pow2;
-}
 
 bool couldOrderByOptimizationBeApplied(const Aggregator::Params& params)
 {
@@ -1335,30 +1329,14 @@ void NO_INLINE Aggregator::executeImplBatch(
                 no_order_by_optimization_impl();
             } else
             {
-                // Max allowable fill of method.data (hash table)
-                size_t max_allowable_fill = std::numeric_limits<uint64_t>::max();
-                const size_t allowed_times_more = 4; // constant could be changed;
-                if (std::numeric_limits<uint64_t>::max() / allowed_times_more >= params.limit_plus_offset_length)
-                    max_allowable_fill = roundUpToPow2(params.limit_plus_offset_length * allowed_times_more);
-
                 const auto& optimization_indexes = params.optimization_indexes.value();
-                using DataIterator = typename DataType::iterator;
 
-                // Making heap
-                std::vector<DataIterator> top_keys_heap;
-                top_keys_heap.reserve(roundUpToPow2(params.limit_plus_offset_length));
-                for (auto iterator = method.data.begin(); iterator != method.data.end(); ++iterator)
-                    top_keys_heap.push_back(iterator);
-                auto heap_cmp = [&](DataIterator& lhs, DataIterator& rhs)
+                // Creating heap comparator
+                auto heap_cmp = [&](const std::vector<Field>& lhs, const std::vector<Field>& rhs)
                 {
-                    return ColumnsHashing::columns_hashing_impl::compareKeyHolders(lhs->getKey(), rhs->getKey(), optimization_indexes);
+                    return ColumnsHashing::columns_hashing_impl::compareOrderbyFields(lhs, rhs, optimization_indexes);
                 };
-                std::make_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
-                while (top_keys_heap.size() > params.limit_plus_offset_length)
-                {
-                    std::pop_heap(top_keys_heap.begin(), top_keys_heap.end(), heap_cmp);
-                    top_keys_heap.pop_back();
-                }
+                chassert(method.heap.size() <= params.limit_plus_offset_length);
 
                 for (size_t i = key_start; i < key_end; ++i)
                 {
@@ -1376,7 +1354,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                         }
                     }
 
-                    auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill, top_keys_heap, heap_cmp);
+                    auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, method.heap, heap_cmp);
 
                     if (!emplace_result.has_value())
                     {
