@@ -28,32 +28,36 @@
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
+#include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <DataTypes/NullableUtils.h>
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <Common/XRayTracing.h>
+
 #include <algorithm>
+#include <bit>
 #include <numeric>
+#include <type_traits>
 
 using namespace DB;
 
 #define INVOKE_WITH_MAP(TYPE, maps, f) \
-    case HashJoin::Type::TYPE:         \
+    case HashJoin::Type::TYPE: \
         return f(*(maps).TYPE);
 
 #define INVOKE_WITH_MAPS(TYPE, lhs_maps, rhs_maps, f) \
-    case HashJoin::Type::TYPE:                        \
+    case HashJoin::Type::TYPE: \
         return f(*(lhs_maps).TYPE, *(rhs_maps).TYPE);
 
-#define APPLY_TO_MAP(M, type, ...)                        \
-    switch (type)                                         \
-    {                                                     \
+#define APPLY_TO_MAP(M, type, ...) \
+    switch (type) \
+    { \
         APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M, __VA_ARGS__) \
-                                                          \
-        default:                                          \
-            UNREACHABLE();                                \
+\
+        default: \
+            UNREACHABLE(); \
     }
 
 namespace ProfileEvents
@@ -143,8 +147,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int SET_SIZE_LIMIT_EXCEEDED;
+extern const int LOGICAL_ERROR;
+extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 
@@ -249,6 +253,8 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
+    XRAY_TRACE_MBR(ConcurrentHashJoin, addBlockToJoin)
+
     /// We materialize columns here to avoid materializing them multiple times on different threads
     /// (inside different `hash_join`-s) because the block will be shared.
     Block right_block = hash_joins[0]->data->materializeColumnsFromRightBlock(right_block_);
@@ -402,13 +408,13 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
 }
 
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(
-        const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
+    const Block & /*left_sample_block*/, const Block & /*result_sample_block*/, UInt64 /*max_block_size*/) const
 {
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}",
-                    table_join->kind(), table_join->strictness());
+    throw Exception(
+        ErrorCodes::LOGICAL_ERROR, "Invalid join type. join kind: {}, strictness: {}", table_join->kind(), table_join->strictness());
 }
 
 template <typename HashTable>
@@ -460,14 +466,13 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
 
         switch (join.getJoinedData()->type)
         {
-        #define M(TYPE)                                                                                                                       \
-            case HashJoin::Type::TYPE:                                                                                                        \
-                hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
-                    *maps.TYPE, key_columns, join.getKeySizes().at(0));                                                                       \
-                return hashToSelector(*maps.TYPE, hash, num_shards);
-
-                APPLY_FOR_JOIN_VARIANTS(M)
-        #undef M
+#define M(TYPE) \
+    case HashJoin::Type::TYPE: \
+        hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
+            *maps.TYPE, key_columns, join.getKeySizes().at(0)); \
+        return hashToSelector(*maps.TYPE, hash, num_shards);
+            APPLY_FOR_JOIN_VARIANTS(M)
+#undef M
 
             default:
                 UNREACHABLE();
@@ -525,6 +530,8 @@ ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColumn::Sele
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(const Strings & key_columns_names, Block && from_block)
 {
+    XRAY_TRACE_MBR(ConcurrentHashJoin, dispatchBlock)
+
     const size_t num_shards = hash_joins.size();
     if (num_shards == 1)
     {

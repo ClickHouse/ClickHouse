@@ -7,6 +7,8 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/JoinUtils.h>
 
+#include <Common/XRayTracing.h>
+
 #include <algorithm>
 #include <type_traits>
 
@@ -165,6 +167,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     bool & is_inserted,
     bool & all_values_unique)
 {
+    XRAY_TRACE((insertFromBlockImplTypeCase<KeyGetter, HashMap, Selector>))
+
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, RowRef>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
@@ -573,6 +577,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     JoinStuff::JoinUsedFlags & used_flags,
     const Selector & selector)
 {
+    XRAY_TRACE((joinRightColumns<KeyGetter, Map, need_filter, check_null_map, join_mask_kind, AddedColumns, Selector>))
+
     static constexpr bool flag_per_row = true; // Always true in multiple maps case
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
