@@ -563,12 +563,17 @@ Pipe ReadFromSystemNumbersStep::makePipe()
                 auto intersected_range = overflowed_table_range->intersectWith(r);
                 if (intersected_range)
                 {
-                    auto range_with_step = steppedRangeFromRange(
-                        intersected_range.value(),
-                        numbers_storage.step,
-                        static_cast<UInt64>(
-                            (static_cast<UInt128>(numbers_storage.offset) + std::numeric_limits<UInt64>::max() + 1)
-                            % numbers_storage.step));
+                    auto step = numbers_storage.step;
+
+                    UInt64 offset_mod = numbers_storage.offset % step;
+
+                    /// 2^64 % step, computed safely in 128-bit
+                    UInt64 wrap_mod = static_cast<UInt64>((static_cast<UInt128>(std::numeric_limits<UInt64>::max()) + 1) % step);
+
+                    /// remainder for the wrapped segment: (offset - 2^64) % step
+                    UInt64 remainder_overflow = (offset_mod + step - wrap_mod) % step;
+
+                    auto range_with_step = steppedRangeFromRange(intersected_range.value(), step, remainder_overflow);
                     if (range_with_step)
                         intersected_ranges.push_back(*range_with_step);
                 }
