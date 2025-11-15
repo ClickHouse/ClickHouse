@@ -49,9 +49,21 @@ class StackTraceReader(object):
         last_lines = all_lines[-max_lines:] if len(all_lines) > max_lines else all_lines
 
         # Read backwards to find the last line that starts with SELECT
+        sql_keywords = (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "CREATE",
+            "DROP",
+            "ALTER",
+            "TRUNCATE",
+            "WITH",
+        )
         for line in reversed(last_lines):
-            if line.strip().startswith("SELECT"):
-                return line.strip()
+            stripped = line.strip()
+            if any(stripped.startswith(keyword) for keyword in sql_keywords):
+                return stripped
         return None
 
 

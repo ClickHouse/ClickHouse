@@ -106,17 +106,19 @@ def main():
             Result(name="Unknown error", status=Result.StatusExtended.ERROR)
         ]
 
-    info = ""
     if not result.is_ok():
+        info = f"Error: {result.name}\n"
+        info += "---\n\n"
         if fuzzer_log.exists():
             fuzzer_query = StackTraceReader.get_fuzzer_query(fuzzer_log)
             if fuzzer_query:
-                info = f"Query: {fuzzer_query}"
-            else:
-                info = "Fuzzer log:\n ~~~\n" + Shell.get_output(
-                    f"tail {fuzzer_log}", verbose=False
-                )
-            info += "\n---\n"
+                info += f"Query: {fuzzer_query}"
+                info += "---\n\n"
+
+            info = "Fuzzer log (last 30 lines):\n" + Shell.get_output(
+                f"tail -n30 {fuzzer_log}", verbose=False
+            )
+            info += "---\n\n"
         if fatal_log.exists():
             stack_trace = StackTraceReader.get_stack_trace(fatal_log)
             if stack_trace:
@@ -127,12 +129,14 @@ def main():
             result.info = info
 
         if Shell.check(f"dmesg > {dmesg_log}"):
-            result.results.append(
-                Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                )
+            oom_result = Result.from_commands_run(
+                name="OOM in dmesg",
+                command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
             )
+            if not oom_result.is_ok():
+                # change status: failure -> FAIL
+                oom_result.set_status(Result.StatusExtended.FAIL)
+                result.results.append(oom_result)
         else:
             print("WARNING: dmesg not enabled")
 
