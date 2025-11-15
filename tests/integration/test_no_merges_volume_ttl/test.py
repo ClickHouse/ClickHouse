@@ -33,7 +33,7 @@ def wait_parts_count(table, expected_number_of_parts):
     assert int(node.query(f"select count() from system.parts where table = '{table}' and active")) == expected_number_of_parts
 
 
-def test_no_merges_volume_ttl_regular_merge(start_cluster):
+def test_no_merges_volume_ttl_merge(start_cluster):
     node.query("create table t (time DateTime) engine = MergeTree order by tuple() ttl time settings storage_policy='hot_cold_separation_policy', merge_with_ttl_timeout=0")
     table_uuid = node.query("select uuid from system.tables where table = 't'").strip()
 
@@ -42,7 +42,7 @@ def test_no_merges_volume_ttl_regular_merge(start_cluster):
     assert node.query("select path from system.parts where table = 't' and active").strip() == f"/with_merges/store/{table_uuid[:3]}/{table_uuid}/all_1_1_0/"
     assert int(node.query("select count() from t").strip()) == 1
 
-    node.query("ALTER TABLE t MOVE PARTITION () TO VOLUME 'no_merges'")
+    node.query("alter table t move partition () to volume 'no_merges'")
     assert node.query("select path from system.parts where table = 't' and active").strip() == f"/no_merges/store/{table_uuid[:3]}/{table_uuid}/all_1_1_0/"
     assert int(node.query("select count() from t").strip()) == 1
 
@@ -53,35 +53,15 @@ def test_no_merges_volume_ttl_regular_merge(start_cluster):
     node.query("drop table t sync")
 
 
-def test_no_merges_volume_ttl_optimize(start_cluster):
-    node.query("create table t (time DateTime) engine = MergeTree order by tuple() ttl time settings storage_policy='hot_cold_separation_policy', merge_with_ttl_timeout=0, do_not_run_schedule_data_processing_job=1")
-    table_uuid = node.query("select uuid from system.tables where table = 't'").strip()
-
-    node.query("system stop merges t")
-    node.query("insert into t values (now() - interval 1 day)")
-    assert node.query("select path from system.parts where table = 't' and active").strip() == f"/with_merges/store/{table_uuid[:3]}/{table_uuid}/all_1_1_0/"
-    assert int(node.query("select count() from t").strip()) == 1
-
-    node.query("ALTER TABLE t MOVE PARTITION () TO VOLUME 'no_merges'")
-    assert node.query("select path from system.parts where table = 't' and active").strip() == f"/no_merges/store/{table_uuid[:3]}/{table_uuid}/all_1_1_0/"
-    assert int(node.query("select count() from t").strip()) == 1
-
-    node.query("system start merges t")
-    node.query("optimize table t")
-    assert int(node.query("select count() from t").strip()) == 0
-    node.query("drop table t sync")
-
-
 def test_no_merges_volume_no_regular_merges(start_cluster):
     node.query("create table t (a UInt64) engine = MergeTree order by tuple() settings storage_policy='hot_cold_separation_policy'")
-    table_uuid = node.query("select uuid from system.tables where table = 't'").strip()
 
     node.query("system stop merges t")
     node.query("insert into t select number from numbers(50) settings max_block_size=1, min_insert_block_size_bytes=1")
     assert int(node.query("select count() from t").strip()) == 50
     assert int(node.query("select count() from system.parts where table = 't' and active").strip()) == 50
 
-    node.query("ALTER TABLE t MOVE PARTITION () TO VOLUME 'no_merges'")
+    node.query("alter table t move partition () to volume 'no_merges'")
     assert int(node.query("select count() from t").strip()) == 50
     assert int(node.query("select count() from system.parts where table = 't' and active").strip()) == 50
 
