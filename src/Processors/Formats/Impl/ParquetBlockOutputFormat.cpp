@@ -311,10 +311,14 @@ void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
         for (auto & chunk : chunks)
         {
             if (concatenated.empty())
+            {
                 concatenated.swap(chunk);
+            }
             else
+            {
                 concatenated.append(chunk);
-            chunk.clear(); // free chunk's buffers so memory is release earlier
+                chunk.clear(); // free chunk's buffers so memory is release earlier
+            }
         }
         writeRowGroupInOneThread(std::move(concatenated));
     }
