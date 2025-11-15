@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>

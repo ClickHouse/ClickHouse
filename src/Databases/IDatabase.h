@@ -9,7 +9,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/AsyncLoader.h>
+#include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
 #include <functional>
