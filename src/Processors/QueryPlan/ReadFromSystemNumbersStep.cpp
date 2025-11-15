@@ -200,12 +200,12 @@ public:
 private:
     /// Find the data range in ranges and return how many item found.
     /// If no data left in ranges return 0.
-    UInt64 findRanges(RangesPos & start, RangesPos & end, UInt64 base_block_size_)
+    UInt64 findRanges(RangesPos & start, RangesPos & end)
     {
         std::lock_guard lock(ranges_state->mutex);
 
 
-        UInt64 maximum_can_take = base_block_size_;
+        UInt64 maximum_can_take = base_block_size;
         UInt64 size = 0; /// how many item found.
 
         /// find start
@@ -260,7 +260,7 @@ protected:
         /// If data left is small, shrink block size.
         RangesPos start;
         RangesPos end;
-        auto block_size = findRanges(start, end, base_block_size);
+        auto block_size = findRanges(start, end);
 
         chassert(block_size <= base_block_size);
 
