@@ -416,7 +416,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     auto result_projection_names = resolveFunction(node, scope);
 
                     if (if_function_arguments[1]->getNodeType() != QueryTreeNodeType::IDENTIFIER &&
-                        node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
+                        !node->getResultType()->equals(*if_function_arguments[1]->getResultType()))
                     {
                         DataTypePtr common_type;
                         if (use_variant_when_no_common_type)
@@ -1344,7 +1344,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 if (disable_constant_folding)
                 {
                     if (isNothing(result_type))
-                        column = ColumnConst::create(ColumnNothing::create(1), 1);
+                        column = ColumnConst::create(ColumnNothing::create(1), num_rows);
                     else
                         column = result_type->createColumnConstWithDefaultValue(num_rows);
                 }
