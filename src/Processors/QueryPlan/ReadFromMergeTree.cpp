@@ -3401,7 +3401,7 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 
 bool ReadFromMergeTree::canRemoveUnusedColumns() const
 {
-    return true;
+    return query_info.prewhere_info == nullptr || !hasDuplicatedNamesInInputOrOutputs(query_info.prewhere_info->prewhere_actions);
 }
 
 IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(NameMultiSet required_outputs, bool /*remove_inputs*/)
