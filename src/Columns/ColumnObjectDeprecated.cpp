@@ -922,6 +922,21 @@ ColumnPtr ColumnObjectDeprecated::filter(const Filter & filter, ssize_t result_s
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.filter(filter, result_size_hint); });
 }
 
+void ColumnObjectDeprecated::filter(const Filter & filter)
+{
+    if (!isFinalized())
+    {
+        finalize();
+    }
+
+    for (auto & subcolumn : subcolumns)
+    {
+        auto & col = subcolumn->data.getFinalizedColumn();
+        col.filter(filter);
+        num_rows = col.size();
+    }
+}
+
 ColumnPtr ColumnObjectDeprecated::index(const IColumn & indexes, size_t limit) const
 {
     return applyForSubcolumns([&](const auto & subcolumn) { return subcolumn.index(indexes, limit); });

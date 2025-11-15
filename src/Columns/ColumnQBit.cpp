@@ -105,6 +105,11 @@ ColumnPtr ColumnQBit::filter(const Filter & filt, ssize_t result_size_hint) cons
     return ColumnQBit::create(tuple->filter(filt, result_size_hint), dimension);
 }
 
+void ColumnQBit::filter(const Filter & filt)
+{
+    tuple->filter(filt);
+}
+
 void ColumnQBit::expand(const Filter & mask, bool inverted)
 {
     tuple->expand(mask, inverted);

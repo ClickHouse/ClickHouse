@@ -1172,6 +1172,19 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
     return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types);
 }
 
+void ColumnObject::filter(const Filter & filt)
+{
+    for (const auto & [path, column] : typed_paths)
+        column->filter(filt);
+
+    for (const auto & [path, column] : dynamic_paths_ptrs)
+        column->filter(filt);
+
+    shared_data->filter(filt);
+
+    statistics.reset();
+}
+
 void ColumnObject::expand(const Filter & mask, bool inverted)
 {
     for (auto & [_, column] : typed_paths)
