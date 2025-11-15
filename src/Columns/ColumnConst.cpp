@@ -67,6 +67,15 @@ ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/)
     return ColumnConst::create(data, new_size);
 }
 
+void ColumnConst::filter(const Filter & filt)
+{
+    if (s != filt.size())
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})",
+            filt.size(), toString(s));
+
+    s = countBytesInFilter(filt);
+}
+
 void ColumnConst::expand(const Filter & mask, bool inverted)
 {
     if (mask.size() < s)

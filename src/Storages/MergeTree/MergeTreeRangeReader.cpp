@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const IColumn::Filter & filter, size_t filter_bytes)
+static void filterColumns(Columns & columns, const IColumn::Filter & filter, size_t /* filter_bytes */)
 {
     for (auto & column : columns)
     {
@@ -57,7 +57,8 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter, siz
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            column = column->filter(filter, filter_bytes);
+            /// column = column->filter(filter, filter_bytes);
+            column->assumeMutable()->filter(filter);
 
             if (column->empty())
             {
