@@ -117,6 +117,8 @@ SELECT number FROM system.numbers WHERE number < 10;
 7
 8
 9
+SELECT * FROM numbers(10) LIMIT 0;
+SELECT * FROM system.numbers LIMIT 0;
 SET max_threads = 10;
 SELECT number FROM numbers_mt(10, 14630045721179951620, 6670599363308407409);
 10
@@ -221,6 +223,7 @@ SELECT number FROM system.numbers_mt WHERE number < 10;
 7
 8
 9
+SELECT * FROM system.numbers_mt LIMIT 0;
 SET max_threads = 10;
 SELECT number FROM system.numbers_mt WHERE number < 100 LIMIT 5;
 0
@@ -293,3 +296,4 @@ SELECT number FROM system.numbers_mt WHERE number BETWEEN 123456 AND 1000000 LIM
 123463
 123464
 123465
+SELECT * FROM system.numbers_mt LIMIT 0;

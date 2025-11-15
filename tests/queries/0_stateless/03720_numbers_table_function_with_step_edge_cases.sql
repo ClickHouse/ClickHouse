@@ -46,6 +46,10 @@ SELECT number FROM numbers(100, 10, 1) WHERE number < 50;
 
 SELECT number FROM system.numbers WHERE number < 10;
 
+SELECT * FROM numbers(10) LIMIT 0;
+
+SELECT * FROM system.numbers LIMIT 0;
+
 SET max_threads = 10;
 
 SELECT number FROM numbers_mt(10, 14630045721179951620, 6670599363308407409);
@@ -83,6 +87,8 @@ SELECT count(), min(number), max(number), sum(number) FROM numbers_mt(0, 1000, 1
 SELECT number FROM numbers_mt(100, 10, 1) WHERE number < 50;
 
 SELECT number FROM system.numbers_mt WHERE number < 10;
+
+SELECT * FROM system.numbers_mt LIMIT 0;
 
 SET max_threads = 10;
 
@@ -122,3 +128,5 @@ FROM system.numbers_mt
 WHERE number < 1000;
 
 SELECT number FROM system.numbers_mt WHERE number BETWEEN 123456 AND 1000000 LIMIT 10;
+
+SELECT * FROM system.numbers_mt LIMIT 0;
