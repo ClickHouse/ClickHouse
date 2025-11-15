@@ -570,6 +570,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
