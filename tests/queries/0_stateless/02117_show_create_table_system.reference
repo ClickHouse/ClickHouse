@@ -663,6 +663,7 @@ CREATE TABLE system.processes
     `ProfileEvents` Map(String, UInt64),
     `Settings` Map(String, String),
     `current_database` String,
+    `is_internal` UInt8,
     `ProfileEvents.Names` Array(String) ALIAS mapKeys(ProfileEvents),
     `ProfileEvents.Values` Array(UInt64) ALIAS mapValues(ProfileEvents),
     `Settings.Names` Array(String) ALIAS mapKeys(Settings),

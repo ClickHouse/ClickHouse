@@ -1449,7 +1449,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
         query_context->setQueryKindReplicatedDatabaseInternal();
         query_context->setCurrentDatabase(getDatabaseName());
-        query_context->setCurrentQueryId("");
+        query_context->setCurrentQueryId({});
 
         /// We will execute some CREATE queries for recovery (not ATTACH queries),
         /// so we need to allow experimental features that can be used in a CREATE query
@@ -1485,17 +1485,35 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         /// and make possible creation of new table with the same UUID.
         String query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Ordinary", backQuoteIfNeed(to_db_name));
         auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
         query_context->setSetting("allow_deprecated_database_ordinary", 1);
         query_context->setSetting("cloud_mode", false);
-        executeQuery(query, query_context, QueryFlags{.internal = true});
+        query_context->setCurrentQueryId({});
+        {
+            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            if (!CurrentThread::getGroup())
+            {
+                query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+            }
+            executeQuery(query, query_context, QueryFlags{.internal = true});
+        }
 
         /// But we want to avoid discarding UUID of ReplicatedMergeTree tables, because it will not work
         /// if zookeeper_path contains {uuid} macro. Replicated database do not recreate replicated tables on recovery,
         /// so it's ok to save UUID of replicated table.
         query = fmt::format("CREATE DATABASE IF NOT EXISTS {} ENGINE=Atomic", backQuoteIfNeed(to_db_name_replicated));
         query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
         query_context->setSetting("cloud_mode", false);
-        executeQuery(query, query_context, QueryFlags{.internal = true});
+        query_context->setCurrentQueryId({});
+        {
+            std::unique_ptr<CurrentThread::QueryScope> query_scope;
+            if (!CurrentThread::getGroup())
+            {
+                query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+            }
+            executeQuery(query, query_context, QueryFlags{.internal = true});
+        }
     }
 
     size_t moved_tables = 0;
