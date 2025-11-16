@@ -42,6 +42,8 @@ public:
 
     bool isUnsyncedAfterRecovery() const { return unsynced_after_recovery; }
 
+    static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;

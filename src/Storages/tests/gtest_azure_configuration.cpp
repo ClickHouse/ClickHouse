@@ -1,8 +1,9 @@
-#include <azure/identity/managed_identity_credential.hpp>
 #include <gtest/gtest.h>
 #include <config.h>
 
 #if USE_AZURE_BLOB_STORAGE
+
+#include <azure/identity/managed_identity_credential.hpp>
 
 #define ASSERT_THROW_ERROR_CODE(statement, expected_exception, expected_code, expected_msg)     \
     ASSERT_THROW(                                                                               \
@@ -254,6 +255,6 @@ TEST(StorageAzureConfiguration, FromASTWithPartialExtraCredentials)
     ASSERT_THROW_ERROR_CODE(conf.fromAST(engine_args, Context::getGlobalContextInstance(), false), Exception, ErrorCodes::BAD_ARGUMENTS, "'client_id' is missing");
 }
 
-#endif
-
 }
+
+#endif

@@ -4,6 +4,7 @@ sidebar_label: 'EXCHANGE'
 sidebar_position: 49
 slug: /sql-reference/statements/exchange
 title: 'EXCHANGE Statement'
+doc_type: 'reference'
 ---
 
 # EXCHANGE Statement

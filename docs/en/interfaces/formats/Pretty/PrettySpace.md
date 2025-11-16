@@ -6,6 +6,7 @@ keywords: ['PrettySpace']
 output_format: true
 slug: /interfaces/formats/PrettySpace
 title: 'PrettySpace'
+doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

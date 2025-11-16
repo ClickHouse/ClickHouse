@@ -68,7 +68,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
             const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
             if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-             || (join_logical && join_logical->getJoinInfo().kind == JoinKind::Right))
+             || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
                 node = node->children.at(1);
             else
                 node = node->children.at(0);
@@ -105,7 +105,7 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
         context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
     node->step = std::move(read_from_merge_tree_parallel_replicas);
 
-    addConvertingActions(*query_plan, header, /*has_missing_objects=*/false);
+    addConvertingActions(*query_plan, header, context);
 
     return {std::move(query_plan), true};
 }

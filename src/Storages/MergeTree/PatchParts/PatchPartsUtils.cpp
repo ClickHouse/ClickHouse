@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
+#include <Storages/IndicesDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -76,16 +77,21 @@ StorageMetadataPtr getPatchPartMetadata(ColumnsDescription patch_part_desc, Cont
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, local_context);
 
     const auto & key_columns = getPatchPartKeyColumns();
-    auto order_by_expression = makeASTFunction("tuple");
+    auto order_by_expression = makeASTOperator("tuple");
 
     for (const auto & [key_column_name, _] : key_columns)
         order_by_expression->arguments->children.push_back(std::make_shared<ASTIdentifier>(key_column_name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
 
+    IndicesDescription secondary_indices;
+    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockNumberColumn::name, patch_part_desc, local_context));
+    secondary_indices.push_back(createImplicitMinMaxIndexDescription(BlockOffsetColumn::name, patch_part_desc, local_context));
+
     part_metadata.sorting_key = KeyDescription::getSortingKeyFromAST(order_by_expression, patch_part_desc, local_context, {});
     part_metadata.primary_key = KeyDescription::getKeyFromAST(order_by_expression, patch_part_desc, local_context);
     part_metadata.primary_key.definition_ast = nullptr;
+    part_metadata.setSecondaryIndices(std::move(secondary_indices));
     part_metadata.setColumns(std::move(patch_part_desc));
 
     return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));

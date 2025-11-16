@@ -510,7 +510,10 @@ bool ParserWindowReference::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // Variant 2:
     // function_name ( * ) OVER ( window_definition )
     ParserWindowDefinition parser_definition;
-    return parser_definition.parse(pos, function.window_definition, expected);
+    auto res = parser_definition.parse(pos, function.window_definition, expected);
+    if (function.window_definition)
+        function.children.push_back(function.window_definition);
+    return res;
 }
 
 static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & pos,
@@ -566,6 +569,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
         else if (parser_expression.parse(pos, node->frame_begin_offset, expected))
         {
+            node->children.push_back(node->frame_begin_offset);
             // We will evaluate the expression for offset expression later.
             node->frame_begin_type = WindowFrame::BoundaryType::Offset;
         }
@@ -613,6 +617,7 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
             }
             else if (parser_expression.parse(pos, node->frame_end_offset, expected))
             {
+                node->children.push_back(node->frame_end_offset);
                 // We will evaluate the expression for offset expression later.
                 node->frame_end_type = WindowFrame::BoundaryType::Offset;
             }
@@ -1228,7 +1233,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         return makeStringLiteral(pos, node, "");
 
     PODArray<UInt8> res;
-    res.resize((pos->size() + word_size) / word_size + 1);
+    res.resize((str_end - str_begin + word_size - 1) / word_size);
     char * res_begin = reinterpret_cast<char *>(res.data());
     char * res_pos = res_begin;
 
@@ -1241,7 +1246,7 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), (res_pos - res_begin - 1)));
+    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()));
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2405,9 +2410,9 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_set(Keyword::SET);
     ParserKeyword s_recompress(Keyword::RECOMPRESS);
     ParserKeyword s_codec(Keyword::CODEC);
-    ParserKeyword s_materialize(Keyword::MATERIALIZE);
-    ParserKeyword s_remove(Keyword::REMOVE);
-    ParserKeyword s_modify(Keyword::MODIFY);
+    ParserKeyword s_materialize_ttl(Keyword::MATERIALIZE_TTL);
+    ParserKeyword s_remove_ttl(Keyword::REMOVE_TTL);
+    ParserKeyword s_modify_ttl(Keyword::MODIFY_TTL);
 
     ParserIdentifier parser_identifier;
     ParserStringLiteral parser_string_literal;
@@ -2415,10 +2420,15 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionList parser_keys_list(false);
     ParserCodec parser_codec;
 
-    if (s_materialize.checkWithoutMoving(pos, expected) ||
-        s_remove.checkWithoutMoving(pos, expected) ||
-        s_modify.checkWithoutMoving(pos, expected))
-
+    /// Disambiguation for the parser between
+    /// 1: MODIFY TTL timestamp + 123, materialize(c) + 1
+    /// and
+    /// 2: MODIFY TTL timestamp + 123, MATERIALIZE TTL
+    /// In the first case, materialize belongs to the list of TTL expressions, so it is the part of TTLElement.
+    /// In the second case, MATERIALIZE TTL is a separate element of the alter, so it can't be parsed as a TTLElement.
+    if (s_materialize_ttl.checkWithoutMoving(pos, expected)
+        || s_remove_ttl.checkWithoutMoving(pos, expected)
+        || s_modify_ttl.checkWithoutMoving(pos, expected))
         return false;
 
     ASTPtr ttl_expr;
@@ -2449,6 +2459,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
+        /// DELETE is the default mode.
         s_delete.ignore(pos, expected);
         mode = TTLMode::DELETE;
     }

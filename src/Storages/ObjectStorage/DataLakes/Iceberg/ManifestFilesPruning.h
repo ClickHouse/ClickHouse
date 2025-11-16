@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
 
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
@@ -21,6 +20,13 @@ enum class PruningReturnStatus
     MIN_MAX_INDEX_PRUNED
 };
 
+}
+
+#if USE_AVRO
+
+namespace DB::Iceberg
+{
+
 struct ManifestFileEntry;
 class ManifestFileContent;
 
@@ -30,7 +36,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 class ManifestFilesPruner
 {
 private:
-    const DB::IcebergSchemaProcessor & schema_processor;
+    const IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
     Int32 initial_schema_id;
     const DB::KeyDescription * partition_key;
@@ -44,7 +50,7 @@ private:
 
 public:
     ManifestFilesPruner(
-        const DB::IcebergSchemaProcessor & schema_processor_,
+        const IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,

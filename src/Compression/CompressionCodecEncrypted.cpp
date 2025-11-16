@@ -286,7 +286,7 @@ inline char* writeNonce(const String& nonce, char* dest)
 /// Firstly, read a byte, which shows if the nonce will be put in text (if it was defined in config)
 /// Secondly, read nonce in text (this step depends from first step)
 /// return new position to read
-inline const char* readNonce(String& nonce, const char* source)
+inline const char * readNonce(String & nonce, const char * source)
 {
     /// If first is zero byte: move source and set zero-bytes nonce
     if (!*source)

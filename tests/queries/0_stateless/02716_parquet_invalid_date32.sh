@@ -9,3 +9,4 @@ $CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_parquet/02716_data.parque
 
 $CLICKHOUSE_LOCAL -q "select * from file('$CURDIR/data_parquet/02716_data.parquet', auto, 'date Int32')"
 
+$CLICKHOUSE_LOCAL -q "select date::Int32 from file('$CURDIR/data_parquet/02716_data.parquet', auto, 'date Date32') settings date_time_overflow_behavior='saturate'"

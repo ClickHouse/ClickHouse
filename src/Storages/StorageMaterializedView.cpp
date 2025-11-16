@@ -399,7 +399,8 @@ void StorageMaterializedView::read(
         {
             auto converting_actions = ActionsDAG::makeConvertingActions(target_header.getColumnsWithTypeAndName(),
                                                                         mv_header.getColumnsWithTypeAndName(),
-                                                                        ActionsDAG::MatchColumnsMode::Name);
+                                                                        ActionsDAG::MatchColumnsMode::Name,
+                                                                        context);
             /* Leave columns outside from materialized view structure as is.
              * They may be added in case of distributed query with JOIN.
              * In that case underlying table returns joined columns as well.
@@ -444,9 +445,6 @@ SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const Stor
 void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
-    const auto & select_query = getInMemoryMetadataPtr()->getSelectQuery();
-    if (!select_query.select_table_id.empty())
-        DatabaseCatalog::instance().removeViewDependency(select_query.select_table_id, table_id);
 
     if (getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
@@ -646,7 +644,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     {
         auto query_for_logging = drop_query->formatForLogging(refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
         UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context, drop_query, nullptr, stopwatch.elapsedMilliseconds(), /*internal*/ true);
         LOG_ERROR(getLogger("StorageMaterializedView"),
             "{}: Failed to drop temporary table after refresh. Table {} is left behind and requires manual cleanup.",
             getStorageID().getFullTableName(), table_id.getFullTableName());
@@ -683,7 +681,7 @@ void StorageMaterializedView::alter(
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
     auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)
