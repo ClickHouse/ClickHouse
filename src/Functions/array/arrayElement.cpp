@@ -161,6 +161,10 @@ private:
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
+    /** For a string, get character at the specified index.
+     */
+    static ColumnPtr executeString(const ColumnsWithTypeAndName & arguments, size_t input_rows_count);
+
     using Offsets = ColumnArray::Offsets;
 
     static bool matchKeyToIndexNumber(
@@ -1968,6 +1972,104 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName & arguments, size_t input_rows_count)
+{
+    const ColumnPtr & column_string = arguments[0].column;
+    const ColumnPtr & column_index = arguments[1].column;
+
+    auto try_get_char_position = [](StringRef str, Int64 index, UInt64 & position) -> bool
+    {
+        if (index == 0 || str.size == 0)
+            return false;
+
+        const UInt64 length = str.size;
+
+        if (index > 0)
+        {
+            const UInt64 idx = static_cast<UInt64>(index);
+            if (idx == 0 || idx > length)
+                return false;
+
+            position = idx - 1;
+            return true;
+        }
+
+        const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
+        if (idx > length)
+            return false;
+
+        position = length - idx;
+        return true;
+    };
+
+    auto append_char_or_empty = [&](ColumnString & result, StringRef str, Int64 index)
+    {
+        UInt64 position = 0;
+        if (!try_get_char_position(str, index, position))
+        {
+            result.insertData(nullptr, 0);
+            return;
+        }
+
+        result.insertData(str.data + position, 1);
+    };
+
+    auto get_char_at_index = [&](StringRef str, Int64 index) -> String
+    {
+        UInt64 position = 0;
+        if (!try_get_char_position(str, index, position))
+            return String();
+
+        return String(str.data + position, 1);
+    };
+
+    if (const auto * col = checkAndGetColumn<ColumnString>(column_string.get()))
+    {
+        auto col_res = ColumnString::create();
+        auto & res_column = assert_cast<ColumnString &>(*col_res);
+
+        if (const auto * column_index_const = checkAndGetColumn<ColumnConst>(column_index.get()))
+        {
+            const Int64 index_value = column_index_const->getInt(0);
+            for (size_t i = 0; i < input_rows_count; ++i)
+                append_char_or_empty(res_column, col->getDataAt(i), index_value);
+        }
+        else
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+                append_char_or_empty(res_column, col->getDataAt(i), column_index->getInt(i));
+        }
+
+        return col_res;
+    }
+
+    if (const auto * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+    {
+        const StringRef str_ref = col_const->getDataAt(0);
+
+        if (const auto * column_index_const = checkAndGetColumn<ColumnConst>(column_index.get()))
+        {
+            const Int64 index_value = column_index_const->getInt(0);
+            const String result_value = get_char_at_index(str_ref, index_value);
+            return DataTypeString().createColumnConst(input_rows_count, result_value);
+        }
+
+        auto col_res = ColumnString::create();
+        auto & res_column = assert_cast<ColumnString &>(*col_res);
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+            append_char_or_empty(res_column, str_ref, column_index->getInt(i));
+
+        return col_res;
+    }
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_COLUMN,
+        "Illegal column {} of first argument of function arrayElement for string subscript",
+        arguments[0].column->getName());
+}
+
+template <ArrayElementExceptionMode mode>
 String FunctionArrayElement<mode>::getName() const
 {
     return name;
@@ -1982,12 +2084,26 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
+    /// Support for string subscript operator
+    if (isString(arguments[0]))
+    {
+        if (!isNativeInteger(arguments[1]))
+        {
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument for function '{}' must be integer, got '{}' instead",
+                getName(),
+                arguments[1]->getName());
+        }
+        return std::make_shared<DataTypeString>();
+    }
+
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "First argument for function '{}' must be array, got '{}' instead",
+            "First argument for function '{}' must be array or string, got '{}' instead",
             getName(),
             arguments[0]->getName());
     }
@@ -2014,6 +2130,10 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     if (col_map || col_const_map)
         return executeMap(arguments, result_type, input_rows_count);
+
+    /// Support for string subscript operator
+    if (isString(arguments[0].type))
+        return executeString(arguments, input_rows_count);
 
     /// Check nullability.
     bool is_array_of_nullable = false;
