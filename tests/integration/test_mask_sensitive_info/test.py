@@ -788,6 +788,6 @@ def test_query_masking_rule_with_ddl():
 
     assert_eq_with_retry(node, "SELECT count(*) FROM system.distribution_queue", "0\n")
     assert "sensetive_data" in node.query(
-        f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
+        f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}=1"
     )
     node.query("DROP TABLE IF EXISTS test_table")
