@@ -15,12 +15,33 @@ C
 a
 a
 
+a
+bc
+bc
+ickHo
+House
+ckHous
+ous
+
+
+
 C
 e
 abc	3	c
 hello	1	h
 test	-1	t
 world	2	o
+clickhouse	2	5	lick
+column	1	3	col
+tuple	2	10	uple
+xyz	3	2	
+1	3	CON
+2	5	ONST
+2	10	ONSTANT
+3	2	
+alpha	lph
+beta	eta
+gamma	amm
 W
 C
 k

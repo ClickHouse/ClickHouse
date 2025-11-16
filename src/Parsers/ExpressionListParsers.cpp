@@ -1337,8 +1337,36 @@ class ArrayElementLayer : public LayerWithSeparator<TokenType::Comma, TokenType:
 public:
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
+        if (ParserToken(TokenType::Colon).ignore(pos, expected))
+        {
+            if (used_slice_separator)
+                return false;
+
+            used_slice_separator = true;
+            action = Action::OPERAND;
+            return mergeElement();
+        }
+
         return LayerWithSeparator::parse(pos, expected, action);
     }
+
+protected:
+    bool getResultImpl(ASTPtr & node) override
+    {
+        if (!used_slice_separator)
+            return Layer::getResultImpl(node);
+
+        if (elements.size() != 2)
+            return false;
+
+        auto first = std::move(elements[0]);
+        auto second = std::move(elements[1]);
+        node = makeASTOperator("tuple", std::move(first), std::move(second));
+        return true;
+    }
+
+private:
+    bool used_slice_separator = false;
 };
 
 class CastLayer : public Layer

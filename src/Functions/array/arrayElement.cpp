@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <utility>
 
 namespace DB
 {
@@ -2023,8 +2024,112 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
         return String(str.data + position, 1);
     };
 
+    auto try_get_slice_end_position = [&](StringRef str, Int64 index, UInt64 & position) -> bool
+    {
+        if (index == 0 || str.size == 0)
+            return false;
+
+        const UInt64 length = str.size;
+
+        if (index > 0)
+        {
+            const UInt64 idx = static_cast<UInt64>(index);
+            if (idx > length)
+            {
+                position = length - 1;
+                return true;
+            }
+
+            position = idx - 1;
+            return true;
+        }
+
+        const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
+        if (idx > length)
+        {
+            position = 0;
+            return true;
+        }
+
+        position = length - idx;
+        return true;
+    };
+
+    auto append_slice_or_empty = [&](ColumnString & result, StringRef str, Int64 start, Int64 end)
+    {
+        UInt64 start_position = 0;
+        UInt64 end_position = 0;
+
+        if (!try_get_char_position(str, start, start_position) || !try_get_slice_end_position(str, end, end_position) || end_position < start_position)
+        {
+            result.insertData(nullptr, 0);
+            return;
+        }
+
+        result.insertData(str.data + start_position, end_position - start_position + 1);
+    };
+
+    auto get_slice_or_empty = [&](StringRef str, Int64 start, Int64 end) -> String
+    {
+        UInt64 start_position = 0;
+        UInt64 end_position = 0;
+
+        if (!try_get_char_position(str, start, start_position) || !try_get_slice_end_position(str, end, end_position) || end_position < start_position)
+            return String();
+
+        return String(str.data + start_position, end_position - start_position + 1);
+    };
+
+    auto ensure_valid_tuple_size = [](const ColumnTuple & tuple_column)
+    {
+        if (tuple_column.tupleSize() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Tuple index for function '{}' must contain exactly two elements",
+                FunctionArrayElement<mode>::name);
+    };
+
+    auto append_tuple_slices = [&](auto && string_accessor, const ColumnTuple & tuple_column, ColumnString & result)
+    {
+        ensure_valid_tuple_size(tuple_column);
+        const IColumn & start_column = tuple_column.getColumn(0);
+        const IColumn & end_column = tuple_column.getColumn(1);
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+            append_slice_or_empty(result, string_accessor(row), start_column.getInt(row), end_column.getInt(row));
+    };
+
+    auto extract_const_tuple = [&](const ColumnConst & tuple_const) -> std::pair<Int64, Int64>
+    {
+        const auto & tuple_data = assert_cast<const ColumnTuple &>(tuple_const.getDataColumn());
+        ensure_valid_tuple_size(tuple_data);
+        const IColumn & start_column = tuple_data.getColumn(0);
+        const IColumn & end_column = tuple_data.getColumn(1);
+        return {start_column.getInt(0), end_column.getInt(0)};
+    };
+
     if (const auto * col = checkAndGetColumn<ColumnString>(column_string.get()))
     {
+        if (const auto * tuple_column = checkAndGetColumn<ColumnTuple>(column_index.get()))
+        {
+            auto col_res = ColumnString::create();
+            auto & res_column = assert_cast<ColumnString &>(*col_res);
+            append_tuple_slices([&](size_t row) { return col->getDataAt(row); }, *tuple_column, res_column);
+            return col_res;
+        }
+
+        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(column_index.get()))
+        {
+            auto [start_value, end_value] = extract_const_tuple(*tuple_const);
+            auto col_res = ColumnString::create();
+            auto & res_column = assert_cast<ColumnString &>(*col_res);
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+                append_slice_or_empty(res_column, col->getDataAt(i), start_value, end_value);
+
+            return col_res;
+        }
+
         auto col_res = ColumnString::create();
         auto & res_column = assert_cast<ColumnString &>(*col_res);
 
@@ -2046,6 +2151,21 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
     if (const auto * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
     {
         const StringRef str_ref = col_const->getDataAt(0);
+
+        if (const auto * tuple_const = checkAndGetColumnConst<ColumnTuple>(column_index.get()))
+        {
+            auto [start_value, end_value] = extract_const_tuple(*tuple_const);
+            const String result_value = get_slice_or_empty(str_ref, start_value, end_value);
+            return DataTypeString().createColumnConst(input_rows_count, result_value);
+        }
+
+        if (const auto * tuple_column = checkAndGetColumn<ColumnTuple>(column_index.get()))
+        {
+            auto col_res = ColumnString::create();
+            auto & res_column = assert_cast<ColumnString &>(*col_res);
+            append_tuple_slices([&](size_t) { return str_ref; }, *tuple_column, res_column);
+            return col_res;
+        }
 
         if (const auto * column_index_const = checkAndGetColumn<ColumnConst>(column_index.get()))
         {
@@ -2087,15 +2207,27 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
     /// Support for string subscript operator
     if (isString(arguments[0]))
     {
-        if (!isNativeInteger(arguments[1]))
+        if (isNativeInteger(arguments[1]))
+            return std::make_shared<DataTypeString>();
+
+        if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[1].get()))
         {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument for function '{}' must be integer, got '{}' instead",
-                getName(),
-                arguments[1]->getName());
+            const auto & tuple_elements = tuple_type->getElements();
+            if (tuple_elements.size() == 2)
+            {
+                const auto left_type = removeNullable(tuple_elements[0]);
+                const auto right_type = removeNullable(tuple_elements[1]);
+
+                if (isNativeInteger(left_type) && isNativeInteger(right_type))
+                    return std::make_shared<DataTypeString>();
+            }
         }
-        return std::make_shared<DataTypeString>();
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Second argument for function '{}' must be integer or tuple(start, end), got '{}' instead",
+            getName(),
+            arguments[1]->getName());
     }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
