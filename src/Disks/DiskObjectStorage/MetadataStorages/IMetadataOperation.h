@@ -2,7 +2,6 @@
 
 #include <memory>
 
-
 namespace DB
 {
 

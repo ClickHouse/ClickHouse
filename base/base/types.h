@@ -36,4 +36,3 @@ using Float32 = float;
 using Float64 = double;
 
 using String = std::string;
-using size_t = std::size_t;
