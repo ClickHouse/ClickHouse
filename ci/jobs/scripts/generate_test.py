@@ -26,6 +26,23 @@ class FuzzerTestGenerator:
         "FUNCTION",
     ]
 
+    READ_SQL_COMMANDS = [
+        "SELECT",
+        "EXPLAIN",
+        "DESCRIBE",
+        "SHOW",
+    ]
+
+    WRITE_SQL_COMMANDS = [
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "CREATE",
+        "DROP",
+        "ALTER",
+        "SET",
+    ]
+
     def __init__(self, server_log, fuzzer_log):
         self.server_log = server_log
         self.fuzzer_log = fuzzer_log
@@ -41,69 +58,57 @@ class FuzzerTestGenerator:
         assert failure_first_line, "No failure first line found in server log"
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
         assert query_id, "No query id found in server log"
-        query_comand = Shell.get_output(
+        query_command = Shell.get_output(
             f"cat {self.server_log} | grep '{query_id}' | head -n1"
         )
-        assert query_comand, "No query command found in server log"
-        query_comand = query_comand.split(" (stage:")[0]
-        sql_keywords = [
-            "SELECT",
-            "INSERT",
-            "UPDATE",
-            "DELETE",
-            "CREATE",
-            "DROP",
-            "ALTER",
-            "WITH",
-            "EXPLAIN",
-            "DESCRIBE",
-            "SHOW",
-            "SET",
-        ]
-        for keyword in sql_keywords:
-            if keyword in query_comand:
-                keyword_pos = query_comand.find(keyword)
-                query_comand = query_comand[keyword_pos:]
-                break
-        else:
+        assert query_command, "No query command found in server log"
+        query_command = query_command.split(" (stage:")[0]
+        min_pos = len(query_command)
+        for keyword in self.SQL_COMMANDS:
+            if keyword in query_command:
+                keyword_pos = query_command.find(keyword)
+                min_pos = min(min_pos, keyword_pos)
+        if min_pos == len(query_command):
             raise Exception("No SQL keyword found in query command")
+        query_command = query_command[min_pos:]
 
         all_fuzzer_commands = self._get_all_fuzzer_commands()
         assert all_fuzzer_commands, "No fuzzer commands found"
         assert (
-            query_comand in all_fuzzer_commands
-        ), f"Query command '{query_comand}' not found in fuzzer log"
-        all_fuzzer_commands = all_fuzzer_commands[
-            : list.index(all_fuzzer_commands, query_comand)
-        ]
+            query_command in all_fuzzer_commands
+        ), f"Query command '{query_command}' not found in fuzzer log"
+        query_index = all_fuzzer_commands.index(query_command)
+        all_fuzzer_commands = all_fuzzer_commands[:query_index]
 
-        # get all tabels from the command
+        # get all tables from the command
         # Match table names after FROM and various JOIN types (LEFT JOIN, RIGHT JOIN, INNER JOIN, etc.)
-        tabeles = set()
-        from_pattern = r"\bFROM\s+([a-zA-Z0-9_]+)"
-        join_pattern = r"\bJOIN\s+([a-zA-Z0-9_]+)"
-        from_matches = re.findall(from_pattern, query_comand, re.IGNORECASE)
-        join_matches = re.findall(join_pattern, query_comand, re.IGNORECASE)
-        tabeles.update(from_matches)
-        tabeles.update(join_matches)
-        assert tabeles, "No tables found in query command"
+        tables = set()
+        from_pattern = r"\bFROM\s+([a-zA-Z0-9_.]+)"
+        join_pattern = r"\bJOIN\s+([a-zA-Z0-9_.]+)"
+        from_matches = re.findall(from_pattern, query_command, re.IGNORECASE)
+        join_matches = re.findall(join_pattern, query_command, re.IGNORECASE)
+        tables.update(from_matches)
+        tables.update(join_matches)
+        assert tables, "No tables found in query command"
 
-        # get all write commands for found tabels
+        # get all write commands for found tables
         commands_to_reproduce = []
-        for table in tabeles:
+        for table in tables:
             for command in all_fuzzer_commands:
-                if any(
-                    command.startswith(read_cmd) for read_cmd in ["SELECT", "EXPLAIN"]
+                if (
+                    any(
+                        command.startswith(write_command)
+                        for write_command in self.WRITE_SQL_COMMANDS
+                    )
+                    and f" {table} " in command
                 ):
-                    continue
-                if f" {table} " in command:
                     commands_to_reproduce.append(command)
-        assert commands_to_reproduce, "No write commands found for tables"
-        commands_to_reproduce.append(query_comand)
+        # assert commands_to_reproduce, "No write commands found for tables"
+        commands_to_reproduce.append(query_command)
 
         # add table drop commands
-        for table in tabeles:
-            commands_to_reproduce.append(f"DROP TABLE {table}")
+        for table in tables:
+            commands_to_reproduce.append(f"DROP TABLE IF EXISTS {table}")
 
         return commands_to_reproduce
 
@@ -132,23 +137,23 @@ class FuzzerTestGenerator:
                 continue
             result.append(line)
 
-        result_with_joned_multiline_commands = []
+        result_with_joined_multiline_commands = []
         for line in result:
             if any(line.startswith(cmd) for cmd in self.SQL_COMMANDS):
-                result_with_joned_multiline_commands.append(line)
+                result_with_joined_multiline_commands.append(line)
             elif line.startswith("("):
-                result_with_joned_multiline_commands[-1] += " " + line
+                result_with_joined_multiline_commands[-1] += " " + line
             else:
                 assert (
                     False
-                ), f"Unknown line: '{line}' | '{result_with_joned_multiline_commands[-1]}'"
+                ), f"Unknown line: '{line}' | '{result_with_joined_multiline_commands[-1]}'"
 
         # sanity check
-        for command in result_with_joned_multiline_commands:
+        for command in result_with_joined_multiline_commands:
             assert any(
                 command.startswith(sql_cmd) for sql_cmd in self.SQL_COMMANDS
             ), f"No SQL command found in command: {command}"
-        return result_with_joned_multiline_commands
+        return result_with_joined_multiline_commands
 
     def generate_test(self):
         pass

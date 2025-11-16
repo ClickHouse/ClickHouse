@@ -149,7 +149,7 @@ def main():
             reproduce_commands = fuzzer_test_generator.get_reproduce_commands()
             if reproduce_commands:
                 info += (
-                    "Reproduce commands (in-progress, if not successful, please ping ci-team or fix yourself):\n"
+                    "Reproduce commands (auto-generated; may require manual adjustment). If you encounter issues, please contact the ci-team:\n"
                     + "\n".join(reproduce_commands)
                 )
         except Exception as e:
