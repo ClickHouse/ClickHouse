@@ -408,6 +408,7 @@ void shrinkRanges(RangesWithStep & ranges, size_t size)
         if (range_size == size)
         {
             last_range_idx = i;
+            found = true;
             break;
         }
 
