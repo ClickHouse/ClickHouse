@@ -273,7 +273,7 @@ def check(
         assert "proj2" in res
 
     if do_check_command:
-        assert check_result == int(node.query(f"CHECK TABLE {table}"))
+        assert check_result == int(node.query(f"CHECK TABLE {table} SETTINGS check_query_single_value_result = 1"))
 
 
 def test_broken_ignored(cluster):

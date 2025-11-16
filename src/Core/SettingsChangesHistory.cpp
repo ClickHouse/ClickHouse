@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
             {"use_paimon_partition_pruning", false, false, "New setting."},
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
             {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
