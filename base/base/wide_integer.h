@@ -28,7 +28,6 @@
 #include <initializer_list>
 #include <base/types.h>
 
-
 // NOLINTBEGIN(*)
 
 namespace wide
