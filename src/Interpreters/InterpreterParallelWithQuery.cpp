@@ -52,7 +52,7 @@ BlockIO InterpreterParallelWithQuery::execute()
                                                    CurrentMetrics::ParallelWithQueryActiveThreads,
                                                    CurrentMetrics::ParallelWithQueryScheduledThreads,
                                                    max_threads);
-        runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, ThreadName::PARALLEL_WITH_QUERY);
+        runner = std::make_unique<ThreadPoolCallbackRunnerLocal<void>>(*thread_pool, "ParallelWithQry");
     }
 
     /// Call the interpreters of all the subqueries - it may produce some pipelines which we combine together into
@@ -87,7 +87,6 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
         {
             ContextMutablePtr subquery_context = Context::createCopy(context);
             subquery_context->makeQueryContext();
-            subquery_context->setCurrentQueryId({});
 
             auto callback = [this, subquery, subquery_context, error_found]
             {

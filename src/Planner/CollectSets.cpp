@@ -1,7 +1,11 @@
 #include <Planner/CollectSets.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/PreparedSets.h>
+
 #include <Storages/StorageSet.h>
 
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -9,11 +13,11 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/Set.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
-
 
 namespace DB
 {
@@ -81,9 +85,7 @@ public:
 
             DataTypes set_element_types = {in_first_argument->getResultType()};
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
-
-            /// Do not unpack if empty tuple or single element tuple
-            if (left_tuple_type && left_tuple_type->getElements().size() > 1)
+            if (left_tuple_type && left_tuple_type->getElements().size() != 1)
                 set_element_types = left_tuple_type->getElements();
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);

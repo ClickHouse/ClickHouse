@@ -10,8 +10,8 @@ class SourceFromSingleChunk : public ISource
 {
 /// If the source consists of multiple chunks you can instead use SourceFromChunks.
 public:
-    SourceFromSingleChunk(SharedHeader header, Chunk chunk_);
-    explicit SourceFromSingleChunk(SharedHeader data);
+    SourceFromSingleChunk(Block header, Chunk chunk_);
+    explicit SourceFromSingleChunk(Block data);
     String getName() const override;
 
 protected:

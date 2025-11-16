@@ -32,9 +32,7 @@ RowBinary
 Values
 ()
 BSONEachRow
-()
 MsgPack
-()
 Native
 ()
 TSV

@@ -7,6 +7,7 @@
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -50,11 +51,11 @@ namespace
 }
 
 BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
-    ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
+    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, std::move(params_))
     , format_settings(format_settings_)
-    , prev_positions(header_->columns())
-    , types(header_->getDataTypes())
+    , prev_positions(header_.columns())
+    , types(header_.getDataTypes())
 {
     name_map = getNamesToIndexesMap(getPort().getHeader());
 }
@@ -256,13 +257,14 @@ static void readAndInsertStringImpl(ReadBuffer & in, IColumn & column, size_t si
         auto & offsets = column_string.getOffsets();
 
         size_t old_chars_size = data.size();
-        size_t offset = old_chars_size + size;
+        size_t offset = old_chars_size + size + 1;
         offsets.push_back(offset);
 
         try
         {
             data.resize(offset);
-            in.readStrict(reinterpret_cast<char *>(&data[offset - size]), size);
+            in.readStrict(reinterpret_cast<char *>(&data[offset - size - 1]), size);
+            data.back() = 0;
         }
         catch (...)
         {
@@ -433,20 +435,14 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
     assertChar(BSON_DOCUMENT_END, *in);
 
-    const auto elements_size = data_type_tuple->getElements().size();
-    if (read_nested_columns != elements_size)
+    if (read_nested_columns != data_type_tuple->getElements().size())
         throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Cannot parse tuple column with type {} from BSON array/embedded document field, "
                         "the number of fields in tuple and BSON document doesn't match: {} != {}",
                         data_type->getName(),
-                        elements_size,
+                        data_type_tuple->getElements().size(),
                         read_nested_columns);
-
-    /// There are no nested columns to grow, so we must explicitly increment the column size.
-    /// Otherwise, `column.size()` will return 0 for empty tuples columns.
-    if (elements_size == 0)
-        tuple_column.addSize(1);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
@@ -1065,7 +1061,7 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerInputFormat(
         "BSONEachRow",
         [](ReadBuffer & buf, const Block & sample, IRowInputFormat::Params params, const FormatSettings & settings)
-        { return std::make_shared<BSONEachRowRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings); });
+        { return std::make_shared<BSONEachRowRowInputFormat>(buf, sample, std::move(params), settings); });
     factory.registerFileExtension("bson", "BSONEachRow");
 }
 

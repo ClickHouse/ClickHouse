@@ -39,14 +39,14 @@ ContextMutablePtr copyContextAndApplySettingsFromDictionaryConfig(const ContextP
 class TransformWithAdditionalColumns final : public ISimpleTransform
 {
 public:
-    TransformWithAdditionalColumns(SharedHeader block_to_add_, SharedHeader header);
+    TransformWithAdditionalColumns(Block block_to_add_, const Block & header);
 
     void transform(Chunk & chunk) override;
 
     String getName() const override;
 
 private:
-    SharedHeader block_to_add;
+    Block block_to_add;
     size_t current_range_index = 0;
 };
 

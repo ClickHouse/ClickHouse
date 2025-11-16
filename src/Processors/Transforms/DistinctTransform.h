@@ -11,7 +11,7 @@ class DistinctTransform : public ISimpleTransform
 {
 public:
     DistinctTransform(
-        SharedHeader header_,
+        const Block & header_,
         const SizeLimits & set_size_limits_,
         UInt64 limit_hint_,
         const Names & columns_);

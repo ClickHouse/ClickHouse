@@ -3,6 +3,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Core/Field.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Common/re2.h>
 
 
@@ -42,13 +43,11 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
-    bool isComparable() const override { return true; }
+    bool isComparable() const override { return false; }
     bool isComparableForEquality() const override { return true; }
     bool haveSubtypes() const override { return false; }
 
     bool equals(const IDataType & rhs) const override;
-
-    void updateHashImpl(SipHash & hash) const override;
 
     void forEachChild(const ChildCallback &) const override;
 
@@ -66,7 +65,6 @@ public:
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
 
     DataTypePtr getTypeOfNestedObjects() const;
-    DataTypePtr getDynamicType() const;
 
     /// Shared data has type Array(Tuple(String, String)).
     static const DataTypePtr & getTypeOfSharedData();

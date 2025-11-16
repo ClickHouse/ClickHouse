@@ -1,4 +1,4 @@
-#include <Dictionaries/HashedArrayDictionary.h>
+#include "HashedArrayDictionary.h"
 
 #include <Common/ArenaUtils.h>
 #include <Core/Defines.h>
@@ -7,7 +7,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/Context.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
@@ -490,7 +489,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
             if (!block.rows())
                 continue;
 
-            removeSpecialColumnRepresentations(block);
+            convertToFullIfSparse(block);
 
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)

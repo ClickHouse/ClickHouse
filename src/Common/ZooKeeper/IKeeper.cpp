@@ -36,18 +36,6 @@ SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
 
 using namespace DB;
 
-WatchCallbackPtrOrEventPtr IKeeper::createWatchFromRawCallback(const String & id, const WatchCallbackCreator & creator)
-{
-    std::lock_guard lock(watches_mutex);
-    auto it = watches_by_id.find(id);
-    if (it == watches_by_id.end())
-    {
-        WatchCallbackPtrOrEventPtr watch(std::make_shared<WatchCallback>(creator()));
-        watches_by_id.emplace(id, watch);
-        return watch;
-    }
-    return it->second;
-}
 
 static void addRootPath(String & path, const String & root_path)
 {

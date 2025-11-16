@@ -309,7 +309,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->select = select;
     query->settings_ast = settings_ast;
     query->data = data != end ? data : nullptr;
-    query->end = data ? end : nullptr;
+    query->end = end;
 
     if (columns)
         query->children.push_back(columns);
