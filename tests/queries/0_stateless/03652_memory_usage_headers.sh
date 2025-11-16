@@ -30,7 +30,6 @@ echo "$CURL_OUTPUT" | grep -m1 'X-ClickHouse-Summary:' | grep -q '"memory_usage"
 CURL_OUTPUT="$(
     ${CLICKHOUSE_CURL} -s -S -v -N -G "${CLICKHOUSE_URL}" \
     --data-urlencode "query=SELECT number, avg(number) FROM numbers(1e12) GROUP BY number FORMAT Null SETTINGS max_rows_to_read = 0" \
-    --data-urlencode "send_progress_in_http_headers=1" \
     --data-urlencode "max_memory_usage=100000000" 2>&1
 )"
 
