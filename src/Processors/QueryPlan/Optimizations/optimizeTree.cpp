@@ -26,6 +26,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     if (!optimization_settings.optimize_plan)
         return;
 
+    const auto & optimizations = getOptimizations();
+
     struct Frame
     {
         QueryPlan::Node * node = nullptr;
@@ -79,7 +81,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         size_t max_update_depth = 0;
 
         /// Apply all optimizations.
-        for (const auto & optimization : getOptimizations())
+        for (const auto & optimization : optimizations)
         {
             if (!(optimization_settings.*(optimization.is_enabled)))
                 continue;
@@ -187,6 +189,11 @@ void optimizeTreeSecondPass(
         if (optimization_settings.direct_read_from_text_index)
             optimizeDirectReadFromTextIndex(stack, nodes);
 
+        /// NOTE: optimizePrewhere can modify the stack.
+        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(stack, nodes);
+
         auto & frame = stack.back();
 
         /// Traverse all children first.
@@ -198,26 +205,9 @@ void optimizeTreeSecondPass(
             continue;
         }
 
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(*frame.node);
-
         stack.pop_back();
     }
 
-    /// Materialize subplan references before other optimizations.
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
-    {
-        materializeQueryPlanReferences(frame_node, nodes);
-    });
-
-    /// Remove CommonSubplanSteps (they must be not used at that point).
-    traverseQueryPlan(stack, root, [&](auto & frame_node)
-    {
-        optimizeUnusedCommonSubplans(frame_node);
-    });
-
-    bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -226,36 +216,8 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            if (optimization_settings.enable_join_runtime_filters)
-                join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
-
-    /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
-    /// to move newly added runtime filter as deep in the tree as possible
-    if (join_runtime_filters_were_added)
-    {
-        traverseQueryPlan(stack, root,
-            [&](auto & frame_node)
-            {
-                /// If there are multiple Expression nodes below Filter node then we need to repeat merging Filter and Expression
-                while (true)
-                {
-                    size_t changed_nodes = 0;
-                    changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
-                    changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
-
-                    if (!changed_nodes)
-                        break;
-                }
-            },
-            [&](auto & frame_node)
-            {
-                if (optimization_settings.optimize_prewhere)
-                    optimizePrewhere(frame_node);
-            });
-    }
 
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)

@@ -67,7 +67,7 @@ bool removeJoin(ASTSelectQuery & select, TreeRewriterResult & rewriter_result, C
 
         const size_t left_table_pos = 0;
         /// Test each argument of `and` function and select ones related to only left table
-        std::shared_ptr<ASTFunction> new_conj = makeASTOperator("and");
+        std::shared_ptr<ASTFunction> new_conj = makeASTFunction("and");
         for (auto && node : splitConjunctionsAst(where))
         {
             if (membership_collector.getIdentsMembership(node) == left_table_pos)

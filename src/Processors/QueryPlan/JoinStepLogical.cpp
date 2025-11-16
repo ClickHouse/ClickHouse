@@ -10,7 +10,6 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDynamic.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
@@ -77,7 +76,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
 }
 
 std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
@@ -393,10 +391,10 @@ JoinActionRef toBoolIfNeeded(JoinActionRef condition)
 
 bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
 {
-    /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
     bool is_suitable_kind = join_operator.kind == JoinKind::Inner
         || join_operator.kind == JoinKind::Cross
         || join_operator.kind == JoinKind::Comma
+        || join_operator.kind == JoinKind::Paste
         || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
         || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
 
@@ -412,25 +410,11 @@ struct JoinPlanningContext
     bool is_storage_join;
 };
 
-void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & right_node,
+    const JoinPlanningContext & planning_context)
 {
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
-
-    if (!join_settings.allow_dynamic_type_in_join_keys)
-    {
-        bool is_left_key_dynamic = hasDynamicType(left_type);
-        bool is_right_key_dynamic = hasDynamicType(right_type);
-
-        if (is_left_key_dynamic || is_right_key_dynamic)
-        {
-            throw DB::Exception(
-                ErrorCodes::ILLEGAL_COLUMN,
-                "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
-                is_left_key_dynamic ? left_node.getColumnName() : right_node.getColumnName(),
-                is_left_key_dynamic ? left_type->getName() : right_type->getName());
-        }
-    }
 
     if (left_type->equals(*right_type))
         return;
@@ -454,7 +438,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
         auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
         if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
             return mapped_it->second;
-        return &dag.addCast(*arg, common_type, {}, nullptr);
+        return &dag.addCast(*arg, common_type, {});
     };
     if (!left_type->equals(*common_type))
         left_node = JoinActionRef::transform({left_node}, cast_transform);
@@ -472,7 +456,7 @@ void predicateOperandsToCommonType(JoinActionRef & left_node, JoinActionRef & ri
 }
 
 bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
-    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context)
+    std::vector<JoinActionRef> & used_expressions, const JoinPlanningContext & planning_context)
 {
     bool has_join_predicates = false;
     std::vector<JoinActionRef> new_predicates;
@@ -489,7 +473,7 @@ bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, Table
         else if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
 
-        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+        predicateOperandsToCommonType(lhs, rhs, planning_context);
         bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
@@ -566,7 +550,6 @@ bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
     std::vector<JoinActionRef> & used_expressions,
-    const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context,
     bool throw_on_error)
 {
@@ -587,7 +570,7 @@ bool tryAddDisjunctiveConditions(
             join_condition = expr.getArguments();
 
         auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, join_settings, planning_context);
+        bool has_keys = addJoinPredicatesToTableJoin(join_condition, table_join_clause, used_expressions, planning_context);
         if (!has_keys)
         {
             table_join_clauses.resize(initial_clauses_num);
@@ -847,7 +830,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
-        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context);
+        bool has_keys = addJoinPredicatesToTableJoin(join_expression, table_join_clauses.emplace_back(), used_expressions, planning_context);
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
@@ -857,7 +840,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             table_join_clauses.pop_back();
             is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+                join_expression, table_join_clauses, used_expressions, planning_context, !can_convert_to_cross);
 
             if (!is_disjunctive_condition)
             {
@@ -873,7 +856,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     else if (!join_expression.empty())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected JOIN ON expression {} for {} JOIN",
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unexpected JOIN ON expression {} for {} JOIN",
             formatJoinCondition(join_expression), toString(join_operator.kind));
     }
 
@@ -904,7 +887,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
             found_asof_predicate_it = it;
 
-            predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+            predicateOperandsToCommonType(lhs, rhs, planning_context);
 
             used_expressions.push_back(lhs);
             used_expressions.push_back(rhs);
@@ -996,36 +979,18 @@ static QueryPlanNode buildPhysicalJoinImpl(
             else
                 action = action->children.at(0);
         }
+
         used_expressions.emplace_back(action, expression_actions);
     }
-
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
     for (const auto * child : children)
     {
-        /// We expect dag inputs to be a subset of child step header columns.
-        /// If column child step returns duplicate columns
-        /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
-        const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
-        std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
-        for (const auto * node : dag_inputs)
-            name_to_nodes[node->result_name].push_back(node);
-
         for (const auto & column : *child->step->getOutputHeader())
         {
-            auto input_it = name_to_nodes.find(column.name);
-
-            if (input_it == name_to_nodes.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in {}",
-                    column.name,
-                    fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
-                    expression_actions.getActionsDAG()->dumpDAG());
-
-
-            used_expressions.emplace_back(input_it->second.front(), expression_actions);
-            input_it->second.pop_front();
+            auto input_node = expression_actions.findNode(column.name, /* is_input */ true);
+            used_expressions.push_back(std::move(input_node));
         }
     }
 
@@ -1111,7 +1076,12 @@ void JoinStepLogical::buildPhysicalJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
     }
 
-    UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
+    UInt64 hash_table_key_hash = 0;
+    if (optimization_settings.collect_hash_table_stats_during_joins)
+    {
+        auto cache_keys = QueryPlanOptimizations::calculateHashTableCacheKeys(node);
+        hash_table_key_hash = cache_keys[node.children.back()];
+    }
 
     if (!join_step->join_algorithm_params)
     {
@@ -1255,16 +1225,6 @@ JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const Shared
         ActionsDAGWithKeys{std::move(left_dag), std::move(left_keys)},
         ActionsDAGWithKeys{std::move(right_dag), std::move(right_keys)},
     });
-}
-
-
-std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
-{
-    std::vector<JoinActionRef> output_actions;
-    const auto & raw_outputs = expression_actions.getActionsDAG()->getOutputs();
-    for (const auto * node : raw_outputs)
-        output_actions.emplace_back(node, expression_actions);
-    return output_actions;
 }
 
 

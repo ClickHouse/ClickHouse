@@ -1,28 +1,20 @@
 #pragma once
 
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsComparison.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
 
-template <typename A, typename B>
-struct IsNotDistinctFromOp
+namespace ErrorCodes
 {
-    /// An operation that gives the same result, if arguments are passed in reverse order.
-    using SymmetricOp = IsNotDistinctFromOp<B, A>;
+    extern const int NOT_IMPLEMENTED;
+}
 
-    static UInt8 apply(A a, B b) { return EqualsOp<A, B>::apply(a, b); }
-};
-
-struct NameFunctionIsNotDistinctFrom
-{
-    static constexpr auto name = "isNotDistinctFrom";
-};
+struct NameFunctionIsNotDistinctFrom { static constexpr auto name = "isNotDistinctFrom"; };
 
 /**
   * Performs null-safe comparison.
@@ -45,10 +37,7 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool useDefaultImplementationForNulls() const override
-    {
-        return false;
-    } // because we return false here, the result_type will be not nullable
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -56,12 +45,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeUInt8>(); }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr &, size_t /* rows_count */) const override
     {
-        ComparisonParams params;
-        using FunctionIsNotDistinctFromImpl = FunctionComparison<IsNotDistinctFromOp, NameFunctionIsNotDistinctFrom>;
-        FunctionIsNotDistinctFromImpl func_is_not_distinct_from(params);
-        return func_is_not_distinct_from.executeImpl(arguments, result_type, rows_count);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} can be used only in the JOIN ON section", getName());
     }
 };
 

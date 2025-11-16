@@ -702,12 +702,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
             /// There are files that we tried to delete previously
             metadata_files.emplace_back(file_name, false);
         }
-        else if (endsWith(file_name, ".tmp_move_from") || endsWith(file_name, ".tmp_move_to"))
-        {
-            /// There are temp files generated in MetadataStorageFromPlainObjectStorageMoveFileOperation
-            LOG_INFO(log, "Removing file {}", sub_path.string());
-            db_disk->removeFileIfExists(sub_path);
-        }
         else if (endsWith(file_name, ".sql.tmp"))
         {
             /// There are files .sql.tmp - delete
@@ -735,7 +729,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
-                DB::setThreadName(ThreadName::DATABASE_ON_DISK);
+                setThreadName("DatabaseOnDisk");
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);
@@ -927,9 +921,9 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
 
-void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
+void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const

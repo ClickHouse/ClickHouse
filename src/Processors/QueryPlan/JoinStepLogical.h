@@ -84,13 +84,10 @@ public:
 
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
-    JoinSettings & getJoinSettings() { return join_settings; }
     const JoinOperator & getJoinOperator() const { return join_operator; }
     JoinOperator & getJoinOperator() { return join_operator; }
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
-
-    std::vector<JoinActionRef> getOutputActions() const;
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
@@ -158,12 +155,6 @@ public:
     std::string_view getDummyStats() const { return dummy_stats; }
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
-    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
-    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
-
-    UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
-    void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
-
 protected:
     void updateOutputHeader() override;
 
@@ -186,7 +177,6 @@ protected:
     std::optional<UInt64> result_rows_estimation = {};
     std::optional<UInt64> left_rows_estimation = {};
     std::optional<UInt64> right_rows_estimation = {};
-    UInt64 right_hash_table_cache_key = 0;
 
     String left_table_label;
     String right_table_label;
@@ -198,9 +188,6 @@ protected:
     std::unique_ptr<JoinAlgorithmParams> join_algorithm_params;
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
-
-private:
-    bool disjunctions_optimization_applied = false;
 };
 
 

@@ -36,9 +36,12 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <pcg_random.hpp>
+#include <base/scope_guard.h>
 #include <Common/FailPoint.h>
 
 #include <Common/config_version.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Types.h>
 #include "config.h"
 
@@ -606,10 +609,10 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readVarUInt(server_query_plan_serialization_version, *in);
         }
 
-        worker_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+        server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
         {
-            readVarUInt(worker_cluster_function_protocol_version, *in);
+            readVarUInt(server_cluster_function_protocol_version, *in);
         }
     }
     else if (packet_type == Protocol::Server::Exception)
@@ -1005,7 +1008,7 @@ void Connection::sendCancel()
 {
     /// If we already disconnected.
     if (!out)
-        throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} terminated", getDescription());
+        return;
 
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->finishChunk();
@@ -1056,7 +1059,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, worker_cluster_function_protocol_version);
+    response.serialize(*out, server_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1204,7 +1207,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             elem->pipe = elem->creating_pipe_callback();
 
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
-        elem->pipe = nullptr;
+        elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
@@ -1340,7 +1343,7 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::TableColumns:
-                res.columns_description = receiveTableColumns();
+                res.multistring_message = receiveMultistringMessage(res.type);
                 return res;
 
             case Protocol::Server::EndOfStream:
@@ -1437,19 +1440,7 @@ Block Connection::receiveProfileEvents()
 
 void Connection::initInputBuffers()
 {
-}
 
-
-void Connection::initMaybeCompressedInput()
-{
-    if (!maybe_compressed_in)
-    {
-        if (compression == Protocol::Compression::Enable)
-            // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
-            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
-        else
-            maybe_compressed_in = in;
-    }
 }
 
 
@@ -1457,7 +1448,15 @@ void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        initMaybeCompressedInput();
+        if (!maybe_compressed_in)
+        {
+            if (compression == Protocol::Compression::Enable)
+                // Different codecs in this case are the default (e.g. LZ4) and codec NONE to skip compression in case of ColumnBLOB.
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in, /*allow_different_codec=*/true);
+            else
+                maybe_compressed_in = in;
+        }
+
         block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision, format_settings);
     }
 }
@@ -1467,15 +1466,8 @@ void Connection::initBlockLogsInput()
 {
     if (!block_logs_in)
     {
-        ReadBuffer * logs_buf = in.get();
-        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
-        {
-            initMaybeCompressedInput();
-            logs_buf = maybe_compressed_in.get();
-        }
-
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*logs_buf, server_revision, format_settings);
+        block_logs_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
@@ -1484,14 +1476,7 @@ void Connection::initBlockProfileEventsInput()
 {
     if (!block_profile_events_in)
     {
-        ReadBuffer * profile_events_buf = in.get();
-        if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
-        {
-            initMaybeCompressedInput();
-            profile_events_buf = maybe_compressed_in.get();
-        }
-
-        block_profile_events_in = std::make_unique<NativeReader>(*profile_events_buf, server_revision, format_settings);
+        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision, format_settings);
     }
 }
 
@@ -1524,21 +1509,13 @@ std::unique_ptr<Exception> Connection::receiveException() const
 }
 
 
-String Connection::receiveTableColumns()
+std::vector<String> Connection::receiveMultistringMessage(UInt64 msg_type) const
 {
-    ReadBuffer * columns_buf = in.get();
-    if (server_revision >= DBMS_MIN_REVISION_WITH_COMPRESSED_LOGS_PROFILE_EVENTS_COLUMNS)
-    {
-        initMaybeCompressedInput();
-        columns_buf = maybe_compressed_in.get();
-    }
-
-    String table_name_ignored;
-    readStringBinary(table_name_ignored, *columns_buf);
-
-    String columns;
-    readStringBinary(columns, *columns_buf);
-    return columns;
+    size_t num = Protocol::Server::stringsInMessage(msg_type);
+    std::vector<String> strings(num);
+    for (size_t i = 0; i < num; ++i)
+        readStringBinary(strings[i], *in);
+    return strings;
 }
 
 

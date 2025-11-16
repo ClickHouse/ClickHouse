@@ -1,22 +1,17 @@
+#include <string>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 
 namespace BuzzHouse
 {
 
-String SQLColumn::getColumnName() const
+void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de) const
 {
-    return "c" + std::to_string(cname);
-}
-
-void SQLDatabase::finishDatabaseSpecification(DatabaseEngine * de, const bool add_params)
-{
-    if (add_params && isReplicatedDatabase())
+    if (isReplicatedDatabase())
     {
         chassert(de->params_size() == 0);
         de->add_params()->set_svalue("/clickhouse/path/" + this->getName());
         de->add_params()->set_svalue("{shard}");
         de->add_params()->set_svalue("{replica}");
-        this->nparams = 3;
     }
 }
 
@@ -51,8 +46,8 @@ void SQLDatabase::setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc)
         }
 
         integration = IntegrationCall::Dolor; /// Has to use La Casa Del Dolor
-        format = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || catalog == LakeCatalog::Glue) ? LakeFormat::Iceberg
-                                                                                                                : LakeFormat::DeltaLake;
+        format
+            = (catalog == LakeCatalog::REST || catalog == LakeCatalog::Hive || rg.nextBool()) ? LakeFormat::Iceberg : LakeFormat::DeltaLake;
         storage = LakeStorage::S3; /// What ClickHouse supports now
     }
 }
@@ -61,7 +56,7 @@ String SQLDatabase::getSparkCatalogName() const
 {
     chassert(isDataLakeCatalogDatabase());
     /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-    return (catalog == LakeCatalog::None && format == LakeFormat::DeltaLake) ? "spark_catalog" : getName();
+    return format == LakeFormat::DeltaLake ? "spark_catalog" : getName();
 }
 
 bool SQLBase::isNotTruncableEngine() const
@@ -112,19 +107,7 @@ String SQLBase::getTableName(const bool full) const
     {
         res += "test.";
     }
-    res += this->prefix + std::to_string(tname);
-    return res;
-}
-
-String SQLBase::getFullName(const bool setdbname) const
-{
-    String res;
-
-    if (db || setdbname)
-    {
-        res += getDatabaseName() + ".";
-    }
-    res += getTableName();
+    res += "t" + std::to_string(tname);
     return res;
 }
 
@@ -145,7 +128,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 {
     chassert(
         !bucket_path.has_value() && !file_format.has_value() && !file_comp.has_value() && !partition_strategy.has_value()
-        && !partition_columns_in_data_file.has_value() && !storage_class_name.has_value());
+        && !partition_columns_in_data_file.has_value());
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 5;
@@ -155,7 +138,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
         String next_bucket_path;
 
         /// Set integration call to use, sometimes create tables in ClickHouse, others also in Spark
-        if (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool())
+        if (getLakeCatalog() != LakeCatalog::None || (has_dolor && (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextBool()))
         {
             integration = IntegrationCall::Dolor;
         }
@@ -170,45 +153,14 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
 
         if (isAnyIcebergEngine() || isAnyDeltaLakeEngine())
         {
-            const LakeCatalog catalog = getLakeCatalog();
-
-            if (catalog == LakeCatalog::None)
-            {
-                /// DeltaLake tables on Spark must be on the `spark_catalog` :(
-                next_bucket_path = fmt::format(
-                    "{}{}{}{}t{}",
-                    isOnLocal() ? fc.lakes_path.generic_string() : "",
-                    isOnLocal() ? "/" : "",
-                    (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
-                    (integration == IntegrationCall::Dolor) ? "/test/" : "",
-                    tname);
-            }
-            else
-            {
-                const Catalog * cat = nullptr;
-                const ServerCredentials & sc = fc.dolor_server.value();
-
-                chassert(isOnS3()); /// What is supported at the moment
-                switch (catalog)
-                {
-                    case LakeCatalog::Glue:
-                        cat = &sc.glue_catalog.value();
-                        break;
-                    case LakeCatalog::Hive:
-                        cat = &sc.hive_catalog.value();
-                        break;
-                    case LakeCatalog::REST:
-                        cat = &sc.rest_catalog.value();
-                        break;
-                    case LakeCatalog::Unity:
-                        cat = &sc.unity_catalog.value();
-                        break;
-                    default:
-                        UNREACHABLE();
-                }
-                next_bucket_path = fmt::format(
-                    "http://{}:{}/{}/t{}/", fc.minio_server.value().server_hostname, fc.minio_server.value().port, cat->warehouse, tname);
-            }
+            /// Set bucket path, Spark has the catalog concept on the path :(
+            next_bucket_path = fmt::format(
+                "{}{}{}{}t{}",
+                isOnLocal() ? fc.lakes_path.generic_string() : "",
+                isOnLocal() ? "/" : "",
+                (integration == IntegrationCall::Dolor) ? getSparkCatalogName() : "",
+                (integration == IntegrationCall::Dolor) ? "/test/" : "",
+                tname);
         }
         else if (isS3QueueEngine() || isAzureQueueEngine())
         {
@@ -281,10 +233,6 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     {
         partition_columns_in_data_file = rg.nextBool() ? "1" : "0";
     }
-    if (isS3Engine() && rg.nextMediumNumber() < 21)
-    {
-        storage_class_name = rg.nextBool() ? "STANDARD" : "INTELLIGENT_TIERING";
-    }
     if (isExternalDistributedEngine())
     {
         integration = (sub == PostgreSQL) ? IntegrationCall::PostgreSQL : IntegrationCall::MySQL;
@@ -315,11 +263,31 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     }
 }
 
-String SQLBase::getTablePath(const FuzzConfig & fc) const
+String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
 {
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
-        return bucket_path.value();
+        String res = bucket_path.value();
+
+        if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
+        {
+            /// Replace PARTITION BY str
+            const size_t partition_pos = res.find(PARTITION_STR);
+            if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
+            {
+                res.replace(
+                    partition_pos,
+                    PARTITION_STR.length(),
+                    rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
+            }
+            /// Use globs
+            const size_t slash_pos = res.rfind('/');
+            if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
+            {
+                res.replace(slash_pos + 1, std::string::npos, rg.nextBool() ? "*" : "**");
+            }
+        }
+        return res;
     }
     if (isFileEngine())
     {
@@ -339,33 +307,8 @@ String SQLBase::getTablePath(const FuzzConfig & fc) const
     {
         return fmt::format("/aflight{}", tname);
     }
-
-    UNREACHABLE();
-}
-
-String SQLBase::getTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bool allow_not_deterministic) const
-{
-    if ((isS3Engine() || isAzureEngine()) && allow_not_deterministic && rg.nextSmallNumber() < 8)
-    {
-        String res = bucket_path.value();
-        /// Replace PARTITION BY str
-        const size_t partition_pos = res.find(PARTITION_STR);
-        if (partition_pos != std::string::npos && rg.nextMediumNumber() < 81)
-        {
-            res.replace(
-                partition_pos,
-                PARTITION_STR.length(),
-                rg.nextBool() ? std::to_string(rg.randomInt<uint32_t>(0, 100)) : rg.nextString("", true, rg.nextStrlen()));
-        }
-        /// Use globs
-        const size_t slash_pos = res.rfind('/');
-        if (slash_pos != std::string::npos && rg.nextMediumNumber() < 81)
-        {
-            res.replace(slash_pos + 1, std::string::npos, rg.nextBool() ? "*" : "**");
-        }
-        return res;
-    }
-    return getTablePath(fc);
+    chassert(0);
+    return "";
 }
 
 String SQLBase::getMetadataPath(const FuzzConfig & fc) const
@@ -384,9 +327,21 @@ size_t SQLTable::numberOfInsertableColumns() const
     return res;
 }
 
-String ColumnPathChain::columnPathRef(const String & quote) const
+String SQLTable::getFullName(const bool setdbname) const
 {
-    String res = quote;
+    String res;
+
+    if (db || setdbname)
+    {
+        res += getDatabaseName() + ".";
+    }
+    res += getTableName();
+    return res;
+}
+
+String ColumnPathChain::columnPathRef() const
+{
+    String res = "`";
 
     for (size_t i = 0; i < path.size(); i++)
     {
@@ -396,8 +351,7 @@ String ColumnPathChain::columnPathRef(const String & quote) const
         }
         res += path[i].cname;
     }
-    res += quote;
+    res += "`";
     return res;
 }
-
 }

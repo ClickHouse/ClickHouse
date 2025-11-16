@@ -753,6 +753,7 @@ def test_alters_from_different_replicas(started_cluster):
 def create_some_tables(db):
     settings = {
         "distributed_ddl_task_timeout": 0,
+        "allow_experimental_object_type": 1,
         "allow_suspicious_codecs": 1,
     }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
@@ -776,7 +777,7 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE TABLE {db}.rmt3 (n int, json JSON materialized '{{}}') ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt3 (n int, json Object('json') materialized '') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
@@ -1908,30 +1909,3 @@ def test_timeseries(started_cluster):
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
         ) == "4\n", f"Node {node.name} failed"
-
-
-def test_mv_false_cyclic_dependency(started_cluster):
-    main_node.query(
-        """
-        DROP DATABASE default;
-        CREATE DATABASE default ENGINE = Replicated('/clickhouse/databases/default', '{shard}', '{replica}');
-        CREATE TABLE default.table_1 (id Int32) ENGINE = MergeTree ORDER BY id;
-        CREATE MATERIALIZED VIEW default.table_2 (id Int32) ENGINE = MergeTree ORDER BY id AS WITH table_3 AS (SELECT id AS id FROM table_1) SELECT * FROM table_3;
-        CREATE MATERIALIZED VIEW default.table_3 (id Int32) ENGINE = MergeTree ORDER BY id AS SELECT id AS id FROM table_2;
-        """
-    )
-    dummy_node.query(
-        """
-        DROP DATABASE default;
-        CREATE DATABASE default ENGINE = Replicated('/clickhouse/databases/default', '{shard}', '{replica}');
-        SYSTEM SYNC DATABASE REPLICA default;
-        DROP DATABASE default SYNC;
-        CREATE DATABASE default;
-        """
-    )
-    main_node.query(
-        """
-        DROP DATABASE default SYNC;
-        CREATE DATABASE default;
-        """
-    )

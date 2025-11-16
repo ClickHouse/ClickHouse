@@ -25,7 +25,6 @@ public:
         const NamesAndTypesList & columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
-        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -41,10 +40,6 @@ public:
                             size_t rows_offset, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
-
-    virtual size_t getResultColumnCount() const { return getColumns().size(); }
-
-    virtual bool producesFilterOnly() const { return false; }
 
     virtual ~IMergeTreeReader() = default;
 
@@ -64,8 +59,8 @@ public:
     /// then try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns) const;
 
-    ALWAYS_INLINE const NamesAndTypesList & getColumns() const { return data_part_info_for_read->isWidePart() ? converted_requested_columns : original_requested_columns; }
-    size_t numColumnsInResult() const { return getColumns().size(); }
+    const NamesAndTypesList & getColumns() const { return requested_columns; }
+    size_t numColumnsInResult() const { return requested_columns.size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
 
@@ -107,7 +102,6 @@ protected:
     MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
-    MergeTreeSettingsPtr storage_settings;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
@@ -147,7 +141,7 @@ private:
     NamesAndTypesList original_requested_columns;
 
     /// The same as above but with converted Arrays to subcolumns of Nested.
-    NamesAndTypesList converted_requested_columns;
+    NamesAndTypesList requested_columns;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;
@@ -159,7 +153,6 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,
     const StorageSnapshotPtr & storage_snapshot,
-    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,

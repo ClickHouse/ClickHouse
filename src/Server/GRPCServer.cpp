@@ -835,7 +835,7 @@ namespace
     {
         try
         {
-            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
+            setThreadName("GRPCServerCall");
             receiveQuery();
             executeQuery();
             processInput();
@@ -1446,7 +1446,7 @@ namespace
     {
         responder.reset();
         pipeline_executor.reset();
-        pipeline = nullptr;
+        pipeline.reset();
         output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
@@ -1900,7 +1900,7 @@ private:
 
     void run()
     {
-        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
+        setThreadName("GRPCServerQueue");
 
         bool ok = false;
         void * tag = nullptr;

@@ -91,7 +91,7 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
-    void alterDatabaseComment(const AlterCommand & command, ContextPtr query_context) override;
+    void alterDatabaseComment(const AlterCommand & alter_command) override;
 
 protected:
     static constexpr const char * create_suffix = ".tmp";

@@ -494,7 +494,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             auto prepare_tables = [&](std::vector<StoragePtr> & tables)
             {
                 /// Prepare tables for shutdown in parallel.
-                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
+                ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
                 for (StoragePtr & table_ptr : tables)
                 {
                     StorageID storage_id = table_ptr->getStorageID();
@@ -575,7 +575,8 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         std::mutex mutex_for_uuids;
         ThreadPoolCallbackRunnerLocal<void> runner(
             getDatabaseCatalogDropTablesThreadPool().get(),
-            ThreadName::TRUNCATE_TABLE);
+            "TruncTbls"
+        );
 
         for (const auto & table_id : tables_to_truncate)
         {
