@@ -412,6 +412,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
+        std::cerr << "result metadata " << json_str << '\n';
         return json_str;
     };
 
@@ -688,6 +689,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
+    ASTPtr order_by,
+    ContextPtr context,
     UInt64 format_version)
 {
     std::unordered_map<String, Int32> column_name_to_source_id;
@@ -755,7 +758,44 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_default_sort_order_id, 0);
     Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
     sort_order->set(Iceberg::f_order_id, 0);
-    sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+
+    std::cerr << "bp1\n";
+    if (order_by)
+    {
+        std::cerr << "bp2\n";
+        auto sort_columns_key_description = KeyDescription::getSortingKeyFromAST(order_by, columns, context, std::nullopt);
+
+        SortDescription sort_description;
+        Names sort_columns = sort_columns_key_description.column_names;
+        std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
+        
+        Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
+        std::cerr << "bp3 " << reverse_flags.size() << '\n';
+        for (size_t i = 0; i < sort_columns.size(); ++i)
+        {
+            Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
+            std::cerr << "bp3.5\n";
+            sorting_field->set(f_source_id, column_name_to_source_id[sort_columns[i]]);
+            std::cerr << "bp3.6\n";
+            sorting_field->set(f_transform, "identity"); // TODO
+            std::cerr << "bp3.7\n";
+            if (reverse_flags.empty() || !reverse_flags[i])
+                sorting_field->set(f_direction, "asc");
+            else
+                sorting_field->set(f_direction, "desc");
+            std::cerr << "bp3.8\n";
+            sorting_field->set("null-order", "nulls-first");
+            std::cerr << "bp4\n";
+            sorting_fields->add(sorting_field);
+            std::cerr << "bp5\n";
+        }
+        sort_order->set(Iceberg::f_fields, sorting_fields);
+        std::cerr << "bp6\n";
+    }
+    else
+    {
+        sort_order->set(Iceberg::f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+    }
 
     Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
     sort_orders->add(sort_order);
@@ -916,6 +956,98 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     {
         return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, std::nullopt);
     }
+}
+
+
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    Poco::JSON::Object::Ptr schema;
+    if (!metadata_object->has(f_current_schema_id))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_current_schema_id);
+    auto current_schema_id = metadata_object->getValue<int>(f_current_schema_id);
+    if (!metadata_object->has(f_schemas))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schemas);
+    auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    if (schemas->size() == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is empty", f_schemas);
+    for (uint32_t i = 0; i != schemas->size(); ++i)
+    {
+        auto current_schema = schemas->getObject(i);
+        if (!current_schema->has(f_schema_id))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
+        }
+        if (current_schema->getValue<int>(f_schema_id) == current_schema_id)
+        {
+            schema = current_schema;
+        }
+    }
+
+    if (!schema)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, R"(There is no schema with "{}" that matches "{}" in metadata)", f_schema_id, f_current_schema_id);
+    if (schema->getValue<int>(f_schema_id) != current_schema_id)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, R"(Field "{}" of the schema doesn't match "{}" in metadata)", f_schema_id, f_current_schema_id);
+    return {schema, current_schema_id};
+}
+
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object)
+{
+    if (!metadata_object->has(f_schema))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in metadata", f_schema);
+    Poco::JSON::Object::Ptr schema = metadata_object->getObject(f_schema);
+    if (!metadata_object->has(f_schema_id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse Iceberg table schema: '{}' field is missing in schema", f_schema_id);
+    auto current_schema_id = schema->getValue<int>(f_schema_id);
+    return {schema, current_schema_id};
+}
+
+KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+{
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+    {
+        source_id_to_column_name[source_id] = col_name;
+    }
+
+    KeyDescription key_description;
+    ColumnsDescription column_description;
+    for (size_t i = 0; i < ch_schema.size(); ++i)
+        column_description.add(ColumnDescription(ch_schema.getNames()[i], ch_schema.getTypes()[i]));
+
+    String order_by_str;
+
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            auto source_id = field->getValue<Int64>(f_source_id);
+            auto column_name = source_id_to_column_name[source_id];
+            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+
+            if (direction == 1)
+                order_by_str += fmt::format("{} ASC,", column_name);
+            else
+                order_by_str += fmt::format("{} DESC,", column_name);
+        }
+        break;
+    }
+    if (order_by_str.empty())
+        return KeyDescription{};
+    order_by_str.pop_back();
+    return KeyDescription::parse(order_by_str, column_description, local_context, true);
 }
 
 }

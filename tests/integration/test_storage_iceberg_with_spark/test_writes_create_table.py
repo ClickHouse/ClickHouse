@@ -48,6 +48,20 @@ def test_writes_create_table(started_cluster_iceberg_with_spark, format_version,
 
 @pytest.mark.parametrize("format_version", [2])
 @pytest.mark.parametrize("storage_type", ["s3"])
+def test_writes_create_table_order_by(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x Int32, y String)", order_by="(x)", format_version=format_version)
+
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL") == ''
+
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1, 'abc'), (4, 'bc'), (2, 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
+    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '1\n2\n4\n'
+
+@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("storage_type", ["s3"])
 def test_writes_create_table_bug_partitioning(started_cluster_iceberg_with_spark, format_version, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session

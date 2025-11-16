@@ -107,6 +107,7 @@ StorageObjectStorage::StorageObjectStorage(
     bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
+    ASTPtr order_by_,
     bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
@@ -133,7 +134,7 @@ StorageObjectStorage::StorageObjectStorage(
     {
         LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;

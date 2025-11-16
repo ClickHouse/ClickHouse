@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Core/SortDescription.h"
+#include "Interpreters/Context_fwd.h"
 #include "config.h"
 
 #include <string>
@@ -80,6 +82,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
+    ASTPtr order_by,
+    ContextPtr context,
     UInt64 format_version = 2);
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -88,6 +92,12 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log);
+
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
+
+KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+
 }
 
 #endif
