@@ -11,7 +11,7 @@ class StackTraceReader(object):
         lines = []
         stack_trace_pattern = re.compile(r"<Fatal> BaseDaemon: \d{1,2}\. ")
 
-        with open(file_path, "r") as file:
+        with open(file_path, "r", errors="replace") as file:
             all_lines = file.readlines()
 
         # Only process last max_lines lines
@@ -42,16 +42,28 @@ class StackTraceReader(object):
     def get_fuzzer_query(fuzzer_log, max_lines=200):
         assert Path(fuzzer_log).is_file(), f"File {fuzzer_log} does not exist"
 
-        with open(fuzzer_log, "r") as file:
+        with open(fuzzer_log, "r", errors="replace") as file:
             all_lines = file.readlines()
 
         # Only process last max_lines lines
         last_lines = all_lines[-max_lines:] if len(all_lines) > max_lines else all_lines
 
         # Read backwards to find the last line that starts with SELECT
+        sql_keywords = (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "CREATE",
+            "DROP",
+            "ALTER",
+            "TRUNCATE",
+            "WITH",
+        )
         for line in reversed(last_lines):
-            if line.strip().startswith("SELECT"):
-                return line.strip()
+            stripped = line.strip()
+            if any(stripped.startswith(keyword) for keyword in sql_keywords):
+                return stripped
         return None
 
 

@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
+
+-- no-parallel-replicas -- https://github.com/ClickHouse/ClickHouse/issues/90063
 
 DROP DATABASE IF EXISTS 03710_database;
 CREATE DATABASE 03710_database;

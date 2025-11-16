@@ -304,7 +304,7 @@ EOF
         echo "BuzzHouse may fail for now. Please inspect the log to find the issues it found."
 
         task_exit_code=0
-        echo "success" > status.txt
+        echo "OK" > status.txt
         echo "OK" > description.txt
     elif [ "$server_died" == 1 ]
     then
@@ -324,10 +324,10 @@ EOF
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
             task_exit_code=0
-            echo "success" > status.txt
+            echo "OK" > status.txt
         else
             task_exit_code=210
-            echo "failure" > status.txt
+            echo "FAIL" > status.txt
         fi
     elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
     then
@@ -335,13 +335,13 @@ EOF
         # 0 -- fuzzing ended earlier than timeout.
         # 143 -- SIGTERM -- the fuzzer was killed by timeout.
         task_exit_code=0
-        echo "success" > status.txt
+        echo "OK" > status.txt
         echo "OK" > description.txt
     elif [ "$fuzzer_exit_code" == "137" ]
     then
         # Killed.
         task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
+        echo "FAIL" > status.txt
         echo "Killed" > description.txt
     else
         # The server was alive, but the fuzzer returned some error. This might
@@ -350,7 +350,7 @@ EOF
         # find a message about normal server termination (Received signal 15),
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
-        echo "error" > status.txt
+        echo "ERROR" > status.txt
         echo "Let op!" > description.txt
     fi
 
