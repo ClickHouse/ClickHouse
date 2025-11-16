@@ -9,7 +9,6 @@ import re
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from abc import ABC, abstractmethod
 from collections import deque
@@ -305,14 +304,8 @@ class Shell:
         stdin_str=None,
         timeout=None,
         retries=1,
-        retry_errors: Union[List[str], str] = "",
         **kwargs,
     ):
-        if retry_errors and retries < 2:
-            retries = 2
-            if isinstance(retry_errors, str):
-                retry_errors = [retry_errors]
-
         # Dry-run
         if dry_run:
             print(f"Dry-run. Would run command [{command}]")
@@ -381,22 +374,8 @@ class Shell:
                     else:
                         if verbose:
                             print(
-                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry+1}/{retries}"
+                                f"ERROR: command failed, exit code: {proc.returncode}, retry: {retry}/{retries}"
                             )
-                        if retry_errors:
-                            should_retry = False
-                            for err in retry_errors:
-                                if any(err in err_line for err_line in err_output):
-                                    print(
-                                        f"Retryable error occurred: [{err}], [{retry+1}/{retries}]"
-                                    )
-                                    should_retry = True
-                                    break
-                            if not should_retry:
-                                print(
-                                    f"No retryable errors found, stopping retry attempts"
-                                )
-                                break
             except Exception as e:
                 if verbose:
                     print(
@@ -407,11 +386,11 @@ class Shell:
                 if strict and retry == retries - 1:
                     raise e
 
-        if strict and (not proc or proc.returncode != 0):
-            err = "\n   ".join(err_output).strip()
-            raise RuntimeError(
-                f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
-            )
+            if strict and (not proc or proc.returncode != 0):
+                err = "\n   ".join(err_output).strip()
+                raise RuntimeError(
+                    f"command failed, exit code {proc.returncode},\nstderr:\n>>>\n{err}\n<<<"
+                )
 
         return proc.returncode if proc else 1  # Return 1 if the process never started
 
@@ -695,24 +674,6 @@ class Utils:
         return path_out
 
     @classmethod
-    def compress_files_gz(cls, files, archive_name):
-        files = [
-            os.path.relpath(file) if os.path.isabs(file) else file for file in files
-        ]
-        for file in files:
-            assert Path(file).exists(), f"Path does not exist [{file}]"
-
-        with tempfile.NamedTemporaryFile() as f:
-            f.write("\n".join(files).encode())
-            f.flush()
-            Shell.check(
-                f"tar -cf - -T {f.name} | gzip > {archive_name}",
-                verbose=True,
-                strict=True,
-            )
-        return archive_name
-
-    @classmethod
     def compress_gz(cls, path):
         path = str(path).rstrip("/")
         path_obj = Path(path)
@@ -768,20 +729,6 @@ class Utils:
             # Perform decompression
             res = Shell.check(
                 f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
-                verbose=True,
-                strict=not no_strict,
-            )
-        elif path.endswith(".gz"):
-            path_to = path_to or path.removesuffix(".gz")
-
-            # Ensure gzip is installed
-            if not Shell.check("which gzip", verbose=True, strict=not no_strict):
-                print("ERROR: gzip is not installed. Cannot decompress artifact.")
-                return False
-
-            # Perform decompression (decompress to stdout and redirect to file)
-            res = Shell.check(
-                f"gzip --decompress --stdout {quote(path)} > {quote(path_to)}",
                 verbose=True,
                 strict=not no_strict,
             )
@@ -844,8 +791,6 @@ class TeePopen:
         log_file: Union[str, Path] = "",
         env: Optional[dict] = None,
         timeout: Optional[int] = None,
-        timeout_shell_cleanup: Optional[str] = None,
-        preserve_stdio: bool = False,
     ):
         self.command = command
         self.log_file_name = log_file
@@ -853,37 +798,27 @@ class TeePopen:
         self.env = env or os.environ.copy()
         self.process = None  # type: Optional[subprocess.Popen]
         self.timeout = timeout
-        self.timeout_shell_cleanup = timeout_shell_cleanup
         self.timeout_exceeded = False
         self.terminated_by_sigterm = False
         self.terminated_by_sigkill = False
         self.log_rolling_buffer = deque(maxlen=100)
-        self.preserve_stdio = preserve_stdio
 
     def _check_timeout(self) -> None:
         if self.timeout is None:
             return
         time.sleep(self.timeout)
-        print(f"WARNING: Timeout exceeded [{self.timeout}] for [{self.process.pid}]")
-        self.timeout_exceeded = True
-
-        if self.timeout_shell_cleanup:
-            Shell.check(self.timeout_shell_cleanup, verbose=True)
-            return
-
+        print(
+            f"WARNING: Timeout exceeded [{self.timeout}], send SIGTERM to [{self.process.pid}] and give a chance for graceful termination"
+        )
         self.send_signal(signal.SIGTERM)
-        print(f"Send SIGTERM to [{self.process.pid}]")
         time_wait = 0
-
+        self.terminated_by_sigterm = True
+        self.timeout_exceeded = True
         while self.process.poll() is None and time_wait < 100:
             print("wait...")
             wait = 5
             time.sleep(wait)
             time_wait += wait
-
-        self.terminated_by_sigterm = True
-
-        print(f"Graceful termination timeout, send SIGKILL to [{self.process.pid}]")
         while self.process.poll() is None:
             print(f"WARNING: Still running, send SIGKILL to [{self.process.pid}]")
             self.send_signal(signal.SIGKILL)
@@ -891,35 +826,19 @@ class TeePopen:
             time.sleep(2)
 
     def __enter__(self) -> "TeePopen":
-        if self.log_file_name and not self.preserve_stdio:
+        if self.log_file_name:
             self.log_file = open(self.log_file_name, "w", encoding="utf-8")
-
-        if self.preserve_stdio:
-            # Inherit parent's stdio and do not start a new session to keep the controlling TTY
-            self.process = subprocess.Popen(
-                self.command,
-                shell=True,
-                universal_newlines=True,
-                env=self.env,
-                # inherit stdin/stdout/stderr
-                stdin=None,
-                stdout=None,
-                stderr=None,
-                start_new_session=False,
-                errors="backslashreplace",
-            )
-        else:
-            self.process = subprocess.Popen(
-                self.command,
-                shell=True,
-                universal_newlines=True,
-                env=self.env,
-                start_new_session=True,  # signal will be sent to all children
-                stderr=subprocess.STDOUT,
-                stdout=subprocess.PIPE,
-                bufsize=1,
-                errors="backslashreplace",
-            )
+        self.process = subprocess.Popen(
+            self.command,
+            shell=True,
+            universal_newlines=True,
+            env=self.env,
+            start_new_session=True,  # signall will be sent to all children
+            stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            bufsize=1,
+            errors="backslashreplace",
+        )
         time.sleep(1)
         print(f"Subprocess started, pid [{self.process.pid}]")
         if self.timeout is not None and self.timeout > 0:
@@ -934,8 +853,7 @@ class TeePopen:
             self.log_file.close()
 
     def wait(self) -> int:
-        # If preserving stdio, we don't have our own stdout pipe; just wait
-        if not self.preserve_stdio and self.process.stdout is not None:
+        if self.process.stdout is not None:
             for line in self.process.stdout:
                 sys.stdout.write(line)
 
@@ -948,14 +866,7 @@ class TeePopen:
         return self.process.poll()
 
     def send_signal(self, signal_num):
-        try:
-            # Prefer sending to the process group when we created a new session
-            if not self.preserve_stdio:
-                os.killpg(self.process.pid, signal_num)
-            else:
-                os.kill(self.process.pid, signal_num)
-        except ProcessLookupError:
-            pass
+        os.killpg(self.process.pid, signal_num)
 
     def get_latest_log(self, max_lines=20):
         buffer = list(self.log_rolling_buffer)

@@ -5,7 +5,6 @@
 #include <Interpreters/InterpreterShowFunctionsQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
-#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -39,7 +38,7 @@ FROM {}.{})",
     {
         rewritten_query += " WHERE name ";
         rewritten_query += query.case_insensitive_like ? "ILIKE " : "LIKE ";
-        rewritten_query += quoteString(query.like);
+        rewritten_query += fmt::format("'{}'", query.like);
     }
 
     return rewritten_query;

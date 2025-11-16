@@ -17,7 +17,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
-#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
@@ -297,7 +296,7 @@ class MergeTreeBackgroundExecutor final : boost::noncopyable
 {
 public:
     MergeTreeBackgroundExecutor(
-        ThreadName name_,
+        String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -309,7 +308,7 @@ public:
         std::string_view policy = {});
 
     MergeTreeBackgroundExecutor(
-        ThreadName name_,
+        String name_,
         size_t threads_count_,
         size_t max_tasks_count_,
         CurrentMetrics::Metric metric_,
@@ -342,7 +341,7 @@ public:
     }
 
 private:
-    ThreadName name;
+    String name;
     size_t threads_count TSA_GUARDED_BY(mutex) = 0;
     std::atomic<size_t> max_tasks_count = 0;
     CurrentMetrics::Metric metric;

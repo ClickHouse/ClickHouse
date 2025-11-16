@@ -71,9 +71,9 @@ public:
         data->get(0, res);
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t) const override
     {
-        return data->getValueNameAndTypeImpl(name_buf, 0, options);
+        return data->getValueNameAndType(0);
     }
 
     StringRef getDataAt(size_t) const override
@@ -250,7 +250,7 @@ public:
 
     bool hasEqualValues() const override { return true; }
 
-    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
     void gather(ColumnGathererStream &) override;
 

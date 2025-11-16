@@ -4,7 +4,6 @@ description: 'System table containing information about metadata files read from
 keywords: ['system table', 'iceberg_metadata_log']
 slug: /operations/system-tables/iceberg_metadata_log
 title: 'system.iceberg_metadata_log'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -19,10 +18,9 @@ This table logs every metadata file and entry read from Iceberg tables, includin
 
 :::note
 This table is primarily intended for debugging purposes.
-:::
+:::note
 
 ## Columns {#columns}
-
 | Name           | Type      | Description                                                                                   |
 |----------------|-----------|----------------------------------------------------------------------------------------------|
 | `event_date`   | [Date](../../sql-reference/data-types/date.md)      | Date of the log entry.                                                                       |

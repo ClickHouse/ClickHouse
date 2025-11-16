@@ -175,7 +175,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
             pool->scheduleOrThrow(
                 [&, i, thread_group = CurrentThread::getGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+                    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
                     /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
                     const size_t reserve_size = 0;
@@ -220,7 +220,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             pool->scheduleOrThrow(
                 [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, ThreadName::CONCURRENT_JOIN);
+                    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
 
                     auto clear_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
                     {
@@ -447,7 +447,7 @@ IColumn::Selector selectDispatchBlock(const HashJoin & join, size_t num_shards, 
     for (const auto & key_name : key_columns_names)
     {
         const auto & key_col = from_block.getByName(key_name).column->convertToFullColumnIfConst();
-        const auto & key_col_no_lc = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_col));
+        const auto & key_col_no_lc = recursiveRemoveLowCardinality(recursiveRemoveSparse(key_col));
         key_column_holders.push_back(key_col_no_lc);
         key_columns.push_back(key_col_no_lc.get());
     }

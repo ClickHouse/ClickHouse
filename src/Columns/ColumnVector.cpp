@@ -24,7 +24,6 @@
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
 #include <DataTypes/FieldToDataType.h>
-#include <IO/Operators.h>
 
 #include <bit>
 #include <cstring>
@@ -450,13 +449,11 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
 }
 
 template <typename T>
-DataTypePtr ColumnVector<T>::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
 {
     chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
     const auto & val = castToNearestFieldType(data[n]);
-    if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(val);
-    return FieldToDataType()(val);
+    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>

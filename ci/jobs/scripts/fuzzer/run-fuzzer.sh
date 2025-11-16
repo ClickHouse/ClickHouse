@@ -38,7 +38,7 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
-    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
+    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/allow-nullable-key.xml $CONFIG_DIR/config.d
 
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
 <clickhouse>
@@ -304,7 +304,7 @@ EOF
         echo "BuzzHouse may fail for now. Please inspect the log to find the issues it found."
 
         task_exit_code=0
-        echo "OK" > status.txt
+        echo "success" > status.txt
         echo "OK" > description.txt
     elif [ "$server_died" == 1 ]
     then
@@ -324,10 +324,10 @@ EOF
             # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
             # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
             task_exit_code=0
-            echo "OK" > status.txt
+            echo "success" > status.txt
         else
             task_exit_code=210
-            echo "FAIL" > status.txt
+            echo "failure" > status.txt
         fi
     elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
     then
@@ -335,13 +335,13 @@ EOF
         # 0 -- fuzzing ended earlier than timeout.
         # 143 -- SIGTERM -- the fuzzer was killed by timeout.
         task_exit_code=0
-        echo "OK" > status.txt
+        echo "success" > status.txt
         echo "OK" > description.txt
     elif [ "$fuzzer_exit_code" == "137" ]
     then
         # Killed.
         task_exit_code=$fuzzer_exit_code
-        echo "FAIL" > status.txt
+        echo "failure" > status.txt
         echo "Killed" > description.txt
     else
         # The server was alive, but the fuzzer returned some error. This might
@@ -350,14 +350,18 @@ EOF
         # find a message about normal server termination (Received signal 15),
         # which is confusing.
         task_exit_code=$fuzzer_exit_code
-        echo "ERROR" > status.txt
+        echo "failure" > status.txt
         echo "Let op!" > description.txt
+        echo "Fuzzer went wrong with error code: ($fuzzer_exit_code). Its process died somehow when the server stayed alive. The server log probably won't tell you much so try to find information in other files." >>description.txt
+        { rg -ao "Found error:.*" fuzzer.log || rg -ao "Exception:.*" fuzzer.log; } | tail -1 >>description.txt
     fi
 
     if test -f core.*; then
         zstd --threads=0 core.*
         mv core.*.zst core.zst
     fi
+
+    dmesg -T | rg -q -F -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' && echo "OOM in dmesg" ||:
 }
 
 case "$stage" in
@@ -370,5 +374,14 @@ case "$stage" in
     time fuzz
     ;&
 esac
+
+dmesg -T > dmesg.log ||:
+
+zstd --threads=0 --rm server.log
+zstd --threads=0 --rm fuzzer.log
+
+if [ -f $FUZZER_OUTPUT_SQL_FILE ]; then
+    zstd --threads=0 --rm $FUZZER_OUTPUT_SQL_FILE
+fi
 
 exit $task_exit_code

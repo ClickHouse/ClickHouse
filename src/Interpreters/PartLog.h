@@ -70,7 +70,6 @@ struct PartLogElement
     String partition;
     String disk_name;
     String path_on_disk;
-    Strings deduplication_block_ids;
 
     MergeTreeDataPartType part_type;
 
@@ -142,16 +141,10 @@ public:
 
     /// Add a record about creation of a new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
-                            Strings deduplication_block_ids,
-                            const ExecutionStatus & execution_status = {});
+                           const ExecutionStatus & execution_status = {});
 
     static bool addNewParts(ContextPtr context, const PartLogEntries & parts,
                             const ExecutionStatus & execution_status = {});
-
-private:
-    static bool addNewPartsImpl(ContextPtr context, const PartLogEntries & parts,
-                                std::vector<Strings> deduplication_block_ids,
-                                const ExecutionStatus & execution_status);
 };
 
 }

@@ -65,9 +65,10 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since
+        /// Remove table without lock since:
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
         table->drop();
 
         if (table->storesDataOnDisk())
@@ -139,7 +140,7 @@ void DatabaseMemory::drop(ContextPtr local_context)
     removeDataPath(local_context);
 }
 
-void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
     ASTPtr create_query;
@@ -158,7 +159,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
 
     /// Apply metadata changes without holding a lock to avoid possible deadlock
     /// (i.e. when ALTER contains IN (table))
-    applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
+    applyMetadataChangesToCreateQuery(create_query, metadata, local_context);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
@@ -219,9 +220,9 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
+void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)
