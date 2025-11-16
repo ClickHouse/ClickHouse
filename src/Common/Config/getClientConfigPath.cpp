@@ -15,7 +15,7 @@ std::optional<std::string> getClientConfigPath(const std::string & home_path)
 
     std::vector<std::string> names;
     names.emplace_back("./clickhouse-client");
-    const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME");
+    const char* xdg_config_home = std::getenv("XDG_CONFIG_HOME"); // NOLINT(concurrency-mt-unsafe)
     if (xdg_config_home && xdg_config_home[0] != '\0')
     {
         names.emplace_back(std::string(xdg_config_home) + "/clickhouse-client/config");
