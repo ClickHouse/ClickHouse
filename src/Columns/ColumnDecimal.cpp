@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
@@ -471,15 +472,19 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
 
     typename Self::Container & res_data = res->getData();
     res_data.reserve_exact(offsets.back());
+    res_data.resize(offsets.back());
+
+    const T *src = data.data();
+    T *dst = res_data.data();
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        size_t size_to_replicate = offsets[i] - prev_offset;
+        size_t count = offsets[i] - prev_offset;
         prev_offset = offsets[i];
 
-        for (size_t j = 0; j < size_to_replicate; ++j)
-            res_data.push_back(data[i]);
+        std::fill_n(dst, count, src[i]);
+        dst += count;
     }
 
     return res;
