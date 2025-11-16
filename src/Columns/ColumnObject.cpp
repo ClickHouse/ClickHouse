@@ -1175,7 +1175,7 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
 void ColumnObject::filter(const Filter & filt)
 {
     for (const auto & [path, column] : typed_paths)
-        column->filter(filt);
+        column->assumeMutable()->filter(filt);
 
     for (const auto & [path, column] : dynamic_paths_ptrs)
         column->filter(filt);

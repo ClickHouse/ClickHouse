@@ -1112,7 +1112,7 @@ void ColumnArray::filterTuple(const Filter & filt)
         return;
     }
 
-    Columns tuple_columns = tuple.getColumns();
+    const auto & tuple_columns = tuple.getColumns();
 
     auto offsets_column = getOffsetsPtr();
 
@@ -1134,7 +1134,7 @@ void ColumnArray::filterNullable(const Filter & filt)
     if (getOffsets().empty())
         return;
 
-    const ColumnNullable & nullable_elems = assert_cast<const ColumnNullable &>(*data);
+    ColumnNullable & nullable_elems = assert_cast<ColumnNullable &>(*data);
 
     auto offsets_column = getOffsetsPtr();
 
