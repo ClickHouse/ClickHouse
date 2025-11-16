@@ -656,6 +656,7 @@ public:
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
+
     ~Context();
 
     String getPath() const;
