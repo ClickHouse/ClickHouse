@@ -92,6 +92,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsBool materialize_projections_on_insert;
 }
 
 namespace ErrorCodes
@@ -903,23 +904,26 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     out->writeWithPermutation(block, perm_ptr);
 
-    for (const auto & projection : metadata_snapshot->getProjections())
+    if ((*data.getSettings())[MergeTreeSetting::materialize_projections_on_insert])
     {
-        Block projection_block;
+        for (const auto & projection : metadata_snapshot->getProjections())
         {
-            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
-            projection_block = projection.calculate(block, 0, context, perm_ptr);
-            LOG_DEBUG(
-                log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
-        }
+            Block projection_block;
+            {
+                ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterProjectionsCalculationMicroseconds);
+                projection_block = projection.calculate(block, 0, context, perm_ptr);
+                LOG_DEBUG(
+                    log, "Spent {} ms calculating projection {} for the part {}", watch.elapsed() / 1000, projection.name, new_data_part->name);
+            }
 
-        if (projection_block.rows())
-        {
-            auto proj_temp_part
-                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
-            new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
-            for (auto & stream : proj_temp_part->streams)
-                temp_part->streams.emplace_back(std::move(stream));
+            if (projection_block.rows())
+            {
+                auto proj_temp_part
+                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+                new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
+                for (auto & stream : proj_temp_part->streams)
+                    temp_part->streams.emplace_back(std::move(stream));
+            }
         }
     }
 

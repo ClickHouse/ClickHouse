@@ -144,6 +144,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
+    extern const MergeTreeSettingsBool materialize_projections_on_merge;
 }
 
 namespace ErrorCodes
@@ -1089,6 +1090,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         {
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
+        }
+        else if ((*global_ctx->data->getSettings())[MergeTreeSetting::materialize_projections_on_merge])
+        {
+            global_ctx->projections_to_rebuild.push_back(&projection);
         }
         else
         {
