@@ -475,9 +475,9 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     /// Note that we add it unconditionally so the progress is available for `X-ClickHouse-Summary`
-    append_callback([&used_output, &context](const Progress & progress)
+    append_callback([&used_output](const Progress & progress)
     {
-        used_output.out_holder->onProgress(progress, context);
+        used_output.out_holder->onProgress(progress);
     });
 
     if (settings[Setting::readonly] > 0 && settings[Setting::cancel_http_readonly_queries_on_client_close])

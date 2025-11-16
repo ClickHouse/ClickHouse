@@ -8,6 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NamePrompter.h>
 #include <Common/quoteString.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace CurrentMetrics
