@@ -19,6 +19,8 @@ echo '!/libcxx/test/*' >> $FILES_TO_CHECKOUT
 echo '/libunwind/*' >> $FILES_TO_CHECKOUT
 echo '!/libunwind/test/*' >> $FILES_TO_CHECKOUT
 echo '/compiler-rt/*' >> $FILES_TO_CHECKOUT
+echo '/libc/*' >> $FILES_TO_CHECKOUT
+echo '!/libc/test/*' >> $FILES_TO_CHECKOUT
 echo '!/compiler-rt/test/*' >> $FILES_TO_CHECKOUT
 echo '/cmake/*' >> $FILES_TO_CHECKOUT
 
