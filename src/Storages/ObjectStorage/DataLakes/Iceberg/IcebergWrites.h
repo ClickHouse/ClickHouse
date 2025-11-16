@@ -7,9 +7,9 @@
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
-#include "Core/SortDescription.h"
-#include "Processors/Chunk.h"
-#include "Storages/KeyDescription.h"
+#include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
+#include <Storages/KeyDescription.h>
 #include <Core/Range.h>
 #include <Columns/IColumn.h>
 #include <IO/CompressionMethod.h>

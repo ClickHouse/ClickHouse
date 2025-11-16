@@ -412,7 +412,6 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         String json_str;
         readJSONObjectPossiblyInvalid(json_str, *buf);
-        std::cerr << "result metadata " << json_str << '\n';
         return json_str;
     };
 
