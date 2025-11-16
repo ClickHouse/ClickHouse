@@ -665,8 +665,8 @@ ORDER BY distinct_flag;
 
 SELECT '1.17 Subquery filter';
 SELECT id,
-       EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a <=> s.b AND s.id <> t.id) AS has_equal_match,
-       EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a IS DISTINCT FROM s.b AND s.id <> t.id) AS has_distinct_match
+       EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a <=> s.b AND s.id = t.id) AS has_equal_match,
+       EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a IS DISTINCT FROM s.b AND s.id = t.id) AS has_distinct_match
 FROM 03611_t_nullsafe t
 ORDER BY id;
 
