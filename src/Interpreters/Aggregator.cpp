@@ -236,7 +236,7 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
-    , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)    
+    , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , limit_plus_offset_length(limit_plus_offset_length_)
     , optimization_indexes(std::move(optimization_indexes_))
 {

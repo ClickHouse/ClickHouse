@@ -95,9 +95,7 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     std::vector<Field> getFields(size_t row, Arena &) const
     {
         auto int_res = unalignedLoad<FieldType>(vec + row * sizeof(FieldType));
-        std::cout << "HashMethodOneNumber called, result=" << static_cast<int64_t>(int_res) << std::endl;
         Field result{int_res};
-        std::cout << "result object created" << std::endl;
         return {result};
     }
 };
@@ -163,9 +161,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
             reinterpret_cast<const char*>(chars + offsets[row - 1]),
             offsets[row] - offsets[row - 1] - 1
         );
-        std::cout << "HashMethodString called, key=" << key << std::endl;
         Field result{key};
-        std::cout << "result object created" << std::endl;
         return {result};
     }
 
@@ -234,9 +230,7 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
             reinterpret_cast<const char*>(&(*chars)[row * n]),
             n
         );
-        std::cout << "HashMethodFixedString called, key=" << key << std::endl;
         Field result{key};
-        std::cout << "result object created" << std::endl;
         return {result};
     }
 
@@ -418,9 +412,7 @@ struct HashMethodKeysFixed
         s.reserve(bitmap.size());
         for (size_t i = 0; i < bitmap.size(); ++i)
             s += static_cast<char>(bitmap[i]);
-        std::cout << "HashMethodFixedString called, s.size()=" << s.size() << std::endl;
         Field result{s};
-        std::cout << "result object created" << std::endl;
         return {result};
     }
 
@@ -480,9 +472,7 @@ struct HashMethodHashed
     std::vector<Field> getFields(size_t row, Arena &) const
     {
         auto hash = hash128(row, key_columns.size(), key_columns);
-        std::cout << "HashMethodFixedString called, (double)hash=" << static_cast<double>(hash) << std::endl;
         Field result{hash};
-        std::cout << "result object created" << std::endl;
         return {result};
     }
 };

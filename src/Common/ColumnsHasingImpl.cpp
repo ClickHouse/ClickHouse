@@ -14,14 +14,12 @@ namespace columns_hashing_impl
 // optimization_indexes - list of ORDER BY expressions
 bool compareOrderbyFields(const std::vector<DB::Field> & lhs, const std::vector<DB::Field> & rhs, const std::vector<OptimizationDataOneExpression> & optimization_indexes)
 {
-    std::cout << "compareOrderbyFields called, lhs.size()=" << lhs.size() << "; rhs.size()=" << rhs.size() << "; optimization_indexes.size()=" << optimization_indexes.size() << std::endl;
     chassert(lhs.size() == rhs.size());
-    for (size_t i = 0; i < optimization_indexes.size(); ++i)
+    for (const auto& optimization_index : optimization_indexes)
     {
-        std::cout << "optimization_indexes[i].index_of_expression_in_group_by: " << optimization_indexes[i].index_of_expression_in_group_by << std::endl;
-        size_t index_in_groupby = optimization_indexes[i].index_of_expression_in_group_by;
+        size_t index_in_groupby = optimization_index.index_of_expression_in_group_by;
         chassert(index_in_groupby < lhs.size());
-        if (optimization_indexes[i].sort_direction == DB::SortDirection::ASCENDING)
+        if (optimization_index.sort_direction == DB::SortDirection::ASCENDING)
         {
             if (lhs[index_in_groupby] < rhs[index_in_groupby])
                 return true;
