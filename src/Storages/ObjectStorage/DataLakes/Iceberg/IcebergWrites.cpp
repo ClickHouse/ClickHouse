@@ -42,9 +42,8 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/Dynamic/Var.h>
 #include <Common/FailPoint.h>
-#include "Core/Block.h"
-#include "Interpreters/sortBlock.h"
-#include "Processors/Chunk.h"
+#include <Core/Block.h>
+#include <Interpreters/sortBlock.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/CastOverloadResolver.h>
@@ -653,7 +652,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
         {
             if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
                 result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i]));
-            else 
+            else
                 result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
         }
         sortBlock(block, result_sort_description);
@@ -696,7 +695,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                     Field last_field_from_last_chunk = last_fields[i];
                     Field first_field_from_new_chunk;
                     part_chunk.getColumns()[column_idx]->get(0, first_field_from_new_chunk);
-                    
+
                     Field last_field_from_new_chunk;
                     part_chunk.getColumns()[column_idx]->get(part_chunk.getNumRows() - 1, first_field_from_new_chunk);
 

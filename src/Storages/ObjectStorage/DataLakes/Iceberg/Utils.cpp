@@ -759,38 +759,28 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     Poco::JSON::Object::Ptr sort_order = new Poco::JSON::Object;
     sort_order->set(Iceberg::f_order_id, 0);
 
-    std::cerr << "bp1\n";
     if (order_by)
     {
-        std::cerr << "bp2\n";
         auto sort_columns_key_description = KeyDescription::getSortingKeyFromAST(order_by, columns, context, std::nullopt);
 
         SortDescription sort_description;
         Names sort_columns = sort_columns_key_description.column_names;
         std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
-        
+
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
-        std::cerr << "bp3 " << reverse_flags.size() << '\n';
         for (size_t i = 0; i < sort_columns.size(); ++i)
         {
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
-            std::cerr << "bp3.5\n";
             sorting_field->set(f_source_id, column_name_to_source_id[sort_columns[i]]);
-            std::cerr << "bp3.6\n";
             sorting_field->set(f_transform, "identity"); // TODO
-            std::cerr << "bp3.7\n";
             if (reverse_flags.empty() || !reverse_flags[i])
                 sorting_field->set(f_direction, "asc");
             else
                 sorting_field->set(f_direction, "desc");
-            std::cerr << "bp3.8\n";
             sorting_field->set("null-order", "nulls-first");
-            std::cerr << "bp4\n";
             sorting_fields->add(sorting_field);
-            std::cerr << "bp5\n";
         }
         sort_order->set(Iceberg::f_fields, sorting_fields);
-        std::cerr << "bp6\n";
     }
     else
     {

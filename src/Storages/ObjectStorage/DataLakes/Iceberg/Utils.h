@@ -1,8 +1,6 @@
 #pragma once
 
-#include "Core/SortDescription.h"
-#include "Interpreters/Context_fwd.h"
-#include "config.h"
+#include <Core/SortDescription.h>
 
 #include <string>
 #include <string_view>
