@@ -161,6 +161,8 @@ private:
         size_t input_rows_count) const
     {
         auto dict = helper.getDictionary(dict_name);
+        chassert(dict != nullptr);
+
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
@@ -252,6 +254,8 @@ private:
         size_t input_rows_count) const
     {
         auto dict = helper.getDictionary(dict_name);
+        chassert(dict != nullptr);
+
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfNeeded();
