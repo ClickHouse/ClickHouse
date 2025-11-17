@@ -35,6 +35,8 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
 {
     friend class MetadataStorageFromPlainRewritableObjectStorageTransaction;
 
+    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
+
 public:
     MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_);
 
@@ -75,10 +77,9 @@ private:
 
     std::mutex metadata_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    AtomicStopwatch previous_refresh;
 
     std::mutex load_mutex;
-    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
+    AtomicStopwatch previous_refresh;
 };
 
 class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetadataTransaction
