@@ -451,7 +451,6 @@ private:
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
-    MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
     MergeTreeDataMergerMutator merger_mutator;
 
