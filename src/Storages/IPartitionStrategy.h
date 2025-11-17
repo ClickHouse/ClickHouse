@@ -47,7 +47,6 @@ struct IPartitionStrategy
     virtual Block getFormatHeader() { return sample_block; }
 
     NamesAndTypesList getPartitionColumns() const;
-    const KeyDescription & getPartitionKeyDescription() const;
 
 protected:
     const KeyDescription partition_key_description;

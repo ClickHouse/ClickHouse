@@ -1290,7 +1290,6 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
         sample_path,
-        args.columns.empty(),
         format_settings,
         args.getContext());
 

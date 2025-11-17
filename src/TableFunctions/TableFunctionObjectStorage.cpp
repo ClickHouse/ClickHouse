@@ -221,7 +221,6 @@ ColumnsDescription TableFunctionObjectStorage<
             columns,
             configuration,
             sample_path,
-            /* inferred_schema */ true,
             /* format_settings */ std::nullopt,
             context);
 
