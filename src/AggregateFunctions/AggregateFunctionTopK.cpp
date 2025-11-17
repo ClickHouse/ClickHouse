@@ -240,6 +240,9 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
+        if (this->data(rhs).value.empty())
+            return;
+
         auto & set = this->data(place).value;
         ensureCapacity(set);
         set.merge(this->data(rhs).value);
@@ -253,8 +256,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         auto & set = this->data(place).value;
-        ensureCapacity(set);
-        set.read(buf);
+        set.read(buf, reserved);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
@@ -389,8 +391,7 @@ public:
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         auto & set = this->data(place).value;
-        ensureCapacity(set);
-        set.read(buf);
+        set.read(buf, reserved);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

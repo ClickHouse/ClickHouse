@@ -302,21 +302,24 @@ public:
             writeVarUInt(alpha, wb);
     }
 
-    void read(ReadBuffer & rb)
+    void read(ReadBuffer & rb, size_t capacity)
     {
-        if (!empty())
-        {
-            size_t capacity = m_capacity;
-            destroyElements();
-            resize(capacity);
-        }
-
         size_t count = 0;
         readVarUInt(count, rb);
-        if (count > m_capacity)
+        if (count > capacity)
             throw DB::Exception(
-                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Found too large when reading counters (Passed: {}. Maximum: {})", count, m_capacity);
+                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Found too large when reading counters (Passed: {}. Maximum: {})", count, capacity);
 
+        if (!count)
+        {
+            /// It is possible that the state was written before the set was initialized, which would add 0 Counters and the alpha map
+            /// The size of the alpha map depends on the version and what was the default but we can just ignore it (no Counters mean there
+            /// should be no errors in the alpha map)
+            skipAlphaMap(rb);
+            return;
+        }
+
+        resize(capacity);
         for (size_t i = 0; i < count; ++i)
         {
             auto counter = Counter();
@@ -325,13 +328,7 @@ public:
             push(std::move(counter));
         }
 
-        /// It is possible that the state was written before the set was initialized, which would add 0 Counters and the alpha map
-        /// The size of the alpha map depends on the version and what was the default but we can just ignore it (no Counters mean there
-        /// should be no errors in the alpha map)
-        if (count)
-            readAlphaMap(rb);
-        else
-            skipAlphaMap(rb);
+        readAlphaMap(rb);
     }
 
     void readAlphaMap(ReadBuffer & rb)
