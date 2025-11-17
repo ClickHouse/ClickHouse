@@ -45,7 +45,7 @@ When a query is received, the server calculates no more than [max_query_size](..
 (by default, 1 MB), and the rest is stream parsed.
 This is to allow for avoiding issues with large `INSERT` queries, which is the recommended way to insert your data in ClickHouse.
 
-When using the [`Values`](../interfaces/formats.md/#data-format-values) format in an `INSERT` query, 
+When using the [`Values`](/interfaces/formats/Values) format in an `INSERT` query, 
 it may appear that data is parsed the same as for expressions in a `SELECT` query however this is not the case. 
 The `Values` format is much more limited.
 

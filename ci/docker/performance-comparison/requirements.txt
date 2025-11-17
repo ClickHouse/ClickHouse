@@ -15,7 +15,7 @@ more-itertools==8.10.0
 numpy==1.26.3
 oauthlib==3.2.2
 packaging==24.1
-pip==25.0.1
+pip==25.3
 pipdeptree==2.23.0
 Pygments==2.19.1
 PyJWT==2.10.1
