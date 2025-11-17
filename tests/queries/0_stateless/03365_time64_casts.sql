@@ -1,3 +1,4 @@
+SET enable_time_time64_type=1;
 -- Downscale (6 -> 3), exact millisecond boundary
 SELECT toString(CAST(toTime64('01:02:03.123000', 6) AS Time64(3)));
 
