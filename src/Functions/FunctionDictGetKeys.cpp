@@ -559,9 +559,9 @@ This is most effective with large dictionaries when the input has low cardinalit
 SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
     )",
             R"(
- ┌─ids───┐
- │ [4,2] │
- └───────┘
+┌─-ids──┐
+│ [4,2] │
+└───────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
