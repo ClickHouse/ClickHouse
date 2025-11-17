@@ -75,6 +75,18 @@ SELECT
 FROM inputs
 ORDER BY target_category, target_brand, target_timezone;
 
+SELECT dictGetKeys('dict_products', 'category', 'catA');
+
+SELECT 'Composite value expressions';
+
+SELECT dictGetKeys('dict_products', 'category', concat('cat', 'A'));
+
+SELECT
+    target_category,
+    dictGetKeys('dict_geo', 'timezone', concat('UTC', substring(target_timezone, 4))) AS country_city_by_tz_expr
+FROM inputs
+ORDER BY target_category, target_brand, target_timezone;
+
 SELECT 'Caching disabled';
 
 SET max_reverse_dictionary_lookup_cache_size_bytes = 0;
