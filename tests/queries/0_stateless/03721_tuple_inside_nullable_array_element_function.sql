@@ -476,6 +476,18 @@ FROM
 ); -- {serverError ZERO_ARRAY_OR_TUPLE_INDEX}
 
 SELECT
+    arrayElement(arr, 0),
+    arrayElement(arr, -1),
+FROM
+(
+    SELECT [(1, 'a'), (2, 'b')] AS arr
+    UNION ALL
+    SELECT [(3, 'c')]           AS arr
+    UNION ALL
+    SELECT [NULL]                   AS arr
+); -- {serverError ZERO_ARRAY_OR_TUPLE_INDEX}
+
+SELECT
     arrayElement(arr, 1),
     arrayElement(arr, -1),
     arrayElement(arr, 3),
