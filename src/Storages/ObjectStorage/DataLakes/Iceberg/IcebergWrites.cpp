@@ -616,19 +616,24 @@ IcebergStorageSink::IcebergStorageSink(
             current_schema = schemas->getObject(static_cast<UInt32>(i));
         }
     }
+
+    sort_description = Iceberg::getSortDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
+
     for (size_t i = 0; i < partitions_specs->size(); ++i)
     {
         auto current_partition_spec = partitions_specs->getObject(static_cast<UInt32>(i));
         if (current_partition_spec->getValue<Int64>(Iceberg::f_spec_id) == partition_spec_id)
         {
             partititon_spec = current_partition_spec;
+            Block extended_block_for_sorting = *sample_block_;
+            if (!sort_description.column_names.empty())
+                sortBlockByKeyDescription(extended_block_for_sorting, sort_description, context);
+
             if (current_partition_spec->getArray(Iceberg::f_fields)->size() > 0)
-                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context_, sample_block_);
+                partitioner = ChunkPartitioner(current_partition_spec->getArray(Iceberg::f_fields), current_schema, context_, std::make_shared<const Block>(extended_block_for_sorting));
             break;
         }
     }
-    for (size_t i = 0; i < sample_block->columns(); ++i)
-        column_name_to_column_index[sample_block->getNames()[i]] = i;
 }
 
 void IcebergStorageSink::consume(Chunk & chunk)
@@ -637,8 +642,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
         return;
     total_rows += chunk.getNumRows();
 
-    if (sort_description.column_names.empty())
-        sort_description = Iceberg::getSortDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
+    size_t start_columns_size = chunk.getNumColumns();
     if (!sort_description.column_names.empty())
     {
         ColumnsWithTypeAndName columns;
@@ -647,15 +651,10 @@ void IcebergStorageSink::consume(Chunk & chunk)
             columns.push_back(ColumnWithTypeAndName(chunk.getColumns()[i], sample_block->getDataTypes()[i], sample_block->getNames()[i]));
         }
         auto block = Block(columns);
-        SortDescription result_sort_description;
-        for (size_t i = 0; i < sort_description.column_names.size(); ++i)
-        {
-            if (sort_description.reverse_flags.empty() || !sort_description.reverse_flags[i])
-                result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i]));
-            else
-                result_sort_description.push_back(SortColumnDescription(sort_description.column_names[i], -1));
-        }
-        sortBlock(block, result_sort_description);
+        sortBlockByKeyDescription(block, sort_description, context);
+
+        for (size_t i = 0; i < block.columns(); ++i)
+            column_name_to_column_index[block.getNames()[i]] = i;
         chunk = Chunk(block.getColumns(), block.rows());
     }
 
@@ -722,8 +721,15 @@ void IcebergStorageSink::consume(Chunk & chunk)
             }
             last_fields_of_last_chunks[partition_key] = std::move(last_fields_new_chunk);
         }
-        writer_per_partition_key.at(partition_key).consume(part_chunk);
+
+        auto columns = part_chunk.getColumns();
+        columns.resize(start_columns_size);
+        Chunk part_chunk_without_sorting_columns(columns, part_chunk.getNumRows());
+        writer_per_partition_key.at(partition_key).consume(part_chunk_without_sorting_columns);
     }
+    auto columns = chunk.getColumns();
+    columns.resize(start_columns_size);
+    chunk = Chunk(columns, chunk.getNumRows());
 }
 
 void IcebergStorageSink::onFinish()

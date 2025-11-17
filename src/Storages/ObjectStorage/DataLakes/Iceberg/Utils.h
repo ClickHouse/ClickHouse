@@ -8,6 +8,9 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Columns/IColumn.h>
+#include <Storages/KeyDescription.h>
+#include <Core/SortDescription.h>
 
 #if USE_AVRO
 
@@ -94,7 +97,15 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 
+/// Parse transform and argument from input parameter
+/// "x" -> {"identity", "x"}
+/// "identity(x)" -> {"identity", "x"}
+/// "bucket(16, x)" -> {"bucket[16]", "x"}
+std::pair<String, String> parseTransformAndColumn(const String & object);
+DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
+
 KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
 }
 
