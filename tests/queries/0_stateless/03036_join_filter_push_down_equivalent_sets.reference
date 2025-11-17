@@ -522,7 +522,7 @@ Positions: 4 1 0 2
               __table2.value String
       Type: RIGHT
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
@@ -607,7 +607,7 @@ Positions: 4 1 0 2
             __table2.value String
     Type: RIGHT
     Strictness: ALL
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
       Expression (Left Pre Join Actions)
       Header: __table1.id UInt64
@@ -711,7 +711,7 @@ Positions: 4 1 0 2
               __table2.value String
       Type: FULL
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
@@ -809,7 +809,7 @@ Positions: 4 1 0 2
               __table2.value String
       Type: FULL
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64
@@ -914,7 +914,7 @@ Positions: 4 1 0 2
               __table2.value String
       Type: FULL
       Strictness: ALL
-      Algorithm: HashJoin
+      Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
         Expression (Left Pre Join Actions)
         Header: __table1.id UInt64

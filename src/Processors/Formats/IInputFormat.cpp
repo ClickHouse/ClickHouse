@@ -1,7 +1,11 @@
+#include <optional>
 #include <Processors/Formats/IInputFormat.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WithFileName.h>
 #include <Common/Exception.h>
+#include <IO/VarInt.h>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 
 namespace DB
 {
@@ -70,4 +74,9 @@ void IInputFormat::onFinish()
 {
     resetReadBuffer();
 }
+
+void IInputFormat::setBucketsToRead(const FileBucketInfoPtr & /*buckets_to_read*/)
+{
+}
+
 }

@@ -1336,6 +1336,9 @@ bool KeyCondition::tryPrepareSetIndex(
     Columns transformed_set_columns = set_columns;
     bool is_constant_transformed = false;
 
+    IColumn::Filter filter(transformed_set_columns.front()->size(), 1);
+    bool filter_used = false;
+
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
         const auto & key_column_type = data_types[indexes_mapping_index];
@@ -1407,32 +1410,39 @@ bool KeyCondition::tryPrepareSetIndex(
         const NullMap & nullable_set_column_null_map = nullable_set_column_typed->getNullMapData();
         size_t nullable_set_column_null_map_size = nullable_set_column_null_map.size();
 
-        IColumn::Filter filter(nullable_set_column_null_map_size);
-
         if (set_column_null_map)
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
                 if (nullable_set_column_null_map_size < set_column_null_map->size())
-                    filter[i] = (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
+                    filter[i] &= (*set_column_null_map)[i] || !nullable_set_column_null_map[i];
                 else
-                    filter[i] = !nullable_set_column_null_map[i];
+                    filter[i] &= !nullable_set_column_null_map[i];
             }
 
-            set_column = nullable_set_column_typed->filter(filter, 0);
+            set_column = nullable_set_column;
         }
         else
         {
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
-                filter[i] = !nullable_set_column_null_map[i];
+                filter[i] &= !nullable_set_column_null_map[i];
 
-            set_column = nullable_set_column_typed->getNestedColumn().filter(filter, 0);
+            set_column = nullable_set_column_typed->getNestedColumnPtr();
         }
+        filter_used = true;
 
         transformed_set_columns[set_element_index] = std::move(set_column);
     }
 
-    set_columns = std::move(transformed_set_columns);
+    if (filter_used)
+    {
+        for (size_t set_element_index = 0; set_element_index < transformed_set_columns.size(); ++set_element_index)
+            set_columns[set_element_index] = transformed_set_columns[set_element_index]->filter(filter, 0);
+    }
+    else
+    {
+        set_columns = std::move(transformed_set_columns);
+    }
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
@@ -2198,7 +2208,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                             ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
                             : common_type;
 
-                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {});
+                        auto func_cast = createInternalCast({key_expr_type, {}}, common_type_maybe_nullable, CastType::nonAccurate, {}, node.getTreeContext().getQueryContext());
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
                         if (!single_point && !func_cast->hasInformationAboutMonotonicity())
