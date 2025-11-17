@@ -1,6 +1,6 @@
 #include <Storages/KVStorageUtils.h>
 
-#include <map>
+#include <unordered_map>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
@@ -396,7 +396,7 @@ bool traverseDAGFilter(
     if (func_name == "and")
     {
         // Collect filters for each key column separately
-        std::map<String, FieldVector> column_filters;
+        std::unordered_map<String, FieldVector> column_filters;
 
         for (const auto * child : elem->children)
         {
@@ -481,15 +481,6 @@ std::pair<FieldVectorPtr, bool> getFilterKeys(
 
     FieldVectorPtr res = std::make_shared<FieldVector>();
     auto matched_keys = traverseDAGFilter(primary_keys, primary_key_types, predicate, context, res);
-
-    {
-        std::cout << "xxxx matched keys:" << matched_keys << " size:" << res->size() << std::endl;
-        for (const auto & f : *res)
-        {
-            std::cout << f.dump() << ' ';
-        }
-        std::cout << std::endl;
-    }
 
     return std::make_pair(res, !matched_keys);
 }
