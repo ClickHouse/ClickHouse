@@ -29,6 +29,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_COLUMN;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_INDEX;
 extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
 }
 
@@ -1978,18 +1979,22 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
     const ColumnPtr & column_string = arguments[0].column;
     const ColumnPtr & column_index = arguments[1].column;
 
-    auto try_get_char_position = [](StringRef str, Int64 index, UInt64 & position) -> bool
+    auto try_get_char_position = [&](StringRef str, Int64 index, UInt64 & position) -> bool
     {
-        if (index == 0 || str.size == 0)
-            return false;
+        if (index == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index 0 is not valid for string subscript (indices start from 1)");
+
+        if (str.size == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Cannot access character in empty string");
 
         const UInt64 length = str.size;
 
         if (index > 0)
         {
             const UInt64 idx = static_cast<UInt64>(index);
-            if (idx == 0 || idx > length)
-                return false;
+            if (idx > length)
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "String index {} is out of bounds for string of length {}", index, length);
 
             position = idx - 1;
             return true;
@@ -1997,7 +2002,8 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
 
         const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
         if (idx > length)
-            return false;
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "String index {} is out of bounds for string of length {} (negative index too large)", index, length);
 
         position = length - idx;
         return true;
@@ -2006,28 +2012,25 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
     auto append_char_or_empty = [&](ColumnString & result, StringRef str, Int64 index)
     {
         UInt64 position = 0;
-        if (!try_get_char_position(str, index, position))
-        {
-            result.insertData(nullptr, 0);
-            return;
-        }
-
+        try_get_char_position(str, index, position);
         result.insertData(str.data + position, 1);
     };
 
     auto get_char_at_index = [&](StringRef str, Int64 index) -> String
     {
         UInt64 position = 0;
-        if (!try_get_char_position(str, index, position))
-            return String();
-
+        try_get_char_position(str, index, position);
         return String(str.data + position, 1);
     };
 
-    auto try_get_slice_end_position = [&](StringRef str, Int64 index, UInt64 & position) -> bool
+    auto get_slice_position = [&](StringRef str, Int64 index, const char* position_name) -> UInt64
     {
-        if (index == 0 || str.size == 0)
-            return false;
+        if (index == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "Index 0 is not valid for string slice {} (indices start from 1)", position_name);
+
+        if (str.size == 0)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX, "Cannot slice empty string");
 
         const UInt64 length = str.size;
 
@@ -2035,47 +2038,45 @@ ColumnPtr FunctionArrayElement<mode>::executeString(const ColumnsWithTypeAndName
         {
             const UInt64 idx = static_cast<UInt64>(index);
             if (idx > length)
-            {
-                position = length - 1;
-                return true;
-            }
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "String slice {} index {} is out of bounds for string of length {}", position_name, index, length);
 
-            position = idx - 1;
-            return true;
+            return idx - 1;
         }
-
-        const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
-        if (idx > length)
+        else  // negative index
         {
-            position = 0;
-            return true;
-        }
+            const UInt64 idx = static_cast<UInt64>(-(index + 1)) + 1;
+            if (idx > length)
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "String slice {} index {} is out of bounds for string of length {} (negative index too large)",
+                    position_name, index, length);
 
-        position = length - idx;
-        return true;
+            return length - idx;
+        }
     };
 
     auto append_slice_or_empty = [&](ColumnString & result, StringRef str, Int64 start, Int64 end)
     {
-        UInt64 start_position = 0;
-        UInt64 end_position = 0;
+        UInt64 start_position = get_slice_position(str, start, "start");
+        UInt64 end_position = get_slice_position(str, end, "end");
 
-        if (!try_get_char_position(str, start, start_position) || !try_get_slice_end_position(str, end, end_position) || end_position < start_position)
-        {
-            result.insertData(nullptr, 0);
-            return;
-        }
+        if (end_position < start_position)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "String slice start index {} is greater than end index {} (after conversion to 0-based: start={}, end={})",
+                start, end, start_position, end_position);
 
         result.insertData(str.data + start_position, end_position - start_position + 1);
     };
 
     auto get_slice_or_empty = [&](StringRef str, Int64 start, Int64 end) -> String
     {
-        UInt64 start_position = 0;
-        UInt64 end_position = 0;
+        UInt64 start_position = get_slice_position(str, start, "start");
+        UInt64 end_position = get_slice_position(str, end, "end");
 
-        if (!try_get_char_position(str, start, start_position) || !try_get_slice_end_position(str, end, end_position) || end_position < start_position)
-            return String();
+        if (end_position < start_position)
+            throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                "String slice start index {} is greater than end index {} (after conversion to 0-based: start={}, end={})",
+                start, end, start_position, end_position);
 
         return String(str.data + start_position, end_position - start_position + 1);
     };
