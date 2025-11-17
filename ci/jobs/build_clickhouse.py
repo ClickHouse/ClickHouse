@@ -64,7 +64,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     UPLOAD_PROFILE_DATA = "profile"
 
 
-def should_use_submodules_sh(build_type: str) -> bool:
+def should_use_sparse_checkout_of_submodules(build_type: str) -> bool:
     COMPATIBLE_JOBS = [
         BuildTypes.AMD_ASAN,
         BuildTypes.AMD_BINARY,
@@ -185,7 +185,7 @@ def main():
             )
 
             def get_command_to_use():
-                if should_use_submodules_sh(build_type):
+                if should_use_sparse_checkout_of_submodules(build_type):
                     return "contrib/update-submodules.sh --max-procs 10"
                 return "git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch"
 
