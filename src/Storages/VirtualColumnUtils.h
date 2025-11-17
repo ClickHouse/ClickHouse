@@ -79,7 +79,8 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
-    ContextPtr context = nullptr,
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings_ = std::nullopt,
     const std::string & path = "");
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(

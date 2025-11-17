@@ -222,7 +222,13 @@ StorageObjectStorage::StorageObjectStorage(
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context,
+        format_settings,
+        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
+        configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE ? sample_path : ""));
+
     setInMemoryMetadata(metadata);
 
     /// This will update metadata for table function which contains specific information about table
@@ -351,7 +357,8 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         /*supports_tuple_elements=*/ supports_prewhere,
         local_context,
-        PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 

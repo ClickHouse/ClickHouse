@@ -10,7 +10,6 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Chunk.h>
 #include <DataTypes/IDataType.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -36,7 +35,6 @@ static auto makeExtractor()
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
-    LOG_TEST(getLogger("KSSENII"), "KSSENII SAMPLE PATH {}", path);
     static auto extractor = makeExtractor();
 
     HivePartitioningKeysAndValues key_values;
@@ -62,7 +60,6 @@ HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & 
         throw Exception(ErrorCodes::INCORRECT_DATA, "Path '{}' to file with enabled hive-style partitioning contains duplicated partition key {} with different values, only unique keys are allowed", path, ex.key);
     }
 
-    LOG_TEST(getLogger("KSSENII"), "KSSENII parsed {}", key_values.size());
     return key_values;
 }
 
@@ -75,7 +72,6 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     const auto hive_map = parseHivePartitioningKeysAndValues(sample_path);
-    LOG_TEST(getLogger("KSSENII"), "KSSENII SEE: {}, {}", sample_path, hive_map.size());
 
     for (const auto & item : hive_map)
     {
@@ -89,7 +85,6 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
-            LOG_TEST(getLogger("KSSENII"), "KSSENII KEY: {}", key);
             if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
             {
                 if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
@@ -210,13 +205,13 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-       extractPartitionColumnsFromPathAndEnrichStorageColumns(
-           columns,
-           hive_partition_columns_to_read_from_file_path,
-           sample_path,
-           inferred_schema,
-           format_settings,
-           context);
+        extractPartitionColumnsFromPathAndEnrichStorageColumns(
+            columns,
+            hive_partition_columns_to_read_from_file_path,
+            sample_path,
+            inferred_schema,
+            format_settings,
+            context);
     }
 
     if (configuration->partition_columns_in_data_file)

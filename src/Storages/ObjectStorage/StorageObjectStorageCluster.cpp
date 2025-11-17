@@ -101,7 +101,13 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context_,
+        /* format_settings */std::nullopt,
+        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
+        configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE ? sample_path : ""));
+
     setInMemoryMetadata(metadata);
 
     /// This will update metadata which contains specific information about table state (e.g. for Iceberg)
