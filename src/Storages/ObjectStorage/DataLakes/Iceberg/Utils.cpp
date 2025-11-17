@@ -694,7 +694,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
 std::pair<String, String> parseTransformAndColumn(const String & object)
 {
     String s = object;
-    
+
     auto trim = [](String & str)
     {
         str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char c){ return !std::isspace(c); }));
@@ -705,12 +705,15 @@ std::pair<String, String> parseTransformAndColumn(const String & object)
     if (s.find('(') == String::npos)
         return {"identity", s};
 
-    static const std::regex re(
+    static const RE2 re(
         R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(?:([0-9]+)\s*,\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$)"
     );
 
-    std::smatch m;
-    if (!std::regex_match(s, m, re))
+    String fn_name;
+    String arg;
+    String column;
+
+    if (!RE2::FullMatch(s, re, &fn_name, &arg, &column))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid transform expression: {}", object);
     }
@@ -724,14 +727,12 @@ std::pair<String, String> parseTransformAndColumn(const String & object)
         {"toDayOfMonth", "day"},
         {"toHour", "hour"}
     };
-    String transform = clickhouse_name_to_iceberg.at(m[1].str());
-    String arg = m[2].matched ? m[2].str() : "";
-    String column = m[3].str();
 
+    const auto & transform_base = clickhouse_name_to_iceberg.at(fn_name);
+
+    String transform = transform_base;
     if (!arg.empty())
-    {
         transform += "[" + arg + "]";
-    }
 
     return {transform, column};
 }
@@ -1130,7 +1131,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
         auto executable_function = function->build(arguments);
         auto result_type = getFunctionResultType(iceberg_transform_name, block.getByName(column_name).type);
         auto result_column = executable_function->execute(arguments, result_type, block.rows(), false);
-        
+
         ColumnsWithTypeAndName new_columns = block.getColumnsWithTypeAndName();
         new_columns.push_back(ColumnWithTypeAndName(result_column, result_type, sort_description.column_names[i]));
         block = Block(new_columns);
