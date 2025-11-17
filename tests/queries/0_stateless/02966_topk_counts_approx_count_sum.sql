@@ -15,7 +15,8 @@ FROM
         concat(countDigits(number * number), '_', intDiv((number % 10), 7)) AS k,
         number AS w
     FROM numbers(1000)
-);
+)
+FORMAT Vertical;
 
 SELECT topKMerge(4, 2, 'counts')(state) FROM ( SELECT topKState(4, 2, 'counts')(countDigits(number * number)) AS state FROM numbers(1000));
 
