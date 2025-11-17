@@ -362,13 +362,11 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
     size_t lhs_type_depth = getCompoundTypeDepth(*lhs_expression_type);
     size_t rhs_type_depth = getCompoundTypeDepth(*rhs_type);
 
-    ColumnsWithTypeAndName result_block;
-
     /// CAST(NULL, `Nullable(Tuple(...))`) IN NULL
     if (lhs_type_depth == rhs_type_depth + 1)
     {
         if (rhs.isNull())
-            result_block = createBlockFromCollection(Array{rhs}, DataTypes{rhs_type}, lhs_unpacked_types, lhs_is_nullable, params);
+            return createBlockFromCollection(Array{rhs}, DataTypes{rhs_type}, lhs_unpacked_types, lhs_is_nullable, params);
     }
     else if (lhs_type_depth == rhs_type_depth)
     {
@@ -381,19 +379,18 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         {
             /// CAST(NULL, `Nullable(Tuple(...))`) IN [NULL, NULL, (...)]
             /// Tuple(...) IN [NULL, NULL, (...)]
-            result_block = buildFromArray(rhs, rhs_type);
+            return buildFromArray(rhs, rhs_type);
         }
-        else if (lhs_is_tuple && rhs_which_type.isTuple() && is_null_in_rhs && (lhs_is_nullable || has_tuple_in_rhs))
+
+        if (lhs_is_tuple && rhs_which_type.isTuple() && is_null_in_rhs && (lhs_is_nullable || has_tuple_in_rhs))
         {
             /// CAST(NULL, `Nullable(Tuple(...))`) IN (NULL, NULL, ...)
             /// Tuple(...) IN (NULL, NULL, Tuple(...), ...)
-            result_block = buildFromTuple(rhs, rhs_type);
+            return buildFromTuple(rhs, rhs_type);
         }
-        else
-        {
-            /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
-            result_block = createBlockFromCollection(Array{rhs}, DataTypes{rhs_type}, lhs_unpacked_types, lhs_is_nullable, params);
-        }
+
+        /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
+        return createBlockFromCollection(Array{rhs}, DataTypes{rhs_type}, lhs_unpacked_types, lhs_is_nullable, params);
     }
     else if (lhs_type_depth + 1 == rhs_type_depth)
     {
@@ -401,25 +398,22 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         WhichDataType rhs_which_type(rhs_type);
 
         if (rhs_which_type.isArray())
-            result_block = buildFromArray(rhs, rhs_type);
-        else if (rhs_which_type.isTuple())
-            result_block = buildFromTuple(rhs, rhs_type);
-        else
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Unsupported type at the right-side of IN. Expected Array or Tuple or Nullable(Tuple). Actual {}",
-                rhs_type->getName());
-    }
-    else
-    {
+            return buildFromArray(rhs, rhs_type);
+
+        if (rhs_which_type.isTuple())
+            return buildFromTuple(rhs, rhs_type);
+
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Unsupported types for IN. First argument type {}. Second argument type {}",
-            lhs_expression_type->getName(),
+            "Unsupported type at the right-side of IN. Expected Array or Tuple or Nullable(Tuple). Actual {}",
             rhs_type->getName());
     }
 
-    return result_block;
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Unsupported types for IN. First argument type {}. Second argument type {}",
+        lhs_expression_type->getName(),
+        rhs_type->getName());
 }
 
 }
