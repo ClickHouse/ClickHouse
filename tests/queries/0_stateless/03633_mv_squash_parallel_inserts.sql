@@ -25,3 +25,7 @@ EXPLAIN PIPELINE INSERT INTO 03633_mv_src SELECT * FROM system.one;
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 SET materialized_views_squash_parallel_inserts=1;
 EXPLAIN PIPELINE INSERT INTO 03633_mv_src SELECT * FROM system.one;
+
+DROP VIEW 03633_mv;
+DROP TABLE 03633_mv_src;
+DROP TABLE 03633_mv_dst;

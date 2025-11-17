@@ -275,3 +275,6 @@ digraph
   n39 -> n40;
   n40 -> n42;
 }
+DROP VIEW 03633_mv;
+DROP TABLE 03633_mv_src;
+DROP TABLE 03633_mv_dst;
