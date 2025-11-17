@@ -237,9 +237,27 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
     }
 }
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+namespace {
+void checkNodeIsValid(const ActionsDAG::Node & node)
+{
+    if (node.column != nullptr && !(node.column->isConst() || typeid_cast<const ColumnSet *>(node.column.get())))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Node's column must be either Conts or Set, but got {} for node {} (structure: {})",
+            node.column->getFamilyName(),
+            node.result_name,
+            node.column->dumpStructure());
+}
+}
+#endif
+
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     checkNodeIsValid(node);
+#endif
+
     auto & res = nodes.emplace_back(std::move(node));
 
     if (res.type == ActionType::INPUT)
@@ -4055,16 +4073,4 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
 
     return dag;
 }
-
-void checkNodeIsValid(const ActionsDAG::Node & node)
-{
-    if (node.column != nullptr && !(node.column->isConst() || typeid_cast<const ColumnSet *>(node.column.get())))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Node's column must be either Conts or Set, but got {} for node {} (structure: {})",
-            node.column->getFamilyName(),
-            node.result_name,
-            node.column->dumpStructure());
-}
-
 }
