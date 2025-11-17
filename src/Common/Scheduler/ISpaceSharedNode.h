@@ -61,6 +61,24 @@ public:
         Update && resetDetached() && noexcept { detached = nullptr; return std::move(*this); }
         Update && resetIncrease() && noexcept { increase = std::nullopt; return std::move(*this); }
         Update && resetDecrease() && noexcept { decrease = std::nullopt; return std::move(*this); }
+
+        // For debugging purposes only
+        String toString() const
+        {
+            std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+            oss << "{ attached=" << attached << ", detached=" << detached << ", increase=";
+            if (increase)
+                oss << (*increase ? reinterpret_cast<void*>(&(*increase)->allocation) : nullptr);
+            else
+                oss << "no_change";
+            oss << ", decrease=";
+            if (decrease)
+                oss << (*decrease ? reinterpret_cast<void*>(&(*decrease)->allocation) : nullptr);
+            else
+                oss << "no_change";
+            oss << " }";
+            return oss.str();
+        }
     };
 
     /// Propagate updates from a child to this node.

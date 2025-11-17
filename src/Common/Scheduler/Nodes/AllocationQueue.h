@@ -81,7 +81,10 @@ public:
                 scheduleActivation();
         }
         else // Zero-cost allocations are not blocked - enqueue into running allocations directly
+        {
+            allocation.fair_key = 0;
             running_allocations.insert(allocation);
+        }
     }
 
     void increaseAllocation(ResourceAllocation & allocation, ResourceCost increase_size) override
@@ -92,9 +95,16 @@ public:
         ensureUsable();
 
         chassert(!allocation.increasing_hook.is_linked());
+
+        // Update the key of running allocation
+        running_allocations.erase(running_allocations.iterator_to(allocation));
+        allocation.fair_key = allocation.allocated + increase_size;
+        running_allocations.insert(allocation);
+
+        // Enqueue increase request
         allocation.increase.prepare(increase_size, false);
         increasing_allocations.insert(allocation);
-        if (&allocation == &*increasing_allocations.begin()) // Only if it should be processed next
+        if (!skip_activation && &allocation == &*increasing_allocations.begin()) // Only if it should be processed next
             scheduleActivation();
     }
 
@@ -131,7 +141,7 @@ public:
         // NOTE: Queue never owns allocations, so they are not destructed here, just detached
         pending_allocations.clear();
         increasing_allocations.clear();
-        decreasing_allocations.clear(); // Ignore them, we never fail decrease requests
+        decreasing_allocations.clear();
         removing_allocations.clear();
         running_allocations.clear();
 
@@ -142,31 +152,11 @@ public:
         is_not_usable = true;
     }
 
-    void attachChild(const SchedulerNodePtr &) override
+    void propagateUpdate(ISpaceSharedNode &, Update &&) override
     {
-        throw Exception(
-            ErrorCodes::INVALID_SCHEDULER_NODE,
-            "Cannot add child to a leaf allocation queue: {}",
-            getPath());
+        chassert(false);
     }
 
-    void removeChild(ISchedulerNode *) override
-    {
-    }
-
-    ISchedulerNode * getChild(const String &) override
-    {
-        return nullptr;
-    }
-
-    ResourceAllocation * selectAllocationToKill() override
-    {
-        std::lock_guard lock(mutex);
-        if (running_allocations.empty())
-            return nullptr;
-        // Kill the largest allocation. It is the last as the set is ordered by size.
-        return &*running_allocations.rbegin();
-    }
     void approveIncrease() override
     {
         std::lock_guard lock(mutex);
@@ -179,6 +169,15 @@ public:
         std::lock_guard lock(mutex);
         applyDecrease();
         setDecrease();
+    }
+
+    ResourceAllocation * selectAllocationToKill() override
+    {
+        std::lock_guard lock(mutex);
+        if (running_allocations.empty())
+            return nullptr;
+        // Kill the largest allocation. It is the last as the set is ordered by size.
+        return &*running_allocations.rbegin();
     }
 
     void processActivation() override
@@ -216,9 +215,21 @@ public:
             propagate(std::move(update));
     }
 
-    void propagateUpdate(ISpaceSharedNode &, Update &&) override
+    void attachChild(const SchedulerNodePtr &) override
     {
-        chassert(false);
+        throw Exception(
+            ErrorCodes::INVALID_SCHEDULER_NODE,
+            "Cannot add child to a leaf allocation queue: {}",
+            getPath());
+    }
+
+    void removeChild(ISchedulerNode *) override
+    {
+    }
+
+    ISchedulerNode * getChild(const String &) override
+    {
+        return nullptr;
     }
 
     std::pair<UInt64, Int64> getQueueLengthAndSize()
@@ -240,7 +251,7 @@ private:
         allocation.decrease.prepare(decrease_size, decrease_size == allocation.allocated);
         decreasing_allocations.push_back(allocation);
         if constexpr (!from_activation)
-            if (&allocation == &*decreasing_allocations.begin()) // Only if it should be processed next (i.e. size = 1)
+            if (!skip_activation && &allocation == &*decreasing_allocations.begin()) // Only if it should be processed next (i.e. size = 1)
                 scheduleActivation();
     }
 
@@ -252,17 +263,18 @@ private:
         {
             pending_allocations.erase(pending_allocations.iterator_to(allocation));
             pending_allocations_size -= allocation.increase.size;
+            allocation.fair_key = increase->size;
+            running_allocations.insert(allocation);
         }
         else
-        {
             increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-            // We need to remove from running allocations to update the key
-            running_allocations.erase(running_allocations.iterator_to(allocation));
-        }
         allocated += increase->size;
         allocation.allocated += increase->size;
-        running_allocations.insert(allocation);
+
+        // Notify allocation
+        skip_activation = true;
         increase->allocation.increaseApproved(*increase); // NOTE: this may re-enter increaseAllocation()
+        skip_activation = false;
         increase = nullptr;
     }
 
@@ -271,26 +283,34 @@ private:
         chassert(decrease);
         ResourceAllocation & allocation = decrease->allocation;
         decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
-        // We need to remove from running allocations to update the key
+
+        // We need to remove from running/increasing allocations to update the key
         running_allocations.erase(running_allocations.iterator_to(allocation));
         bool is_increasing = allocation.increasing_hook.is_linked();
-        if (is_increasing) // remove to update the key
+        if (is_increasing)
             increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+
+        // Update the key and other fields
         allocated -= decrease->size;
         allocation.allocated -= decrease->size;
+        allocation.fair_key -= decrease->size;
+
+        // Reinsert into the appropriate data structures
         if (allocation.allocated > 0)
         {
             running_allocations.insert(allocation);
             if (is_increasing)
                 increasing_allocations.insert(allocation);
         }
-        if (is_increasing)
-        {
-            // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-            if (setIncrease())
-                propagate(Update().setIncrease(increase));
-        }
+
+        // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
+        if (is_increasing && setIncrease())
+            propagate(Update().setIncrease(increase));
+
+        // Notify allocation
+        skip_activation = true;
         decrease->allocation.decreaseApproved(*decrease); // NOTE: this may re-enter decreaseAllocation()
+        skip_activation = false;
         decrease = nullptr;
     }
 
@@ -345,7 +365,7 @@ private:
     static bool compareAllocations(const ResourceAllocation & lhs, const ResourceAllocation & rhs) noexcept
     {
         // Note that is called outside of the scheduler thread and thus requires mutex
-        return std::tie(lhs.allocated, lhs.unique_id) < std::tie(rhs.allocated, rhs.unique_id);
+        return std::tie(lhs.fair_key, lhs.unique_id) < std::tie(rhs.fair_key, rhs.unique_id);
     }
 
     /// Hooks for intrusive data structures
@@ -371,6 +391,8 @@ private:
 
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
+
+    bool skip_activation = false; /// Optimization to avoid unnecessary activation
 };
 
 }

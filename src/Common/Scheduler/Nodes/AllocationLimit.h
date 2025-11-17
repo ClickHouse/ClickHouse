@@ -6,6 +6,15 @@
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
 
+#if 0
+#include <iostream>
+#include <base/getThreadId.h>
+#define DBG(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
+#else
+#include <base/defines.h>
+#define DBG(...) UNUSED(__VA_ARGS__)
+#endif
+
 namespace DB
 {
 
@@ -79,6 +88,7 @@ public:
 
     void approveIncrease() override
     {
+        DBG("{} -- approveIncrease()", getPath());
         applyIncrease();
         child->approveIncrease();
         setIncrease(child->increase, false);
@@ -86,9 +96,15 @@ public:
 
     void approveDecrease() override
     {
+        DBG("{} -- approveDecrease()", getPath());
         applyDecrease();
+        IncreaseRequest * old_increase = increase;
         child->approveDecrease();
         setDecrease(child->decrease);
+        // Check if we can now process pending increase request in case it was not changed (e.g. other allocation was decreased here)
+        // NOTE: if increase was changed, it is already propagated in approveDecrease()
+        if (old_increase == increase && setIncrease(child->increase, true))
+            propagate(Update().setIncrease(increase));
     }
 
     ResourceCost getLimit() const
@@ -98,6 +114,7 @@ public:
 
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override
     {
+        DBG("{} -- propagateUpdate({}, {})", getPath(), reinterpret_cast<void*>(&from_child), update.toString());
         chassert(&from_child == child.get());
         bool reapply_constraint = false;
         if (update.attached)
@@ -150,6 +167,7 @@ private:
                         if (!new_increase->pending_allocation // Kill due to running allocation increase
                             || &candidate_to_kill->queue != &new_increase->allocation.queue) // Or kills allocation from a different queue
                         {
+                            DBG("{}: Killing. allocated={}, increase_size={}, max={}, increasing={}, killing={}", getPath(), allocated, new_increase->size, max_allocated, reinterpret_cast<void*>(&new_increase->allocation), reinterpret_cast<void*>(candidate_to_kill));
                             allocation_to_kill = candidate_to_kill;
                             allocation_to_kill->killAllocation(std::make_exception_ptr(
                                 Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
@@ -192,10 +210,6 @@ private:
         // Check if allocation being killed released all its resources
         if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
             allocation_to_kill = nullptr;
-
-        // Check if we can now process pending increase request
-        if (setIncrease(child->increase, true))
-            propagate(Update().setIncrease(increase));
 
         decrease = nullptr;
     }

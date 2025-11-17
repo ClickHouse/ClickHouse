@@ -60,13 +60,10 @@ private:
     boost::intrusive::list_member_hook<> decreasing_hook;
     boost::intrusive::list_member_hook<> removing_hook;
 
-    /// Unique id for tie breaking in ordering.
-    /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
-    size_t unique_id = 0;
-
-    /// Currently allocated.
-    /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
-    ResourceCost allocated = 0;
+    // NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
+    size_t unique_id = 0; /// Unique id for tie breaking in ordering.
+    ResourceCost allocated = 0; /// Currently allocated.
+    ResourceCost fair_key = 0; /// Currently allocated plus pending increase (key for max-min fair ordering).
 };
 
 }
