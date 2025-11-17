@@ -568,7 +568,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         pipeline.narrow(num_streams);
     }
 
-    pipeline.addResources(std::move(resources));
+    pipeline.addResources(resources);
 }
 
 void ReadFromMerge::filterTablesAndCreateChildrenPlans()
