@@ -438,7 +438,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
-            parameter="amd_asan, distributed plan, sequential",
+            parameter="amd_asan, database disk, distributed plan, sequential",
             runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
@@ -709,7 +709,7 @@ class JobConfigs:
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, {batch}/{total_batches}",
+                parameter=f"amd_asan, database disk, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
@@ -720,7 +720,7 @@ class JobConfigs:
     integration_test_jobs_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
+                parameter=f"amd_asan, database disk, old analyzer, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
