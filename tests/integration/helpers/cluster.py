@@ -876,6 +876,8 @@ class ClickHouseCluster:
 
         # available when with_ytsaurus = True
         self._ytsaurus_port = None
+        self._ytsaurus_internal_ports_list = None
+        self.ytsaurus_internal_ports_list_size = 20
 
         # available when with_letsencrypt_pebble = True
         self._letsencrypt_pebble_api_port = 14000
@@ -1011,6 +1013,14 @@ class ClickHouseCluster:
         if not self._letsencrypt_pebble_management_port:
             self._letsencrypt_pebble_management_port = self.port_pool.get_port()
         return self._letsencrypt_pebble_management_port
+
+    @property
+    def ytsaurus_internal_ports_list(self):
+        if not self._ytsaurus_internal_ports_list:
+            self._ytsaurus_internal_ports_list = []
+            for _ in range(self.ytsaurus_internal_ports_list_size):
+                self._ytsaurus_internal_ports_list.append(self.port_pool.get_port())
+        return self._ytsaurus_internal_ports_list
 
     def print_all_docker_pieces(self):
         res_networks = subprocess.check_output(
@@ -1802,6 +1812,9 @@ class ClickHouseCluster:
     def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
         self.with_ytsaurus = True
         env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+        env_variables["YTSAURUS_INTERNAL_PORTS_LIST"] = " ".join(
+            str(port) for port in self.ytsaurus_internal_ports_list
+        )
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
@@ -2740,7 +2753,7 @@ class ClickHouseCluster:
         headers = {
             'Content-Type': 'application/json',
             # The Authorization header for the FIRST user creation must be '_dremionull'
-            'Authorization': '_dremionull' 
+            'Authorization': '_dremionull'
         }
 
         self.dremio26_ip = self.get_instance_ip("dremio26")
