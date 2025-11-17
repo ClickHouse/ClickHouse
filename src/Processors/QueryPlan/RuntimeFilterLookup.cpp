@@ -1,13 +1,9 @@
-#include <Interpreters/BloomFilter.h>
-#include <Interpreters/Set.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
-#include "Common/typeid_cast.h"
+
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
-#include "Columns/IColumn_fwd.h"
-#include "base/defines.h"
+#include <Common/typeid_cast.h>
+#include <Functions/FunctionFactory.h>
 
 namespace DB
 {
@@ -16,18 +12,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-struct DataTypeSingleton
-{
-    static const DataTypePtr UInt8;
-};
-
-const DataTypePtr DataTypeSingleton::UInt8 = std::make_shared<DataTypeUInt8>();
-
 }
 
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)

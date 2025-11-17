@@ -1,18 +1,24 @@
 #pragma once
 
-#include <Interpreters/Set.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/BloomFilter.h>
+#include <Interpreters/Set.h>
+
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
-#include "Columns/IColumn_fwd.h"
-#include "DataTypes/DataTypesNumber.h"
-#include <Functions/FunctionFactory.h>
 #include <cstddef>
 #include <memory>
-#include <mutex>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+
+extern const int LOGICAL_ERROR;
+
+}
 
 class IRuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<IRuntimeFilter>;
@@ -22,11 +28,6 @@ using RuntimeFilterConstPtr = std::shared_ptr<const IRuntimeFilter>;
 class IRuntimeFilter
 {
 public:
-
-    explicit IRuntimeFilter(size_t filters_to_merge_, const DataTypePtr & filter_column_target_type_)
-        : filters_to_merge(filters_to_merge_)
-        , filter_column_target_type(filter_column_target_type_) {}
-
     virtual ~IRuntimeFilter() = default;
 
     virtual void insert(ColumnPtr values) = 0;
@@ -41,6 +42,11 @@ public:
     virtual void merge(const IRuntimeFilter * source) = 0;
 
 protected:
+
+    IRuntimeFilter(size_t filters_to_merge_, const DataTypePtr & filter_column_target_type_)
+        : filters_to_merge(filters_to_merge_)
+        , filter_column_target_type(filter_column_target_type_) {}
+
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
 
