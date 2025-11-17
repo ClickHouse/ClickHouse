@@ -3,9 +3,15 @@
         <default/>
     </profiles>
 
+    <named_collections>
+        <my_static_jwks>
+            <jwks/>
+        </my_static_jwks>
+    </named_collections>
+
     <users>
         <default>
-            <jwks/>
+            <static_jwks>my_static_jwks</static_jwks>
 
             <networks>
                 <ip>::/0</ip>
@@ -16,7 +22,7 @@
         </default>
 
         <user_jwt>
-            <jwks/>
+            <static_jwks>my_static_jwks</static_jwks>
 
             <networks>
                 <ip>::/0</ip>

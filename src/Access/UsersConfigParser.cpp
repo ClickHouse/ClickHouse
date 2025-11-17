@@ -130,7 +130,7 @@ namespace
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
         bool has_kerberos = config.has(user_config + ".kerberos");
-        bool has_jwt = config.has(user_config + ".jwks");
+        bool has_static_jwks = config.has(user_config + ".static_jwks");
 
         const auto certificates_config = user_config + ".ssl_certificates";
         bool has_certificates = config.has(certificates_config);
@@ -142,7 +142,7 @@ namespace
         bool has_http_auth = config.has(http_auth_config);
 
         size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex
-            + has_jwt + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
+            + has_static_jwks + has_ldap + has_kerberos + has_certificates + has_ssh_keys + has_http_auth + has_scram_password_sha256_hex;
 
         if (num_password_fields > 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "More than one field of 'password', 'password_sha256_hex', "
@@ -175,10 +175,19 @@ namespace
             user->authentication_methods.emplace_back(AuthenticationType::DOUBLE_SHA1_PASSWORD);
             user->authentication_methods.back().setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"), validate);
         }
-        else if (has_jwt)
+        else if (has_static_jwks)
         {
+            String static_jwks;
+            const String static_jwks_collection = config.getString(user_config + ".static_jwks");
+            if (!static_jwks_collection.empty()) {
+                auto config_prefix = "named_collections." + static_jwks_collection;
+                static_jwks = config.getString(config_prefix + ".jwks");
+            }
+            if (static_jwks.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "No named collection {} or jwks in it.", static_jwks_collection);
+
             user->authentication_methods.emplace_back(AuthenticationType::JWT);
-            user->authentication_methods.back().setPassword(config.getString(user_config + ".jwks"), false);
+            user->authentication_methods.back().setPassword(static_jwks, false);
         }
         else if (has_ldap)
         {
