@@ -1,0 +1,6 @@
+<clickhouse>
+    <hashicorp_vault>
+      <url>https://hashicorpvault:8220</url>
+      <token>foobar</token>
+    </hashicorp_vault>
+</clickhouse>

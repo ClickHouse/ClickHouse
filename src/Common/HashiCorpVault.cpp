@@ -40,7 +40,7 @@ HashiCorpVault & HashiCorpVault::instance()
 
 void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
-    if (!config.has(prefix + ".ssl"))
+    if (!config.has(prefix + ".ssl") && auth_method == HashiCorpVaultAuthMethod::Cert)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "ssl section is not specified for vault.");
 
     std::string ssl_prefix = prefix + ".ssl.";
@@ -48,12 +48,18 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
     Poco::Net::Context::Params params;
 
     params.privateKeyFile = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_PRIV_KEY_FILE, "");
-    if (params.privateKeyFile.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "privateKeyFile is not specified for vault.");
 
     params.certificateFile = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, "");
-    if (params.certificateFile.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "certificateFile is not specified for vault.");
+
+    // TODO refactor it
+    if (auth_method == HashiCorpVaultAuthMethod::Cert)
+    {
+        if (params.privateKeyFile.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "privateKeyFile is not specified for vault.");
+
+        if (params.certificateFile.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "certificateFile is not specified for vault.");
+    }
 
     std::string caLocation = config.getString(ssl_prefix + "caLocation", "");
     if (!caLocation.empty())
@@ -62,7 +68,12 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
         params.caLocation = caLocation;
     }
     else
-        params.verificationMode = Poco::Net::Context::VERIFY_RELAXED;
+    {
+        if (params.privateKeyFile.empty())
+            params.verificationMode = Poco::Net::Context::VERIFY_NONE;
+        else
+            params.verificationMode = Poco::Net::Context::VERIFY_RELAXED;
+    }
 
     request_context = new Poco::Net::Context(Poco::Net::Context::CLIENT_USE, params);
 }
@@ -114,9 +125,10 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
         else if (config.has(prefix + ".cert"))
         {
             cert_name = config.getString(prefix + ".cert.name", "");
-            if (cert_name.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "name of role is not specified for vault.");
-            initRequestContext(config, prefix);
+
+            // Name of role validation is not required. Because if name of role is not specified then
+            // Vault tries all roles and uses any one that matches.
+
             auth_method = HashiCorpVaultAuthMethod::Cert;
         }
         else
@@ -131,6 +143,9 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
 
             auth_method = HashiCorpVaultAuthMethod::Token;
         }
+
+        if (scheme == "https")
+            initRequestContext(config, prefix);
 
         loaded = true;
     }
@@ -182,9 +197,6 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
     }
 
     std::string value = responseStream.str();
-
-    // TODO remove the logging
-    // LOG_DEBUG(log, "received info: {}", value);
 
     return value;
 }
@@ -291,9 +303,6 @@ String HashiCorpVault::readSecret(const String & secret, const String & key)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Key {} not found in secret {} of vault.", key, secret);
 
         const auto value = kv->get(key).extract<String>();
-
-        // TODO remove the logging
-        // LOG_DEBUG(log, "vault secret value: {}", value);
 
         return value;
     }
