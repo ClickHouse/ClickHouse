@@ -1708,9 +1708,6 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
     if (zk_request.include_stats)
     {
         auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
-        auto it = deltas.end_it;
-        --it;
-        create2response->zstat = std::get<CreateNodeDelta>(it->operation).stat;
         response = create2response;
     }
     else if (zk_request.not_exists)
@@ -1734,8 +1731,10 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
         { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
 
     if (create_delta_it != deltas.end())
+    {
         created_path = create_delta_it->path;
-
+        static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat = std::get<CreateNodeDelta>(create_delta_it->operation).stat;
+    }
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;
