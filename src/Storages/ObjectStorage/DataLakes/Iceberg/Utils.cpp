@@ -1114,9 +1114,9 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
 
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)
 {
-    for (size_t i = 0; i < sort_description.column_names.size(); ++i)
+    for (const auto & column_name_to_sort : sort_description.column_names)
     {
-        auto [iceberg_transform_name, column_name] = parseTransformAndColumn(sort_description.column_names[i]);
+        auto [iceberg_transform_name, column_name] = parseTransformAndColumn(column_name_to_sort);
         auto clickhouse_function_info = parseTransformAndArgument(iceberg_transform_name);
         auto function = FunctionFactory::instance().get(clickhouse_function_info->transform_name, context);
         ColumnsWithTypeAndName arguments;
@@ -1124,7 +1124,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
         {
             Field const_value_arg(*clickhouse_function_info->argument);
             auto column_arg = DataTypeUInt64().createColumnConst(block.rows(), const_value_arg);
-            ColumnWithTypeAndName result_column_with_type_and_name(column_arg, std::make_shared<DataTypeUInt64>(), sort_description.column_names[i]);
+            ColumnWithTypeAndName result_column_with_type_and_name(column_arg, std::make_shared<DataTypeUInt64>(), column_name_to_sort);
             arguments.push_back(result_column_with_type_and_name);
         }
         arguments.push_back(block.getByName(column_name));
@@ -1133,7 +1133,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
         auto result_column = executable_function->execute(arguments, result_type, block.rows(), false);
 
         ColumnsWithTypeAndName new_columns = block.getColumnsWithTypeAndName();
-        new_columns.push_back(ColumnWithTypeAndName(result_column, result_type, sort_description.column_names[i]));
+        new_columns.push_back(ColumnWithTypeAndName(result_column, result_type, column_name_to_sort));
         block = Block(new_columns);
     }
 
