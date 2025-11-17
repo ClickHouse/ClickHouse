@@ -19,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
 #include <Common/DNSResolver.h>
+#include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
 
@@ -281,24 +282,30 @@ ObjectStorageQueueMetadata::tryAcquireBucket(const Bucket & bucket)
 
 void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, const ContextPtr & context)
 {
+    bool is_initial_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY ||
+                            (context->getZooKeeperMetadataTransaction() && context->getZooKeeperMetadataTransaction()->isInitialQuery());
+
     const fs::path alter_settings_lock_path = zookeeper_path / "alter_settings_lock";
     zkutil::EphemeralNodeHolder::Ptr alter_settings_lock;
     auto zookeeper = getZooKeeper(log);
 
-    /// We will retry taking alter_settings_lock for the duration of 5 seconds.
-    /// Do we need to add a setting for this?
-    const size_t num_tries = 100;
-    for (size_t i = 0; i < num_tries; ++i)
+    if (is_initial_query)
     {
-        alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
+        /// We will retry taking alter_settings_lock for the duration of 5 seconds.
+        /// Do we need to add a setting for this?
+        const size_t num_tries = 100;
+        for (size_t i = 0; i < num_tries; ++i)
+        {
+            alter_settings_lock = zkutil::EphemeralNodeHolder::tryCreate(alter_settings_lock_path, *zookeeper->getKeeper(), toString(getCurrentTime()));
 
-        if (alter_settings_lock)
-            break;
+            if (alter_settings_lock)
+                break;
 
-        if (i == num_tries - 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
+            if (i == num_tries - 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to take alter setting lock");
 
-        sleepForMilliseconds(50);
+            sleepForMilliseconds(50);
+        }
     }
 
     Coordination::Stat stat;
@@ -413,7 +420,8 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
     /// Here we intentionally do not add zk retries,
     /// because we modify metadata under ephemeral metadata lock,
     /// so we do not want to retry if it expires.
-    zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
+    if (is_initial_query)
+        zookeeper->set(table_metadata_path, new_metadata_str, stat.version);
 
     table_metadata.syncChangeableSettings(new_table_metadata);
 }

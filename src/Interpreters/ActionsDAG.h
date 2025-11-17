@@ -45,6 +45,13 @@ class SortDescription;
 struct SerializedSetsRegistry;
 struct DeserializedSetsRegistry;
 
+struct PartialEvaluationParameters
+{
+    bool throw_on_error = false;
+    bool skip_materialize = false;
+    bool allow_unknown_function_arguments = false;
+};
+
 /// Directed acyclic graph of expressions.
 /// This is an intermediate representation of actions which is usually built from expression list AST.
 /// Node of DAG describe calculation of a single column with known type, name, and constant value (if applicable).
@@ -164,7 +171,7 @@ public:
         const FunctionBasePtr & function_base,
         NodeRawConstPtrs children,
         std::string result_name);
-    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name);
+    const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
     const Node & addPlaceholder(std::string name, DataTypePtr type);
 
     /// Find first column by name in output nodes. This search is linear.
@@ -291,6 +298,11 @@ public:
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, bool remove_aliases);
     static ActionsDAG cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping & copy_map, bool remove_aliases);
 
+    /// Clone the DAG, retaining only the subgraph computable from the specified available input columns.
+    /// Special handling for logical AND: non-computable children are replaced with constant true.
+    /// Useful for evaluating boolean filters in projection indices when some input columns are missing.
+    ActionsDAG restrictFilterDAGToInputs(const ActionsDAG::Node * filter_node, const NameSet & available_inputs) const;
+
     /// Execute actions for header. Input block must have empty columns.
     /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
@@ -304,8 +316,7 @@ public:
         IntermediateExecutionResult & node_to_column,
         const NodeRawConstPtrs & outputs,
         size_t input_rows_count,
-        bool throw_on_error,
-        bool skip_materialize = false
+        PartialEvaluationParameters params = {}
     );
 
     /// Replace all PLACEHOLDER nodes with INPUT nodes
@@ -335,6 +346,7 @@ public:
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
         MatchColumnsMode mode,
+        ContextPtr context,
         bool ignore_constant_values = false,
         bool add_cast_columns = false,
         NameToNameMap * new_names = nullptr);

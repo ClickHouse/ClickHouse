@@ -57,8 +57,6 @@ public:
 
     static void wait(const String & fail_point_name);
 
-    static void enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config);
-
 private:
     static std::mutex mu;
     static std::unordered_map<String, std::shared_ptr<FailPointChannel>> fail_point_wait_channels;

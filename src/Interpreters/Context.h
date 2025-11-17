@@ -19,7 +19,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -102,6 +101,8 @@ class UncompressedCache;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
 class TextIndexDictionaryBlockCache;
+class TextIndexHeaderCache;
+class TextIndexPostingsCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -125,6 +126,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
 class SessionLog;
@@ -345,6 +347,9 @@ protected:
 
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
+
+    using InteractiveCancelCallback = std::function<bool()>;
+    InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -651,6 +656,7 @@ public:
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
+
     ~Context();
 
     String getPath() const;
@@ -758,8 +764,8 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password!
+    /// Sets the current user, assuming they are already authenticated.
+    /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
@@ -805,6 +811,7 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
@@ -1166,6 +1173,9 @@ public:
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
+    void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
+    InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1280,6 +1290,16 @@ public:
     void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
     void clearTextIndexDictionaryBlockCache() const;
+
+    void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexHeaderCache> getTextIndexHeaderCache() const;
+    void clearTextIndexHeaderCache() const;
+
+    void setTextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexPostingsCache> getTextIndexPostingsCache() const;
+    void clearTextIndexPostingsCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
