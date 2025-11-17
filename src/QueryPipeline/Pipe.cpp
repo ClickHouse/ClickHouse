@@ -168,9 +168,6 @@ Pipe::Pipe(ProcessorPtr source)
 {
     checkSource(*source);
 
-    if (collected_processors)
-        collected_processors->emplace_back(source);
-
     output_ports.push_back(&source->getOutputs().front());
     header = output_ports.front()->getSharedHeader();
     processors->emplace_back(std::move(source));
@@ -233,6 +230,29 @@ Pipe::Pipe(std::shared_ptr<Processors> processors_) : processors(std::move(proce
     if (collected_processors)
         for (const auto & processor : *processors)
             collected_processors->emplace_back(processor);
+}
+
+Pipe Pipe::clone() const
+{
+    Pipe res;
+
+    if (totals_port != nullptr || extremes_port != nullptr)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot clone Pipe with totals or extremes");
+
+    res.header = header;
+    res.max_parallel_streams = max_parallel_streams;
+
+    res.output_ports.reserve(output_ports.size());
+    res.processors = std::make_shared<Processors>();
+    for (const auto & processor : *processors)
+    {
+        auto cloned_processor = processor->clone();
+        res.processors->emplace_back(cloned_processor);
+        for (auto & port : cloned_processor->getOutputs())
+            res.output_ports.push_back(&port);
+    }
+
+    return res;
 }
 
 static Pipes removeEmptyPipes(Pipes pipes)
