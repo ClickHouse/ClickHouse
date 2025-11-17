@@ -6577,7 +6577,7 @@ a   Tuple(
 )
 ```
 )", 0) \
-    DECLARE(Bool, create_table_empty_primary_key_by_default, false, R"(
+    DECLARE(Bool, create_table_empty_primary_key_by_default, true, R"(
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 )", 0) \
     DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
