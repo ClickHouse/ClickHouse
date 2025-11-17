@@ -15,7 +15,6 @@ from ci.praktika.utils import Shell, Utils
 IMAGE_NAME = "clickhouse/fuzzer"
 
 cwd = Utils.cwd()
-temp_dir = Path(f"{cwd}/ci/tmp/")
 
 
 def get_run_command(
@@ -47,9 +46,33 @@ def get_run_command(
     )
 
 
-def finalize_job(
-    workspace_path: Path, temp_dir: Path, result: Result, try_reproduce: bool = True
-):
+def run_fuzz_job():
+    logging.basicConfig(level=logging.INFO)
+
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+
+    temp_dir = Path(f"{cwd}/ci/tmp/")
+    assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
+
+    docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
+
+    workspace_path = temp_dir / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+
+    run_command = get_run_command(workspace_path, docker_image, check_name)
+    logging.info("Going to run %s", run_command)
+
+    info = Info()
+
+    with open(workspace_path / "ci-changed-files.txt", "w") as f:
+        f.write("\n".join(info.get_changed_files()))
+
+    Shell.check(command=run_command, verbose=True)
+    result = Result.from_fs(name=info.job_name)
+    result.status = Result.Status.SUCCESS
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_dir}", shell=True)
 
     fuzzer_log = workspace_path / "fuzzer.log"
@@ -119,19 +142,18 @@ def finalize_job(
                 info += "Stack trace:\n" + stack_trace + "\n"
 
         info += "---\n\n"
-        if try_reproduce:
-            try:
-                fuzzer_test_generator = FuzzerTestGenerator(
-                    str(server_log), str(fuzzer_log)
+        try:
+            fuzzer_test_generator = FuzzerTestGenerator(
+                str(server_log), str(fuzzer_log)
+            )
+            reproduce_commands = fuzzer_test_generator.get_reproduce_commands()
+            if reproduce_commands:
+                info += (
+                    "Reproduce commands (auto-generated; may require manual adjustment). If you encounter issues, please contact the ci-team:\n"
+                    + "\n".join(reproduce_commands)
                 )
-                reproduce_commands = fuzzer_test_generator.get_reproduce_commands()
-                if reproduce_commands:
-                    info += (
-                        "Reproduce commands (auto-generated; may require manual adjustment). If you encounter issues, please contact the ci-team:\n"
-                        + "\n".join(reproduce_commands)
-                    )
-            except Exception as e:
-                info += "Failed to generate reproduce commands: " + str(e)
+        except Exception as e:
+            info += "Failed to generate reproduce commands: " + str(e)
 
         if result.results:
             result.results[-1].info = info
@@ -158,35 +180,5 @@ def finalize_job(
     result.complete_job()
 
 
-def main():
-    logging.basicConfig(level=logging.INFO)
-
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
-
-    assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
-
-    docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
-
-    workspace_path = temp_dir / "workspace"
-    workspace_path.mkdir(parents=True, exist_ok=True)
-
-    run_command = get_run_command(workspace_path, docker_image, check_name)
-    logging.info("Going to run %s", run_command)
-
-    info = Info()
-
-    with open(workspace_path / "ci-changed-files.txt", "w") as f:
-        f.write("\n".join(info.get_changed_files()))
-
-    Shell.check(command=run_command, verbose=True)
-    result = Result.from_fs(name=info.job_name)
-    result.status = Result.Status.SUCCESS
-
-    finalize_job(workspace_path, temp_dir, result)
-
-
 if __name__ == "__main__":
-    main()
+    run_fuzz_job()
