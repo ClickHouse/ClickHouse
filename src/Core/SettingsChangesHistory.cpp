@@ -58,6 +58,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
             {"serialize_string_in_memory_with_zero_byte", true, true, "New setting"},
             {"optimize_inverse_dictionary_lookup", false, true, "New setting"},
+            {"distributed_shard_retry_count", 0, 0, "New setting. The maximum number of times to retry a distributed query on different replicas within a shard when receiving a retryable error."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -124,6 +125,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"distributed_cache_receive_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_send_timeout_ms", 3000, 3000, "New setting"},
             {"distributed_cache_tcp_keep_alive_timeout_ms", 2900, 2900, "New setting"},
+            {"distributed_shard_retry_count", 0, 1, "New setting to enable retries in distributed queries on different replicas when encountering retryable errors."},
         });
         addSettingsChanges(settings_changes_history, "25.9",
         {
