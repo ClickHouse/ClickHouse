@@ -5120,7 +5120,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
 
@@ -6577,7 +6577,7 @@ a   Tuple(
 )
 ```
 )", 0) \
-    DECLARE(Bool, create_table_empty_primary_key_by_default, false, R"(
+    DECLARE(Bool, create_table_empty_primary_key_by_default, true, R"(
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 )", 0) \
     DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
@@ -7053,6 +7053,11 @@ Linux nice value for materialized view threads. Lower values mean higher CPU pri
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Bool, show_processlist_include_internal, 1, R"(
+Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
+
+Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
     )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.

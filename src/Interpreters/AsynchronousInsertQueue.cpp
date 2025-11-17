@@ -909,7 +909,7 @@ try
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
-    bool internal = false; // To enable logging this query
+    bool internal = true;
     bool async_insert = true;
 
     /// Disabled query spans. Could be activated by initializing this to a SpanHolder
@@ -958,7 +958,8 @@ try
         normalized_query_hash,
         key.query.get(),
         insert_context,
-        start_watch.getStart());
+        start_watch.getStart(),
+        internal);
 
     auto query_status = process_list_entry->getQueryStatus();
     insert_context->setProcessListElement(std::move(query_status));
@@ -1060,7 +1061,7 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
 
         if (async_insert_log)
         {
