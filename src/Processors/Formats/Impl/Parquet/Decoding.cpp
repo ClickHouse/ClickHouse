@@ -745,7 +745,7 @@ struct ByteStreamSplitDecoder : public PageDecoder
 
 bool PageDecoderInfo::canReadDirectlyIntoColumn(parq::Encoding::type encoding, size_t num_values, IColumn & col, std::span<char> & out) const
 {
-    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && fixed_size_converter->isTrivial())
+    if (encoding == parq::Encoding::PLAIN && fixed_size_converter && physical_type != parq::Type::BOOLEAN && fixed_size_converter->isTrivial())
     {
         chassert(col.sizeOfValueIfFixed() == fixed_size_converter->input_size);
         out = col.insertRawUninitialized(num_values);
@@ -1003,7 +1003,7 @@ void Dictionary::index(const ColumnUInt32 & indexes_col, IColumn & out)
             c.reserve(c.size() + indexes.size());
             for (UInt32 idx : indexes)
             {
-                size_t start = offsets[size_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
+                size_t start = offsets[ssize_t(idx) - 1] + 4; // offsets[-1] is ok because of padding
                 size_t len = offsets[idx] - start;
                 /// TODO [parquet]: Try optimizing short memcpy by taking advantage of padding (maybe memcpySmall.h helps). Also in PlainStringDecoder.
                 c.insertData(data.data() + start, len);
@@ -1221,7 +1221,7 @@ void TrivialStringConverter::convertColumn(std::span<const char> chars, const UI
     {
         col_str.getChars().reserve(col_str.getChars().size() + (offsets[num_values - 1] - offsets[-1]) - separator_bytes * num_values);
         for (size_t i = 0; i < num_values; ++i)
-            col_str.insertData(chars.data() + offsets[i - 1], offsets[i] - offsets[i - 1] - separator_bytes);
+            col_str.insertData(chars.data() + offsets[ssize_t(i) - 1], offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes);
     }
 }
 
@@ -1347,8 +1347,8 @@ void BigEndianDecimalStringConverter<T>::convertColumn(std::span<const char> cha
 
     for (size_t i = 0; i < num_values; ++i)
     {
-        const char * data = chars.data() + offsets[i - 1];
-        size_t size = offsets[i] - offsets[i - 1] - separator_bytes;
+        const char * data = chars.data() + offsets[ssize_t(i) - 1];
+        size_t size = offsets[i] - offsets[ssize_t(i) - 1] - separator_bytes;
         if (size > sizeof(T))
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Unexpectedly wide Decimal value: {} > {} bytes", size, sizeof(T));
 
@@ -1419,7 +1419,7 @@ void GeoConverter::convertColumn(std::span<const char> chars, const UInt64 * off
 {
     col.reserve(col.size() + num_values);
     chassert(chars.size() >= offsets[num_values - 1]);
-    for (size_t i = 0; i < num_values; ++i)
+    for (ssize_t i = 0; i < ssize_t(num_values); ++i)
     {
         char * ptr = const_cast<char*>(chars.data() + offsets[i - 1]);
         size_t length = offsets[i] - offsets[i - 1] - separator_bytes;

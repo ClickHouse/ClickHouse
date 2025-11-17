@@ -227,6 +227,8 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
+The query processes parts in parallel, the number of threads is regulated by the `max_threads` setting.
+
 For more information about backups and restoring data, see the [Data Backup](/operations/backup.md) section.
 
 ## UNFREEZE PARTITION {#unfreeze-partition}

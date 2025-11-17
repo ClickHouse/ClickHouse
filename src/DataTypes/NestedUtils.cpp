@@ -48,11 +48,8 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
   */
 std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
 {
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
+    auto res = splitName(std::string_view(name), reverse);
+    return {std::string(res.first), std::string(res.second)};
 }
 
 std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse)
@@ -107,7 +104,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 
                     res.insert(ColumnWithTypeAndName(
                         is_const
-                            ? ColumnConst::create(std::move(column_array_of_element), block.rows())
+                            ? ColumnConst::create(column_array_of_element, block.rows())
                             : column_array_of_element,
                         std::make_shared<DataTypeArray>(element_types[i]),
                         nested_name));
@@ -366,4 +363,42 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
     nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
     return extractColumn(original_column_name, new_column_name_prefix, nested_names.second);
 }
+
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
+{
+    auto it = tuple_elements.begin();
+    while (true)
+    {
+        if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            type = type_array->getNestedType();
+        }
+        else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+        {
+            if (it == tuple_elements.end())
+                break;
+
+            auto pos = type_tuple->tryGetPositionByName(*it);
+            if (!pos)
+                break;
+
+            ++it;
+            type = type_tuple->getElement(*pos);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    return type;
+}
+
+DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions)
+{
+    for (size_t i = 0; i < num_dimensions; ++i)
+        type = std::make_shared<DataTypeArray>(std::move(type));
+    return type;
+}
+
 }

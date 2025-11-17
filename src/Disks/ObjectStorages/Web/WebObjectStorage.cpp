@@ -277,12 +277,12 @@ void WebObjectStorage::startup()
 {
 }
 
-ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */) const
+ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }
 
-std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & /* path */) const
+std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const std::string & /* path */, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Metadata is not supported for {}", getName());
 }

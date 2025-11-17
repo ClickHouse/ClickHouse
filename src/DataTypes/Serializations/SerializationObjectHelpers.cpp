@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnObject.h>
 #include <Common/SipHash.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB

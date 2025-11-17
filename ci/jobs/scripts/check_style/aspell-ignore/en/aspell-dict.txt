@@ -1,4 +1,5 @@
 personal_ws-1.1 en 3452
+aarch
 AArch
 ACLs
 ALTERs
@@ -205,6 +206,24 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+conversio
+convertCharset
+cooldown
+coroutines
+corrmatrix
+corrMatrix
+corrstable
+corrStable
+cors
+CORS
+cosineDistance
+countDigits
+countDistinctIf
+countEqual
+counterintuitively
+countIf
+countMatches
+countMatchesCaseInsensitive
 CountMin
 Covid
 Cramer
@@ -310,6 +329,7 @@ Eoan
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -467,6 +487,38 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
+intExp
+intHash
+IntN
+invalidCertificateHandler
+invariants
+invertedindexes
+INVOKER
+IOPrefetchThreads
+IOPrefetchThreadsActive
+IOThreads
+IOThreadsActive
+IOUringInFlightEvents
+IOUringPendingEvents
+IOWriterThreads
+IOWriterThreadsActive
+IProcessor
+IPTrie
+IPv
+irate
+isAdjustedToUTC
+isConstant
+isDecimalOverflow
+isFinite
+isInfinite
+isIPAddressInRange
+isIPv
+isMergeTreePartCoveredBy
+isNaN
+isNotDistinctFrom
+isNotNull
+isNull
+isNullable
 IsPentagon
 IsResClassIII
 IsValid
@@ -519,6 +571,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -812,6 +865,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -868,6 +922,7 @@ Poess
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostLinks
@@ -948,6 +1003,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1346,6 +1402,8 @@ argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1433,6 +1491,7 @@ atanh
 atomicity
 auth
 authType
+authenticatedUser
 authenticator
 authenticators
 autocompletion
@@ -1696,6 +1755,7 @@ csv
 csvwithnames
 csvwithnamesandtypes
 ctukey
+cume
 curdate
 currentDatabase
 currentProfiles
@@ -1932,6 +1992,8 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+Flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2449,6 +2511,7 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
 multiquery
 multiread
 multisearchany
@@ -2470,6 +2533,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -3076,6 +3142,7 @@ subqueries
 subquery
 subranges
 subreddits
+subsecond
 subseconds
 subsequence
 substream
@@ -3305,6 +3372,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight

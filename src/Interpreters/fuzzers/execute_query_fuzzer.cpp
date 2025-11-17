@@ -68,14 +68,27 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 
         std::string input = std::string(reinterpret_cast<const char*>(data), size);
 
-        auto io = DB::executeQuery(input, context, QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
+        auto query_context = Context::createCopy(context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId({});
+
+        std::unique_ptr<CurrentThread::QueryScope> query_scope;
+        if (!CurrentThread::getGroup())
+        {
+            query_scope = std::make_unique<CurrentThread::QueryScope>(query_context);
+        }
+
+        auto io = DB::executeQuery(input, std::move(query_context), QueryFlags{ .internal = true }, QueryProcessingStage::Complete).second;
 
         /// Execute only SELECTs
         if (io.pipeline.pulling())
         {
-            PullingPipelineExecutor executor(io.pipeline);
-            Block res;
-            while (res.empty() && executor.pull(res));
+            io.executeWithCallbacks([&]()
+            {
+                PullingPipelineExecutor executor(io.pipeline);
+                Block res;
+                while (res.empty() && executor.pull(res));
+            });
         }
         /// We don't want to execute it and thus need to finish it properly.
         else
