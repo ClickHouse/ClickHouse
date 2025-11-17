@@ -437,7 +437,8 @@ CREATE TABLE system.mutations
     `latest_failed_part` String,
     `latest_fail_time` DateTime,
     `latest_fail_reason` String,
-    `latest_fail_error_code_name` String
+    `latest_fail_error_code_name` String,
+    `parts_in_progress_names` Array(String)
 )
 ENGINE = SystemMutations
 COMMENT 'Contains a list of mutations and their progress. Each mutation command is represented by a single row.'
