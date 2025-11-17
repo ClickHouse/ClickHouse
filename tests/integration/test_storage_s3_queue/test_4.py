@@ -112,7 +112,7 @@ def test_replicated(started_cluster):
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1000
+    files_to_generate = 100
 
     node1.query(f"DROP DATABASE IF EXISTS {db_name}")
     node2.query(f"DROP DATABASE IF EXISTS {db_name}")

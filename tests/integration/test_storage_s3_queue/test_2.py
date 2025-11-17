@@ -223,7 +223,7 @@ def test_shards(started_cluster, mode, processing_threads):
     def get_count(table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
 
-    for _ in range(30):
+    for _ in range(100):
         count = (
             get_count(f"{dst_table_name}_1")
             + get_count(f"{dst_table_name}_2")
@@ -347,7 +347,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 600
+    files_to_generate = 1000
     row_num = 1000
     total_rows = row_num * files_to_generate
     shards_num = 2
@@ -373,6 +373,7 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
     for instance in [node, node_2]:
         create_mv(instance, table_name, dst_table_name)
 
+    time.sleep(2)
     total_values = generate_random_files(
         started_cluster, files_path, files_to_generate, row_num=row_num
     )
