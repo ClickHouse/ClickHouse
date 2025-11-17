@@ -272,6 +272,13 @@ void executeString(
     const ITokenExtractor * token_extractor,
     const TokensWithPosition & tokens)
 {
+    if (tokens.empty())
+    {
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_rows_count, UInt8(0));
+        return;
+    }
+
     col_result.resize(input_rows_count);
 
     if constexpr (HasTokensTraits::mode == HasAnyAllTokensMode::Any)
@@ -292,6 +299,13 @@ void executeArray(
 {
     const auto & offsets = array->getOffsets();
     const size_t input_size = offsets.size();
+
+    if (tokens.empty())
+    {
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_size, UInt8(0));
+        return;
+    }
 
     col_result.resize(input_size);
 
