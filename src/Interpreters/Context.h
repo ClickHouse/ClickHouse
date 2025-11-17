@@ -19,7 +19,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -127,6 +126,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
 class SessionLog;
@@ -655,6 +655,7 @@ public:
     static ContextMutablePtr createCopy(const ContextMutablePtr & other);
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
+
 
     ~Context();
 

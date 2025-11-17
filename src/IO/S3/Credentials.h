@@ -25,6 +25,7 @@
 #    include <IO/S3/PocoHTTPClient.h>
 #    include <IO/S3Defines.h>
 
+class SipHash;
 namespace DB::S3
 {
 
@@ -34,6 +35,8 @@ static inline constexpr char GCP_METADATA_SERVICE_ENDPOINT[] = "http://metadata.
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
 std::string getRunningAvailabilityZone();
 std::string tryGetRunningAvailabilityZone();
+
+void setCredentialsProviderCacheMaxSize(size_t cache_size);
 
 class AWSEC2MetadataClient : public Aws::Internal::AWSHttpResourceClient
 {
@@ -122,24 +125,40 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
     /// See STSAssumeRoleWebIdentityCredentialsProvider.
 
 public:
+    static std::shared_ptr<Aws::Auth::AWSCredentialsProvider>
+    create(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_ = "");
+
     explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(
-        DB::S3::PocoHTTPClientConfiguration & aws_client_configuration, uint64_t expiration_window_seconds_, String role_arn_ = "");
+        DB::S3::PocoHTTPClientConfiguration & aws_client_configuration,
+        uint64_t expiration_window_seconds_,
+        Aws::String role_arn_,
+        Aws::String token_file_,
+        Aws::String session_name_,
+        String tmp_region);
 
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
+    struct CacheKey
+    {
+        Aws::String role_arn;
+        Aws::String token_file;
+        Aws::String session_name;
+
+        bool operator==(const CacheKey & rhs) const = default;
+
+        void updateHash(SipHash & hash) const;
+    };
 
 protected:
     void Reload() override;
 
 private:
-    void refreshIfExpired();
-
     std::unique_ptr<Aws::Internal::STSCredentialsClient> client;
     Aws::Auth::AWSCredentials credentials;
     Aws::String role_arn;
     Aws::String token_file;
     Aws::String session_name;
     Aws::String token;
-    bool initialized = false;
     LoggerPtr logger;
     uint64_t expiration_window_seconds;
 };
@@ -249,6 +268,9 @@ public:
         const std::string & sts_endpoint_override = "");
 
     AssumeRoleOutcome assumeRole(const AssumeRoleRequest & request) const;
+
+    const auto & getEndpoint() const { return endpoint; }
+
 private:
     Aws::Endpoint::AWSEndpoint endpoint;
 };
@@ -256,7 +278,7 @@ private:
 class AwsAuthSTSAssumeRoleCredentialsProvider : public Aws::Auth::AWSCredentialsProvider
 {
 public:
-    AwsAuthSTSAssumeRoleCredentialsProvider(
+    static std::shared_ptr<Aws::Auth::AWSCredentialsProvider> create(
             std::string role_arn_,
             std::string session_name_,
             uint64_t expiration_window_seconds_,
@@ -264,13 +286,29 @@ public:
             DB::S3::PocoHTTPClientConfiguration & client_configuration,
             const std::string & sts_endpoint_override = "");
 
+    AwsAuthSTSAssumeRoleCredentialsProvider(
+            std::string role_arn_,
+            std::string session_name_,
+            uint64_t expiration_window_seconds_,
+            std::shared_ptr<AWSAssumeRoleClient> client_);
+
     Aws::Auth::AWSCredentials GetAWSCredentials() override;
+
+    struct CacheKey
+    {
+        std::string role_arn;
+        std::string session_name;
+        std::string endpoint;
+        Aws::Auth::AWSCredentials credentials;
+
+        bool operator==(const CacheKey & rhs) const = default;
+
+        void updateHash(SipHash & hash) const;
+    };
 
 protected:
     void Reload() override;
 private:
-    void refreshIfExpired();
-
     std::string role_arn;
     std::string session_name;
     uint64_t expiration_window_seconds;

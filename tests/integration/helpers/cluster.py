@@ -627,6 +627,7 @@ class ClickHouseCluster:
         self.with_mysql57 = False
         self.with_mysql8 = False
         self.with_mysql_cluster = False
+        self.with_dremio26 = False
         self.with_postgres = False
         self.with_postgres_cluster = False
         self.with_postgresql_java_client = False
@@ -825,6 +826,14 @@ class ClickHouseCluster:
         self.mysql4_ip = None
         self.mysql_cluster_dir = p.abspath(p.join(self.instances_dir, "mysql"))
         self.mysql_cluster_logs_dir = os.path.join(self.mysql8_dir, "logs")
+
+        # available when with_dremio26 == True
+        self.dremio26_host = "dremio26"
+        self.dremio26_port = 32010
+        self.dremio26_rest_port = 9047
+        self.dremio26_ip = None
+        self.dremio26_dir = p.abspath(p.join(self.instances_dir, "dremio26"))
+        self.dremio26_logs_dir = os.path.join(self.dremio26_dir, "logs")
 
         # available when with_zookeper_secure == True
         self.zookeeper_secure_port = 2281
@@ -1330,6 +1339,28 @@ class ClickHouseCluster:
         )
 
         return self.base_mysql_cluster_cmd
+
+    def setup_dremio26_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_dremio26 = True
+        env_variables["DREMIO26_HOST"] = self.dremio26_host
+        env_variables["DREMIO26_PORT"] = str(self.dremio26_port)
+        env_variables["DREMIO26_REST_PORT"] = str(self.dremio26_rest_port)
+        env_variables["DREMIO26_ROOT_HOST"] = "%"
+        env_variables["DREMIO26_LOGS"] = self.dremio26_logs_dir
+        env_variables["DREMIO26_LOGS_FS"] = "bind"
+        env_variables["DREMIO26_DOCKER_USER"] = str(os.getuid())
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml")]
+        )
+        self.base_dremio26_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_dremio_26_0.yml"),
+        )
+
+        return self.base_dremio26_cmd
 
     def setup_postgres_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.base_cmd.extend(
@@ -1859,6 +1890,7 @@ class ClickHouseCluster:
         with_mysql57=False,
         with_mysql8=False,
         with_mysql_cluster=False,
+        with_dremio26=False,
         with_kafka=False,
         with_kafka_sasl=False,
         with_kerberized_kafka=False,
@@ -2014,6 +2046,7 @@ class ClickHouseCluster:
             with_mysql57=with_mysql57,
             with_mysql8=with_mysql8,
             with_mysql_cluster=with_mysql_cluster,
+            with_dremio26=with_dremio26,
             with_kafka=with_kafka,
             with_kafka_sasl=with_kafka_sasl,
             with_kerberized_kafka=with_kerberized_kafka,
@@ -2130,6 +2163,11 @@ class ClickHouseCluster:
                 self.setup_mysql_cluster_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
+            )
+
+        if with_dremio26 and not self.with_dremio26:
+            cmds.append(
+                self.setup_dremio26_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if with_postgres and not self.with_postgres:
@@ -2707,6 +2745,39 @@ class ClickHouseCluster:
         run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
+
+    def wait_dremio26_to_start(self, timeout=180):
+        # Data payload for the request
+        user_data = {
+            "userName": dremio_user,
+            "firstName": "FirstName",
+            "lastName": "LastName",
+            "email": "dremio@localhost",
+            "password": dremio_pass
+        }
+
+        headers = {
+            'Content-Type': 'application/json',
+            # The Authorization header for the FIRST user creation must be '_dremionull'
+            'Authorization': '_dremionull' 
+        }
+
+        self.dremio26_ip = self.get_instance_ip("dremio26")
+        start = time.time()
+
+        while time.time() - start < timeout:
+            try:
+                response = requests.put(f"http://{self.dremio26_ip}:{self.dremio26_rest_port}/apiv2/bootstrap/firstuser", headers=headers, data=json.dumps(user_data), timeout=10)
+                if response.status_code == 200:
+                    logging.debug("Dremio 26 Started")
+                    return
+                raise Exception(f"Failed to create user for Dremio 26 (Status Code: {response.status_code}): {response.text}")
+            except Exception as ex:
+                logging.debug("Can't connect to Dremio 26 " + str(ex))
+                time.sleep(0.5)
+
+        run_and_check(["docker", "ps", "--all"])
+        raise Exception("Cannot wait Dremio 26 container")
 
     def wait_ytsaurus_to_start(self):
         self.wait_for_url(
@@ -3441,6 +3512,15 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
+            if self.with_dremio26 and self.base_dremio26_cmd:
+                logging.debug("Setup Dremio 26")
+                if os.path.exists(self.dremio26_dir):
+                    shutil.rmtree(self.dremio26_dir, ignore_errors=True)
+                os.makedirs(self.dremio26_logs_dir, exist_ok=True)
+                os.chmod(self.dremio26_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
+                subprocess_check_call(self.base_dremio26_cmd + common_opts)
+                self.wait_dremio26_to_start()
+
             if self.with_postgres and self.base_postgres_cmd:
                 logging.debug("Setup Postgres")
                 if os.path.exists(self.postgres_dir):
@@ -4067,6 +4147,7 @@ class ClickHouseInstance:
         with_mysql57,
         with_mysql8,
         with_mysql_cluster,
+        with_dremio26,
         with_kafka,
         with_kafka_sasl,
         with_kerberized_kafka,
@@ -4170,6 +4251,7 @@ class ClickHouseInstance:
         self.with_mysql57 = with_mysql57
         self.with_mysql8 = with_mysql8
         self.with_mysql_cluster = with_mysql_cluster
+        self.with_dremio26 = with_dremio26
         self.with_postgres = with_postgres
         self.with_postgres_cluster = with_postgres_cluster
         self.with_postgresql_java_client = with_postgresql_java_client
@@ -5481,6 +5563,9 @@ class ClickHouseInstance:
             depends_on.append("mysql2")
             depends_on.append("mysql3")
             depends_on.append("mysql4")
+
+        if self.with_dremio26:
+            depends_on.append("dremio26")
 
         if self.with_postgres_cluster:
             depends_on.append("postgres2")
