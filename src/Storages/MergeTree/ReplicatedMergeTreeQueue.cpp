@@ -409,7 +409,8 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         addPartToMutations(virtual_part_name, part_info);
     }
 
-    if (entry->type == LogEntry::MUTATE_PART) {
+    if (entry->type == LogEntry::MUTATE_PART)
+    {
         auto source_part_name = entry->source_parts.at(0);
         auto part_info = MergeTreePartInfo::fromPartName(source_part_name, format_version);
         auto new_part_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);
@@ -559,7 +560,8 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             alter_sequence.finishMetadataAlter(entry->alter_version, state_lock);
         }
 
-        if (entry->type == LogEntry::MUTATE_PART) {
+        if (entry->type == LogEntry::MUTATE_PART)
+        {
             auto source_part_name = entry->source_parts.at(0);
             auto part_info = MergeTreePartInfo::fromPartName(source_part_name, format_version);
             auto new_part_info = MergeTreePartInfo::fromPartName(entry->new_part_name, format_version);

@@ -992,10 +992,10 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
         std::map<String, Int64> block_numbers_map({{"", entry.block_number}});
 
         Names parts_in_progress_names;
-        for (const auto &[part, future_version] : currently_mutating_part_future_versions) {
-            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version) {
+        for (const auto &[part, future_version] : currently_mutating_part_future_versions)
+        {
+            if (part->info.getDataVersion() < mutation_version && future_version >= mutation_version)
                 parts_in_progress_names.push_back(part->name);
-            }
         }
 
         for (const MutationCommand & command : *entry.commands)
