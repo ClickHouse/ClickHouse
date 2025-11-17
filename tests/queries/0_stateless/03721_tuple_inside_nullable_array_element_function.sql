@@ -151,7 +151,7 @@ FROM
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
 SELECT
@@ -186,7 +186,7 @@ FROM
     SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
     SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-);
+) ORDER BY tuple();
 
 SELECT arrayElementOrNull(arr, idx)
 FROM
@@ -198,7 +198,7 @@ FROM
     SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
 
 
 SELECT arrayElementOrNull(arr, idx)
@@ -213,7 +213,7 @@ FROM
     SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT arrayElementOrNull(arr, idx)
@@ -232,7 +232,7 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -254,7 +254,7 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -273,7 +273,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -293,7 +293,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
@@ -313,7 +313,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 
 SELECT arrayElementOrNull([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 
@@ -518,7 +518,7 @@ FROM
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
 SELECT
@@ -553,7 +553,7 @@ FROM
     SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
     SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-);
+) ORDER BY tuple();
 
 SELECT arrayElement(arr, idx)
 FROM
@@ -565,7 +565,7 @@ FROM
     SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
 
 
 SELECT arrayElement(arr, idx)
@@ -580,7 +580,7 @@ FROM
     SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT arrayElement(arr, idx)
@@ -599,7 +599,7 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -621,7 +621,7 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -640,7 +640,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -660,7 +660,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
@@ -680,7 +680,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 
 SELECT arrayElement([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 

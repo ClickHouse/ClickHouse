@@ -135,8 +135,8 @@ FROM
     UNION ALL
     SELECT [NULL]                   AS arr
 );
-(1,'a')	(2,'b')	\N	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
 (3,'c')	(3,'c')	\N	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
+(1,'a')	(2,'b')	\N	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
 \N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 SELECT arrayElementOrNull(arr, idx)
 FROM
@@ -154,12 +154,12 @@ FROM
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-);
+) ORDER BY tuple();
 (1,'a')
 \N
+\N
+\N
 (1,'a')
-\N
-\N
 \N
 \N
 WITH CAST([(NULL, 'a'), (1, 'b')] AS Array(Tuple(Nullable(Int64), String))) AS arr
@@ -195,12 +195,12 @@ FROM
     SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
     SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-);
-\N
+) ORDER BY tuple();
 (1,'a')
 \N
-(3,'c')
 \N
+\N
+(3,'c')
 \N
 SELECT arrayElementOrNull(arr, idx)
 FROM
@@ -212,7 +212,7 @@ FROM
     SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
 ()
 ()
 \N
@@ -229,10 +229,10 @@ FROM
     SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
+()
 ()
 \N
-()
 \N
 \N
 WITH [(1, 'a'), (2, 'b')] AS arr
@@ -252,13 +252,13 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 (1,'a')
+(2,'b')
 \N
 (2,'b')
 (1,'a')
 \N
-(2,'b')
 \N
 WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
 SELECT
@@ -280,9 +280,9 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
-2	\N	Nullable(Tuple(Int64, String))
+) ORDER BY tuple();
 1	(1,'a')	Nullable(Tuple(Int64, String))
+2	\N	Nullable(Tuple(Int64, String))
 3	\N	Nullable(Tuple(Int64, String))
 -1	\N	Nullable(Tuple(Int64, String))
 -2	(1,'a')	Nullable(Tuple(Int64, String))
@@ -305,7 +305,7 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 (1,'a')	(1,'a')
 (2,'b')	(2,'b')
 \N	\N
@@ -330,13 +330,13 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 1	()	Nullable(Tuple())
-3	\N	Nullable(Tuple())
--2	()	Nullable(Tuple())
 2	()	Nullable(Tuple())
--3	\N	Nullable(Tuple())
+3	\N	Nullable(Tuple())
 -1	()	Nullable(Tuple())
+-2	()	Nullable(Tuple())
+-3	\N	Nullable(Tuple())
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
 SELECT
     idx,
@@ -355,13 +355,13 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 1	()	Nullable(Tuple())
 2	\N	Nullable(Tuple())
 3	\N	Nullable(Tuple())
+-1	\N	Nullable(Tuple())
 -2	()	Nullable(Tuple())
 -3	\N	Nullable(Tuple())
--1	\N	Nullable(Tuple())
 SELECT arrayElementOrNull([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 DROP TABLE IF EXISTS test_array_tuple_mergetree;
 CREATE TABLE test_array_tuple_mergetree
@@ -549,9 +549,9 @@ FROM
     UNION ALL
     SELECT [NULL]                   AS arr
 );
-\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
-(1,'a')	(2,'b')	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
 (3,'c')	(3,'c')	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
+(1,'a')	(2,'b')	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
+\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 SELECT arrayElement(arr, idx)
 FROM
 (
@@ -568,7 +568,7 @@ FROM
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, -3 AS idx
     UNION ALL
     SELECT CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr, 0  AS idx
-);
+) ORDER BY tuple();
 (1,'a')
 \N
 \N
@@ -609,12 +609,12 @@ FROM
     SELECT CAST([(3, 'c')]       AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
     UNION ALL
     SELECT CAST([]               AS Array(Nullable(Tuple(Int64, String)))) AS arr, -1 AS idx
-);
+) ORDER BY tuple();
 (1,'a')
 \N
 \N
-(3,'c')
 \N
+(3,'c')
 \N
 SELECT arrayElement(arr, idx)
 FROM
@@ -626,7 +626,7 @@ FROM
     SELECT CAST([]                 AS Array(Tuple())) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Tuple())) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
 ()
 ()
 ()
@@ -643,10 +643,10 @@ FROM
     SELECT CAST([NULL]             AS Array(Nullable(Tuple()))) AS arr, 1 AS idx
     UNION ALL
     SELECT CAST([tuple(), tuple()] AS Array(Nullable(Tuple()))) AS arr, 3 AS idx
-);
+) ORDER BY tuple();
+()
 ()
 \N
-()
 \N
 \N
 WITH [(1, 'a'), (2, 'b')] AS arr
@@ -666,11 +666,11 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 (1,'a')
 (2,'b')
-(2,'b')
 (0,'')
+(2,'b')
 (1,'a')
 (0,'')
 (0,'')
@@ -694,13 +694,13 @@ FROM
     SELECT -3 AS idx
     UNION ALL
     SELECT 0  AS idx
-);
+) ORDER BY tuple();
 1	(1,'a')	Nullable(Tuple(Int64, String))
 2	\N	Nullable(Tuple(Int64, String))
 3	\N	Nullable(Tuple(Int64, String))
--3	\N	Nullable(Tuple(Int64, String))
--2	(1,'a')	Nullable(Tuple(Int64, String))
 -1	\N	Nullable(Tuple(Int64, String))
+-2	(1,'a')	Nullable(Tuple(Int64, String))
+-3	\N	Nullable(Tuple(Int64, String))
 0	\N	Nullable(Tuple(Int64, String))
 WITH [(1, 'a'), (2, 'b')] AS arr
 SELECT
@@ -719,12 +719,12 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 (1,'a')	(1,'a')
 (2,'b')	(2,'b')
+(0,'')	(0,'')
 (2,'b')	(0,'')
 (1,'a')	(0,'')
-(0,'')	(0,'')
 (0,'')	(0,'')
 WITH CAST([tuple(), tuple()] AS Array(Tuple())) AS arr
 SELECT
@@ -744,11 +744,11 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 1	()	Tuple()
+2	()	Tuple()
 3	()	Tuple()
 -1	()	Tuple()
-2	()	Tuple()
 -2	()	Tuple()
 -3	()	Tuple()
 WITH CAST([tuple(), NULL] AS Array(Nullable(Tuple()))) AS arr
@@ -769,13 +769,13 @@ FROM
     SELECT -2 AS idx
     UNION ALL
     SELECT -3 AS idx
-);
+) ORDER BY tuple();
 1	()	Nullable(Tuple())
 2	\N	Nullable(Tuple())
+3	\N	Nullable(Tuple())
 -1	\N	Nullable(Tuple())
 -2	()	Nullable(Tuple())
 -3	\N	Nullable(Tuple())
-3	\N	Nullable(Tuple())
 SELECT arrayElement([(1, 'a'), (2, 'b')], 'x'); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}
 DROP TABLE IF EXISTS test_array_tuple_mergetree;
 CREATE TABLE test_array_tuple_mergetree
