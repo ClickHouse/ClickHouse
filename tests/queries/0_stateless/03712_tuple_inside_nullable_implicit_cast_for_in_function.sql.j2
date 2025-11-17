@@ -171,4 +171,12 @@ SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL);
 
 SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2));
 
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 {% endfor -%}

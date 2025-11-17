@@ -162,6 +162,10 @@ SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL);
 1
 SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2));
 1
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SET transform_null_in = 0;
 SELECT CAST(NULL, 'Nullable(Int32)') IN [NULL, 1];
 \N
@@ -324,3 +328,7 @@ SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL);
 \N
 SELECT CAST(NULL, 'Nullable(Tuple(Int64, Int64))') IN (NULL, NULL, (1, 2));
 \N
+SELECT (1, 2) IN 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [1]; -- { serverError INCORRECT_ELEMENT_OF_SET }
+SELECT (1, 2) IN (((1, 2), (1, 2)), ((1, 2), (1, 2))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) IN [((1, 2), (1, 2)), ((1, 2), (1, 2))]; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
