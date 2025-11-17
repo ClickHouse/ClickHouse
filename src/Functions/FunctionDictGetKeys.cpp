@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 
 #include <Core/Block.h>
 #include <Core/Names.h>
@@ -165,7 +166,8 @@ private:
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
 
         chassert(values_column != nullptr);
-        chassert(values_column->size() == input_rows_count);
+        chassert(values_column->size() == argument_values_column.column->size());
+        chassert(values_column->size() >= 1);
 
         /// Step 1
         const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
@@ -173,6 +175,8 @@ private:
         /// Step 2
         MutableColumns result_cols;
         const auto key_types = structure.getKeyTypes();
+        chassert(!key_types.empty());
+
         for (const auto & key_type : key_types)
         {
             auto col = key_type->createColumn();
@@ -308,6 +312,7 @@ private:
 
         /// Step 3
         const auto key_types = structure.getKeyTypes();
+        chassert(!key_types.empty());
 
         if (!missing_bucket_ids.empty())
         {
