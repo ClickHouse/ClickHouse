@@ -468,7 +468,7 @@ const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePt
     node.type = ActionType::PLACEHOLDER;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
-    node.column = node.result_type->createColumn();
+    node.column = node.result_type->createColumnConst(1, node.result_type->getDefault());
 
     return addNode(std::move(node));
 }
