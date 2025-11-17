@@ -127,8 +127,14 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        const String dict_name = checkAndGetColumnConst<ColumnString>(arguments[0].column.get())->getValue<String>();
-        const String attr_name = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())->getValue<String>();
+        const auto * dict_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get());
+        const auto * attr_name_const_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+
+        chassert(dict_name_const_col);
+        chassert(attr_name_const_col);
+
+        const String dict_name = dict_name_const_col->getValue<String>();
+        const String attr_name = attr_name_const_col->getValue<String>();
 
         if (isColumnConst(*arguments[2].column))
         {
@@ -157,6 +163,9 @@ private:
         const auto & structure = dict->getStructure();
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
+
+        chassert(values_column != nullptr);
+        chassert(values_column->size() == input_rows_count);
 
         /// Step 1
         const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
@@ -243,6 +252,9 @@ private:
         const auto & attribute_column_type = structure.getAttribute(attr_name).type;
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type)->convertToFullIfNeeded();
 
+        chassert(values_column != nullptr);
+        chassert(values_column->size() == input_rows_count);
+
         /// Step 1
         HashToBucket value_hash_to_bucket_id;
         value_hash_to_bucket_id.reserve(input_rows_count);
@@ -282,8 +294,11 @@ private:
         std::vector<size_t> missing_bucket_ids;
         missing_bucket_ids.reserve(num_buckets);
 
+        chassert(bucket_value_hashes.size() == num_buckets);
+
         for (size_t bucket_id = 0; bucket_id < num_buckets; ++bucket_id)
         {
+            chassert(bucket_id < bucket_value_hashes.size());
             CacheKey key{domain_id, bucket_value_hashes[bucket_id]};
             if (auto hit = cache.get(key))
                 bucket_cached_bytes[bucket_id] = hit;
@@ -336,6 +351,7 @@ private:
         for (size_t row_id = 0; row_id < input_rows_count; ++row_id)
         {
             const size_t bucket_id = row_id_to_bucket_id[row_id];
+            chassert(bucket_id < num_buckets);
 
             /// No matching rows in the dictionary for this bucket
             if (!bucket_cached_bytes[bucket_id])
@@ -362,7 +378,10 @@ private:
             }
 
             /// Need to decode from cached bytes. This is slow but happens only once per bucket.
-            const auto & cached_bytes = *bucket_cached_bytes[bucket_id];
+            const auto & cached_bytes_ptr = bucket_cached_bytes[bucket_id];
+            chassert(cached_bytes_ptr != nullptr);
+
+            const auto & cached_bytes = *cached_bytes_ptr;
             if (cached_bytes.empty())
             {
                 bucket_start_offset[bucket_id] = out_offset;
@@ -379,8 +398,12 @@ private:
             {
                 for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
                     pos = result_cols[key_pos]->deserializeAndInsertFromArena(pos);
+
+                chassert(pos <= end);
                 ++out_offset;
             }
+
+            chassert(pos == end);
 
             bucket_start_offset[bucket_id] = before;
             bucket_row_count[bucket_id] = out_offset - before;
@@ -408,11 +431,15 @@ private:
     {
         std::vector<UInt8> is_missing(out.size(), 0);
         for (size_t id : missing_bucket_ids)
+        {
+            chassert(id < out.size());
             is_missing[id] = 1;
+        }
 
         const size_t num_keys = key_types.size();
 
         Names column_names = dict->getStructure().getKeysNames();
+        chassert(column_names.size() == num_keys);
         column_names.push_back(attr_name);
 
         auto pipe = dict->read(column_names, helper.getContext()->getSettingsRef()[Setting::max_block_size], 1);
@@ -425,13 +452,18 @@ private:
         Block block;
         while (executor.pull(block))
         {
+            chassert(block.columns() >= num_keys + 1);
+
             ColumnPtr attr_col = block.getByPosition(num_keys).column->convertToFullIfNeeded();
+            const size_t rows_in_block = attr_col->size();
 
             std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
+            {
                 key_columns[key_pos] = block.getByPosition(key_pos).column->convertToFullIfNeeded();
+                chassert(key_columns[key_pos]->size() == rows_in_block);
+            }
 
-            const size_t rows_in_block = attr_col->size();
             for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
             {
                 const UInt128 value_hash = sipHash128AtRow(*attr_col, row_id);
@@ -442,6 +474,8 @@ private:
                     continue;
 
                 const size_t bucket_id = it->getMapped();
+
+                chassert(bucket_id < out.size());
 
                 /// In user given `values_column` but not needed
                 if (!is_missing[bucket_id])
