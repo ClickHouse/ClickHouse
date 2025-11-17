@@ -581,4 +581,6 @@ struct ActionsAndProjectInputsFlag
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
 
+void checkNodeIsValid(const ActionsDAG::Node & node);
+
 }

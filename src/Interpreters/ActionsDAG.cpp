@@ -239,6 +239,7 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
+    checkNodeIsValid(node);
     auto & res = nodes.emplace_back(std::move(node));
 
     if (res.type == ActionType::INPUT)
@@ -2640,7 +2641,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         const Node * input;
         auto & list = required_inputs[col.name];
         if (list.empty())
-            input = &actions.addInput(col);
+            input = &actions.addInput(col.name, col.type);
         else
         {
             input = list.front();
@@ -3192,7 +3193,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
         {
             auto & result_input = result_inputs[input_node_it->second.name];
             if (!result_input)
-                result_input = &result_dag.addInput(input_node_it->second);
+                result_input = &result_dag.addInput(input_node_it->second.name, input_node_it->second.type);
 
             node_to_result_node.emplace(node, result_input);
             nodes_to_process.pop_back();
@@ -4053,6 +4054,17 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
     dag.outputs = std::move(outputs);
 
     return dag;
+}
+
+void checkNodeIsValid(const ActionsDAG::Node & node)
+{
+    if (node.column != nullptr && !(node.column->isConst() || typeid_cast<const ColumnSet *>(node.column.get())))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Node's column must be either Conts or Set, but got {} for node {} (structure: {})",
+            node.column->getFamilyName(),
+            node.result_name,
+            node.column->dumpStructure());
 }
 
 }
