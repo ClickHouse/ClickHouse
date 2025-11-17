@@ -817,3 +817,55 @@ ORDER BY id;
 2	2	(0,'')	\N
 3	-1	(0,'')	\N
 4	0	(0,'')	\N
+SELECT arrayElement([(1, 2)], NULL);
+\N
+SELECT arrayElementOrNull([(1, 2)], NULL);
+\N
+SELECT arrayElementOrNull([CAST(NULL AS Nullable(Tuple()))], NULL);
+\N
+SELECT arrayElementOrNull([CAST(NULL AS Nullable(Tuple()))], NULL);
+\N
+WITH [(1, 'a'), (2, 'b')] AS arr
+SELECT
+    idx,
+    arrayElementOrNull(arr, idx) AS value,
+    toTypeName(arrayElementOrNull(arr, idx)) AS type
+FROM
+(
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
+1	(1,'a')	Nullable(Tuple(UInt8, String))
+2	(2,'b')	Nullable(Tuple(UInt8, String))
+-1	(2,'b')	Nullable(Tuple(UInt8, String))
+-2	(1,'a')	Nullable(Tuple(UInt8, String))
+\N	\N	Nullable(Tuple(UInt8, String))
+WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
+SELECT
+    idx,
+    arrayElementOrNull(arr, idx) AS value,
+    toTypeName(arrayElementOrNull(arr, idx)) AS type
+FROM
+(
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
+1	(1,'a')	Nullable(Tuple(Int64, String))
+2	\N	Nullable(Tuple(Int64, String))
+-1	\N	Nullable(Tuple(Int64, String))
+-2	(1,'a')	Nullable(Tuple(Int64, String))
+\N	\N	Nullable(Tuple(Int64, String))

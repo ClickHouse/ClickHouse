@@ -720,3 +720,47 @@ SELECT
     arrayElement(arr_null, idx) AS arr_null_idx
 FROM test_array_tuple_mergetree
 ORDER BY id;
+
+SELECT arrayElement([(1, 2)], NULL);
+
+SELECT arrayElementOrNull([(1, 2)], NULL);
+
+SELECT arrayElementOrNull([CAST(NULL AS Nullable(Tuple()))], NULL);
+
+SELECT arrayElementOrNull([CAST(NULL AS Nullable(Tuple()))], NULL);
+
+WITH [(1, 'a'), (2, 'b')] AS arr
+SELECT
+    idx,
+    arrayElementOrNull(arr, idx) AS value,
+    toTypeName(arrayElementOrNull(arr, idx)) AS type
+FROM
+(
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
+
+WITH CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))) AS arr
+SELECT
+    idx,
+    arrayElementOrNull(arr, idx) AS value,
+    toTypeName(arrayElementOrNull(arr, idx)) AS type
+FROM
+(
+    SELECT CAST(1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-1    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(-2    AS Nullable(Int64)) AS idx
+    UNION ALL
+    SELECT CAST(NULL AS Nullable(Int64)) AS idx
+) ORDER BY tuple();
