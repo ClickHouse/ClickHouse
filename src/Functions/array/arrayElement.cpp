@@ -149,7 +149,7 @@ private:
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
-    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> &,  size_t input_rows_count) const;
+    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> &, size_t input_rows_count) const;
 
     /** For a map array, the function is evaluated component-wise for its keys and values
       */
