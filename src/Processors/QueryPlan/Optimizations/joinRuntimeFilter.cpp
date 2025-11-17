@@ -43,7 +43,7 @@ const ActionsDAG::Node & createRuntimeFilterCondition(
     if (!key_column.type->equals(*filter_element_type))
         filter_argument = &actions_dag.addCast(key_column_node, filter_element_type, {}, nullptr);
 
-    auto filter_function = FunctionFactory::instance().get("__filterContains", /*query_context*/nullptr);
+    auto filter_function = FunctionFactory::instance().get("__applyFilter", /*query_context*/nullptr);
     const auto & condition = actions_dag.addFunction(filter_function, {&filter_name_node, filter_argument}, {});
 
     return condition;
@@ -116,7 +116,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
-    const String filter_name_prefix = fmt::format("_runtime_filter_{}", thread_local_rng());
+    const String filter_name_prefix = fmt::format("{}_runtime_filter_{}", check_left_does_not_contain ? "_exclusion_" : "", thread_local_rng());
 
     {
         ActionsDAG filter_dag;
