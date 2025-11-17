@@ -52,7 +52,7 @@ class FuzzerTestGenerator:
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
         failure_output = Shell.get_output(
-            f"cat {self.server_log} | grep -A10 'Logical error:'"
+            f"grep -A10 -a 'Logical error:' {self.server_log}", verbose=True
         )
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
@@ -60,7 +60,7 @@ class FuzzerTestGenerator:
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
         assert query_id, "No query id found in server log"
         query_command = Shell.get_output(
-            f"cat {self.server_log} | grep '{query_id}' | head -n1"
+            f"grep -a '{query_id}' {self.server_log} | head -n1"
         )
         assert query_command, "No query command found in server log"
         query_command = query_command.split(" (stage:")[0]
@@ -157,8 +157,8 @@ class FuzzerTestGenerator:
 
 
 if __name__ == "__main__":
-    fuzzer_log = "fuzzer.log_1"
-    server_log = "server.log_1"
+    fuzzer_log = "fuzzer.log"
+    server_log = "server.log"
     FTG = FuzzerTestGenerator(server_log, fuzzer_log)
     failed_query = FTG.get_failed_query()
     print("Failed query:")

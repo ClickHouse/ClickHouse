@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
@@ -140,7 +141,7 @@ def main():
                     failed_query
                 )
                 if reproduce_commands:
-                    info += "---\n\nReproduce commands (auto-generated; may require manual adjustment). If you encounter issues, please contact the ci-team:\n"
+                    info += "---\n\nReproduce commands (auto-generated; may require manual adjustment):\n"
                     if len(reproduce_commands) > 20:
                         reproduce_file_sql = workspace_path / "reproduce_commands.sql"
                         with open(reproduce_file_sql, "w") as f:
@@ -150,7 +151,11 @@ def main():
                     else:
                         info += "\n".join(reproduce_commands)
             except Exception as e:
-                info += "---\n\nFailed to fetch relevant queries from logs: " + str(e)
+                info += (
+                    "---\n\nFailed to fetch relevant queries from logs:\n"
+                    + traceback.format_exc()
+                    + "\n"
+                )
 
         if fatal_log.exists():
             stack_trace = StackTraceReader.get_stack_trace(fatal_log)
