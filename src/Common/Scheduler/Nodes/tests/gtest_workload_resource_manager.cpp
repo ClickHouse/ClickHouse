@@ -1762,11 +1762,22 @@ public:
             DBG_PRINT("{}: Destroying failed allocation", name);
             return;
         }
+        ResourceCost last_size = real_size;
         real_size = 0;
-        chassert(allocated_size > 0);
-        DBG_PRINT("{}: Removing allocation... size = {}. killed = {}", name, allocated_size, kill_reason ? "1" : "0");
-        queue.decreaseAllocation(*this, allocated_size);
-        cv.wait(lock, [this]() { return allocated_size == 0; });
+        if (allocated_size > 0) // Running allocation
+        {
+            DBG_PRINT("{}: Removing running allocation... size = {}. killed = {}", name, allocated_size, kill_reason ? "1" : "0");
+            queue.decreaseAllocation(*this, allocated_size);
+            cv.wait(lock, [this]() { return allocated_size == 0; });
+        }
+        else
+        {
+            DBG_PRINT("{}: Removing pending allocation...", name);
+            queue.decreaseAllocation(*this, last_size);
+            // It can be either approved and decreased later or failed (i.e. canceled) right away
+            cv.wait(lock, [this]() { return bool(fail_reason) || (!increase_enqueued && !decrease_enqueued && allocated_size == 0); });
+        }
+        chassert(removed);
         DBG_PRINT("{}: Allocation removed", name);
     }
 
@@ -1793,6 +1804,12 @@ public:
         cv.wait(lock, [this] { return kill_reason; });
         DBG_PRINT("{}: Waiting killed done. size = {}. failed = {}. killed = {}", name, allocated_size, fail_reason ? "1" : "0", kill_reason ? "1" : "0");
         ASSERT_EQ(kill_reason != nullptr, true);
+    }
+
+    void assertIncreaseEnqueued()
+    {
+        std::unique_lock lock(mutex);
+        ASSERT_EQ(increase_enqueued, true);
     }
 
 private: // interaction with the scheduler thread
@@ -1854,6 +1871,7 @@ private: // interaction with the scheduler thread
         std::unique_lock lock(mutex);
         DBG_PRINT("{}: Allocation failed", name);
         fail_reason = reason;
+        removed = true;
         allocated_size = 0;
         cv.notify_all(); // notify dtor (e.g. for removal of pending allocation or queue purge)
     }
@@ -1963,5 +1981,133 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationHugeIncreaseDoesNotKillO
         a2.waitSync();
         a2.setSize(100500); // Exceeds limit, and new size is the largest among all allocations, while old size was not
         a2.waitKilled();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingAllocationWaits)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running1", 80);
+        TestAllocation a2(link, "Running2", 10);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Make pending allocation that hit the limit
+        TestAllocation a3(link, "Pending3", 30);
+        TestAllocation a4(link, "Pending4", 30);
+
+        // Make sure running allocations could use memory as expected, while pending allocations are waiting
+        for (int mem : {20, 30, 40, 50, 60, 70, 80, 70, 60, 50, 40, 30, 20, 10 })
+        {
+            a1.setSize(90 - mem);
+            a1.waitSync();
+            a2.setSize(mem);
+            a2.waitSync();
+        }
+
+        // Release memory to allow pending allocation to proceed
+        a3.assertIncreaseEnqueued();
+        a1.setSize(60);
+        a1.waitSync();
+        a3.waitSync();
+        // --- a1:60, a2:10, a3:30 ---
+        a3.setSize(20); // to avoid kills first decrease
+        a3.waitSync();
+        a2.setSize(20); // only then increase
+        a2.waitSync();
+
+        // Make sure running allocations could use memory as expected, while pending allocation is waiting
+        for (int mem : { 60, 80 })
+        {
+            a1.setSize(100 - mem);
+            a1.waitSync();
+            a2.setSize(mem / 2);
+            a3.setSize(mem / 2);
+            a2.waitSync();
+            a3.waitSync();
+        }
+
+        // --- a1:20, a2:40, a3:40 ---
+        // Release memory by killing allocation to free space for pending allocation
+        a4.assertIncreaseEnqueued();
+        a2.setSize(50); // hits the limit (110) with running and pending allocations: self-kill expected
+        a2.waitKilled();
+        a4.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseOfRunningHasPriorityOverPending)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running1", 80);
+        TestAllocation a2(link, "Running2", 10);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Make pending allocation that hit the limit
+        TestAllocation a3(link, "Pending3", 40);
+
+        // Increase running allocation to hit the limit
+        a2.setSize(70); // this is lower than 80, so a1 should be killed
+        a2.waitSync();
+
+        // Resource released by killing a1 should NOT allow a3 to proceed, but should be used to satisfy a2 increase
+        a1.waitKilled();
+        a2.waitSync();
+        a3.assertIncreaseEnqueued();
+
+        // Clean up
+        a2.setSize(10);
+        a2.waitSync();
+        a3.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationCancelPendingAllocation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        TestAllocation a1(link, "Running1", 80);
+        a1.waitSync();
+
+        // Make pending allocations that hit the limit
+        TestAllocation a2(link, "Pending2", 80);
+
+        // These are smaller but blocked by the first pending allocation
+        TestAllocation a3(link, "Pending2", 10);
+        TestAllocation a4(link, "Pending2", 10);
+
+        // Assert that allocations are pending
+        a2.assertIncreaseEnqueued();
+        a3.assertIncreaseEnqueued();
+        a4.assertIncreaseEnqueued();
+
+        // Cancel pending allocation by dtor
     }
 }

@@ -115,7 +115,12 @@ public:
         std::lock_guard lock(mutex);
         chassert(!allocation.decreasing_hook.is_linked());
         if (allocation.running_hook.is_linked()) // Running allocation
-            decreaseRunningAllocation(allocation, decrease_size);
+        {
+            allocation.decrease.prepare(decrease_size, decrease_size == allocation.allocated);
+            decreasing_allocations.push_back(allocation);
+            if (!skip_activation && &allocation == &*decreasing_allocations.begin()) // Only if it should be processed next (i.e. size = 1)
+                scheduleActivation();
+        }
         else // Special case - cancel pending allocation
         {
             // We cannot remove pending allocation here because it may be processed concurrently by the scheduler thread
@@ -196,10 +201,7 @@ public:
                     pending_allocations_size -= allocation.increase.size;
                     allocation.allocationFailed(cancel_error);
                 }
-                else if (allocation.running_hook.is_linked()) // Allocation is already running - retry removal
-                    decreaseRunningAllocation<true>(allocation, 0);
-                else // Allocation was already removed
-                    continue;
+                // else: allocation is now running - it is responsibility of allocation to decrease itself to zero in this case
             }
             removing_allocations.clear();
 
@@ -245,16 +247,6 @@ public:
     }
 
 private:
-    template <bool from_activation = false>
-    void decreaseRunningAllocation(ResourceAllocation & allocation, ResourceCost decrease_size) // TSA_REQUIRES(mutex)
-    {
-        allocation.decrease.prepare(decrease_size, decrease_size == allocation.allocated);
-        decreasing_allocations.push_back(allocation);
-        if constexpr (!from_activation)
-            if (!skip_activation && &allocation == &*decreasing_allocations.begin()) // Only if it should be processed next (i.e. size = 1)
-                scheduleActivation();
-    }
-
     void applyIncrease() // TSA_REQUIRES(mutex)
     {
         chassert(increase);
