@@ -46,13 +46,8 @@ def get_run_command(
     )
 
 
-def run_fuzz_job():
+def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
-
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
     temp_dir = Path(f"{cwd}/ci/tmp/")
     assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
@@ -181,4 +176,9 @@ def run_fuzz_job():
 
 
 if __name__ == "__main__":
-    run_fuzz_job()
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+
+    run_fuzz_job(check_name)

@@ -223,7 +223,7 @@ def main():
     with open(buzz_config_file, "w") as outfile:
         outfile.write(json.dumps(buzz_config))
 
-    run_fuzz_job()
+    run_fuzz_job("BuzzHouse")
 
 
 if __name__ == "__main__":
