@@ -16,6 +16,7 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents

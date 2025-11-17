@@ -99,7 +99,7 @@ public:
     void applySettings(const Settings & settings);
 
 private:
-    Pipe getSourcePipe(const Columns & key_columns, const PaddedPODArray<KeyType> & requested_keys) const;
+    BlockIO loadKeys(const PaddedPODArray<KeyType> & requested_keys, const Columns & key_columns) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
