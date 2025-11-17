@@ -1,3 +1,4 @@
+#include <vector>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -5,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -180,6 +182,24 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
     return toTupleCmp() == other.toTupleCmp();
+}
+
+StorageID AsynchronousInsertQueue::InsertQuery::getStorageID() const
+{
+    if (!query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "InsertQuery AST is null");
+
+    auto * insert_query = query->as<ASTInsertQuery>();
+    if (!insert_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "AST is not of type ASTInsertQuery");
+
+    auto database = insert_query->getDatabase();
+    auto table = insert_query->getTable();
+
+    if (database.empty() && table.empty())
+        return StorageID::createEmpty();
+
+    return StorageID(database, table);
 }
 
 AsynchronousInsertQueue::InsertData::Entry::Entry(
@@ -651,6 +671,76 @@ void AsynchronousInsertQueue::validateSettings(const Settings & settings, Logger
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'async_insert_busy_timeout_decrease_rate' must be greater than zero");
 }
 
+void AsynchronousInsertQueue::flush(const std::vector<std::pair<String, String>> & table_names)
+{
+    if (table_names.empty())
+    {
+        flushAll();
+        return;
+    }
+
+    LOG_DEBUG(log, "Requested to flush asynchronous insert queue for tables: {}", fmt::join(table_names, ", "));
+
+    auto database_table_name_set = std::set<std::pair<String, String>>(table_names.begin(), table_names.end());
+
+    auto affected_set = std::set<String>{};
+    std::vector<Queue> queues_to_flush(pool_size);
+
+    std::lock_guard flush_lock(flush_mutex);
+
+    for (size_t i = 0; i < pool_size; ++i)
+    {
+        std::lock_guard lock(queue_shards[i].mutex);
+        auto & shard = queue_shards[i];
+        auto & queue = shard.queue;
+
+        for (auto it = queue.begin(); it != queue.end();)
+        {
+            const auto storage = it->second.key.getStorageID();
+            /// it is not strict match of database and table name
+            /// async insert queue does not store database name always
+            if (!database_table_name_set.contains({storage.database_name, storage.table_name})
+                && !database_table_name_set.contains({"", storage.table_name}))
+            {
+                ++it;
+                continue;
+            }
+
+            affected_set.emplace(storage.getNameForLogs());
+            queues_to_flush[i].emplace(it->first, std::move(it->second));
+            shard.iterators.erase(it->second.key.hash);
+            it = queue.erase(it);
+        }
+    }
+
+    size_t total_queries = 0;
+    size_t total_bytes = 0;
+    size_t total_entries = 0;
+
+    for (size_t i = 0; i < pool_size; ++i)
+    {
+        auto & queue = queues_to_flush[i];
+        total_queries += queue.size();
+        for (auto & [_, entry] : queue)
+        {
+            total_bytes += entry.data->size_in_bytes;
+            total_entries += entry.data->entries.size();
+            scheduleDataProcessingJob(entry.key, std::move(entry.data), getContext(), i);
+        }
+    }
+
+    /// Note that jobs scheduled before the call of 'flush' are not counted here.
+    LOG_DEBUG(log,
+        "Will wait for finishing of {} flushing jobs (about {} inserts, {} bytes, {} distinct queries) for tables: {}",
+        pool.active(), total_entries, total_bytes, total_queries, fmt::join(affected_set, ", "));
+
+    /// Wait until all jobs are finished. That includes also jobs
+    /// that were scheduled before the call of 'flush'.
+    pool.wait();
+
+    LOG_DEBUG(log, "Finished flushing of asynchronous insert queue for tables: {}", fmt::join(affected_set, ", "));
+}
+
 void AsynchronousInsertQueue::flushAll()
 {
     std::lock_guard flush_lock(flush_mutex);
@@ -799,7 +889,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
+        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length, true);
 }
 
 }
@@ -813,13 +903,13 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
-    setThreadName("AsyncInsertQ");
+    DB::setThreadName(ThreadName::ASYNC_INSERT_QUEUE);
 
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
-    bool internal = false; // To enable logging this query
+    bool internal = true;
     bool async_insert = true;
 
     /// Disabled query spans. Could be activated by initializing this to a SpanHolder
@@ -868,7 +958,8 @@ try
         normalized_query_hash,
         key.query.get(),
         insert_context,
-        start_watch.getStart());
+        start_watch.getStart(),
+        internal);
 
     auto query_status = process_list_entry->getQueryStatus();
     insert_context->setProcessListElement(std::move(query_status));
@@ -970,7 +1061,7 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
 
         if (async_insert_log)
         {

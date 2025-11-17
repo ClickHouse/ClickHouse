@@ -403,6 +403,13 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
     )
+    stateless_tests_targeted_pr_jobs = common_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="arm_asan, targeted",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_ASAN],
+        ),
+    )
     bugfix_validation_ft_pr_job = Job.Config(
         name=JobNames.BUGFIX_VALIDATE_FT,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
@@ -759,6 +766,13 @@ class JobConfigs:
             )
         )
     )
+    integration_test_targeted_pr_jobs = common_integration_test_job_config.parametrize(
+        Job.ParamSet(
+            parameter=f"amd_asan, targeted",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_ASAN],
+        )
+    )
     compatibility_test_jobs = Job.Config(
         name=JobNames.COMPATIBILITY,
         runs_on=[],  # from parametrize()
@@ -783,13 +797,14 @@ class JobConfigs:
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
         runs_on=[],  # from parametrize()
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command=f"python3 ./ci/jobs/ast_fuzzer_job.py",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
-                "./tests/ci/ci_fuzzer_check.py",
+                "./ci/jobs/ast_fuzzer_job.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
             ],
         ),
         allow_merge_on_failure=True,

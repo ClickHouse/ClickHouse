@@ -1,7 +1,6 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -829,12 +828,8 @@ void executeQueryWithParallelReplicasCustomKey(
         return;
     }
 
-    ColumnsDescriptionByShardNum columns_object;
-    if (hasDynamicSubcolumnsDeprecated(columns))
-        columns_object = getExtendedObjectsOfRemoteTables(*query_info.cluster, storage_id, columns, context);
-
     ClusterProxy::SelectStreamFactory select_stream_factory
-        = ClusterProxy::SelectStreamFactory(header, columns_object, snapshot, processed_stage);
+        = ClusterProxy::SelectStreamFactory(header, snapshot, processed_stage);
 
     auto shard_filter_generator = getShardFilterGeneratorForCustomKey(*query_info.getCluster(), context, columns);
     if (shard_filter_generator && context->getSettingsRef()[Setting::serialize_query_plan])
