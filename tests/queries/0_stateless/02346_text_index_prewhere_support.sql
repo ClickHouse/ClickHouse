@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests that text indexes can be build on and used with Map columns.
+-- Tests that text indexes can be used in PREWHERE clause.
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
