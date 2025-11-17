@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.11",
         {
+            {"send_profile_events", true, true, "New setting. Whether to send profile events to the clients."},
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
@@ -940,6 +941,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
             {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
             {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.10",
         {
