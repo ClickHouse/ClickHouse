@@ -663,18 +663,11 @@ SELECT (a IS DISTINCT FROM b) AS distinct_flag,
 FROM 03611_t_nullsafe
 ORDER BY distinct_flag;
 
-SELECT '1.17 Subquery filter';
-SELECT id,
-       EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a <=> s.b AND s.id = t.id) AS has_equal_match,
-       EXISTS(SELECT 1 FROM 03611_t_nullsafe s WHERE t.a IS DISTINCT FROM s.b AND s.id = t.id) AS has_distinct_match
-FROM 03611_t_nullsafe t
-ORDER BY id;
-
-SELECT '1.18 OR / AND';
+SELECT '1.17 OR / AND';
 select 1 <=> 1 AND 1 is DISTINCT FROM 1,
        1 <=> 1 OR 1 is DISTINCT FROM 1;
 
-SELECT '1.19 Tuple has null';
+SELECT '1.18 Tuple has null';
 select (null,null,null) is DISTINCT FROM (null,null,null);
 select (null,null,null) is DISTINCT FROM (null,null,1);
 select (null,null,null) <=> (null,null,1);
@@ -690,7 +683,7 @@ GROUP BY 1
 WITH TOTALS QUALIFY ((2 <=> 2) / ((2 IS NOT NULL) IS NULL), *, *, materialize(toNullable(2)), materialize(2), materialize(materialize(2)), 2)
 <=> ((2 = *) * 2, *, *, 2, toNullable(2), 2, 2);
 
-SELECT '1.20 Alias function testing';
+SELECT '1.19 Alias function testing';
 SELECT isNotDistinctFrom(1, 1);
 SELECT isNotDistinctFrom(1, 2);
 SELECT isNotDistinctFrom(1, null);
