@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Core/SortDescription.h>
-
 #include <string>
 #include <string_view>
 
