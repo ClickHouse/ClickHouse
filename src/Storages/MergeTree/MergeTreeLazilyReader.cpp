@@ -150,7 +150,6 @@ void MergeTreeLazilyReader::readLazyColumns(
             tmp_requested_column_names);
 
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-            .withExtendedObjects()
             .withSubcolumns(storage.supportsSubcolumns());
 
         NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);

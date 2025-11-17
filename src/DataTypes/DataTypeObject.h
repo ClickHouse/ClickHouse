@@ -3,7 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <Core/Field.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Common/re2.h>
 
 
