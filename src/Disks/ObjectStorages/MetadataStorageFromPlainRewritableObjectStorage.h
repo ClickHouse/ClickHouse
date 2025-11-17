@@ -47,6 +47,10 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    /// Will reload in-memory structure from scratch.
+    void dropCache() override;
+    void refresh(UInt64 not_sooner_than_milliseconds) override;
+
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
     bool existsFileOrDirectory(const std::string & path) const override;
@@ -63,8 +67,6 @@ public:
     Poco::Timestamp getLastModified(const std::string & path) const override;
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
 
-    void refresh(UInt64 not_sooner_than_milliseconds) override;
-
 private:
     const ObjectStoragePtr object_storage;
     const std::string storage_path_prefix;
@@ -72,11 +74,11 @@ private:
     const std::string metadata_key_prefix;
 
     std::mutex metadata_mutex;
-
-    std::mutex load_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     AtomicStopwatch previous_refresh;
-    void load(bool is_initial_load);
+
+    std::mutex load_mutex;
+    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
 };
 
 class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetadataTransaction

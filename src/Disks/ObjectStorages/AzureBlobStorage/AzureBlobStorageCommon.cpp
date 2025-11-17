@@ -276,7 +276,7 @@ static bool containerExists(const ContainerClient & client)
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
-    if (!params.endpoint.sas_auth.empty())
+    if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
         return params.createForContainer();
 
     if (params.endpoint.container_already_exists.value_or(false) || readonly)
@@ -514,7 +514,7 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
-    return {storage_url, account_name, container_name, prefix, "", container_already_exists};
+    return {storage_url, account_name, container_name, prefix, "", "", container_already_exists};
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)

@@ -66,6 +66,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/S3/Credentials.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -110,16 +111,16 @@
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Server/CloudPlacementInfo.h>
+#include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
-#include <Server/KeeperReadinessHandler.h>
 #include <Server/ArrowFlightHandler.h>
-#include <Server/HTTP/HTTPServer.h>
-#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -144,6 +145,7 @@
 #    include <Server/SSH/SSHPtyHandlerFactory.h>
 #    include <Common/LibSSHInitializer.h>
 #    include <Common/LibSSHLogger.h>
+#    include <Server/ACME/Client.h>
 #endif
 
 #if USE_GRPC
@@ -359,6 +361,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsUInt64 s3_credentials_provider_max_cache_size;
 }
 
 namespace ErrorCodes
@@ -913,7 +916,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-                executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                startup_context->setCurrentQueryId("");
+
+                {
+                    CurrentThread::QueryScope query_scope(startup_context);
+                    executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                }
 
                 auto result = condition_write_buffer.str();
                 if (result != "1\n" && result != "true\n")
@@ -942,6 +950,10 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+            startup_context->setCurrentQueryId("");
+
+            CurrentThread::QueryScope query_scope(startup_context);
+
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
@@ -1043,6 +1055,33 @@ try
     Stopwatch startup_watch;
     Poco::Logger * log = &logger();
 
+    const size_t physical_server_memory = getMemoryAmount();
+
+    LOG_INFO(
+        log,
+        "Available RAM: {}; logical cores: {}; used cores: {}.",
+        formatReadableSizeWithBinarySuffix(physical_server_memory),
+        std::thread::hardware_concurrency(),
+        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
+    );
+
+#if defined(__x86_64__)
+    String cpu_info;
+#define COLLECT_FLAG(X) \
+    if (CPU::have##X()) \
+    {                   \
+        if (!cpu_info.empty()) \
+            cpu_info += ", ";  \
+        cpu_info += #X; \
+    }
+
+    CPU_ID_ENUMERATE(COLLECT_FLAG)
+#undef COLLECT_FLAG
+
+    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
+#endif
+
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
@@ -1055,35 +1094,44 @@ try
 
     if (config().getBool("mlock_executable", false))
     {
-        if (hasLinuxCapability(CAP_IPC_LOCK))
+        size_t min_physical_server_memory_to_mlock = config().getUInt64("mlock_executable_min_total_memory_amount_bytes", 5'000'000'000);
+        if (physical_server_memory >= min_physical_server_memory_to_mlock)
         {
-            try
+            if (hasLinuxCapability(CAP_IPC_LOCK))
             {
-                /// Get the memory area with (current) code segment.
-                /// It's better to lock only the code segment instead of calling "mlockall",
-                /// because otherwise debug info will be also locked in memory, and it can be huge.
-                auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
+                try
+                {
+                    /// Get the memory area with (current) code segment.
+                    /// It's better to lock only the code segment instead of calling "mlockall",
+                    /// because otherwise debug info will be also locked in memory, and it can be huge.
+                    auto [addr, len] = getMappedArea(reinterpret_cast<void *>(mainEntryClickHouseServer));
 
-                LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
-                if (0 != mlock(addr, len))
-                    LOG_WARNING(log, "Failed mlock: {}", errnoToString());
-                else
-                    LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                    LOG_TRACE(log, "Will do mlock to prevent executable memory from being paged out. It may take a few seconds.");
+                    if (0 != mlock(addr, len))
+                        LOG_WARNING(log, "Failed mlock: {}", errnoToString());
+                    else
+                        LOG_TRACE(log, "The memory map of clickhouse executable has been mlock'ed, total {}", ReadableSize(len));
+                }
+                catch (...)
+                {
+                    LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                }
             }
-            catch (...)
+            else
             {
-                LOG_WARNING(log, "Cannot mlock: {}", getCurrentExceptionMessage(false));
+                LOG_INFO(
+                    log,
+                    "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
+                    " It could happen due to incorrect ClickHouse package installation."
+                    " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
+                    " Note that it will not work on 'nosuid' mounted filesystems.",
+                    executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
             }
         }
         else
         {
-            LOG_INFO(
-                log,
-                "It looks like the process has no CAP_IPC_LOCK capability, binary mlock will be disabled."
-                " It could happen due to incorrect ClickHouse package installation."
-                " You could resolve the problem manually with 'sudo setcap cap_ipc_lock=+ep {}'."
-                " Note that it will not work on 'nosuid' mounted filesystems.",
-                executable_path.empty() ? "/usr/bin/clickhouse" : executable_path);
+            LOG_INFO(log, "Skip mlock for the clickhouse executable, because the total memory in the system ({}) is less than the minimum configured threshold (`mlock_executable_min_total_memory_amount_bytes` = {})",
+                ReadableSize(physical_server_memory), ReadableSize(min_physical_server_memory_to_mlock));
         }
     }
 #endif
@@ -1142,6 +1190,10 @@ try
         LOG_INFO(
             log, "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
     }
+
+#if USE_AWS_S3
+    DB::S3::setCredentialsProviderCacheMaxSize(server_settings[ServerSetting::s3_credentials_provider_max_cache_size]);
+#endif
 
     registerInterpreters();
     registerFunctions();
@@ -1202,32 +1254,6 @@ try
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
         PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
-#endif
-
-    const size_t physical_server_memory = getMemoryAmount();
-
-    LOG_INFO(
-        log,
-        "Available RAM: {}; logical cores: {}; used cores: {}.",
-        formatReadableSizeWithBinarySuffix(physical_server_memory),
-        std::thread::hardware_concurrency(),
-        getNumberOfCPUCoresToUse() // on ARM processors it can show only enabled at current moment cores
-    );
-
-#if defined(__x86_64__)
-    String cpu_info;
-#define COLLECT_FLAG(X) \
-    if (CPU::have##X()) \
-    {                   \
-        if (!cpu_info.empty()) \
-            cpu_info += ", ";  \
-        cpu_info += #X; \
-    }
-
-    CPU_ID_ENUMERATE(COLLECT_FLAG)
-#undef COLLECT_FLAG
-
-    LOG_INFO(log, "Available CPU instruction sets: {}", cpu_info);
 #endif
 
     bool has_trace_collector = false;
@@ -2279,10 +2305,10 @@ try
             global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
 
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
+            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
             NamedCollectionFactory::instance().reloadFromConfig(*config);
             FileCacheFactory::instance().updateSettingsFromConfig(*config);
 
@@ -2469,6 +2495,13 @@ try
             LOG_INFO(log, "Listening for {}", server.getDescription());
         }
     }
+
+#if USE_SSL
+    /// ACME client is necessary for CertificateReloader to work in case Let's Encrypt is configured,
+    /// but can not start before Keeper server can be initialized (in case of embedded Keeper).
+    /// Let's try deferring until servers are started.
+    ACME::Client::instance().initialize(config());
+#endif
 
     const auto & cache_disk_name = server_settings[ServerSetting::temporary_data_in_cache].value;
 
@@ -2756,6 +2789,7 @@ try
                              "to configuration file.)");
 
 #if USE_SSL
+        ACME::Client::instance().initialize(config());
         CertificateReloader::instance().tryLoad(config());
         CertificateReloader::instance().tryLoadClient(config());
 #endif
@@ -2875,6 +2909,13 @@ try
         systemdNotify("READY=1\n");
 #endif
 
+        auto stop_acme_instance = []{
+#if USE_SSL
+            /// Stop ACME tasks.
+            ACME::Client::instance().shutdown();
+#endif
+        };
+
         SCOPE_EXIT_SAFE({
             if (config().has("logger.shutdown_level") && !config().getString("logger.shutdown_level").empty())
             {
@@ -2894,6 +2935,8 @@ try
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
+
+            stop_acme_instance();
 
             is_cancelled = true;
 

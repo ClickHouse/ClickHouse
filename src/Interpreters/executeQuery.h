@@ -27,6 +27,8 @@ struct QueryResultDetails
     std::optional<String> content_type = {};
     std::optional<String> format = {};
     std::optional<String> timezone = {};
+    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_created_at = {};
+    std::optional<std::chrono::time_point<std::chrono::system_clock>> query_cache_expires_at = {};
     std::unordered_map<String, String> additional_headers = {};
 };
 
@@ -87,7 +89,7 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
-void executeTrivialBlockIO(BlockIO & streams, ContextPtr context);
+void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
 
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(
@@ -128,5 +130,6 @@ void logExceptionBeforeStart(
     ContextPtr context,
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
-    UInt64 elapsed_milliseconds);
+    UInt64 elapsed_milliseconds,
+    bool internal);
 }
