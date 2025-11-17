@@ -16,6 +16,7 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           {},
           {},
           main_reader_->storage_snapshot,
+          main_reader_->storage_settings,
           nullptr,
           nullptr,
           main_reader_->all_mark_ranges,

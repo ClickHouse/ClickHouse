@@ -6,7 +6,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -200,7 +199,7 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwInapplicable(); }
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
-    void takeDynamicStructureFromSourceColumns(const Columns &) override { throwInapplicable(); }
+    void takeDynamicStructureFromSourceColumns(const Columns &, std::optional<size_t>) override { throwInapplicable(); }
     void takeDynamicStructureFromColumn(const ColumnPtr &) override { throwInapplicable(); }
 
 private:

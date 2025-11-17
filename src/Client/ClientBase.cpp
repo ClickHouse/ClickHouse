@@ -129,6 +129,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool into_outfile_create_parent_directories;
 }
 
 namespace ErrorCodes
@@ -151,6 +152,7 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
+    extern const int CANNOT_CREATE_DIRECTORY;
 }
 
 }
@@ -519,14 +521,14 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.empty())
         return;
 
-    processed_rows += block.rows();
+    processed_rows_from_blocks += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
+    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
@@ -1196,6 +1198,28 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                 out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
             }
 
+            if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
+            {
+                fs::path file_path(out_file);
+                fs::path parent_dir = file_path.parent_path();
+
+                if (!parent_dir.empty() && !fs::exists(parent_dir))
+                {
+                    try
+                    {
+                        fs::create_directories(parent_dir);
+                    }
+                    catch (const fs::filesystem_error & e)
+                    {
+                        throw Exception(
+                            ErrorCodes::CANNOT_CREATE_DIRECTORY,
+                            "Cannot create parent directories for INTO OUTFILE '{}': {}",
+                            parent_dir.string(),
+                            e.what());
+                    }
+                }
+            }
+
             std::string compression_method_string;
 
             if (query_with_output->compression)
@@ -1300,7 +1324,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
-            if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
+            if (processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
             {
                 error_stream << "Got a transient error from the server, will"
                         << " retry (" << retries_left << " retries left)";
@@ -1466,6 +1490,13 @@ void ClientBase::onProgress(const Progress & value)
         // Just a keep-alive update.
         return;
     }
+
+    /// Tracks inserted rows for server-side operations like INSERT ... SELECT where data bypasses the client and thus isn't captured in
+    // `processed_rows_from_blocks`. We exclude `read_rows` to avoid incorrect counting:
+    ///   - INSERT ... SELECT is an INSERT operation, so counting read rows would be misleading.
+    ///   - Pure SELECT would show internal scan count rather than actual results returned to client. SELECT queries already track correct
+    //      row count in `processed_rows_from_blocks` and we want `processed_rows_from_progress` to be 0 in such scenario.
+    processed_rows_from_progress += value.written_rows;
 
     if (output_format)
         output_format->onProgress(value);
@@ -2061,7 +2092,7 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
         if (!block.empty())
         {
             connection->sendData(block, /* name */"", /* scalar */false);
-            processed_rows += block.rows();
+            processed_rows_from_blocks += block.rows();
         }
     }
 
@@ -2230,7 +2261,8 @@ void ClientBase::processParsedSingleQuery(
         }
     }
 
-    processed_rows = 0;
+    processed_rows_from_blocks = 0;
+    processed_rows_from_progress = 0;
     written_first_block = false;
     progress_indication.resetProgress();
     progress_table.resetTable();
@@ -2358,6 +2390,8 @@ void ClientBase::processParsedSingleQuery(
 
         profile_events.last_block = {};
     }
+
+    auto processed_rows = std::max(processed_rows_from_blocks, processed_rows_from_progress);
 
     if (is_interactive)
     {
@@ -3463,10 +3497,12 @@ void ClientBase::runInteractive()
     replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
+    {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
             highlight(query, colors, *client_context, pos);
         };
+    }
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;

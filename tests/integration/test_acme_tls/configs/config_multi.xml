@@ -1,0 +1,22 @@
+<clickhouse>
+    <http_port>5002</http_port>  <!-- Must match with Pebble configuration -->
+    <https_port>3443</https_port>
+
+    <acme>
+        <email>test@clickhouse.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>multi.integration-tests.clickhouse.com</domain>
+        </domains>
+        <directory_url>https://10.5.11.2:14000/dir</directory_url>
+        <refresh_certificates_task_interval>1000</refresh_certificates_task_interval>
+        <refresh_certificates_before>86400</refresh_certificates_before> <!-- one day -->
+    </acme>
+    <openSSL>
+        <client>
+            <invalidCertificateHandler>
+                <name>AcceptCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>

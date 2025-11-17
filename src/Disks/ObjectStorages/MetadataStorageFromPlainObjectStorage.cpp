@@ -115,11 +115,6 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastMod
     return std::nullopt;
 }
 
-bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
-}
-
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
@@ -180,7 +175,7 @@ ObjectMetadataEntryPtr MetadataStorageFromPlainObjectStorage::getObjectMetadataE
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
-        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
+        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize(), /*with_tags=*/ false))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;
     };

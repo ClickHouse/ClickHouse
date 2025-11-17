@@ -7,6 +7,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -264,7 +266,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
-            if (rg.nextMediumNumber() < 91)
+            if (!fc.measure_performance && !fc.compare_explains && rg.nextMediumNumber() < 91)
             {
                 this->swapTableDefinitions(rg, newt);
             }

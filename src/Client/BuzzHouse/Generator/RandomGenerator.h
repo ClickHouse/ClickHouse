@@ -185,10 +185,18 @@ public:
         {
             if constexpr (std::is_unsigned_v<T>)
             {
-                return std::numeric_limits<T>::max();
+                return (tmp <= always_on_prob + always_off_prob + 0.003) ? 0 : std::numeric_limits<T>::max();
+            }
+            if constexpr (std::is_signed_v<T>)
+            {
+                return (tmp <= always_on_prob + always_off_prob + 0.005) ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
             }
             if constexpr (std::is_floating_point_v<T>)
             {
+                if (tmp <= always_on_prob + always_off_prob + 0.003)
+                {
+                    return std::numeric_limits<T>::min();
+                }
                 if (max_val >= 0.9 && max_val <= 1.1)
                 {
                     return max_val;
@@ -197,7 +205,7 @@ public:
             }
             UNREACHABLE();
         }
-        if constexpr (std::is_unsigned_v<T>)
+        if constexpr (std::is_integral_v<T>)
         {
             std::uniform_int_distribution<T> d{min_val, max_val};
             return d(generator);

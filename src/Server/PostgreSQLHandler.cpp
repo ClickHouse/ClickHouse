@@ -160,7 +160,7 @@ void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 
 void PostgreSQLHandler::run()
 {
-    setThreadName("PostgresHandler");
+    DB::setThreadName(ThreadName::POSTGRES_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::POSTGRESQL);
     SCOPE_EXIT({ session.reset(); });
@@ -385,7 +385,7 @@ void PostgreSQLHandler::cancelRequest()
 
     auto query_context = session->makeQueryContext();
     query_context->setCurrentQueryId("");
-    executeQuery(std::move(replacement), *out, true, query_context, {});
+    executeQuery(std::move(replacement), *out, query_context, {});
 }
 
 inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQLHandler::receiveStartupMessage(int payload_size)
@@ -661,7 +661,7 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
 
     // Execute query with PostgreSQLWire output format
     auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
-    executeQuery(std::move(read_buf), *out, false, query_context, {});
+    executeQuery(std::move(read_buf), *out, query_context, {});
 
     // Determine affected rows based on command type
     return (command == PostgreSQLProtocol::Messaging::CommandComplete::Command::INSERT)
