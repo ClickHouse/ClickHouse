@@ -4,11 +4,11 @@ WITH
 SELECT
     topKExact,
     topKWeightedExact,
-    topK(3, 2, 'counts')(k) AS topK_counts,
-    topKWeighted(3, 2, 'counts')(k, w) AS topKWeighted_counts,
+    topK(3, 1, 'counts')(k) AS topK_counts,
+    topKWeighted(3, 1, 'counts')(k, w) AS topKWeighted_counts,
     approx_top_count(3, 6)(k) AS approx_top_count,
-    approx_top_k(3, 6)(k) AS approx_top_k,
-    approx_top_sum(3, 6)(k, w) AS approx_top_sum
+    approx_top_k(3, 4)(k) AS approx_top_k,
+    approx_top_sum(3, 4)(k, w) AS approx_top_sum
 FROM
 (
     SELECT
