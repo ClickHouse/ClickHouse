@@ -159,7 +159,7 @@ def main():
         "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,321,386,403,467",
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
-        "log_path": buzz_out,
+        "log_path": str(buzz_out),
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),
