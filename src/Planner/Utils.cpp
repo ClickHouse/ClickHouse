@@ -72,6 +72,7 @@ namespace Setting
     extern const SettingsOverflowMode read_overflow_mode_leaf;
     extern const SettingsSeconds timeout_before_checking_execution_speed;
     extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsBool use_variant_as_common_type;
 }
 
 namespace ErrorCodes
@@ -99,7 +100,7 @@ String dumpQueryPipeline(const QueryPlan & query_plan)
     return query_pipeline_buffer.str();
 }
 
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode)
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type)
 {
     size_t num_selects = queries_headers.size();
     Block common_header = *queries_headers.front();
@@ -132,7 +133,7 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
             columns[i] = &queries_headers[i]->getByPosition(column_number);
 
         ColumnWithTypeAndName & result_element = common_header.getByPosition(column_number);
-        result_element = getLeastSuperColumn(columns);
+        result_element = getLeastSuperColumn(columns, use_variant_as_common_type);
     }
 
     return common_header;
@@ -141,7 +142,8 @@ Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUni
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    SharedHeaders & query_plans_headers)
+    SharedHeaders & query_plans_headers,
+    ContextPtr context)
 {
     size_t queries_size = query_plans.size();
     for (size_t i = 0; i < queries_size; ++i)
@@ -153,7 +155,11 @@ void addConvertingToCommonHeaderActionsIfNeeded(
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_node_plan->getCurrentHeader()->getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context,
+            false /*ignore_constant_values*/,
+            false /*add_cast_columns*/,
+            nullptr /*new_names*/);
         auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
@@ -667,6 +673,27 @@ bool optimizePlanForExists(QueryPlan & query_plan)
         query_plan = query_plan.extractSubplan(node);
     }
     return false;
+}
+
+QueryPlanStepPtr projectOnlyUsedColumns(
+    const SharedHeader & stream_header,
+    const ColumnIdentifiers & used_column_identifiers)
+{
+    ActionsDAG project_only_used_columns_actions;
+
+    NameSet used_column_identifiers_set(used_column_identifiers.begin(), used_column_identifiers.end());
+
+    auto & outputs = project_only_used_columns_actions.getOutputs();
+    for (const auto & column : stream_header->getColumnsWithTypeAndName())
+    {
+        const auto * input_node = &project_only_used_columns_actions.addInput(column);
+        if (used_column_identifiers_set.contains(column.name))
+            outputs.push_back(input_node);
+    }
+
+    auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
+    step->setStepDescription("Project only used columns");
+    return step;
 }
 
 }

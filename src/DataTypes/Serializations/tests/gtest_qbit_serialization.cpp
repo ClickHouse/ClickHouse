@@ -17,7 +17,7 @@ protected:
     void SetUp() override
     {
         auto float32_type = DataTypeFactory::instance().get("Float32");
-        qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 3));
+        qbit_type_float32 = std::static_pointer_cast<DataTypeQBit>(std::make_shared<DataTypeQBit>(float32_type, 5));
         serialization_float32 = qbit_type_float32->getDefaultSerialization();
     }
 

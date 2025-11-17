@@ -57,7 +57,7 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsTransactions() const override { return true; }
+    bool supportsTransactions() const override { return support_transaction; }
 
     void read(
         QueryPlan & query_plan,
@@ -175,6 +175,8 @@ private:
     std::mutex mutation_prepared_sets_cache_mutex;
     std::map<Int64, PreparedSetsCachePtr::weak_type> mutation_prepared_sets_cache;
     PlainLightweightUpdatesSync lightweight_updates_sync;
+
+    const bool support_transaction;
 
     void loadMutations();
 

@@ -360,7 +360,7 @@ void DatabaseBackup::loadTablesMetadata(ContextPtr local_context, ParsedTablesMe
 
     /// Read and parse metadata in parallel
     ThreadPool pool(CurrentMetrics::DatabaseBackupThreads, CurrentMetrics::DatabaseBackupThreadsActive, CurrentMetrics::DatabaseBackupThreadsScheduled);
-    ThreadPoolCallbackRunnerLocal<void> runner(pool, "DatabaseBackup");
+    ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::DATABASE_BACKUP);
 
     const auto batch_size = metadata_files.size() / pool.getMaxThreads() + 1;
 
@@ -407,15 +407,12 @@ ASTPtr DatabaseBackup::getCreateQueryFromMetadata(const String & table_name, boo
     return create_query;
 }
 
-ASTPtr DatabaseBackup::getCreateDatabaseQuery() const
+ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
-    std::string creation_args;
-    creation_args += fmt::format("'{}'", config.database_name);
-    creation_args += fmt::format(", '{}'", config.backup_info.toString());
-
-    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({})", backQuoteIfNeed(getDatabaseName()), creation_args);
+    const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
+        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,

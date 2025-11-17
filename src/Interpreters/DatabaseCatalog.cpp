@@ -600,7 +600,7 @@ void DatabaseCatalog::assertDatabaseDoesntExist(const String & database_name) co
 void DatabaseCatalog::assertDatabaseDoesntExistUnlocked(const String & database_name) const
 {
     assert(!database_name.empty());
-    if (databases.end() != databases.find(database_name))
+    if (databases.contains(database_name))
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists", backQuoteIfNeed(database_name));
 }
 
@@ -704,7 +704,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
 void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
 {
     std::lock_guard lock{databases_mutex};
-    assert(databases.find(new_name) == databases.end());
+    assert(!databases.contains(new_name));
     auto it = databases.find(old_name);
     assert(it != databases.end());
     auto db = it->second;
@@ -737,15 +737,13 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     }
 }
 
-void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
+void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
 {
     std::lock_guard lock{databases_mutex};
-    ASTPtr ast = database->getCreateDatabaseQuery();
-    if (!ast)
-        throw Exception(
-            ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database->getDatabaseName()));
+    if (!create_query)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
 
-    auto * ast_create_query = ast->as<ASTCreateQuery>();
+    auto * ast_create_query = create_query->as<ASTCreateQuery>();
     ast_create_query->attach = true;
 
     WriteBufferFromOwnString statement_buf;
@@ -754,8 +752,8 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
-    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     writeMetadataFile(
@@ -835,7 +833,7 @@ bool DatabaseCatalog::isDatabaseExist(const String & database_name) const
 {
     assert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
-    return databases.end() != databases.find(database_name);
+    return databases.contains(database_name);
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
@@ -1170,7 +1168,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
     for (const auto & elem : dropped_metadata)
     {
         auto full_path = elem.first;
@@ -1432,7 +1430,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
     if (tables_to_drop.empty())
         return;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
 
     for (const auto & item : tables_to_drop)
     {
@@ -1522,7 +1520,7 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
 
     /// Check if we are interested in a particular disk
     ///   or it is better to bypass it e.g. to avoid interactions with a remote storage
-    auto is_disk_eligible_for_search = [this](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
+    auto is_disk_eligible_for_search = [](DiskPtr disk, std::shared_ptr<MergeTreeData> storage)
     {
         bool is_disk_eligible = !disk->isReadOnly();
 
@@ -1533,7 +1531,6 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
             is_disk_eligible = mode == SearchOrphanedPartsDisks::ANY || (mode == SearchOrphanedPartsDisks::LOCAL && !disk->isRemote());
         }
 
-        LOG_TRACE(log, "is disk {} eligible for search: {}", disk->getName(), is_disk_eligible);
         return is_disk_eligible;
     };
 
@@ -2008,7 +2005,18 @@ void DatabaseCatalog::reloadDisksTask()
         while (it->isValid())
         {
             auto table = it->table();
-            table->initializeDiskOnConfigChange(disks);
+            try
+            {
+                table->initializeDiskOnConfigChange(disks);
+            }
+            catch (const std::exception & e)
+            {
+                LOG_WARNING(log, "Fail to reinitialize disks [{}] for table {}, error: {}", fmt::join(disks, ","), table->getName(), e.what());
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Fail to reinitialize disks [{}] for table {}", fmt::join(disks, ","), table->getName());
+            }
             it->next();
         }
     }

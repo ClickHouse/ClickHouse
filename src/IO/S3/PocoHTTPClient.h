@@ -9,11 +9,11 @@
 
 #include <Common/HistogramMetrics.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/IThrottler.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <IO/HTTPRequestThrottler.h>
 #include <IO/SessionAwareIOStream.h>
 #include <IO/S3Defines.h>
 
@@ -62,8 +62,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     bool enable_s3_requests_logging;
     bool for_disk_s3;
     std::optional<std::string> opt_disk_name;
-    ThrottlerPtr get_request_throttler;
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
 
     HTTPHeaderEntries extra_headers;
     String http_client;
@@ -97,8 +96,7 @@ private:
         bool for_disk_s3_,
         std::optional<std::string> opt_disk_name_,
         bool s3_use_adaptive_timeouts_,
-        const ThrottlerPtr & get_request_throttler_,
-        const ThrottlerPtr & put_request_throttler_,
+        const HTTPRequestThrottler & request_throttler_,
         std::function<void(const ProxyConfiguration &)> error_report_);
 
     /// Constructor of Aws::Client::ClientConfiguration must be called after AWS SDK initialization.
@@ -222,14 +220,7 @@ protected:
     bool enable_s3_requests_logging = false;
     bool for_disk_s3 = false;
 
-    /// Limits get request per second rate for GET, SELECT and all other requests, excluding throttled by put throttler
-    /// (i.e. throttles GetObject, HeadObject)
-    ThrottlerPtr get_request_throttler;
-
-    /// Limits put request per second rate for PUT, COPY, POST, LIST requests
-    /// (i.e. throttles PutObject, CopyObject, ListObjects, CreateMultipartUpload, UploadPartCopy, UploadPart, CompleteMultipartUpload)
-    /// NOTE: DELETE and CANCEL requests are not throttled by either put or get throttler
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
 
     const HTTPHeaderEntries extra_headers;
 };
