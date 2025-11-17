@@ -406,9 +406,16 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
-        if (metadata_storage.existsFileOrDirectory(path))
-            removeMetadataRecursive(tx, path);
+        if (metadata_storage.getType() == MetadataStorageType::Plain || metadata_storage.getType() == MetadataStorageType::PlainRewritable)
+        {
+            tx->removeRecursive(path);
+        }
+        else
+        {
+            /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
+            if (metadata_storage.existsFileOrDirectory(path))
+                removeMetadataRecursive(tx, path);
+        }
     }
 
     void undo() override

@@ -1,9 +1,5 @@
 #pragma once
 
-#include <unordered_map>
-#include <vector>
-#include <deque>
-
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -11,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 
+#include <deque>
 
 namespace DB
 {
@@ -44,6 +41,41 @@ struct RangesInDataPartsDescription: public std::deque<RangesInDataPartDescripti
     void merge(const RangesInDataPartsDescription & other);
 };
 
+struct PartOffsetRange
+{
+    size_t begin;
+    size_t end;
+};
+
+struct PartOffsetRanges : public std::vector<PartOffsetRange>
+{
+    /// Tracks the total number of rows to determine if using the projection index is worthwhile.
+    size_t total_rows = 0;
+
+    /// Used to determine whether offsets can fit in 32-bit or require 64-bit.
+    size_t max_part_offset = 0;
+
+    /// Returns true if the ranges collectively cover the full range [0, total_rows)
+    bool isContiguousFullRange() const { return total_rows == max_part_offset + 1; }
+
+    /// Checks if the given offset falls within any of the stored ranges.
+    /// Each range is treated as a half-open interval: [begin, end)
+    bool contains(UInt64 offset) const
+    {
+        if (empty())
+            return false;
+
+        /// Binary search for the first range whose 'begin' is greater than offset.
+        auto it = std::upper_bound(begin(), end(), offset, [](UInt64 value, const auto & range) { return value < range.begin; });
+
+        if (it == begin())
+            return false;
+
+        /// The range before 'it' might contain the offset.
+        --it;
+        return offset < it->end;
+    }
+};
 
 /// A vehicle which transports additional information to optimize searches
 struct RangesInDataPartReadHints
@@ -61,6 +93,9 @@ struct RangesInDataPart
     MarkRanges ranges;
     MarkRanges exact_ranges;
     RangesInDataPartReadHints read_hints;
+
+    /// Offset ranges from parent part, used during projection index reading.
+    PartOffsetRanges parent_ranges;
 
     RangesInDataPart(
         const DataPartPtr & data_part_,

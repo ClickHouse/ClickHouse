@@ -73,20 +73,6 @@ def parse_args() -> argparse.Namespace:
         description="A program to build clickhouse-server image, both alpine and "
         "ubuntu versions",
     )
-    # TODO: Not supported. remove?
-    # parser.add_argument(
-    #     "--version",
-    #     type=version_arg,
-    #     default=get_version_from_repo(git=git).string,
-    #     help="a version to build, automaticaly got from version_helper, accepts either "
-    #     "tag ('refs/tags/' is removed automatically) or a normal 22.2.2.2 format",
-    # )
-    # parser.add_argument(
-    #     "--sha",
-    #     type=str,
-    #     default="",
-    #     help="sha of the commit to use packages from",
-    # )
     parser.add_argument(
         "--tag-type",
         type=str,
@@ -257,7 +243,7 @@ def build_and_push_image(
         result.append(
             Result.from_commands_run(name=f"{image.name}:{tag}-{arch}", command=cmd)
         )
-        if result[-1].is_ok():
+        if not result[-1].is_ok():
             return result
         with open(metadata_path, "rb") as m:
             metadata = json.load(m)
@@ -269,7 +255,7 @@ def build_and_push_image(
         )
         logging.info("Pushing merged %s:%s image: %s", image.name, tag, cmd)
         result.append(Result.from_commands_run(name=f"{image.name}:{tag}", command=cmd))
-        if result[-1].is_ok():
+        if not result[-1].is_ok():
             return result
     else:
         logging.info(
@@ -293,22 +279,23 @@ def test_docker_library(test_results) -> None:
     if not check_images:
         return
     test_name = "docker library image test"
+    arch = "amd64" if Utils.is_amd() else "arm64"
     try:
         repo = "docker-library/official-images"
         logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
         repo_path = temp_path / repo
+        config_override = (
+            Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
+        ).absolute()
         Shell.check(f"{GIT_PREFIX} clone {GITHUB_SERVER_URL}/{repo} {repo_path}")
-        logging.info(
-            "Patching tests config to run clickhouse tests for clickhouse/clickhouse-server"
-        )
-        Shell.check(
-            "sed -i '/testAlias+=(/ a[clickhouse/clickhouse-server]=clickhouse' "
-            f"{repo_path/'test/config.sh'}"
-        )
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
-            cmd = f"{run_sh} {image}"
-            test_results.append(Result.from_commands_run(name=test_name, command=cmd))
+            if not image.endswith(f"-{arch}"):
+                continue
+            cmd = f"{run_sh} {image} -c {repo_path / 'test/config.sh'} -c {config_override}"
+            test_results.append(
+                Result.from_commands_run(name=f"{test_name} ({image})", command=cmd)
+            )
 
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
@@ -345,18 +332,15 @@ def main():
 
     if not info.is_local_run:
         assert not args.image_path and not args.image_repo
-        if "server image" in info.job_name:
-            image_path = "docker/server"
-            image_repo = "clickhouse/clickhouse-server"
-        elif "keeper image" in info.job_name:
-            image_path = "docker/keeper"
-            image_repo = "clickhouse/clickhouse-keeper"
-        else:
-            assert False, f"Unexpected job name [{info.job_name}]"
+
+    if "server image" in info.job_name:
+        image_path = args.image_path or "docker/server"
+        image_repo = args.image_repo or "clickhouse/clickhouse-server"
+    elif "keeper image" in info.job_name:
+        image_path = args.image_path or "docker/keeper"
+        image_repo = args.image_repo or "clickhouse/clickhouse-keeper"
     else:
-        assert args.image_path and args.image_repo
-        image_path = args.image_path
-        image_repo = args.image_repo
+        assert False, f"Unexpected job name [{info.job_name}]"
 
     push = args.push
     del args.image_path
@@ -401,14 +385,6 @@ def main():
             assert not args.allow_build_reuse
             repo_urls[arch] = f"{args.bucket_prefix}/{build_name}"
             print(f"Bucket prefix is set: Fetching packages from [{repo_urls}]")
-        # TODO: not supported, remove?
-        # elif args.sha:
-        #     version = args.version
-        #     repo_urls[arch] = (
-        #         f"{S3_DOWNLOAD}/{S3_BUILDS_BUCKET}/"
-        #         f"{version.major}.{version.minor}/{args.sha}/{build_name}"
-        #     )
-        #     print(f"Fetching packages from [{repo_urls}]")
         else:
             assert (
                 False

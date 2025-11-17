@@ -3,27 +3,31 @@ description: 'The Alias table engine creates a transparent proxy to another tabl
 sidebar_label: 'Alias'
 sidebar_position: 5
 slug: /engines/table-engines/special/alias
-title: 'Alias Table Engine'
+title: 'Alias table engine'
 doc_type: 'reference'
 ---
 
-# Alias Table Engine
+# Alias table engine
 
 The `Alias` engine creates a proxy to another table. All read and write operations are forwarded to the target table, while the alias itself stores no data and only maintains a reference to the target table.
 
 ## Creating a Table {#creating-a-table}
 
 ```sql
-CREATE TABLE [db_name.]alias_name [columns]
+CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_table)
 ```
 
 Or with explicit database name:
 
 ```sql
-CREATE TABLE [db_name.]alias_name [columns]
+CREATE TABLE [db_name.]alias_name
 ENGINE = Alias(target_db, target_table)
 ```
+
+:::note
+The `Alias` table does not support explicit column definitions. Columns are automatically inherited from the target table. This ensures that the alias always matches the target table's schema.
+:::
 
 ## Engine Parameters {#engine-parameters}
 

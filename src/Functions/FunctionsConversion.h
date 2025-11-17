@@ -1309,6 +1309,14 @@ struct ConvertThroughParsing
                                     break;
                                 }
                             }
+                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeUUID>)
+                            {
+                                if (fixed_string_size == UUID_BINARY_LENGTH)
+                                {
+                                    readBinary(vec_to[i], read_buffer);
+                                    break;
+                                }
+                            }
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
                                 if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing))
@@ -1400,8 +1408,10 @@ struct ConvertThroughParsing
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
                             vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     }
-                    else if (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>
-                            && fixed_string_size == IPV6_BINARY_LENGTH)
+                    else if (
+                        std::is_same_v<FromDataType, DataTypeFixedString>
+                        && ((std::is_same_v<ToDataType, DataTypeIPv6> && fixed_string_size == IPV6_BINARY_LENGTH)
+                            || (std::is_same_v<ToDataType, DataTypeUUID> && fixed_string_size == UUID_BINARY_LENGTH)))
                     {
                         readBinary(vec_to[i], read_buffer);
                         parsed = true;
@@ -2900,7 +2910,8 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createWithOverflow
+        if (context && datetime_overflow_behavior == default_date_time_overflow_behavior)
             context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         if (isDynamic(from_type))
@@ -4177,7 +4188,8 @@ private:
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = function_date_time_overflow_behavior;
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createFunctionBaseCast
+        if (context && function_date_time_overflow_behavior == default_date_time_overflow_behavior)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))

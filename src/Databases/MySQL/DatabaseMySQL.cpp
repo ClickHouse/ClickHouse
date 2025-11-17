@@ -39,6 +39,10 @@
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
 
+#if CLICKHOUSE_CLOUD
+#    include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -65,6 +69,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CANNOT_CREATE_DATABASE;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -98,11 +103,20 @@ DatabaseMySQL::DatabaseMySQL(
     catch (...)
     {
         if (attach)
+        {
             tryLogCurrentException("DatabaseMySQL");
+        }
+#if CLICKHOUSE_CLOUD
+        else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
+        {
+            tryLogCurrentException("DatabaseMySQL");
+        }
+#endif
         else
             throw;
     }
 
+    persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
         auto db_disk = getDisk();
@@ -153,7 +167,7 @@ StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name, ContextPt
 
     fetchTablesIntoLocalCache(local_context);
 
-    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.find(mysql_table_name) != local_tables_cache.end())
+    if (!remove_or_detach_tables.contains(mysql_table_name) && local_tables_cache.contains(mysql_table_name))
         return local_tables_cache[mysql_table_name].second;
 
     return StoragePtr{};
@@ -163,9 +177,25 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 {
     std::lock_guard lock(mutex);
 
-    fetchTablesIntoLocalCache(local_context);
+    try
+    {
+        /// This function can throw mysql exception, we don't have enough context to handle it.
+        /// So we just catch and re-throw as known exception if needed.
+        fetchTablesIntoLocalCache(local_context);
+    }
+    catch (...)
+    {
+        if (throw_on_error)
+        {
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
+                            "Received error while fetching table structure for table {} from MySQL: {}",
+                            backQuote(table_name), getCurrentExceptionMessage(true));
+        }
 
-    if (local_tables_cache.find(table_name) == local_tables_cache.end())
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    if (!local_tables_cache.contains(table_name))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
@@ -214,7 +244,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 
     fetchTablesIntoLocalCache(getContext());
 
-    if (local_tables_cache.find(table_name) == local_tables_cache.end())
+    if (!local_tables_cache.contains(table_name))
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "MySQL table {}.{} doesn't exist.", database_name_in_mysql, table_name);
 
     return time_t(local_tables_cache[table_name].first);
@@ -225,6 +255,7 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
+    create_query->uuid = db_uuid;
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
         create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
@@ -244,7 +275,7 @@ void DatabaseMySQL::destroyLocalCacheExtraTables(const std::map<String, UInt64> 
 {
     for (auto iterator = local_tables_cache.begin(); iterator != local_tables_cache.end();)
     {
-        if (tables_with_modification_time.find(iterator->first) != tables_with_modification_time.end())
+        if (tables_with_modification_time.contains(iterator->first))
             ++iterator;
         else
         {
@@ -439,9 +470,9 @@ StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & t
     return local_tables_cache[table_name].second;
 }
 
-void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command)
+void DatabaseMySQL::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 String DatabaseMySQL::getMetadataPath() const

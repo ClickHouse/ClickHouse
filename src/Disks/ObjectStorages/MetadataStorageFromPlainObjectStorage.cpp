@@ -41,7 +41,7 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
 {
     if (object_metadata_cache_size)
-        object_metadata_cache.emplace(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
+        object_metadata_cache = std::make_shared<CacheBase<UInt128, ObjectMetadataEntry>>(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
 }
 
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
@@ -115,11 +115,6 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastMod
     return std::nullopt;
 }
 
-bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
-}
-
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
@@ -175,13 +170,12 @@ std::optional<StoredObjects> MetadataStorageFromPlainObjectStorage::getStorageOb
     return std::nullopt;
 }
 
-MetadataStorageFromPlainObjectStorage::ObjectMetadataEntryPtr
-MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
+ObjectMetadataEntryPtr MetadataStorageFromPlainObjectStorage::getObjectMetadataEntryWithCache(const std::string & path) const
 {
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
-        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
+        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize(), /*with_tags=*/ false))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;
     };
@@ -222,8 +216,14 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     else
     {
         operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation>(
-            normalizeDirectoryPath(path), *metadata_storage.getPathMap(), object_storage, metadata_storage.getMetadataKeyPrefix()));
+            normalizeDirectoryPath(path), *metadata_storage.getFsTree(), object_storage, metadata_storage.getMetadataKeyPrefix()));
     }
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path)
+{
+    operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation>(
+        path, *metadata_storage.getFsTree(), object_storage, metadata_storage.object_metadata_cache, metadata_storage.getMetadataKeyPrefix()));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
@@ -232,7 +232,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std:
         throwNotImplemented();
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
-        path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+        path_from, path_to, *metadata_storage.getFsTree(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
@@ -247,7 +247,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::strin
     }
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
-        false, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+        false, path_from, path_to, *metadata_storage.getFsTree(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
@@ -265,7 +265,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::st
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Replacing to directory is not supported {}", path_to);
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
-        true, path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+        true, path_from, path_to, *metadata_storage.getFsTree(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & /* objects */)
@@ -274,7 +274,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const 
         return;
 
     operations.addOperation(
-        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getPathMap(), object_storage));
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getFsTree(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
@@ -294,15 +294,35 @@ void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std
 
     auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
         std::move(normalized_path),
-        *metadata_storage.getPathMap(),
+        *metadata_storage.getFsTree(),
         object_storage,
-        metadata_storage.getMetadataKeyPrefix());
+        metadata_storage.getMetadataKeyPrefix(),
+        /*recursive=*/false);
     operations.addOperation(std::move(op));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
 {
-    createDirectory(path);
+    if (metadata_storage.object_storage->isWriteOnce())
+        return;
+
+    auto normalized_path = normalizeDirectoryPath(path);
+    if (normalized_path.empty())
+    {
+        LOG_TRACE(
+            getLogger("MetadataStorageFromPlainObjectStorageTransaction"),
+            "Skipping creation of a directory '{}' with an empty normalized path",
+            path);
+        return;
+    }
+
+    auto op = std::make_unique<MetadataStorageFromPlainObjectStorageCreateDirectoryOperation>(
+        std::move(normalized_path),
+        *metadata_storage.getFsTree(),
+        object_storage,
+        metadata_storage.getMetadataKeyPrefix(),
+        /*recursive=*/true);
+    operations.addOperation(std::move(op));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
@@ -313,7 +333,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::moveDirectory(const std::
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(
         normalizeDirectoryPath(path_from),
         normalizeDirectoryPath(path_to),
-        *metadata_storage.getPathMap(),
+        *metadata_storage.getFsTree(),
         object_storage,
         metadata_storage.getMetadataKeyPrefix()));
 }
@@ -332,7 +352,7 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTrans
     auto result = std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
     if (!metadata_storage.object_storage->isWriteOnce())
         operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
-            path, *metadata_storage.getPathMap(), object_storage));
+            path, *metadata_storage.getFsTree(), object_storage));
     return result;
 }
 
