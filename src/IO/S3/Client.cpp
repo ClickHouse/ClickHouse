@@ -757,31 +757,29 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         Int64 attempt_no = 0;
 
         auto net_exception_handler = [&]() -> bool
-            {
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
-                if (isClientForDisk())
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+        {
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
 
-                tryLogCurrentException(log, "Will retry");
-                last_exception = std::current_exception();
+            tryLogCurrentException(log, "Will retry");
+            last_exception = std::current_exception();
 
-                auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
+            auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
 
-                /// Check if query is canceled.
-                /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
-                if (!client_configuration.retryStrategy->ShouldRetry(error, /*attemptedRetries*/ -1))
-                    return true;
+            /// Check if query is canceled.
+            /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+            if (!client_configuration.retryStrategy->ShouldRetry(error, /*attemptedRetries*/ -1))
+                return true;
 
-                incrementProfileEvents<IsReadMethod>(
-                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
-                    if (isClientForDisk())
-                        incrementProfileEvents<IsReadMethod>(
-                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
+            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+            if (isClientForDisk())
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
-                updateNextTimeToRetryAfterRetryableError(error, attempt_no);
-                inside_retry_loop = true;
-                return false;
-            };
+            updateNextTimeToRetryAfterRetryableError(error, attempt_no);
+            inside_retry_loop = true;
+            return false;
+        };
 
         for (attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {

@@ -628,7 +628,7 @@ def test_when_s3_timeout_at_listing(
                 AND type='QueryFinish'
             """).strip().split("\t")
 
-    assert int(read_count) > 10 # atleast 10 files are read from s3
+    assert int(read_count) > 10 # at least 10 files are read from s3
     assert int(errors) >= 1
     assert int(retryable) >= 1
 
