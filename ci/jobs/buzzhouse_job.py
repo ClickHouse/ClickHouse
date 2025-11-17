@@ -120,7 +120,7 @@ def main():
 
     # Generate configuration file
     # No PARALLEL WITH with slow sanitizers
-    min_nested_rows = random.randint(0, 10)
+    min_nested_rows = random.randint(0, 5)
     min_insert_rows = random.randint(1, 100)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
@@ -132,7 +132,7 @@ def main():
         "max_dictionaries": random.randint(0, 10),
         "max_columns": random.randint(1, 8),
         "min_nested_rows": min_nested_rows,
-        "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 10),
+        "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
         "min_insert_rows": min_insert_rows,
         "max_insert_rows": random.randint(min_insert_rows, min_insert_rows + 400),
         "min_string_length": random.randint(0, 100),
@@ -184,18 +184,25 @@ def main():
             # Keep all debugging messages
             "send_logs_level",
             # Slow settings
+            "enable_producing_buckets_out_of_order_in_aggregation",
             "grace_hash_join_initial_buckets",
             "join_default_strictness",
-            "query_plan_max_limit_for_lazy_materialization",
             "max_download_buffer_size",
-            "enable_producing_buckets_out_of_order_in_aggregation",
+            "max_partitions_per_insert_block",
+            "max_table_size_to_drop",
             "max_temporary_data_on_disk_size_for_query",
             "max_temporary_data_on_disk_size_for_user",
+            "max_untracked_memory",
             # Makes everything nullable, not handy
             "data_type_default_nullable",
             "restore_replace_external_dictionary_source_to_null",
             "restore_replace_external_engines_to_null",
             "restore_replace_external_table_functions_to_null",
+            # Not handy
+            "insert_shard_id",
+            "union_default_mode",
+            "except_default_mode",
+            "input_format_skip_unknown_fields",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [
