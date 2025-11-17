@@ -427,25 +427,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
         if (processed_file_info.has_value())
         {
-            Coordination::Requests requests;
-            std::vector<std::string> paths{processed_node_path, failed_node_path};
-
-            zkutil::ZooKeeper::MultiTryGetResponse responses;
-
-            zk_retry.retryLoop([&]
-            {
-                responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(paths);
-            });
-
-            auto check_code = [this](auto code_)
-            {
-                if (!(code_ == Coordination::Error::ZOK || code_ == Coordination::Error::ZNONODE))
-                    throw zkutil::KeeperException::fromPath(code_, path);
-            };
-            check_code(responses[0].error);
-            check_code(responses[1].error);
-
-            if (responses[1].error == Coordination::Error::ZOK)
+            if (processed_file_info->is_failed)
             {
                 LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
                 return {false, FileStatus::State::Failed};
