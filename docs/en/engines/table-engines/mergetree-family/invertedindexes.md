@@ -460,7 +460,8 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0;
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
+         use_skip_indexes_on_data_read = 1;
 ```
 
 returns
@@ -482,7 +483,8 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM tab
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
+         use_skip_indexes_on_data_read = 1;
 ```
 
 returns
