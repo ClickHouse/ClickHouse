@@ -105,7 +105,7 @@ FROM
     SELECT [(3, 'c')]           AS arr
     UNION ALL
     SELECT []                   AS arr
-);
+) ORDER BY tuple();
 
 SELECT
     arrayElementOrNull(arr, 1),
@@ -132,7 +132,7 @@ FROM
     SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
     SELECT [NULL]                   AS arr
-);
+) ORDER BY tuple();
 
 
 SELECT arrayElementOrNull(arr, idx)
@@ -460,7 +460,7 @@ FROM
     SELECT [(3, 'c')]           AS arr
     UNION ALL
     SELECT []                   AS arr
-);
+) ORDER BY tuple();
 
 
 SELECT
@@ -499,7 +499,7 @@ FROM
     SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
     SELECT [NULL]                   AS arr
-);
+) ORDER BY tuple();
 
 
 SELECT arrayElement(arr, idx)

@@ -105,7 +105,7 @@ FROM
     SELECT [(3, 'c')]           AS arr
     UNION ALL
     SELECT []                   AS arr
-);
+) ORDER BY tuple();
 (1,'a')	(2,'b')	\N	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
 (3,'c')	(3,'c')	\N	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
 \N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
@@ -134,9 +134,9 @@ FROM
     SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
     SELECT [NULL]                   AS arr
-);
-(3,'c')	(3,'c')	\N	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
+) ORDER BY tuple();
 (1,'a')	(2,'b')	\N	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
+(3,'c')	(3,'c')	\N	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
 \N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 SELECT arrayElementOrNull(arr, idx)
 FROM
@@ -509,7 +509,7 @@ FROM
     SELECT [(3, 'c')]           AS arr
     UNION ALL
     SELECT []                   AS arr
-);
+) ORDER BY tuple();
 (1,'a')	(2,'b')	(0,'')	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
 (3,'c')	(3,'c')	(0,'')	(3,'c')	(3,'c')	(0,'')	(0,'')	(3,'c')	(0,'')	(0,'')	(3,'c')	(0,'')	(0,'')	(3,'c')	(3,'c')	(3,'c')
 (0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')	(0,'')
@@ -548,9 +548,9 @@ FROM
     SELECT [CAST((3, 'c') AS Nullable(Tuple(Int64, String)))]           AS arr
     UNION ALL
     SELECT [NULL]                   AS arr
-);
-(3,'c')	(3,'c')	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
+) ORDER BY tuple();
 (1,'a')	(2,'b')	\N	(1,'a')	(2,'b')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')	(1,'a')	(2,'b')	(1,'a')
+(3,'c')	(3,'c')	\N	(3,'c')	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	\N	\N	(3,'c')	(3,'c')	(3,'c')
 \N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 SELECT arrayElement(arr, idx)
 FROM
