@@ -3414,26 +3414,51 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
     for (const auto & column_name : required_outputs)
         columns_to_keep.insert(column_name);
 
-    if (query_info.row_level_filter)
-    {
-        for (const auto * input : query_info.row_level_filter->actions.getInputs())
-            columns_to_keep.insert(input->result_name);
-    }
-
-    auto erased_prewhere_output = false;
+    auto removed_output_from_prewhere = false;
 
     if (query_info.prewhere_info)
     {
         auto & prewhere_outputs = query_info.prewhere_info->prewhere_actions.getOutputs();
-        erased_prewhere_output = std::erase_if(
-                                     prewhere_outputs,
-                                     [&](const auto * output)
-                                     {
-                                         return output->result_name != query_info.prewhere_info->prewhere_column_name
-                                             && required_outputs.find(output->result_name) == required_outputs.end();
-                                     })
+        removed_output_from_prewhere = std::erase_if(
+                                           prewhere_outputs,
+                                           [&](const auto * output)
+                                           {
+                                               return output->result_name != query_info.prewhere_info->prewhere_column_name
+                                                   && required_outputs.find(output->result_name) == required_outputs.end();
+                                           })
             > 0;
+
+        if (!query_info.prewhere_info->remove_prewhere_column && !required_outputs.contains(query_info.prewhere_info->prewhere_column_name))
+        {
+            query_info.prewhere_info->remove_prewhere_column = true;
+            removed_output_from_prewhere = true;
+        }
+
         for (const auto * input : query_info.prewhere_info->prewhere_actions.getInputs())
+            columns_to_keep.insert(input->result_name);
+    }
+
+    auto removed_output_from_row_level_filter = false;
+    if (query_info.row_level_filter)
+    {
+        /// Important that the inputs of prewhere are also kept as outputs for row level filter, thus `columns_to_keep`
+        /// is used instead of `required_outputs`.
+        auto & row_level_filter_outputs = query_info.row_level_filter->actions.getOutputs();
+        removed_output_from_row_level_filter = std::erase_if(
+                                                   row_level_filter_outputs,
+                                                   [&](const auto * output)
+                                                   {
+                                                       return output->result_name != query_info.row_level_filter->column_name
+                                                           && columns_to_keep.find(output->result_name) == columns_to_keep.end();
+                                                   })
+            > 0;
+
+        if (!query_info.row_level_filter->do_remove_column && !columns_to_keep.contains(query_info.row_level_filter->column_name))
+        {
+            query_info.row_level_filter->do_remove_column = true;
+            removed_output_from_row_level_filter = true;
+        }
+        for (const auto * input : query_info.row_level_filter->actions.getInputs())
             columns_to_keep.insert(input->result_name);
     }
 
@@ -3444,7 +3469,7 @@ IQueryPlanStep::RemovedUnusedColumns ReadFromMergeTree::removeUnusedColumns(Name
             new_column_names.push_back(column_name);
     }
 
-    if (!erased_prewhere_output && new_column_names.size() == all_column_names.size())
+    if (!removed_output_from_prewhere && !removed_output_from_row_level_filter && new_column_names.size() == all_column_names.size())
         return RemovedUnusedColumns::None;
 
     all_column_names = std::move(new_column_names);
