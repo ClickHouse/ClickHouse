@@ -7,7 +7,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
-
 namespace DB
 {
 namespace Setting

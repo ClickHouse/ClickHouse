@@ -308,6 +308,7 @@ private:
     std::map<IQueryTreeNode::Hash, ResolvedFunctionsCache> functions_cache;
 
     const bool only_analyze;
+    bool disable_constant_folding = false;
 };
 
 }
