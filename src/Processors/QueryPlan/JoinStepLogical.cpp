@@ -53,7 +53,6 @@
 #include <Storages/StorageJoin.h>
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
-#include <fmt/format.h>
 #include <algorithm>
 #include <memory>
 #include <ranges>
