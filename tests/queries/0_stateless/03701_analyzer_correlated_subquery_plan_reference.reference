@@ -18,7 +18,7 @@ Positions: 0
                INPUT :: 1 -> __table1.y Int32 : 1
                INPUT :: 2 -> exists(__table2) UInt8 : 2
       Positions: 0 1 2
-        Join
+        Join (JOIN FillRightFirst)
         Type: LEFT
         Strictness: SEMI
         Algorithm: ConcurrentHashJoin
@@ -71,7 +71,7 @@ Positions: 0
                 Actions: INPUT :: 0 -> __table1.x Int32 : 0
                          INPUT :: 1 -> __table4.number UInt64 : 1
                 Positions: 0 1
-                  Join
+                  Join (JOIN FillRightFirst)
                   Type: CROSS
                   Strictness: ALL
                   Algorithm: HashJoin
