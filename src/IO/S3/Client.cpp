@@ -21,6 +21,7 @@
 #include <aws/core/utils/logging/ErrorMacros.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Exception.h>
 
 #include <IO/Expect404ResponseScope.h>
 #include <IO/S3/Requests.h>
@@ -752,7 +753,37 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
         bool inside_retry_loop = false;
-        for (Int64 attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
+
+        Int64 attempt_no = 0;
+
+        auto net_exception_handler = [&]() -> bool
+            {
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
+                if (isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+
+                tryLogCurrentException(log, "Will retry");
+                last_exception = std::current_exception();
+
+                auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
+
+                /// Check if query is canceled.
+                /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                if (!client_configuration.retryStrategy->ShouldRetry(error, /*attemptedRetries*/ -1))
+                    return true;
+
+                incrementProfileEvents<IsReadMethod>(
+                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                    if (isClientForDisk())
+                        incrementProfileEvents<IsReadMethod>(
+                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
+
+                updateNextTimeToRetryAfterRetryableError(error, attempt_no);
+                inside_retry_loop = true;
+                return false;
+            };
+
+        for (attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
@@ -801,23 +832,14 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             catch (Poco::Net::NetException &)
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
-
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
-                if (isClientForDisk())
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
-
-                tryLogCurrentException(log, "Will retry");
-                last_exception = std::current_exception();
-
-                auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
-
-                /// Check if query is canceled.
-                /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
-                if (!client_configuration.retryStrategy->ShouldRetry(error, /*attemptedRetries*/ -1))
+                if (net_exception_handler())
                     break;
-
-                updateNextTimeToRetryAfterRetryableError(error, attempt_no);
-                inside_retry_loop = true;
+            }
+            catch (Poco::TimeoutException &)
+            {
+                /// This includes "Timeout"
+                if (net_exception_handler())
+                    break;
             }
         }
 
