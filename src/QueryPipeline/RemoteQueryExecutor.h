@@ -66,7 +66,8 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::optional<Extension> extension_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        bool async_cancel = false);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
@@ -78,8 +79,8 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-
-        std::optional<Extension> extension_ = std::nullopt);
+        std::optional<Extension> extension_ = std::nullopt,
+        bool async_cancel = false);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
@@ -92,7 +93,8 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
-        std::optional<Extension> extension_ = std::nullopt);
+        std::optional<Extension> extension_ = std::nullopt,
+        bool async_cancel = false);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
@@ -106,7 +108,8 @@ public:
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr,
         std::optional<Extension> extension_ = std::nullopt,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        GetPriorityForLoadBalancing::Func priority_func = {},
+        bool async_cancel = false);
 
     ~RemoteQueryExecutor();
 
@@ -182,7 +185,12 @@ public:
 
     /// Receive all remain packets and finish query.
     /// It should be cancelled after read returned empty block.
-    void finish();
+    ///
+    /// If async_cancel is set, it will not receive all remain packets. The remaining packets
+    /// shoule be received in the readAsync
+    ///
+    /// Returns true iff the remaining packets should be received in the readAsync
+    bool finish();
 
     /// Cancel query execution. Sends Cancel packet and ignore others.
     /// This method may be called from separate thread.
@@ -231,7 +239,8 @@ private:
         QueryProcessingStage::Enum stage_,
         std::shared_ptr<const QueryPlan> query_plan_,
         std::optional<Extension> extension_,
-        GetPriorityForLoadBalancing::Func priority_func = {});
+        GetPriorityForLoadBalancing::Func priority_func = {},
+        bool async_cancel = false);
 
     SharedHeader header;
     Block totals;
@@ -346,6 +355,21 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+public:
+    /// If it is set, it will cancel the remote query in fiber
+    const bool async_cancel = false;
+
+    /// Used for logging in the finalizeAsyncCancel, because when finalizeAsyncCancel is called, all of
+    /// the connections have dropped and we can not get the addresses info from the connections anymore
+    String connections_addresses;
+
+    /// Returns True iff there are some remaining packets have not been consumed
+    bool hasDrainingPackets();
+
+    /// This function is called when all of the remaining packets after the async sendCancel have been consumed.
+    /// Used to cancel the fiber task
+    void finalizeAsyncCancel();
 };
 
 }

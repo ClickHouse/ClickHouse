@@ -108,6 +108,12 @@ private:
     bool suspend_when_query_sent = false;
     bool is_query_sent = false;
     const bool read_packet_type_separately = false;
+    bool is_async_cancel_sent = false;
+    std::atomic_bool is_async_cancelling = false;
+
+public:
+    void asyncCancel() { is_async_cancelling = true; }
+    bool isAsyncCancelled() { return is_async_cancelling; }
 };
 
 }

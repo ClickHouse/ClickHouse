@@ -47,7 +47,18 @@ protected:
 
 private:
     std::atomic_bool was_query_sent = false;
-    bool need_drain = false;
+    enum class DrainStatus
+    {
+        /// Do not need to call the drain process
+        NoDrain,
+        /// The prepare function transitions status from NoDrain to NeedDrain, which the work function then reads and processes.
+        NeedDrain,
+        /// Changes status from NeedDrain to Draining, marking the transition where readAsync processes post-cancel packets.
+        Draining,
+        /// After consuming all post-cancel packets, the work function transitions drain_status to Drained, signaling drain completion
+        Drained,
+    };
+    DrainStatus drain_status = DrainStatus::NoDrain;
     bool executor_finished = false;
     bool add_aggregation_info = false;
     RemoteQueryExecutorPtr query_executor;

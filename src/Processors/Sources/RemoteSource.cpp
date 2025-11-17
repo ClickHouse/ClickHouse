@@ -101,9 +101,19 @@ ISource::Status RemoteSource::prepare()
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        is_async_state = false;
-        need_drain = true;
-        return Status::Ready;
+        switch (drain_status) {
+            case DrainStatus::NoDrain:
+                is_async_state = false;
+                drain_status = DrainStatus::NeedDrain;
+                return Status::Ready;
+            case DrainStatus::NeedDrain:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The prepare function cannot have NeedDrain status");
+            case DrainStatus::Draining:
+                return Status::Ready;
+            case DrainStatus::Drained:
+                query_executor->finalizeAsyncCancel();
+                return Status::Finished;
+        }
     }
 
     return status;
@@ -123,11 +133,15 @@ void RemoteSource::work()
     /// Connection drain is a heavy operation that may take a long time.
     /// Therefore we move connection drain from prepare() to work(), and drain multiple connections in parallel.
     /// See issue: https://github.com/ClickHouse/ClickHouse/issues/60844
-    if (need_drain)
+    if (drain_status == DrainStatus::NeedDrain)
     {
-        query_executor->finish();
-        executor_finished = true;
-        return;
+        auto is_draining = query_executor->finish();
+        if (!is_draining)
+        {
+            executor_finished = true;
+            return;
+        }
+        drain_status = DrainStatus::Draining;
     }
 
     if (preprocessed_packet)
@@ -199,6 +213,16 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         if (res.getType() == RemoteQueryExecutor::ReadResult::Type::ParallelReplicasToken)
         {
             is_async_state = false;
+            return Chunk();
+        }
+
+        if (drain_status == DrainStatus::Draining && res.getType() == RemoteQueryExecutor::ReadResult::Type::Data)
+        {
+            is_async_state = false;
+            /// Calling hasDrainingPackets here is fine, because resume the fiber task will synchronize the
+            /// query_executor's state
+            if (!query_executor->hasDrainingPackets())
+                drain_status = DrainStatus::Drained;
             return Chunk();
         }
 

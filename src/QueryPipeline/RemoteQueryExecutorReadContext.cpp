@@ -64,6 +64,13 @@ void RemoteQueryExecutorReadContext::Task::run(AsyncCallback async_callback, Sus
             read_context.has_read_packet_part = PacketPart::Type;
             suspend_callback();
         }
+        if (read_context.executor.async_cancel && read_context.isAsyncCancelled() && !read_context.is_async_cancel_sent)
+        {
+            auto & connections = read_context.executor.getConnections();
+            AsyncCallbackSetter<IConnections> async_setter(&connections, async_callback);
+            connections.sendCancel();
+            read_context.is_async_cancel_sent = true;
+        }
         read_context.packet = read_context.executor.getConnections().receivePacketUnlocked(async_callback);
         read_context.has_read_packet_part = PacketPart::Body;
         suspend_callback();
