@@ -9,6 +9,11 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int TEXT_INDEX_USED_IN_BOTH_PREWHERE_AND_WHERE;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -70,6 +75,97 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
+/// Helper function.
+/// Collects index conditions from the given ReadFromMergeTree step and stores them in index_conditions.
+static void collectTextIndexConditions(const ReadFromMergeTree * read_from_merge_tree_step, IndexToConditionMap & text_index_conditions)
+{
+    const auto & indexes = read_from_merge_tree_step->getIndexes();
+    if (!indexes || indexes->skip_indexes.useful_indices.empty())
+        return;
+
+    const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
+    if (parts_with_ranges.empty())
+        return;
+
+    std::unordered_set<DataPartPtr> unique_parts;
+    for (const auto & part : parts_with_ranges)
+        unique_parts.insert(part.data_part);
+
+    for (const auto & index : indexes->skip_indexes.useful_indices)
+    {
+        if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
+        {
+            /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
+            /// TODO: support partial read from text index with fallback to the brute-force
+            /// search for parts where index is not materialized.
+            bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
+            {
+                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
+            });
+
+            if (has_index_in_all_parts)
+                text_index_conditions[index.index->index.name] = text_index_condition;
+        }
+    }
+}
+
+static bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const MergeTreeIndexConditionText & condition)
+{
+    using enum ActionsDAG::ActionType;
+    const auto & header = condition.getHeader();
+
+    if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
+    {
+        auto lhs_name_without_aliases = getNameWithoutAliases(&lhs_arg);
+        return header.has(lhs_name_without_aliases);
+    }
+
+    if (lhs_arg.type == COLUMN && (rhs_arg.type == INPUT || rhs_arg.type == FUNCTION))
+    {
+        auto rhs_name_without_aliases = getNameWithoutAliases(&rhs_arg);
+        return header.has(rhs_name_without_aliases);
+    }
+
+    return false;
+}
+
+static bool isSupportedDirectReadTextFunctionNode(const ActionsDAG::Node & function_node, const IndexToConditionMap & index_conditions)
+{
+    if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function)
+        return false;
+
+    if (function_node.children.size() != 2)
+        return false;
+
+    if (!MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(function_node.function->getName()))
+        return false;
+
+    auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
+    {
+        return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+    });
+
+    if (selected_it == index_conditions.end())
+        return false;
+
+    size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
+    {
+        return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
+    });
+
+    /// Do not optimize if there are multiple text indexes set for the column.
+    /// It is not clear which index to use.
+    return num_supported_conditions == 1;
+}
+
+static bool isSupportedDirectReadTextFunctionsWithinDAG(const ActionsDAG & dag, const IndexToConditionMap & index_conditions)
+{
+    for (const auto & node : dag.getNodes())
+        if (isSupportedDirectReadTextFunctionNode(node, index_conditions))
+            return true;
+    return false;
+}
+
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
 ///
 /// The substitution is performed after the index analysis and before PREWHERE optimization:
@@ -101,24 +197,32 @@ public:
     /// Replaces text-search functions by virtual columns.
     /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
     /// Returns a pair of (added columns by index name, removed columns)
-    std::pair<IndexReadColumns, Names> replace()
+    std::pair<IndexReadColumns, Names> replace(bool add_alias = false)
     {
         IndexReadColumns added_columns;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
-
+        NamesWithAliases names_with_aliases;
+        NameSet output_result_names;
+        for (const auto & output : actions_dag.getOutputs())
+            output_result_names.insert(output->result_name);
         for (ActionsDAG::Node & node : actions_dag.nodes)
         {
+            String origin_result_name = node.result_name;
             auto replaced = tryReplaceFunctionNodeInplace(node);
 
             if (replaced.has_value())
             {
                 const auto & [index_name, column_name] = replaced.value();
+                if (output_result_names.contains(origin_result_name))
+                    names_with_aliases.push_back({column_name, origin_result_name});
                 added_columns[index_name].emplace_back(column_name, node.result_type);
             }
         }
 
         if (added_columns.empty())
             return {{}, {}};
+        if (add_alias && !names_with_aliases.empty())
+            actions_dag.addAliases(names_with_aliases);
 
         actions_dag.removeUnusedActions();
 
@@ -139,37 +243,11 @@ private:
     ActionsDAG & actions_dag;
     std::unordered_map<String, MergeTreeIndexConditionText *> index_conditions;
 
-    bool isSupportedCondition(const ActionsDAG::Node & lhs_arg, const ActionsDAG::Node & rhs_arg, const MergeTreeIndexConditionText & condition) const
-    {
-        using enum ActionsDAG::ActionType;
-        const auto & header = condition.getHeader();
-
-        if ((lhs_arg.type == INPUT || lhs_arg.type == FUNCTION) && rhs_arg.type == COLUMN)
-        {
-            auto lhs_name_without_aliases = getNameWithoutAliases(&lhs_arg);
-            return header.has(lhs_name_without_aliases);
-        }
-
-        if (lhs_arg.type == COLUMN && (rhs_arg.type == INPUT || rhs_arg.type == FUNCTION))
-        {
-            auto rhs_name_without_aliases = getNameWithoutAliases(&rhs_arg);
-            return header.has(rhs_name_without_aliases);
-        }
-
-        return false;
-    }
-
     /// Attempts to add a new node with the replacement virtual column.
     /// Returns the pair of (index name, virtual column name) if the replacement is successful.
     std::optional<std::pair<String, String>> tryReplaceFunctionNodeInplace(ActionsDAG::Node & function_node)
     {
-        if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function)
-            return std::nullopt;
-
-        if (function_node.children.size() != 2)
-            return std::nullopt;
-
-        if (!MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(function_node.function->getName()))
+        if (!isSupportedDirectReadTextFunctionNode(function_node, index_conditions))
             return std::nullopt;
 
         auto selected_it = std::ranges::find_if(index_conditions, [&](const auto & index_with_condition)
@@ -178,16 +256,6 @@ private:
         });
 
         if (selected_it == index_conditions.end())
-            return std::nullopt;
-
-        size_t num_supported_conditions = std::ranges::count_if(index_conditions, [&](const auto & index_with_condition)
-        {
-            return isSupportedCondition(*function_node.children[0], *function_node.children[1], *index_with_condition.second);
-        });
-
-        /// Do not optimize if there are multiple text indexes set for the column.
-        /// It is not clear which index to use.
-        if (num_supported_conditions != 1)
             return std::nullopt;
 
         const auto & [index_name, condition] = *selected_it;
@@ -212,40 +280,21 @@ private:
     }
 };
 
-/// Helper function.
-/// Collects index conditions from the given ReadFromMergeTree step and stores them in index_conditions.
-static void collectIndexConditions(const ReadFromMergeTree * read_from_merge_tree_step, IndexToConditionMap & index_conditions)
+static bool applyTextIndexDirectReadToDAG(ReadFromMergeTree * read_from_merge_tree_step, ActionsDAG & filter_dag, const IndexToConditionMap & text_index_conditions, bool add_alias)
 {
+    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, text_index_conditions);
+    auto [added_columns, removed_columns] = replacer.replace(add_alias);
+
+    if (added_columns.empty())
+        return false;
+
+    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
+
     const auto & indexes = read_from_merge_tree_step->getIndexes();
-    if (!indexes || indexes->skip_indexes.useful_indices.empty())
-        return;
-
-    const RangesInDataParts & parts_with_ranges = read_from_merge_tree_step->getParts();
-    if (parts_with_ranges.empty())
-        return;
-
-    std::unordered_set<DataPartPtr> unique_parts;
-    for (const auto & part : parts_with_ranges)
-        unique_parts.insert(part.data_part);
-
-    for (const auto & index : indexes->skip_indexes.useful_indices)
-    {
-        if (auto * text_index_condition = typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
-        {
-            /// Index may be not materialized in some parts, e.g. after ALTER ADD INDEX query.
-            /// TODO: support partial read from text index with fallback to the brute-force
-            /// search for parts where index is not materialized.
-            bool has_index_in_all_parts = std::ranges::all_of(unique_parts, [&](const auto & part)
-            {
-                return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName());
-            });
-
-            if (has_index_in_all_parts)
-                index_conditions[index.index->index.name] = text_index_condition;
-        }
-    }
+    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
+    return true;
 }
-
 /// Text index search queries have this form:
 ///     SELECT [...]
 ///     FROM tab
@@ -274,7 +323,7 @@ void optimizeWhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes 
         return;
 
     IndexToConditionMap index_conditions;
-    collectIndexConditions(read_from_merge_tree_step, index_conditions);
+    collectTextIndexConditions(read_from_merge_tree_step, index_conditions);
     if (index_conditions.empty())
         return;
 
@@ -286,20 +335,17 @@ void optimizeWhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes 
     ActionsDAG & filter_dag = filter_step->getExpression();
     const ActionsDAG::Node & filter_column_node = filter_dag.findInOutputs(filter_step->getFilterColumnName());
 
-    FullTextMatchingFunctionDAGReplacer replacer(filter_dag, index_conditions);
-    auto [added_columns, removed_columns] = replacer.replace();
+    /// Simply forbid the case that PREWHERE and WHERE contain eligible functions.
+    auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo();
+    if (prewhere_info && isSupportedDirectReadTextFunctionsWithinDAG(prewhere_info->prewhere_actions, index_conditions) && isSupportedDirectReadTextFunctionsWithinDAG(filter_dag, index_conditions))
+        throw Exception(ErrorCodes::TEXT_INDEX_USED_IN_BOTH_PREWHERE_AND_WHERE,
+            "Using text index in both PREWHERE and WHERE is not supported. Please move all text-index conditions into PREWHERE.");
 
-    if (added_columns.empty())
+    bool applied = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, filter_dag, index_conditions, false);
+    if (!applied)
         return;
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
-
-    const auto & indexes = read_from_merge_tree_step->getIndexes();
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
-
-    bool removes_filter_column = filter_step->removesFilterColumn();
-
+     bool removes_filter_column = filter_step->removesFilterColumn();
     /// The original node (pointer address) should be preserved in the DAG outputs because we replace in-place.
     /// However, the `result_name` could be different if the output column was replaced.
     chassert(std::ranges::contains(filter_dag.getOutputs(), &filter_column_node));
@@ -326,7 +372,7 @@ void optimizePrewhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nod
         return;
 
     IndexToConditionMap index_conditions;
-    collectIndexConditions(read_from_merge_tree_step, index_conditions);
+    collectTextIndexConditions(read_from_merge_tree_step, index_conditions);
     if (index_conditions.empty())
         return;
 
@@ -334,34 +380,16 @@ void optimizePrewhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nod
     if (!prewhere_info)
         return;
 
+    read_from_merge_tree_step->updatePrewhereInfo({});
     auto cloned_prewhere_info = prewhere_info->clone();
-    FullTextMatchingFunctionDAGReplacer replacer(cloned_prewhere_info.prewhere_actions, index_conditions);
-    auto [added_columns, removed_columns] = replacer.replace();
+    auto applied = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, cloned_prewhere_info.prewhere_actions, index_conditions, true);
 
-    if (added_columns.empty())
+    if (!applied)
+    {
+        read_from_merge_tree_step->updatePrewhereInfo(prewhere_info);
         return;
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
-    LOG_DEBUG(logger, "{}", optimizationInfoToString(added_columns, removed_columns));
+    }
 
-    /// Updating the modified PrewhereInfo requires adding virtual columns and removing the associated text columns.
-    /// Because these operations rely on the state of the existing PrewhereInfo,
-    /// we must reset it first and then apply the new, updated PrewhereInfo.
-    read_from_merge_tree_step->updatePrewhereInfo(nullptr);
-    const auto & indexes = read_from_merge_tree_step->getIndexes();
-    read_from_merge_tree_step->createReadTasksForTextIndex(indexes->skip_indexes, added_columns, removed_columns);
-
-    /// When the PREWHERE clause contains only a single text function and
-    /// that function has been rewritten into a virtual column,
-    /// the prewhere_column_name in PrewhereInfo must be replaced with the name of the virtual column.
-    /// If multiple text functions or multiple conditions are present,
-    /// no replacement is needed; the column referenced by prewhere_column_name
-    /// will be generated later during the subsequent computation stages.
-    const auto & prewhere_actions_outpus = cloned_prewhere_info.prewhere_actions.getOutputs();
-    const auto & prewhere_actions_inputs = cloned_prewhere_info.prewhere_actions.getInputs();
-    if (prewhere_actions_outpus.size() == 1 && prewhere_actions_outpus.front()->type == ActionsDAG::ActionType::INPUT &&
-        prewhere_actions_inputs.size() == 1 && prewhere_actions_inputs.front()->type == ActionsDAG::ActionType::INPUT &&
-        prewhere_actions_outpus.front()->result_name == prewhere_actions_inputs.front()->result_name)
-        cloned_prewhere_info.prewhere_column_name = prewhere_actions_outpus.front()->result_name;
     /// Finally, assign the corrected PrewhereInfo back to the plan node.
     auto modified_prewhere_info = std::make_shared<PrewhereInfo>(std::move(cloned_prewhere_info));
     read_from_merge_tree_step->updatePrewhereInfo(modified_prewhere_info);
