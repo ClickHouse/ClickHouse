@@ -49,12 +49,20 @@ public:
 
     void cancelImpl() noexcept override
     {
-        finalFlushBefore();
-        Base::next();
-        Base::cancelImpl();
-        out->next();
-        out->cancel();
-        finalFlushAfter();
+        try
+        {
+            finalFlushBefore();
+            Base::next();
+            Base::cancelImpl();
+            out->next();
+            out->cancel();
+            finalFlushAfter();
+        }
+        catch (...)
+        {
+            tryLogCurrentException("WriteBufferDecorator");
+            out->cancel();
+        }
     }
 
     WriteBuffer * getNestedBuffer() { return out; }
