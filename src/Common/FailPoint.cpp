@@ -189,7 +189,9 @@ static struct InitFiu
     REGULAR(wide_part_writer_fail_in_add_streams) \
     REGULAR(compact_part_writer_fail_in_add_streams) \
     REGULAR(transaction_force_unknown_state_after_commit) \
-    PAUSEABLE(transaction_after_commit_pause)
+    PAUSEABLE(transaction_after_commit_pause) \
+    ONCE(remote_query_executor_exception_after_receiving_data) \
+    REGULAR(remote_query_executor_exception_retryable)
 
 namespace FailPoints
 {

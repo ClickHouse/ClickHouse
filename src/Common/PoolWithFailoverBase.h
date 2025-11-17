@@ -76,6 +76,7 @@ public:
         void reset() { *this = {}; }
 
         Entry entry; /// use isNull() to check if connection is established
+        NestedPoolPtr pool; /// The pool this entry was obtained from
         bool is_usable = false; /// if connection is established, then can be false only with table check
                                 /// if table is not present on remote peer, -> it'll be false
         bool is_up_to_date = false; /// If true, the entry is a connection to up-to-date replica
@@ -308,6 +309,7 @@ PoolWithFailoverBase<TNestedPool>::getMany(
 
             std::string fail_message;
             result = try_get_entry(shuffled_pool.pool, fail_message);
+            result.pool = shuffled_pool.pool;
 
             if (!fail_message.empty())
                 fail_messages += fail_message + '\n';
