@@ -179,7 +179,7 @@ public:
         const IColumn ** columns,
         const UInt8 * null_map,
         Arena *,
-        ssize_t if_argument_pos = -1) const override
+        ssize_t if_argument_pos) const override
     {
         auto & set = this->data(place).value;
         ensureCapacity(set);
