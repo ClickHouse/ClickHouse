@@ -442,7 +442,7 @@ void IPAddressDictionary::loadData()
                         setAttributeValue(attribute, attribute_column[row]);
                     }
 
-                    const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
+                    const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row));
                     has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
 
                     size_t row_number = ip_records.size();
