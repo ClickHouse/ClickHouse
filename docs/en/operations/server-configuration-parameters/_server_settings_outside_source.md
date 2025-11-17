@@ -2508,7 +2508,7 @@ The same applies to GitLab, even though it has a leading dot. Both `gitlab.com` 
 
 ## hashicorp_vault {#hashicorp_vault}
 
-Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently token and username/password authentication methods are supported.
+Configures HashiCorp Vault or OpenBao for secure secrets retrieval in configuration. Currently token, username/password and TLS certificate authentication methods are supported.
 
 The following settings can be configured by sub-tags:
 
@@ -2517,13 +2517,31 @@ The following settings can be configured by sub-tags:
 | `url`                | Scheme, site, port of Vault server without path.       |
 | `token`              | Token used for token authentication.                   |
 | `userpass`           | Section used for username and password authentication. |
+| `cert`               | Section used for TLS certificate authentication.       |
+| `ssl`                | Section used for SSL settings.       |
 
 `userpass` contains the following settings, which can be configured by sub-tags:
 
+| Sub-tags             | Definition                                                |
+|----------------------|-----------------------------------------------------------|
+| `username`           | Username for username and password authentication method. |
+| `password`           | Password for username and password authentication method. |
+
+`cert` contains the following settings, which can be configured by sub-tags:
+
+| Sub-tags         | Definition                                                        |
+|------------------|-------------------------------------------------------------------|
+| `name`           | Named certificate role for TLS certificate authentication method. |
+
+`ssl` contains the following settings with, which can be configured by sub-tags:
+
 | Sub-tags             | Definition                                                                                                                                        |
 |----------------------|--------------------------------------------------|
-| `username`           | Username for username and authentication method. |
-| `password`           | Password for username and authentication method. |
+| `privateKeyFile`     | Client's private key file.                       |
+| `certificateFile`    | Client's certificate file.                       |
+| `caLocation`         | Server's CA certificate file.                    |
+
+`ssl` section is obligatory for TLS certificate auth method, but it may be used with any supported auth methods.
 
 Each section in ClickHouse configuration or users configuration may have the following attributes:
 
@@ -2556,6 +2574,23 @@ ClickHouse configuration for username and password authentication method:
         <password>test</password>
       </userpass>
     </hashicorp_vault>
+</clickhouse>
+```
+
+ClickHouse configuration for TLS certificate authentication method:
+
+```xml
+<clickhouse>
+    <hashicorp_vault>
+      <url>https://hashicorpvault:8210</url>
+      <cert>
+        <name>client</name>
+      </cert>
+      <ssl>
+        <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
+        <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
+        <caLocation>/etc/clickhouse-server/config.d/ca.crt</caLocation>
+      </ssl>
 </clickhouse>
 ```
 

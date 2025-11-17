@@ -2,7 +2,7 @@
     <hashicorp_vault>
       <url>https://hashicorpvault:8210</url>
       <cert>
-      	<name>client</name>
+        <name>client</name>
       </cert>
       <ssl>
         <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
