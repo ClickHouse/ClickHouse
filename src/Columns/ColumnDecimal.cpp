@@ -475,8 +475,8 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
     res_data.reserve_exact(offsets.back());
     res_data.resize(offsets.back());
 
-    const T *src = data.data();
-    T *dst = res_data.data();
+    const T * src = data.data();
+    T * dst = res_data.data();
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
