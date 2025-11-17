@@ -46,7 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_dictionary_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
-            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
         });
         addSettingsChanges(settings_changes_history, "25.10",
