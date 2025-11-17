@@ -443,13 +443,13 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
+    nested->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

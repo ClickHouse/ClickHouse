@@ -27,7 +27,7 @@ public:
     void finishInsert();
 
     /// Looks up each value and returns column of Bool-s
-    ColumnPtr find(ColumnPtr values) const;
+    ColumnPtr find(const ColumnWithTypeAndName & values) const;
 
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     void addAllFrom(const RuntimeFilter & source);

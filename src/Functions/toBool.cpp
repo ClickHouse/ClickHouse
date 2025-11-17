@@ -56,7 +56,7 @@ namespace
                 }
             };
 
-            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {});
+            auto func_cast = createInternalCast(arguments[0], result_type, CastType::nonAccurate, {}, nullptr);
             return func_cast->execute(cast_args, result_type, arguments[0].column->size(), /* dry_run = */ false);
         }
     };

@@ -274,7 +274,7 @@ TEST_F(ConnectionPoolTest, CanConnect)
     ASSERT_EQ(1, getServer().currentConnections());
     ASSERT_EQ(1, getServer().totalConnections());
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -293,7 +293,7 @@ TEST_F(ConnectionPoolTest, CanRequest)
     ASSERT_EQ(1, getServer().totalConnections());
     ASSERT_EQ(1, getServer().currentConnections());
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());
@@ -359,7 +359,7 @@ TEST_F(ConnectionPoolTest, CanReuse)
         ASSERT_EQ(1, DB::CurrentThread::getProfileEvents()[metrics.reused]);
         ASSERT_EQ(0, DB::CurrentThread::getProfileEvents()[metrics.reset]);
 
-        connection->reset();
+        (*connection).reset();
     }
 
     ASSERT_EQ(0, CurrentMetrics::get(pool->getMetrics().active_count));
@@ -388,7 +388,7 @@ TEST_F(ConnectionPoolTest, CanReuse10)
 
     {
         auto connection = pool->getConnection(timeouts, nullptr);
-        connection->reset(); // reset just not to wait its expiration here
+        (*connection).reset(); // reset just not to wait its expiration here
     }
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
@@ -455,7 +455,7 @@ TEST_F(ConnectionPoolTest, CanReuse5)
     {
         // just to trigger pool->wipeExpired();
         auto connection = pool->getConnection(timeouts, nullptr);
-        connection->reset();
+        (*connection).reset();
     }
 
     ASSERT_EQ(6, DB::CurrentThread::getProfileEvents()[metrics.created]);
@@ -546,7 +546,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 
     echoRequest("Hello", *connection);
 
-    connection->reset();
+    (*connection).reset();
 
     wait_until([&] () { return getServer().currentConnections() == 0; });
     ASSERT_EQ(0, getServer().currentConnections());

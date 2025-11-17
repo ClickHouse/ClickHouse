@@ -507,9 +507,15 @@ class BackportPRs:
         # To not have a possible TZ issues
         tomorrow = date.today() + timedelta(days=1)
 
+        # The search API struggles to serve the heavy queries, so we limit the
+        # updated date to 90 days ago. It improves the response quality by an order of
+        # magnitude
+        updated = (date.today() - timedelta(days=90)).isoformat() + "..*"
+
         query_args = {
             "query": f"type:pr repo:{repo_name} -label:{backport_created_label}",
             "label": ",".join(labels_to_backport),
+            "updated": updated,
             "merged": [since_date, tomorrow],
         }
         logging.info("Query to find the backport PRs:\n %s", query_args)

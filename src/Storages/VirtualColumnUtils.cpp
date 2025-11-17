@@ -31,6 +31,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 
@@ -65,7 +66,7 @@ namespace DB
 namespace VirtualColumnUtils
 {
 
-void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
@@ -81,11 +82,26 @@ void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
                 if (!future_set->get())
                 {
                     if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
-                        set_from_subquery->buildSetInplace(context);
+                    {
+                        if (ordered)
+                            set_from_subquery->buildOrderedSetInplace(context);
+                        else
+                            set_from_subquery->buildSetInplace(context);
+                    }
                 }
             }
         }
     }
+}
+
+void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+{
+    buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
+{
+    buildSetsForDagImpl(dag, context, /* ordered = */ true);
 }
 
 ExpressionActionsPtr buildFilterExpression(ActionsDAG dag, ContextPtr context)
@@ -127,13 +143,15 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 
 static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
-    return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
-            {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
-            {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
-            {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())}
+    return {
+        {"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
+        {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+        {"_data_lake_snapshot_version", makeNullable(std::make_shared<DataTypeUInt64>())},
+        {"_row_number", makeNullable(std::make_shared<DataTypeInt64>())},
     };
 }
 
@@ -197,7 +215,7 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context, const NamesAndTypesList & hive_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -216,7 +234,7 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
     }
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
-    return splitFilterDagForAllowedInputs(predicate, &block);
+    return splitFilterDagForAllowedInputs(predicate, &block, context);
 }
 
 ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
@@ -287,6 +305,21 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), (*virtual_values.etag))->convertToFullColumnIfConst());
             else
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+        }
+        else if (virtual_column.name == "_tags")
+        {
+            if (virtual_values.tags)
+            {
+                Map map_value;
+                for (const auto & [key, value] : *virtual_values.tags)
+                    map_value.push_back(Field(Tuple{Field(key), Field(value)}));
+
+                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), map_value)->convertToFullColumnIfConst());
+            }
+            else
+            {
+                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            }
         }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {
@@ -388,7 +421,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
 }
 
 static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
-    const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, bool allow_partial_result)
+    const ActionsDAG::Node * node, const Block * allowed_inputs, ActionsDAG::Nodes & additional_nodes, const ContextPtr & context, bool allow_partial_result)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION)
     {
@@ -398,7 +431,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
             node_copy.children.clear();
             for (const auto * child : node->children)
                 if (const auto * child_copy
-                    = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_partial_result))
+                    = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, context, allow_partial_result))
                     node_copy.children.push_back(child_copy);
                 /// Expression like (now_allowed AND allowed) is not allowed if allow_partial_result = true. This is important for
                 /// trivial count optimization, otherwise we can get incorrect results. For example, if the query is
@@ -418,7 +451,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                 if (!res->result_type->equals(*node->result_type))
                 {
                     ActionsDAG tmp_dag;
-                    res = &tmp_dag.addCast(*res, node->result_type, {});
+                    res = &tmp_dag.addCast(*res, node->result_type, {}, context);
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));
                 }
 
@@ -431,7 +464,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
         {
             auto & node_copy = additional_nodes.emplace_back(*node);
             for (auto & child : node_copy.children)
-                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, allow_partial_result); !child)
+                if (child = splitFilterNodeForAllowedInputs(child, allowed_inputs, additional_nodes, context, allow_partial_result); !child)
                     return nullptr;
 
             return &node_copy;
@@ -446,7 +479,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     ActionsDAG::NodeRawConstPtrs atoms;
                     for (const auto & output : index_hint_dag.getOutputs())
                         if (const auto * child_copy
-                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, allow_partial_result))
+                            = splitFilterNodeForAllowedInputs(output, allowed_inputs, additional_nodes, context, allow_partial_result))
                             atoms.push_back(child_copy);
 
                     if (!atoms.empty())
@@ -461,7 +494,7 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                         }
 
                         if (!res->result_type->equals(*node->result_type))
-                            res = &index_hint_dag.addCast(*res, node->result_type, {});
+                            res = &index_hint_dag.addCast(*res, node->result_type, {}, context);
 
                         additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(index_hint_dag)));
                         return res;
@@ -482,13 +515,13 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
 }
 
 std::optional<ActionsDAG>
-splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result)
+splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, const ContextPtr & context, bool allow_partial_result)
 {
     if (!predicate)
         return {};
 
     ActionsDAG::Nodes additional_nodes;
-    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, allow_partial_result);
+    const auto * res = splitFilterNodeForAllowedInputs(predicate, allowed_inputs, additional_nodes, context, allow_partial_result);
     if (!res)
         return {};
 
@@ -498,7 +531,7 @@ splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block *
 void filterBlockWithPredicate(
     const ActionsDAG::Node * predicate, Block & block, ContextPtr context, bool allow_filtering_with_partial_predicate)
 {
-    auto dag = splitFilterDagForAllowedInputs(predicate, &block, /*allow_partial_result=*/allow_filtering_with_partial_predicate);
+    auto dag = splitFilterDagForAllowedInputs(predicate, &block, context, /*allow_partial_result=*/allow_filtering_with_partial_predicate);
     if (dag)
         filterBlockWithExpression(buildFilterExpression(std::move(*dag), context), block);
 }

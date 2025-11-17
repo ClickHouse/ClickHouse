@@ -97,7 +97,7 @@ public:
 
         /// If the precision node was nullable, the result needs to be nullable too. As this pass removes precision_node, we force
         /// the nullability on the dimension constant (if former was the case) to preserve the nullability of the result
-        if (precision_node->getResultType()->isNullable())
+        if (precision_node->getResultType()->isNullable() || precision_node->getResultType()->isLowCardinalityNullable())
             dimension_constant->convertToNullable();
 
         new_args.push_back(dimension_constant);

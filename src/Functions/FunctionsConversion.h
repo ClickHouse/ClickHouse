@@ -10,7 +10,6 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
@@ -23,6 +22,7 @@
 #include <Core/Settings.h>
 #include <Core/Types.h>
 #include <Core/callOnTypeIndex.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -41,7 +41,6 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeString.h>
@@ -52,7 +51,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -2910,7 +2908,8 @@ private:
 
         FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createWithOverflow
+        if (context && datetime_overflow_behavior == default_date_time_overflow_behavior)
             context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
 
         if (isDynamic(from_type))
@@ -4187,7 +4186,8 @@ private:
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
         FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = function_date_time_overflow_behavior;
-        if (context)
+        /// Only use context settings if the overflow behavior was not explicitly set via createFunctionBaseCast
+        if (context && function_date_time_overflow_behavior == default_date_time_overflow_behavior)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
         if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -4703,6 +4703,13 @@ private:
             const auto * col = arguments.front().column.get();
 
             size_t tuple_size = to_element_types.size();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col->size());
+            }
+
             const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*col);
 
             Columns converted_columns(tuple_size);
@@ -5019,337 +5026,6 @@ private:
         }
     }
 
-    WrapperType createTupleToObjectDeprecatedWrapper(const DataTypeTuple & from_tuple, bool has_nullable_subcolumns) const
-    {
-        if (!from_tuple.hasExplicitNames())
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_tuple.getName());
-
-        PathsInData paths;
-        DataTypes from_types;
-
-        std::tie(paths, from_types) = flattenTuple(from_tuple.getPtr());
-        auto to_types = from_types;
-
-        for (auto & type : to_types)
-        {
-            if (isTuple(type) || isNested(type))
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Cast to Object can be performed only from flatten Named Tuple. Got: {}",
-                    from_tuple.getName());
-
-            type = recursiveRemoveLowCardinality(type);
-        }
-
-        return [element_wrappers = getElementWrappers(from_types, to_types),
-            has_nullable_subcolumns, from_types, to_types, paths]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
-        {
-            size_t tuple_size = to_types.size();
-            auto flattened_column = flattenTuple(arguments.front().column);
-            const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
-
-            if (tuple_size != column_tuple.getColumns().size())
-                throw Exception(ErrorCodes::TYPE_MISMATCH,
-                    "Expected tuple with {} subcolumn, but got {} subcolumns",
-                    tuple_size, column_tuple.getColumns().size());
-
-            auto res = ColumnObjectDeprecated::create(has_nullable_subcolumns);
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
-                auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
-                res->addSubcolumn(paths[i], converted_column->assumeMutable());
-            }
-
-            return res;
-        };
-    }
-
-    WrapperType createMapToObjectDeprecatedWrapper(const DataTypeMap & from_map, bool has_nullable_subcolumns) const
-    {
-        auto key_value_types = from_map.getKeyValueTypes();
-
-        if (!isStringOrFixedString(key_value_types[0]))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Cast to Object from Map can be performed only from Map "
-                "with String or FixedString key. Got: {}", from_map.getName());
-
-        const auto & value_type = key_value_types[1];
-        auto to_value_type = value_type;
-
-        if (!has_nullable_subcolumns && value_type->isNullable())
-            to_value_type = removeNullable(value_type);
-
-        if (has_nullable_subcolumns && !value_type->isNullable())
-            to_value_type = makeNullable(value_type);
-
-        DataTypes to_key_value_types{std::make_shared<DataTypeString>(), std::move(to_value_type)};
-        auto element_wrappers = getElementWrappers(key_value_types, to_key_value_types);
-
-        return [has_nullable_subcolumns, element_wrappers, key_value_types, to_key_value_types]
-            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t) -> ColumnPtr
-        {
-            const auto & column_map = assert_cast<const ColumnMap &>(*arguments.front().column);
-            const auto & offsets = column_map.getNestedColumn().getOffsets();
-            auto key_value_columns = column_map.getNestedData().getColumnsCopy();
-
-            for (size_t i = 0; i < 2; ++i)
-            {
-                ColumnsWithTypeAndName element{{key_value_columns[i], key_value_types[i], ""}};
-                key_value_columns[i] = element_wrappers[i](element, to_key_value_types[i], nullable_source, key_value_columns[i]->size());
-            }
-
-            const auto & key_column_str = assert_cast<const ColumnString &>(*key_value_columns[0]);
-            const auto & value_column = *key_value_columns[1];
-
-            using SubcolumnsMap = HashMap<StringRef, MutableColumnPtr, StringRefHash>;
-            SubcolumnsMap subcolumns;
-
-            for (size_t row = 0; row < offsets.size(); ++row)
-            {
-                for (size_t i = offsets[static_cast<ssize_t>(row) - 1]; i < offsets[row]; ++i)
-                {
-                    auto ref = key_column_str.getDataAt(i);
-
-                    bool inserted;
-                    SubcolumnsMap::LookupResult it;
-                    subcolumns.emplace(ref, it, inserted);
-                    auto & subcolumn = it->getMapped();
-
-                    if (inserted)
-                        subcolumn = value_column.cloneEmpty()->cloneResized(row);
-
-                    /// Map can have duplicated keys. We insert only first one.
-                    if (subcolumn->size() == row)
-                        subcolumn->insertFrom(value_column, i);
-                }
-
-                /// Insert default values for keys missed in current row.
-                for (const auto & [_, subcolumn] : subcolumns)
-                    if (subcolumn->size() == row)
-                        subcolumn->insertDefault();
-            }
-
-            auto column_object = ColumnObjectDeprecated::create(has_nullable_subcolumns);
-            for (auto && [key, subcolumn] : subcolumns)
-            {
-                PathInData path(key.toView());
-                column_object->addSubcolumn(path, std::move(subcolumn));
-            }
-
-            return column_object;
-        };
-    }
-
-    WrapperType createObjectDeprecatedWrapper(const DataTypePtr & from_type, const DataTypeObjectDeprecated * to_type) const
-    {
-        if (const auto * from_tuple = checkAndGetDataType<DataTypeTuple>(from_type.get()))
-        {
-            return createTupleToObjectDeprecatedWrapper(*from_tuple, to_type->hasNullableSubcolumns());
-        }
-        else if (const auto * from_map = checkAndGetDataType<DataTypeMap>(from_type.get()))
-        {
-            return createMapToObjectDeprecatedWrapper(*from_map, to_type->hasNullableSubcolumns());
-        }
-        else if (checkAndGetDataType<DataTypeString>(from_type.get()))
-        {
-            return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
-            {
-                auto res = ConvertImplGenericFromString<true>::execute(arguments, result_type, nullable_source, input_rows_count, context)->assumeMutable();
-                res->finalize();
-                return res;
-            };
-        }
-        else if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()))
-        {
-            return [is_nullable = to_type->hasNullableSubcolumns()] (ColumnsWithTypeAndName & arguments, const DataTypePtr & , const ColumnNullable * , size_t) -> ColumnPtr
-            {
-                const auto & column_object = assert_cast<const ColumnObjectDeprecated &>(*arguments.front().column);
-                auto res = ColumnObjectDeprecated::create(is_nullable);
-                for (size_t i = 0; i < column_object.size(); i++)
-                    res->insert(column_object[i]);
-
-                res->finalize();
-                return res;
-            };
-        }
-
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
-    }
-
-    /// We support nested Objects types. For example, in JSON we can have paths with type Array(JSON).
-    /// The parameters max_dynamic_types/max_dynamic_paths of these nested Object types depend on the
-    /// parameters of the original Object type (they are reduced by constant factors to avoid subcolumns
-    /// explosion). And this logic is used to read typed subcolumns without knowing the reduced parameters
-    /// like this: "SELECT json.a.b.:`Array(JSON)`" (or simply "SELECT json.a.b[]"). In this case we substitute the
-    /// nested JSON type name to the JSON type name with reduced parameters (see replaceJSONTypeNameIfNeeded function in DataTypeObject.cpp).
-    /// It's done to allow the user to request nested JSON subcolumns without specifying these parameters.
-    /// All this means that during conversion from one Object type to another the max_dynamic_types/max_dynamic_paths
-    /// parameters may change and we should change the parameters of all nested Object types recursively.
-    /// The next few functions are needed to do this conversion of nested Object types.
-
-    /// Convert all nested object types to new provided object type. Go inside Array and Tuple types.
-    DataTypePtr convertNestedObjectType(const DataTypePtr & type, const DataTypePtr & new_object_type) const
-    {
-        if (isObject(type))
-            return new_object_type;
-
-        if (const auto * type_array = checkAndGetDataType<DataTypeArray>(type.get()))
-            return std::make_shared<DataTypeArray>(convertNestedObjectType(type_array->getNestedType(), new_object_type));
-
-        if (const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get()))
-        {
-            const auto & elements = type_tuple->getElements();
-            DataTypes new_elements;
-            new_elements.reserve(elements.size());
-            for (const auto & element : elements)
-                new_elements.push_back(convertNestedObjectType(element, new_object_type));
-            return type_tuple->hasExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
-                                                  : std::make_shared<DataTypeTuple>(new_elements);
-        }
-
-        return type;
-    }
-
-    /// Copy the value in a form <binary_encoded_type><binary_value> with converted Object type.
-    /// Such values are used in shared variant inside Dynamic column and shared data inside Object column.
-    void copySharedValueWithConvertedNestedObjectType(const ColumnString & old_values, ColumnString & new_values, const DataTypePtr & new_object_type, size_t row, const FormatSettings & format_settings) const
-    {
-        auto value = old_values.getDataAt(row);
-        ReadBufferFromMemory value_buf(value.data, value.size);
-        auto type = decodeDataType(value_buf);
-        if (type->hasDynamicSubcolumns())
-        {
-            /// Deserialize value into temporary column.
-            auto tmp_column = type->createColumn();
-            type->getDefaultSerialization()->deserializeBinary(*tmp_column, value_buf, format_settings);
-            /// Create new type and cast temporary column to it.
-            auto new_type = convertNestedObjectType(type, new_object_type);
-            auto wrapper = prepareUnpackDictionaries(type, new_type);
-            ColumnsWithTypeAndName args = {{tmp_column->getPtr(), type, ""}};
-            auto new_column = wrapper(args, new_type, nullptr, tmp_column->size());
-            /// Encode new type and serialize new value.
-            WriteBufferFromVector<ColumnString::Chars> new_value_buf(new_values.getChars(), AppendModeTag());
-            encodeDataType(new_type, new_value_buf);
-            new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
-            new_value_buf.finalize();
-            new_values.getOffsets().push_back(new_values.getChars().size());
-        }
-        else
-        {
-            /// Just copy the value.
-            new_values.insertFrom(old_values, row);
-        }
-    }
-
-    /// Create new values of shared data/shared variant with all object types converted to new provided object type.
-    ColumnPtr getSharedValuesWithConvertedNestedObjectTypes(const ColumnString & old_values, const DataTypePtr & new_object_type) const
-    {
-        auto new_values = ColumnString::create();
-        new_values->reserve(old_values.size());
-        FormatSettings format_settings;
-        for (size_t i = 0; i != old_values.size(); ++i)
-            copySharedValueWithConvertedNestedObjectType(old_values, *new_values, new_object_type, i, format_settings);
-        return new_values;
-    }
-
-    bool checkIfSharedValuesContainNestedObjectsTypes(const ColumnString & values) const
-    {
-        for (size_t i = 0; i != values.size(); ++i)
-        {
-            auto value = values.getDataAt(i);
-            ReadBufferFromMemory buf(value.data, value.size);
-            auto type = decodeDataType(buf);
-            if (type->hasDynamicSubcolumns())
-                return true;
-        }
-
-        return false;
-    }
-
-    ColumnPtr getSharedDataWithConvertedNestedObjectTypes(const ColumnPtr & shared_data, const DataTypePtr & new_object_type) const
-    {
-        const auto & shared_data_array = assert_cast<const ColumnArray &>(*shared_data);
-        const auto & shared_data_offsets = shared_data_array.getOffsetsPtr();
-        const auto & shared_data_tuple = assert_cast<const ColumnTuple &>(shared_data_array.getData());
-        const auto & shared_data_paths = shared_data_tuple.getColumnPtr(0);
-        const auto & shared_data_values = shared_data_tuple.getColumnPtr(1);
-        const auto & shared_data_values_str = assert_cast<const ColumnString &>(*shared_data_values);
-
-        /// First check if we actually have any object type in the values.
-        /// If we don't have object types, just return the original shared data column.
-        if (!checkIfSharedValuesContainNestedObjectsTypes(shared_data_values_str))
-            return shared_data;
-
-        /// Otherwise we should create new shared data column with converted object types.
-        auto new_shared_data_values = getSharedValuesWithConvertedNestedObjectTypes(shared_data_values_str, new_object_type);
-        return ColumnArray::create(ColumnTuple::create(Columns{shared_data_paths, new_shared_data_values}), shared_data_offsets);
-    }
-
-    ColumnPtr getDynamicColumnWithConvertedNestedObjectTypes(const ColumnPtr & column, const DataTypePtr & new_object_type) const
-    {
-        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
-        const auto & variant_info = dynamic_column.getVariantInfo();
-        const auto & variants_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-
-        /// First check if we have any nested object type inside this dynamic column.
-        bool has_nested_object_type = false;
-        for (const auto & variant_type : variants_types)
-        {
-            if (variant_type->hasDynamicSubcolumns())
-            {
-                has_nested_object_type = true;
-                break;
-            }
-        }
-
-        /// If there are no variants with object type, check shared variant
-        if (!has_nested_object_type)
-            has_nested_object_type = checkIfSharedValuesContainNestedObjectsTypes(dynamic_column.getSharedVariant());
-
-        /// If there are no nested objects, don't do anything.
-        if (!has_nested_object_type)
-            return column;
-
-        /// If there are nested objects, we need to convert them to new object type.
-        const auto & variant_column = dynamic_column.getVariantColumn();
-        const auto & variants_columns = variant_column.getVariants();
-        auto shared_variant_global_discriminator = dynamic_column.getSharedVariantDiscriminator();
-        DataTypes new_variants_types;
-        new_variants_types.reserve(variants_types.size());
-        Columns new_variants_columns;
-        new_variants_columns.resize(variants_columns.size());
-        for (size_t global_discr = 0; global_discr != variants_types.size(); ++global_discr)
-        {
-            auto local_discr = variant_column.localDiscriminatorByGlobal(global_discr);
-            if (global_discr == shared_variant_global_discriminator)
-            {
-                new_variants_columns[local_discr] = getSharedValuesWithConvertedNestedObjectTypes(dynamic_column.getSharedVariant(), new_object_type);
-                new_variants_types.push_back(variants_types[global_discr]);
-            }
-            else if (variants_types[global_discr]->hasDynamicSubcolumns())
-            {
-                /// Cast variant to new type with converted object type.
-                auto new_variant_type = convertNestedObjectType(variants_types[global_discr], new_object_type);
-                auto wrapper = prepareUnpackDictionaries(variants_types[global_discr], new_variant_type);
-                ColumnsWithTypeAndName args = {{variants_columns[local_discr], variants_types[global_discr], ""}};
-                new_variants_columns[local_discr] = wrapper(args, new_variant_type, nullptr, variants_columns[local_discr]->size());
-                new_variants_types.push_back(new_variant_type);
-            }
-            else
-            {
-                new_variants_columns[local_discr] = variants_columns[local_discr];
-                new_variants_types.push_back(variants_types[global_discr]);
-            }
-        }
-
-        auto new_variant_type = std::make_shared<DataTypeVariant>(new_variants_types);
-        auto new_variant_column = ColumnVariant::create(variant_column.getLocalDiscriminatorsPtr(), variant_column.getOffsetsPtr(), new_variants_columns, variant_column.getLocalToGlobalDiscriminatorsMapping());
-        return ColumnDynamic::create(std::move(new_variant_column), new_variant_type, dynamic_column.getMaxDynamicTypes(), dynamic_column.getGlobalMaxDynamicTypes());
-    }
-
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object, bool requested_result_is_nullable) const
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -5376,7 +5052,7 @@ private:
         /// It's all complicates the implementation and last attempt to implement it led to several bugs.
         /// So for now let's perform this conversion through cast to String and parsing new JSON back from it.
         /// It's not effective, but 100% accurate.
-        if (checkAndGetDataType<DataTypeObjectDeprecated>(from_type.get()) || checkAndGetDataType<DataTypeTuple>(from_type.get())
+        if (checkAndGetDataType<DataTypeTuple>(from_type.get())
             || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
         {
             return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
@@ -6552,8 +6228,6 @@ private:
                 return createQBitWrapper(from_type, static_cast<const DataTypeQBit &>(*to_type));
             case TypeIndex::Map:
                 return createMapWrapper(from_type, checkAndGetDataType<DataTypeMap>(to_type.get()));
-            case TypeIndex::ObjectDeprecated:
-                return createObjectDeprecatedWrapper(from_type, checkAndGetDataType<DataTypeObjectDeprecated>(to_type.get()));
             case TypeIndex::Object:
                 return createObjectWrapper(from_type, checkAndGetDataType<DataTypeObject>(to_type.get()), requested_result_is_nullable);
             case TypeIndex::AggregateFunction:

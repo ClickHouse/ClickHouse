@@ -9,6 +9,8 @@
 namespace DB
 {
 class ActionsDAG;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 }
 
 namespace DeltaLake
@@ -23,9 +25,11 @@ class EnginePredicate : public ffi::EnginePredicate
 public:
     explicit EnginePredicate(
         const DB::ActionsDAG & filter_,
-        std::exception_ptr & exception_)
+        std::exception_ptr & exception_,
+        DB::ContextPtr context_)
         : filter(filter_)
         , exception(exception_)
+        , context(context_)
     {
         predicate = this;
         visitor = &visitPredicate;
@@ -41,6 +45,7 @@ public:
     }
 
     const DB::ActionsDAG & getFilterDAG() const { return filter; }
+    DB::ContextPtr getContext() const { return context; }
 
 private:
     const LoggerPtr log = getLogger("EnginePredicate");
@@ -51,12 +56,14 @@ private:
     /// Exceptions cannot be rethrown as it will cause
     /// panic from rust and server terminate.
     std::exception_ptr & exception;
+    /// Context for accessing settings
+    DB::ContextPtr context;
 
     static uintptr_t visitPredicate(void * data, ffi::KernelExpressionVisitorState * state);
 };
 
 std::shared_ptr<EnginePredicate> getEnginePredicate(
-    const DB::ActionsDAG & filter, std::exception_ptr & exception);
+    const DB::ActionsDAG & filter, std::exception_ptr & exception, DB::ContextPtr context);
 }
 
 #endif

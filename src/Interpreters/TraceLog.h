@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/SystemLog.h>
+#include <Common/setThreadName.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TraceSender.h>
@@ -31,6 +32,7 @@ struct TraceLogElement
     UInt64 timestamp_ns{};
     TraceType trace_type{};
     UInt64 thread_id{};
+    ThreadName thread_name = ThreadName::UNKNOWN;
     String query_id{};
     std::vector<UInt64> trace{};
     /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.

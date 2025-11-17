@@ -739,7 +739,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     else
         return false;
 
-    if (!replace && !or_replace && s_temporary.ignore(pos, expected))
+    /// Support `REPLACE TEMPORARY TABLE t ...` and `CREATE OR REPLACE TEMPORARY TABLE t ...`,
+    /// but forbid wrong syntax `ATTACH TEMPORARY TABLE t`.
+    if (!attach && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
     }

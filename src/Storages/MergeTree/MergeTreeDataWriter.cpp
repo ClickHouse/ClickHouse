@@ -3,7 +3,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -559,34 +558,34 @@ Block MergeTreeDataWriter::mergeBlock(
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    header, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.is_deleted_column, merging_params.version_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
+                    false, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
                     /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
             case MergeTreeData::MergingParams::Summing: {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, "sumWithOverflow", "sumMapWithOverflow", true, false);
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "sumWithOverflow", "sumMapWithOverflow", true, false);
             }
             case MergeTreeData::MergingParams::Aggregating:
-                return std::make_shared<AggregatingSortedAlgorithm>(header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0);
+                return std::make_shared<AggregatingSortedAlgorithm>(header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0);
+                    header, 1, sort_description, merging_params.sign_column, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, merging_params.graphite_params, time(nullptr));
+                    header, 1, sort_description, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, merging_params.graphite_params, time(nullptr));
             case MergeTreeData::MergingParams::Coalescing:
             {
                 auto required_columns = metadata_snapshot->getPartitionKey().expression->getRequiredColumns();
                 required_columns.append_range(metadata_snapshot->getSortingKey().expression->getRequiredColumns());
                 return std::make_shared<SummingSortedAlgorithm>(
                     header, 1, sort_description, merging_params.columns_to_sum,
-                    required_columns, block_size + 1, /*block_size_bytes=*/0, "last_value", "last_value", false, true);
+                    required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "last_value", "last_value", false, true);
             }
         }
     };
@@ -655,10 +654,6 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     MergeTreePartition & partition = block_with_partition.partition;
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-
-    for (auto & column : columns)
-        if (column.type->hasDynamicSubcolumnsDeprecated())
-            column.type = block.getByName(column.name).type;
 
     auto minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
     minmax_idx->update(block, MergeTreeData::getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));

@@ -1323,7 +1323,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_, hive_columns);
 
     if (filter_dag)
     {
@@ -1595,9 +1595,9 @@ Chunk StorageFileSource::generate()
 
             size_t file_num = 0;
             if (storage->archive_info)
-                file_num = storage->archive_info->paths_to_archives.size();
+                file_num = storage->archive_info->paths_to_archives.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             else
-                file_num = storage->paths.size();
+                file_num = storage->paths.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
 
             chassert(file_num > 0);
 
@@ -1688,7 +1688,7 @@ Chunk StorageFileSource::generate()
 
         /// Close file prematurely if stream was ended.
         reader.reset();
-        pipeline.reset();
+        pipeline = nullptr;
         input_format.reset();
 
         if (files_iterator->isReadFromArchive() && !files_iterator->isSingleFileReadFromArchive())

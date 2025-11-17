@@ -15,6 +15,7 @@ INSERT INTO orders SELECT number, number/10000, number%1000 FROM numbers(1000000
 SET enable_analyzer=1;
 SET enable_join_runtime_filters=1;
 SET enable_parallel_replicas=0;
+SET join_algorithm = 'hash,parallel_hash';
 
 SELECT avg(o_totalprice)
 FROM orders, customer, nation
@@ -72,6 +73,17 @@ SELECT count()
 FROM customer, nation
 WHERE c_nationkey = n_nationkey AND n_name = 'FRANCE'
 SETTINGS enable_join_runtime_filters = 1, join_runtime_bloom_filter_bytes = 4096, join_runtime_bloom_filter_hash_functions = 2;
+
+-- Join algorithm that doesn't support runtime filters
+SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
+FROM (
+    EXPLAIN actions=1
+    SELECT count()
+    FROM customer, nation
+    WHERE c_nationkey = n_nationkey AND n_nationkey%10 = c_custkey%100
+    SETTINGS query_plan_join_swap_table=0, join_algorithm='full_sorting_merge'
+)
+WHERE (explain ILIKE '%Filter column%') OR (explain LIKE '%BuildRuntimeFilter%') OR (explain LIKE '%FullSorting%');
 
 -- Filters on multiple join predicates
 SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')

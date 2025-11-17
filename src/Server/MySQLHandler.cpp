@@ -237,7 +237,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
+    DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -564,10 +564,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)

@@ -1,0 +1,76 @@
+Expression ((Project names + Projection))
+Actions: INPUT : 0 -> __table1.uid Int16 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         ALIAS __table1.uid :: 0 -> uid Int16 : 3
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+Positions: 3 0 1
+  Filter (WHERE)
+  Filter column: equals(__table1.uid, __table2) (removed)
+  Actions: INPUT : 0 -> __table1.uid Int16 : 0
+           INPUT :: 1 -> __table1.name String : 1
+           INPUT :: 2 -> __table1.age Int16 : 2
+           INPUT : 3 -> __table2 Nullable(Int64) : 3
+           FUNCTION equals(__table1.uid : 0, __table2 :: 3) -> equals(__table1.uid, __table2) Nullable(UInt8) : 4
+  Positions: 4 0 1 2
+    JoinLogical
+    Join: R0 ⋈ Memory[3]
+    ResultRows: unknown
+    Type: INNER
+    Strictness: ALL
+    Locality: UNSPECIFIED
+    Expression: equals(__table2.__table1.name, __table1.name)
+    Expression:
+    Actions: INPUT :: 0 -> __table2 Nullable(Int64) : 0
+             INPUT : 1 -> __table2.__table1.name String : 1
+             INPUT :: 2 -> __table1.uid Int16 : 2
+             INPUT : 3 -> __table1.name String : 3
+             INPUT :: 4 -> __table1.age Int16 : 4
+             FUNCTION equals(__table2.__table1.name :: 1, __table1.name : 3) -> equals(__table2.__table1.name, __table1.name) UInt8 : 5
+    Positions: 0 2 3 4
+    Expression Sources:
+    __table2: {0}
+    __table2.__table1.name: {0}
+    __table1.uid: {1}
+    __table1.name: {1}
+    __table1.age: {1}
+      Expression ((Create renaming actions for scalar subquery + (Create correlated subquery result alias + (Project names + Projection))))
+      Actions: INPUT : 0 -> sum(__table3.age) Int64 : 0
+               INPUT : 1 -> __table1.name String : 1
+               COLUMN Const(String) -> \'Nullable(Int64)\'_String String : 2
+               ALIAS sum(__table3.age) :: 0 -> sum(age) Int64 : 3
+               ALIAS __table1.name :: 1 -> __table2.__table1.name String : 0
+               FUNCTION _CAST(sum(age) :: 3, \'Nullable(Int64)\'_String :: 2) -> __table2 Nullable(Int64) : 1
+      Positions: 1 0
+        Aggregating
+        Keys: __table1.name
+        Aggregates:
+            sum(__table3.age)
+              Function: sum(Int16) → Int64
+              Arguments: __table3.age
+        Skip merging: 0
+          Expression (Before GROUP BY)
+          Actions: INPUT :: 0 -> __table3.age Int16 : 0
+                   INPUT :: 1 -> __table1.name String : 1
+                   INPUT :: 2 -> __table3.name String : 2
+          Positions: 0 2 1
+            Filter ((WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers)))
+            Filter column: equals(__table1.name, __table3.name) (removed)
+            Actions: INPUT : 0 -> age Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     ALIAS age :: 0 -> __table3.age Int16 : 2
+                     ALIAS name : 1 -> __table3.name String : 0
+                     FUNCTION equals(name : 1, name :: 1) -> equals(__table1.name, __table3.name) UInt8 : 3
+                     ALIAS __table3.name : 0 -> __table1.name String : 1
+            Positions: 3 2 0 1
+              ReadFromMemoryStorage
+      Expression (Change column names to column identifiers)
+      Actions: INPUT : 0 -> uid Int16 : 0
+               INPUT : 1 -> name String : 1
+               INPUT : 2 -> age Int16 : 2
+               ALIAS uid :: 0 -> __table1.uid Int16 : 3
+               ALIAS name :: 1 -> __table1.name String : 0
+               ALIAS age :: 2 -> __table1.age Int16 : 1
+      Positions: 3 0 1
+        ReadFromMemoryStorage

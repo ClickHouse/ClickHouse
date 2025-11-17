@@ -444,8 +444,6 @@ public:
 
     virtual bool supportsHardLinks() const { return true; }
 
-    virtual bool supportsPartitionCommand(const PartitionCommand & command) const;
-
     /// Check if disk is broken. Broken disks will have 0 space and cannot be used.
     virtual bool isBroken() const { return false; }
 

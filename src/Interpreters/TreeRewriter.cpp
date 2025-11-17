@@ -48,7 +48,6 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <IO/WriteHelpers.h>
@@ -373,7 +372,7 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
                 continue;
 
             size_t i = 1;
-            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+            while (all_column_names.contains(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
@@ -1013,7 +1012,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     if (storage)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
-        options.withExtendedObjects();
         options.withSubcolumns(storage->supportsSubcolumns());
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
@@ -1193,33 +1191,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         has_virtual_shard_num
             = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
-    }
-
-    /// Collect missed object subcolumns
-    if (!unknown_required_source_columns.empty())
-    {
-        for (const NameAndTypePair & pair : source_columns_ordinary)
-        {
-            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
-            {
-                size_t object_pos = it->find('.');
-                if (object_pos != std::string::npos)
-                {
-                    String object_name = it->substr(0, object_pos);
-                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::ObjectDeprecated)
-                    {
-                        const auto * object_type = typeid_cast<const DataTypeObjectDeprecated *>(pair.type.get());
-                        if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
-                        {
-                            missed_subcolumns.insert(*it);
-                            it = unknown_required_source_columns.erase(it);
-                            continue;
-                        }
-                    }
-                }
-                ++it;
-            }
-        }
     }
 
     /// Check for subcolumns in unknown required columns.

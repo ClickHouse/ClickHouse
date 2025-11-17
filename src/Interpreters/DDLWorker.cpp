@@ -450,7 +450,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
-                setThreadName("DDLWorkerExec");
+                DB::setThreadName(ThreadName::DDL_WORKER_EXECUTER);
                 processTask(saved_task, zookeeper, /*internal_query=*/ false);
             });
         }
@@ -513,7 +513,7 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             query_scope.emplace(query_context);
 
         NullWriteBuffer nullwb;
-        executeQuery(istr, nullwb, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
+        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -1132,7 +1132,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
 bool DDLWorker::initializeMainThread()
 {
     chassert(!initialized);
-    setThreadName("DDLWorker");
+    DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
     while (!stop_flag)
@@ -1196,7 +1196,7 @@ void DDLWorker::runMainThread()
     };
 
 
-    setThreadName("DDLWorker");
+    DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Starting DDLWorker thread");
 
     while (!stop_flag)
@@ -1440,7 +1440,7 @@ void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeper
 
 void DDLWorker::runCleanupThread()
 {
-    setThreadName("DDLWorkerClnr");
+    DB::setThreadName(ThreadName::DDL_WORKER_CLEANUP);
     LOG_DEBUG(log, "Started DDLWorker cleanup thread");
 
     Int64 last_cleanup_time_seconds = 0;

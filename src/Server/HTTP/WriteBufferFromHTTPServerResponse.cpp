@@ -8,12 +8,16 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
+#include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/IDataType.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 
 #include <fmt/core.h>
+#include <cstddef>
 #include <iterator>
 #include <sstream>
 #include <string>
@@ -104,6 +108,8 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
     if (add_cors_header)
         response.set("Access-Control-Allow-Origin", "*");
 
+    response.set("X-ClickHouse-Exception-Tag", exception_tag);
+
     writeHeaderSummary();
     writeExceptionCode();
 
@@ -139,16 +145,30 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 {
     if (response.getChunkedTransferEncoding())
         setChunked();
+
+    exception_tag = getRandomASCIIString(EXCEPTION_TAG_LENGTH);
 }
 
 
-void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
+void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, ContextPtr context)
 {
     std::lock_guard lock(mutex);
 
     /// Cannot add new headers if body was started to send.
     if (headers_finished_sending)
         return;
+
+    if (progress.memory_usage)
+    {
+        /// When the query is finished the memory_usage will be in progress and it will match the query_log
+        accumulated_progress.memory_usage = 0;
+    }
+    else
+    {
+        QueryStatusPtr process_list_elem = context->getProcessListElement();
+        if (process_list_elem)
+            accumulated_progress.memory_usage = process_list_elem->getInfo().memory_usage;
+    }
 
     accumulated_progress.incrementPiecewiseAtomically(progress);
     if (send_progress && (progress_watch.elapsed() >= send_progress_interval_ms * 1000000))
@@ -245,7 +265,7 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             discarded_data = rejectBufferedDataSave();
 
         bool is_response_sent = response.sent();
-        // proper senging bad http code
+        // proper sending bad http code
         if (!is_response_sent)
         {
             drainRequestIfNeeded(request, response);
@@ -322,16 +342,49 @@ bool WriteBufferFromHTTPServerResponse::cancelWithException(HTTPServerRequest & 
             }
 
             auto & out = use_compression_buffer ? *compression_buffer : *this;
+
+            // Write the exception block in response in new format as follows.
+            // The whole exception block should not exceed MAX_EXCEPTION_SIZE
+            // __exception__
+            // <TAG>
+            // <error message of max 16K bytes>
+            // <message_length> <TAG>
+            // __exception__
+
+            // 2 bytes represents - \r\n
+            // 1 byte represents - ' ' (space between <message_length> <TAG>) in the above exception block format
+            // 8 byte represents - <message_length>
+            size_t size_message_excluded = 2 + EXCEPTION_MARKER.size() + 2 + EXCEPTION_TAG_LENGTH + 2 + 8 + 1 + EXCEPTION_TAG_LENGTH + 2 + EXCEPTION_MARKER.size() + 2;
+
+            size_t max_exception_message_size = MAX_EXCEPTION_SIZE - size_message_excluded;
+
+            writeCString("\r\n", out);
             writeString(EXCEPTION_MARKER, out);
             writeCString("\r\n", out);
-            writeString(message, out);
-            if (!message.ends_with('\n'))
+            writeString(exception_tag, out);
+            writeCString("\r\n", out);
+
+            std::string limited_message = message;
+            if (limited_message.size() > max_exception_message_size)
+                limited_message = limited_message.substr(0, max_exception_message_size);
+
+            writeString(limited_message, out);
+            if (!limited_message.ends_with('\n'))
                 writeChar('\n', out);
 
+            writeIntText(limited_message.size() + (limited_message.ends_with('\n') ? 0 : 1), out);
+            writeChar(' ', out);
+            writeString(exception_tag, out);
+            writeCString("\r\n", out);
+            writeString(EXCEPTION_MARKER, out);
+            writeCString("\r\n", out);
 
             // this finish chunk with the error message in case of Transfer-Encoding: chunked
             if (use_compression_buffer)
+            {
                 compression_buffer->next();
+                compression_buffer->finalize();
+            }
             next();
 
             LOG_DEBUG(

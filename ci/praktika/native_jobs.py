@@ -144,7 +144,7 @@ def _build_dockers(workflow, job_name):
             job_info = "Failed to install docker buildx driver"
 
     if job_status == Result.Status.SUCCESS:
-        if not Docker.login(
+        if not Info().is_local_run and not Docker.login(
             Settings.DOCKERHUB_USERNAME,
             user_password=workflow.get_secret(Settings.DOCKERHUB_SECRET).get_value(),
         ):
@@ -174,6 +174,7 @@ def _build_dockers(workflow, job_name):
                     digests=docker_digests,
                     amd_only=amd_only,
                     arm_only=arm_only,
+                    disable_push=Info().is_local_run,
                 )
             )
             if results[-1].is_ok():

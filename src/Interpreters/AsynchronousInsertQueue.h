@@ -9,6 +9,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
+#include <Interpreters/StorageID.h>
 
 #include <future>
 #include <variant>
@@ -54,6 +55,7 @@ public:
 
     /// Force flush the whole queue.
     void flushAll();
+    void flush(const std::vector<std::pair<String, String>> & table_names);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
@@ -85,6 +87,7 @@ public:
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
+        StorageID getStorageID() const;
 
     private:
         auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
@@ -284,6 +287,7 @@ private:
     static Chunk processPreprocessedEntries(
         const InsertDataPtr & data,
         const Block & header,
+        const ContextPtr & context_,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>

@@ -6,16 +6,20 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
@@ -23,19 +27,19 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Act
     }
     else if (filter == nullptr)
     {
-        return estimateRelationProfile(prewhere);
+        return estimateRelationProfile(metadata, prewhere);
     }
     else if (prewhere == nullptr)
     {
-        return estimateRelationProfile(filter);
+        return estimateRelationProfile(metadata, filter);
     }
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(node_, out);
+        return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
     std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(node_, out);
+        return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
     rpn.insert(rpn.end(), prewhere_rpn.begin(), prewhere_rpn.end());
     RPNElement last_rpn;
@@ -44,11 +48,11 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Act
     return estimateRelationProfileImpl(rpn);
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const RPNBuilderTreeNode & node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
 {
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(node, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
-        return extractAtomFromTree(node_, out);
+        return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
     return estimateRelationProfileImpl(rpn);
 }
@@ -143,10 +147,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ActionsDAG::Node * node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
     RPNBuilderTreeContext tree_context(getContext());
-    return estimateRelationProfile(RPNBuilderTreeNode(node, tree_context));
+    return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
 }
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
@@ -162,7 +166,7 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
     return false;
 }
 
-bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const
+bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
     if (node_dag && node_dag->result_type->equals(DataTypeNullable(std::make_shared<DataTypeNothing>())))
@@ -175,6 +179,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
     Field const_value;
     DataTypePtr const_type;
     String column_name;
+    DataTypePtr column_type;
 
     if (node.isFunction())
     {
@@ -247,6 +252,47 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const RPNBuilderTreeNode
             else
                 return false;
 
+            if (metadata)
+            {
+                const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+                if (column_desc)
+                    column_type = removeLowCardinalityAndNullable(column_desc->type);
+            }
+            /// In some cases we need to cast the type of const
+            bool cast_not_needed = !column_type ||
+                ((isNativeInteger(column_type) || isDateTime(column_type))
+                && (isNativeInteger(const_type) || isDateTime(const_type)));
+
+            if (!cast_not_needed && !column_type->equals(*const_type))
+            {
+                if (const_value.getType() == Field::Types::String)
+                {
+                    const_value = convertFieldToType(const_value, *column_type);
+                    if (const_value.isNull())
+                        return false;
+                }
+                else
+                {
+                    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{column_type, const_type});
+                    if (!common_type)
+                        return false;
+
+                    if (!const_type->equals(*common_type))
+                    {
+                        // Replace direct call that throws exception with try version
+                        Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                        if (converted.isNull())
+                            return false;
+
+                        const_value = converted;
+                    }
+                    if (!column_type->equals(*common_type))
+                    {
+                        /// we assume that is "cast(column) < const", will not estimate this condition.
+                        return false;
+                    }
+                }
+            }
             const auto atom_it = atom_map.find(func_name);
             atom_it->second(out, column_name, const_value);
             return true;

@@ -188,7 +188,7 @@ void ReadFromSystemDatabaseReplicas::applyFilters(ActionDAGNodes added_filter_no
             {ColumnString::create(), std::make_shared<DataTypeString>(), "database"},
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }

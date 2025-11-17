@@ -222,6 +222,21 @@ size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, s
 }
 
 
+size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept
+{
+    size_t code_point = 0;
+    size_t bytes = 0;
+
+    while (bytes < size && code_point < limit)
+    {
+        bytes += seqLength(data[bytes]);
+        ++code_point;
+    }
+
+    return std::min(bytes, size);
+}
+
+
 size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length)
 {
     static const Poco::UTF8Encoding utf8;

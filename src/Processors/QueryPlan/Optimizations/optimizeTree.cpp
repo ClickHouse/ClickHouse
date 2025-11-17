@@ -238,9 +238,17 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
-                tryMergeExpressions(&frame_node, nodes, {});
-                tryMergeFilters(&frame_node, nodes, {});
-                tryPushDownFilter(&frame_node, nodes, {});
+                /// If there are multiple Expression nodes below Filter node then we need to repeat merging Filter and Expression
+                while (true)
+                {
+                    size_t changed_nodes = 0;
+                    changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
+                    changed_nodes += tryMergeFilters(&frame_node, nodes, {});
+                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+
+                    if (!changed_nodes)
+                        break;
+                }
             },
             [&](auto & frame_node)
             {

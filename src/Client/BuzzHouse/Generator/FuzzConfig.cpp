@@ -42,7 +42,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (!configEntries.contains(nkey))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown catalog option: {}", nkey);
         }
@@ -96,10 +96,9 @@ static std::optional<ServerCredentials> loadServerCredentials(
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
-        {
+        if (!configEntries.contains(nkey))
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
-        }
+
         configEntries.at(nkey)(value);
     }
 
@@ -139,10 +138,9 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     {
         const String & nkey = String(key);
 
-        if (metricEntries.find(nkey) == metricEntries.end())
-        {
+        if (!metricEntries.contains(nkey))
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
-        }
+
         metricEntries.at(nkey)(value);
     }
 
@@ -163,7 +161,7 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
         {
             const std::string_view entry(word.begin(), word.end());
 
-            if (entries.find(entry) == entries.end())
+            if (!entries.contains(entry))
             {
                 throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for {}: {}", text, String(entry));
             }
@@ -265,7 +263,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
            {"fixedstring", allow_fixed_strings},
-           {"qbit", allow_qbit}};
+           {"qbit", allow_qbit},
+           {"aggregate", allow_aggregate},
+           {"simpleaggregate", allow_simple_aggregate}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
@@ -351,6 +351,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_parallel_queries",
+         [&](const JSONObjectType & value) { max_parallel_queries = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"max_number_alters",
+         [&](const JSONObjectType & value) { max_number_alters = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -375,6 +379,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
+        {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
+        {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -402,7 +408,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (!configEntries.contains(nkey))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }

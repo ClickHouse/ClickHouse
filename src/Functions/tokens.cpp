@@ -112,15 +112,36 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(*token_extractor, *column_string, *col_offsets, input_rows_count, *col_result);
-        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(*token_extractor, *column_fixed_string, *col_offsets, input_rows_count, *col_result);
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        {
+            /// The sparse gram token extractor stores an internal state which modified during the execution.
+            /// This leads to an error while executing this function multi-threaded because that state is not protected.
+            /// To avoid this case, a clone of the sparse gram token extractor will be used.
+            auto sparse_gram_extractor = token_extractor->clone();
+            executeWithTokenizer(*sparse_gram_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+        }
+        else
+        {
+            executeWithTokenizer(*token_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
+        }
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
     }
 
 private:
+    void executeWithTokenizer(
+        const ITokenExtractor & extractor,
+        ColumnPtr col_input,
+        ColumnArray::ColumnOffsets & col_offsets,
+        size_t input_rows_count,
+        ColumnString & col_result) const
+    {
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            executeImpl(extractor, *column_string, col_offsets, input_rows_count, col_result);
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            executeImpl(extractor, *column_fixed_string, col_offsets, input_rows_count, col_result);
+    }
+
     template <typename StringColumnType>
     void executeImpl(
         const ITokenExtractor & extractor,

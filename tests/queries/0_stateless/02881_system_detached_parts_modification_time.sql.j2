@@ -9,8 +9,10 @@ set mutations_sync=1;
 drop table if exists data_{{ id }};
 create table data_{{ id }} (key Int) engine=MergeTree() order by tuple() settings {{ settings }};
 insert into data_{{ id }} values (1);
-select 'before detach', now()-modification_time < 10 from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
+select 'before detach', modification_time from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
 alter table data_{{ id }} detach partition all;
-select 'after detach', now()-modification_time < 10 from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
+system flush logs query_log;
+with (select event_time from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_kind = 'Alter' and tables = [currentDatabase() || '.data_{{ id }}']) as finish_time_
+select 'after detach', max2(abs(dateDiff('seconds', modification_time, finish_time_)), 5) from system.detached_parts where database = currentDatabase() and table = 'data_{{ id }}';
 
 {% endfor %}

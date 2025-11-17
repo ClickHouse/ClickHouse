@@ -489,7 +489,7 @@ bool Client::processBuzzHouseQuery(const String & full_query)
     }
     if (error_code > 0)
     {
-        if (fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
+        if (fuzz_config->disallowed_error_codes.contains(error_code))
         {
             throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
@@ -736,7 +736,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query3.resize(0);
-                    qo.maybeUpdateOracleSelectQuery(rg, sq2, sq4);
+                    qo.maybeUpdateOracleSelectQuery(rg, gen, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query3, sq4);
                     fuzz_config->outf << full_query3 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query3);
@@ -889,7 +889,7 @@ bool Client::buzzHouse()
                 }
                 else
                 {
-                    chassert(0);
+                    UNREACHABLE();
                 }
             }
         }

@@ -1,0 +1,91 @@
+right_all_small
+2	B	Second
+3	C	Third
+\N	\N	Fourth
+\N	\N	Fifth
+explain_right_all_small
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.id Nullable(UInt32) : 0
+         INPUT : 1 -> __table1.value Nullable(String) : 1
+         INPUT : 2 -> __table2.description String : 2
+         INPUT :: 3 -> __table2.id UInt32 : 3
+         ALIAS __table1.id :: 0 -> id Nullable(UInt32) : 4
+         ALIAS __table1.value :: 1 -> value Nullable(String) : 0
+         ALIAS __table2.description :: 2 -> description String : 1
+Positions: 4 0 1
+  Sorting (Sorting for ORDER BY)
+  Sort description: __table2.id ASC, __table1.id ASC
+    Expression ((Before ORDER BY + Projection))
+    Actions: INPUT :: 0 -> __table1.id Nullable(UInt32) : 0
+             INPUT :: 1 -> __table1.value Nullable(String) : 1
+             INPUT :: 2 -> __table2.description String : 2
+             INPUT :: 3 -> __table2.id UInt32 : 3
+    Positions: 3 0 1 2
+      Expression (Post Join Actions)
+      Actions: INPUT : 0 -> toNullable(__table1.id) Nullable(UInt32) : 0
+               INPUT : 1 -> toNullable(__table1.value) Nullable(String) : 1
+               INPUT :: 2 -> __table2.description String : 2
+               INPUT :: 3 -> __table2.id UInt32 : 3
+               ALIAS toNullable(__table1.id) :: 0 -> __table1.id Nullable(UInt32) : 4
+               ALIAS toNullable(__table1.value) :: 1 -> __table1.value Nullable(String) : 0
+      Positions: 4 0 2 3
+        Join
+        Type: RIGHT
+        Strictness: ALL
+        Algorithm: ConcurrentHashJoin
+        Clauses: [(__table1.id) = (__table2.id)]
+          Expression (Left Pre Join Actions)
+          Actions: INPUT : 0 -> __table1.id UInt32 : 0
+                   INPUT : 1 -> __table1.value String : 1
+                   FUNCTION toNullable(__table1.id : 0) -> toNullable(__table1.id) Nullable(UInt32) : 2
+                   FUNCTION toNullable(__table1.value : 1) -> toNullable(__table1.value) Nullable(String) : 3
+          Positions: 0 2 3 1
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> id UInt32 : 0
+                     INPUT : 1 -> value String : 1
+                     ALIAS id :: 0 -> __table1.id UInt32 : 2
+                     ALIAS value :: 1 -> __table1.value String : 0
+            Positions: 2 0
+              ReadFromMemoryStorage
+          Expression (Right Pre Join Actions)
+          Actions: INPUT :: 0 -> __table2.id UInt32 : 0
+                   INPUT :: 1 -> __table2.description String : 1
+          Positions: 0 1
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> description String : 0
+                     INPUT : 1 -> id UInt32 : 1
+                     ALIAS description :: 0 -> __table2.description String : 2
+                     ALIAS id :: 1 -> __table2.id UInt32 : 0
+            Positions: 2 0
+              ReadFromMemoryStorage
+full_all_small
+1	A	\N
+2	B	Second
+3	C	Third
+\N	\N	Fourth
+\N	\N	Fifth
+right_any_small
+3	1
+right_all_with_on_filter
+\N	\N	Second
+\N	\N	Third
+4	D	Fourth
+right_all_null_keys
+\N	\N	null1
+1	A	one
+\N	\N	three
+right_all_composite_keys
+1	1	a	r11
+2	1	c	r21
+\N	\N	\N	r31
+right_all_large
+20000	5000	112492500	199990000
+full_all_large
+15500	500	0
+Consistency of results with HashJoin for multiple conditions
+hash	200
+parallel_hash	200
+hash right-only	200
+parallel right-only	200
+hash	400
+parallel_hash	400
