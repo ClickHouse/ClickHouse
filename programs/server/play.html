@@ -2481,15 +2481,6 @@ async function getQueryUnderCursor() {
     return all_queries;
 }
 
-/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
-let theme = current_url.searchParams.get('theme');
-if (['dark', 'light'].indexOf(theme) === -1) {
-    theme = window.localStorage.getItem('theme');
-}
-if (!theme) {
-    theme = 'light';
-}
-
 function setColorTheme(new_theme, update_preference) {
     theme = new_theme;
     if (update_preference) {
@@ -2497,6 +2488,11 @@ function setColorTheme(new_theme, update_preference) {
     }
     document.documentElement.setAttribute('data-theme', theme);
     redrawChart();
+}
+/// First we check if theme is set via the 'theme' GET parameter, if not, we check localStorage, otherwise we check OS preference.
+let theme = current_url.searchParams.get('theme');
+if (['dark', 'light'].indexOf(theme) === -1) {
+    theme = window.localStorage.getItem('theme');
 }
 
 if (theme) {
@@ -2506,6 +2502,8 @@ if (theme) {
     const media_query_list = window.matchMedia('(prefers-color-scheme: dark)');
     if (media_query_list.matches) {
         setColorTheme('dark');
+    } else {
+        setColorTheme('light');
     }
 
     /// There is a rumor that on some computers, the theme is changing automatically on day/night.
