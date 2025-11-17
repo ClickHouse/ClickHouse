@@ -1,28 +1,37 @@
+#!/usr/bin/env python3
 import json
+import logging
 import random
 from pathlib import Path
+from .ast_fuzzer_job import finalize_job
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.stack_trace_reader import StackTraceReader
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
-
 
 def main():
-    res = True
-    results = []
-    stop_watch = Utils.Stopwatch()
+    logging.basicConfig(level=logging.INFO)
     ch = ClickHouseProc()
-    shell_log_file = Path(f"{temp_dir}/buzzing.log")
-    buzz_log_file = Path(f"{temp_dir}/fuzzer_out.sql")
-    buzz_config_file = Path(f"{temp_dir}/fuzz.json")
+    temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
+    workspace_path = temp_dir / "workspace"
+    workspace_path.mkdir(parents=True, exist_ok=True)
+    fuzzer_log = workspace_path / "fuzzer.log"
+    buzz_out = workspace_path / "fuzzer_out.sql"
+    buzz_config = workspace_path / "fuzz.json"
+    info = Info()
+    result = Result.from_fs(name=info.job_name)
 
-    buzz_log_file.touch()
-    buzz_config_file.touch()
+    buzz_out.touch()
+    buzz_config.touch()
+    result.status = Result.Status.SUCCESS
 
-    if res:
+    assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
+
+    if result.is_ok():
+        # Install ClickHouse as first step
         print("Install ClickHouse")
 
         def install():
@@ -31,30 +40,32 @@ def main():
                 return res
             return res and ch.create_log_export_config()
 
-        results.append(
-            Result.from_commands_run(name="Install ClickHouse", command=install)
-        )
-        res = results[-1].is_ok()
+        result_ = Result.from_commands_run(name="Install ClickHouse", command=install)
+        if not result_.is_ok():
+            result.results = [result_]
+            result.set_status(Result.Status.FAILED)
 
-    if res:
+    if result.is_ok():
+        # Start ClickHouse as second step
         print("Start ClickHouse")
 
         def start():
             res = ch.start_light()
             if Info().is_local_run:
                 return res
-            return res and ch.start_log_exports(check_start_time=stop_watch.start_time)
-
-        results.append(
-            Result.from_commands_run(
-                name="Start ClickHouse",
-                command=start,
-                with_log=True,
+            return res and ch.start_log_exports(
+                check_start_time=Utils.Stopwatch().start_time
             )
-        )
-        res = results[-1].is_ok()
 
-    if res:
+        result_ = Result.from_commands_run(
+            name="Start ClickHouse", command=start, with_log=True
+        )
+        if not result_.is_ok():
+            result.results = [result_]
+            result.set_status(Result.Status.FAILED)
+
+    if result.is_ok():
+        # Time to Buzz!!
         print("Buzzing")
 
         # Sometimes disallow SQL types to reduce number of combinations
@@ -205,7 +216,7 @@ def main():
             "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,321,386,403,467",
             "client_file_path": "/var/lib/clickhouse/user_files",
             "server_file_path": "/var/lib/clickhouse/user_files",
-            "log_path": buzz_log_file,
+            "log_path": buzz_out,
             "read_log": False,
             "allow_memory_tables": random.choice([True, False]),
             "allow_client_restarts": random.choice([True, False]),
@@ -262,104 +273,16 @@ def main():
                 "use_const_adaptive_granularity",
             ],
         }
-        with open(buzz_config_file, "w") as outfile:
+        with open(buzz_config, "w") as outfile:
             outfile.write(json.dumps(buzz_config))
 
         # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
         # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
         # a reasonable time.
-        run = Shell.run(
-            command=[
-                f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 15m clickhouse-client --stacktrace --buzz-house-config={buzz_config_file}"
-            ],
-            verbose=True,
-            log_file=shell_log_file,
-        )
+        run_command = f"timeout --verbose --signal TERM --kill-after=5m --preserve-status 15m clickhouse-client --stacktrace --buzz-house-config={buzz_config}"
+        Shell.check(command=run_command, verbose=True, log_file=fuzzer_log)
 
-        # Check if server was terminated by any other reason
-        results.append(
-            Result.create_from(
-                name="Check errors",
-                results=ch.check_fatal_messages_in_logs(),
-                status=Result.Status.SUCCESS,
-                stopwatch=stop_watch,
-            )
-        )
-        res = res and results[-1].is_ok()
-
-        # If ClickHouse got OOM killed, ignore the result
-        # On SIGTERM due to timeout, exit code is 143, ignore it
-        oom_check = ch.check_ch_is_oom_killed()
-
-        next_result = Result.create_from(
-            name="Buzzing result",
-            status=(
-                Result.Status.SUCCESS
-                if (run in (0, 143) or (oom_check is not None and oom_check.is_ok()))
-                else Result.Status.FAILED
-            ),
-            info=Shell.get_output(f"tail -300 {shell_log_file}"),
-            stopwatch=stop_watch,
-        )
-        results.append(next_result)
-        res = res and results[-1].is_ok()
-
-        if not res:
-            fuzzer_query = ""
-            stack_trace = ""
-            info = ""
-            workspace_path = temp_dir / "workspace"
-
-            dmesg_log = workspace_path / "dmesg.log"
-            fuzzer_log = workspace_path / "fuzzer.log"
-            fatal_log = workspace_path / "fatal.log"
-
-            paths = [
-                workspace_path / "core.zst",
-                workspace_path / "dmesg.log",
-                fatal_log,
-                workspace_path / "stderr.log",
-                workspace_path / "server.log",
-                workspace_path / "fuzzer_out.sql",
-                fuzzer_log,
-                dmesg_log,
-            ]
-
-            if fuzzer_log.exists():
-                fuzzer_query = StackTraceReader.get_fuzzer_query(fuzzer_log)
-                if fuzzer_query:
-                    info = f"Query: {fuzzer_query}"
-                else:
-                    info = "Fuzzer log:\n ~~~\n" + Shell.get_output(
-                        f"tail {fuzzer_log}", verbose=False
-                    )
-                info += "\n---\n"
-            if fatal_log.exists():
-                stack_trace = StackTraceReader.get_stack_trace(fatal_log)
-                if stack_trace:
-                    info += "Stack trace:\n" + stack_trace
-            results[-1].info = info
-
-            if Shell.check(f"dmesg > {dmesg_log}"):
-                results.append(
-                    Result.from_commands_run(
-                        name="OOM in dmesg",
-                        command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                    )
-                )
-            else:
-                print("WARNING: dmesg not enabled")
-
-            for file in paths:
-                if file.exists():
-                    next_result.set_files(file)
-
-    Result.create_from(
-        results=results,
-        stopwatch=stop_watch,
-        files=ch.prepare_logs(info=Info())
-        + [shell_log_file, buzz_config_file, buzz_log_file],
-    ).complete_job()
+        finalize_job(workspace_path, temp_dir, result, False)
 
 
 if __name__ == "__main__":
