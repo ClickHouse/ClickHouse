@@ -1259,7 +1259,7 @@ void AsynchronousInsertQueue::processEntriesWithAsyncParsingImpl(
     std::vector<ExecutorInfo> executor_info_v(num_threads);
     auto get_executor_info = [&executor_info_v](size_t executors_num [[maybe_unused]]) -> ExecutorInfo &
     {
-        if constexpr(IS_PARALLEL)
+        if constexpr (IS_PARALLEL)
             return executor_info_v[executors_num];
         else
             return executor_info_v[0];
