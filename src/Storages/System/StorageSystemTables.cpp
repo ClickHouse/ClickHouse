@@ -290,18 +290,15 @@ protected:
         {
             StorageMetadataPtr metadata_snapshot;
             /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
-            try
+            auto metadata_result = table->tryGetInMemoryMetadataPtr();
+            if (metadata_result.has_value())
             {
-                metadata_snapshot = table->getInMemoryMetadataPtr();
+                metadata_snapshot = std::move(*metadata_result);
             }
-            catch (const Exception & e)
+            else
             {
-                if (table->getName() != "Alias" || (e.code() == ErrorCodes::UNKNOWN_DATABASE || e.code() == ErrorCodes::UNKNOWN_TABLE))
-                {
-                    columns[res_index++]->insertDefault();
-                    return;
-                }
-                throw;
+                columns[res_index++]->insertDefault();
+                return;
             }
 
             NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
@@ -550,18 +547,17 @@ protected:
                     Array table_paths_array;
 
                     /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
-                    try
+                    auto paths_result = table->tryGetDataPaths();
+                    if (paths_result.has_value())
                     {
-                        auto paths = table->getDataPaths();
+                        const auto & paths = *paths_result;
                         table_paths_array.reserve(paths.size());
                         for (const String & path : paths)
                             table_paths_array.push_back(path);
                     }
-                    catch (const Exception & e)
+                    else
                     {
-                        if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
-                            throw;
-                        tryLogCurrentException(getLogger("StorageSystemTables"), fmt::format("While obtaining data paths for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
+                        LOG_DEBUG(getLogger("StorageSystemTables"), "Failed to get data paths for {}: {}", table->getStorageID().getNameForLogs(), paths_result.error().message());
                     }
 
                     res_columns[res_index++]->insert(table_paths_array);
@@ -579,16 +575,11 @@ protected:
                 if (table)
                 {
                     /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
-                    try
-                    {
-                        metadata_snapshot = table->getInMemoryMetadataPtr();
-                    }
-                    catch (const Exception & e)
-                    {
-                        if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
-                            throw;
-                        tryLogCurrentException(getLogger("StorageSystemTables"), fmt::format("Cannot find target database/table for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
-                    }
+                    auto metadata_result = table->tryGetInMemoryMetadataPtr();
+                    if (metadata_result.has_value())
+                        metadata_snapshot = std::move(*metadata_result);
+                    else
+                        LOG_DEBUG(getLogger("StorageSystemTables"), "Failed to get inmemory metadata for {}: {}", table->getStorageID().getNameForLogs(), metadata_result.error().message());
                 }
 
                 if (columns_mask[src_index++])
@@ -703,21 +694,25 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    try
+                    if (table)
                     {
-                        auto policy = table ? table->getStoragePolicy() : nullptr;
-                        if (policy)
-                            res_columns[res_index]->insert(policy->getName());
+                        auto policy_result = table->tryGetStoragePolicy();
+                        if (policy_result.has_value())
+                        {
+                            const auto & policy = *policy_result;
+                            if (policy)
+                                res_columns[res_index++]->insert(policy->getName());
+                            else
+                                res_columns[res_index++]->insertDefault();
+                        }
                         else
-                            res_columns[res_index]->insertDefault();
+                        {
+                            res_columns[res_index++]->insertDefault();
+                            LOG_DEBUG(getLogger("StorageSystemTables"), "Failed to get storage policy for {}: {}", table->getStorageID().getNameForLogs(), policy_result.error().message());
+                        }
                     }
-                    catch (const Exception &)
-                    {
-                        /// Even if the method throws, it should not prevent querying system.tables.
-                        tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index]->insertDefault();
-                    }
-                    ++res_index;
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 ContextMutablePtr context_copy = Context::createCopy(context);
@@ -831,40 +826,48 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    try
+                    if (table)
                     {
-                        auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
-                        if (lifetime_rows)
-                            res_columns[res_index]->insert(*lifetime_rows);
+                        auto lifetime_rows_result = table->tryLifetimeRows();
+                        if (lifetime_rows_result.has_value())
+                        {
+                            auto lifetime_rows = *lifetime_rows_result;
+                            if (lifetime_rows)
+                                res_columns[res_index++]->insert(*lifetime_rows);
+                            else
+                                res_columns[res_index++]->insertDefault();
+                        }
                         else
-                            res_columns[res_index]->insertDefault();
+                        {
+                            res_columns[res_index++]->insertDefault();
+                            LOG_DEBUG(getLogger("StorageSystemTables"), "Failed to get lifetime rows for {}: {}", table->getStorageID().getNameForLogs(), lifetime_rows_result.error().message());
+                        }
                     }
-                    catch (const Exception &)
-                    {
-                        /// Even if the method throws, it should not prevent querying system.tables.
-                        tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index]->insertDefault();
-                    }
-                    ++res_index;
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
                 {
-                    try
+                    if (table)
                     {
-                        auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
-                        if (lifetime_bytes)
-                            res_columns[res_index]->insert(*lifetime_bytes);
+                        auto lifetime_bytes_result = table->tryLifetimeBytes();
+                        if (lifetime_bytes_result.has_value())
+                        {
+                            auto lifetime_bytes = *lifetime_bytes_result;
+                            if (lifetime_bytes)
+                                res_columns[res_index++]->insert(*lifetime_bytes);
+                            else
+                                res_columns[res_index++]->insertDefault();
+                        }
                         else
-                            res_columns[res_index]->insertDefault();
+                        {
+                            res_columns[res_index++]->insertDefault();
+                            LOG_DEBUG(getLogger("StorageSystemTables"), "Failed to get lifetime bytes for {}: {}", table->getStorageID().getNameForLogs(), lifetime_bytes_result.error().message());
+                        }
                     }
-                    catch (const Exception &)
-                    {
-                        /// Even if the method throws, it should not prevent querying system.tables.
-                        tryLogCurrentException("StorageSystemTables");
-                        res_columns[res_index]->insertDefault();
-                    }
-                    ++res_index;
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])

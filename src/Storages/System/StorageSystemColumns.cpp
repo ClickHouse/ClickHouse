@@ -154,17 +154,30 @@ protected:
                         // Table was dropped while acquiring the lock, skipping table
                         continue;
                     }
-
-                    metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    serialization_hints = storage->getSerializationHints();
                 }
                 catch (const Exception & e)
                 {
                     if (storage->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
                         throw;
-                    metadata_snapshot = std::make_shared<StorageInMemoryMetadata>();
                     tryLogCurrentException(getLogger("SystemColumns"), fmt::format("Cannot find target database/table for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
                 }
+
+                auto metadata_result = storage->tryGetInMemoryMetadataPtr();
+                if (metadata_result.has_value())
+                {
+                    metadata_snapshot = std::move(*metadata_result);
+                }
+                else
+                {
+                    metadata_snapshot = std::make_shared<StorageInMemoryMetadata>();
+                    LOG_DEBUG(getLogger("SystemColumns"), "Failed to get inmemory metadata for {}: {}", storage->getStorageID().getNameForLogs(), metadata_result.error().message());
+                }
+
+                auto hints_result = storage->tryGetSerializationHints();
+                if (hints_result.has_value())
+                    serialization_hints = std::move(*hints_result);
+                else
+                    LOG_DEBUG(getLogger("SystemColumns"), "Failed to get serialization hints for {}: {}", storage->getStorageID().getNameForLogs(), hints_result.error().message());
 
                 columns = metadata_snapshot->getColumns();
 
@@ -172,16 +185,11 @@ protected:
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
                 {
                     /// Can throw UNKNOWN_DATABASE in case of Merge table
-                    try
-                    {
-                        column_sizes = storage->getColumnSizes();
-                    }
-                    catch (const Exception & e)
-                    {
-                        if ((storage->getName() != "Merge" && storage->getName() != "Alias") || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
-                            throw;
-                        tryLogCurrentException(getLogger("SystemColumns"), fmt::format("While obtaining columns sizes for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
-                    }
+                    auto column_sizes_result = storage->tryGetColumnSizes();
+                    if (column_sizes_result.has_value())
+                        column_sizes = std::move(*column_sizes_result);
+                    else
+                        LOG_DEBUG(getLogger("SystemColumns"), "Failed to get column sizes for {}: {}", storage->getStorageID().getNameForLogs(), column_sizes_result.error().message());
                 }
 
                 if (columns_mask[11])

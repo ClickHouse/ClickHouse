@@ -185,6 +185,18 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    virtual std::expected<ColumnSizeByName, Exception> tryGetColumnSizes() const
+    {
+        try
+        {
+            return getColumnSizes();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
+    }
+
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
@@ -201,6 +213,18 @@ public:
     virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
     {
         return metadata.get();
+    }
+
+    virtual std::expected<StorageMetadataPtr, Exception> tryGetInMemoryMetadataPtr() const
+    {
+        try
+        {
+            return getInMemoryMetadataPtr();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
     }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
@@ -287,6 +311,18 @@ public:
 
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
+
+    virtual std::expected<SerializationInfoByName, Exception> tryGetSerializationHints() const
+    {
+        try
+        {
+            return getSerializationHints();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
+    }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
@@ -673,8 +709,32 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
+    virtual std::expected<Strings, Exception> tryGetDataPaths() const
+    {
+        try
+        {
+            return getDataPaths();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
+    }
+
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    virtual std::expected<StoragePolicyPtr, Exception> tryGetStoragePolicy() const
+    {
+        try
+        {
+            return getStoragePolicy();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
+    }
 
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
@@ -720,10 +780,34 @@ public:
     /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
+    virtual std::expected<std::optional<UInt64>, Exception> tryLifetimeRows() const
+    {
+        try
+        {
+            return lifetimeRows();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
+    }
+
     /// Number of bytes INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
+
+    virtual std::expected<std::optional<UInt64>, Exception> tryLifetimeBytes() const
+    {
+        try
+        {
+            return lifetimeBytes();
+        }
+        catch (const Exception & e)
+        {
+            return std::unexpected(e);
+        }
+    }
 
     /// Creates a storage snapshot from given metadata.
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const

@@ -35,11 +35,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
-}
 
 static constexpr const char * DATABASE_CONTEXT = "database";
 static constexpr const char * TABLE_CONTEXT = "table";
@@ -95,16 +90,14 @@ void fillDataWithTableColumns(
         return; // table was dropped while acquiring the lock
 
     StorageMetadataPtr snapshot;
-    /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
-    try
+    auto snapshot_result = table->tryGetInMemoryMetadataPtr();
+    if (snapshot_result.has_value())
     {
-        snapshot = table->getInMemoryMetadataPtr();
+        snapshot = std::move(*snapshot_result);
     }
-    catch (const Exception & e)
+    else
     {
-        if (table->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
-            throw;
-        tryLogCurrentException(getLogger("SystemCompletions"), fmt::format("Cannot find target database/table for {}", table->getStorageID().getNameForLogs()), LogsLevel::debug);
+        LOG_DEBUG(getLogger("SystemCompletions"), "Failed to get inmemory metadata for {}: {}", table->getStorageID().getNameForLogs(), snapshot_result.error().message());
         return;
     }
 
