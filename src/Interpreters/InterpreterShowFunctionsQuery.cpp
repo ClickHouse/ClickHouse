@@ -5,6 +5,7 @@
 #include <Interpreters/InterpreterShowFunctionsQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -16,7 +17,11 @@ InterpreterShowFunctionsQuery::InterpreterShowFunctionsQuery(const ASTPtr & quer
 
 BlockIO InterpreterShowFunctionsQuery::execute()
 {
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId({});
+
+    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
 String InterpreterShowFunctionsQuery::getRewrittenQuery()
@@ -38,7 +43,7 @@ FROM {}.{})",
     {
         rewritten_query += " WHERE name ";
         rewritten_query += query.case_insensitive_like ? "ILIKE " : "LIKE ";
-        rewritten_query += fmt::format("'{}'", query.like);
+        rewritten_query += quoteString(query.like);
     }
 
     return rewritten_query;

@@ -45,3 +45,13 @@ def test_writes_create_table(started_cluster_iceberg_with_spark, format_version,
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 2
+
+@pytest.mark.parametrize("format_version", [2])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_writes_create_table_bug_partitioning(started_cluster_iceberg_with_spark, format_version, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
+
+    with pytest.raises(Exception):
+        create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(c0 Int)", format_version, partition_by="(min(c0) OVER ())")

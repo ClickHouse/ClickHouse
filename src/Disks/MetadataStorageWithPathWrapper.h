@@ -209,11 +209,6 @@ public:
 
     bool supportsStat() const override { return delegate->supportsStat(); }
 
-    bool supportsPartitionCommand(const PartitionCommand & command) const override
-    {
-        return delegate->supportsPartitionCommand(command);
-    }
-
     struct stat stat(const String & path) const override { return delegate->stat(wrappedPath(path)); }
 
     std::vector<std::string> listDirectory(const std::string & path) const override
