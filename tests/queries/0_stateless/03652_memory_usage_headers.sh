@@ -17,6 +17,7 @@ CURL_OUTPUT="$(
 echo "$CURL_OUTPUT" | grep -m1 'X-ClickHouse-Progress:' | grep -q '"memory_usage":"[1-9][0-9]*"' && echo "Ok"
 echo "$CURL_OUTPUT" | grep 'X-ClickHouse-Summary:' | grep -q '"memory_usage":"[1-9][0-9]*"' && echo "Ok"
 
+
 # Check that we have memory_usage in summary without progress headers
 CURL_OUTPUT="$(
     ${CLICKHOUSE_CURL} -s -S -v -N -G "${CLICKHOUSE_URL}" \
@@ -25,6 +26,7 @@ CURL_OUTPUT="$(
 )"
 
 echo "$CURL_OUTPUT" | grep -m1 'X-ClickHouse-Summary:' | grep -q '"memory_usage":"[1-9][0-9]*"' && echo "Ok"
+
 
 # Check that we have memory_usage in summary for 241 OOM errors
 CURL_OUTPUT="$(
