@@ -143,6 +143,11 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
     , response(response_)
     , is_http_method_head(is_http_method_head_)
 {
+    LOG_DEBUG(
+        getLogger("WriteBufferFromHTTPServerResponse"),
+        "Constructor called for WriteBufferFromHTTPServerResponse. is_http_method_head: {}, from place: {}",
+        is_http_method_head,
+        StackTrace().toString());
     if (response.getChunkedTransferEncoding())
         setChunked();
 
@@ -150,8 +155,30 @@ WriteBufferFromHTTPServerResponse::WriteBufferFromHTTPServerResponse(
 }
 
 
+WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
+{
+    LOG_DEBUG(
+        getLogger("~WriteBufferFromHTTPServerResponse"),
+        "Destructor called for WriteBufferFromHTTPServerResponse. is_canceled: {}, is_finalized: {}, "
+        "headers_started_sending: {}, headers_finished_sending: {}, count(): {}, offset(): {}, from place: {}",
+        isCanceled(),
+        isFinalized(),
+        headers_started_sending,
+        headers_finished_sending,
+        count(),
+        offset(),
+        StackTrace().toString());
+}
+
+
 void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress, ContextPtr context)
 {
+    LOG_DEBUG(
+        getLogger("WriteBufferFromHTTPServerResponse"),
+        "Progress received in HTTP write buffer: {} rows, {} bytes, from place: {}",
+        progress.read_rows.load(),
+        progress.read_bytes.load(),
+        StackTrace().toString());
     std::lock_guard lock(mutex);
 
     /// Cannot add new headers if body was started to send.

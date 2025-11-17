@@ -2231,6 +2231,15 @@ void executeQuery(
         }
     }
 
+    std::this_thread::sleep_for(
+        std::chrono::microseconds(5000000)); /// Ensure that finish_time is greater than time of last progress update.
+
+    LOG_DEBUG(
+        getLogger("executeQuery"),
+        "Query finished at {}, finish callback exception: {}",
+        std::chrono::duration_cast<std::chrono::milliseconds>(finish_time.time_since_epoch()).count(),
+        exception_ptr ? "yes" : "no");
+
     streams.onFinish(finish_time);
 
     if (exception_ptr)

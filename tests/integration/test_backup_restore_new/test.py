@@ -9,6 +9,8 @@ from collections import namedtuple
 from typing import Dict
 from datetime import datetime
 
+from time import sleep
+
 import pytest
 
 from helpers.client import QueryRuntimeException
@@ -998,6 +1000,27 @@ def test_async_backups_to_same_destination(interface):
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
+
+
+def test_correct_usage_of_http_handler_in_async_restore():
+    node = instance
+    # simplest smt restore test
+    node.query("CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO src VALUES (1), (2), (3)")
+
+    backup_destination = new_backup_name()
+    node.query(
+        f"BACKUP TABLE src TO {backup_destination};"
+    )
+    node.query("DROP TABLE src SYNC")
+
+    query_id = uuid.uuid4()
+
+    node.http_query(f"RESTORE TABLE default.src FROM {backup_destination} SETTINGS async=1;")
+
+    sleep(2)
+
+    print("Restore completed with query id:", query_id)
 
 def test_empty_files_in_backup():
     instance.query("CREATE DATABASE test")

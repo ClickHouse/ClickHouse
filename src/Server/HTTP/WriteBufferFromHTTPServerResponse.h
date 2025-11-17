@@ -67,6 +67,8 @@ public:
 
     bool cancelWithException(HTTPServerRequest & request, int exception_code_, const std::string & message, WriteBuffer * compression_buffer) noexcept;
 
+    ~WriteBufferFromHTTPServerResponse() override;
+
 private:
     /// Send at least HTTP headers if no data has been sent yet.
     /// Use after the data has possibly been sent and no error happened (and thus you do not plan
