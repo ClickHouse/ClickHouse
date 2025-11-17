@@ -109,7 +109,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
 
     auto event = object_storage->getMetadataStorageMetrics().directory_created;
     ProfileEvents::increment(event);
-    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path);
+    auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path, /*with_tags=*/ false);
     fs_tree.recordDirectoryPath(path, DirectoryRemoteInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
     created_directory = true;
 }
@@ -311,18 +311,18 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
 }
 
 MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlainObjectStorageWriteFileOperation(
-    const std::string & path_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_)
-    : path(path_), fs_tree(fs_tree_), object_storage(object_storage_)
+    const std::string & path_, const StoredObject & object_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_)
+    : path(path_), object(object_), fs_tree(fs_tree_), object_storage(object_storage_)
 {
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
 {
-    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}'", path);
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageWriteFileOperation"), "Creating metadata for a file '{}', size: {}", path, object.bytes_size);
 
     if (!fs_tree.existsFile(path))
     {
-        fs_tree.addFile(path);
+        fs_tree.recordFile(path, {object.bytes_size, std::time(nullptr)});
         written = true;
     }
 }
@@ -355,6 +355,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File '{}' does not exist", path);
 
     remote_path = object_storage->generateObjectKeyForPath(path, std::nullopt).serialize();
+    file_remote_info = fs_tree.getFileRemoteInfo(path);
 
     fs_tree.removeFile(path);
     unlinked = true;
@@ -365,7 +366,8 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
     if (!unlinked)
         return;
 
-    fs_tree.addFile(path);
+    chassert(file_remote_info.has_value());
+    fs_tree.recordFile(path, std::move(file_remote_info.value()));
 }
 
 MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlainObjectStorageCopyFileOperation(
@@ -397,7 +399,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     remote_path_from = object_storage->generateObjectKeyForPath(path_from, std::nullopt).serialize();
     remote_path_to = object_storage->generateObjectKeyForPath(path_to, std::nullopt).serialize();
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
-    fs_tree.addFile(path_to);
+    fs_tree.recordFile(path_to, fs_tree.getFileRemoteInfo(path_from).value());
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
@@ -451,6 +453,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
     remote_path_to = object_storage->generateObjectKeyForPath(path_to, std::nullopt).serialize();
     tmp_remote_path_from = object_storage->generateObjectKeyForPath(path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_from", std::nullopt).serialize();
     tmp_remote_path_to = object_storage->generateObjectKeyForPath(path_to.string() + "." + getRandomASCIIString(16) + ".tmp_move_to", std::nullopt).serialize();
+    file_from_remote_info = fs_tree.getFileRemoteInfo(path_from).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
 
@@ -469,11 +472,16 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             read_settings,
             write_settings);
         moved_existing_target_file = true;
+
+        file_to_remote_info = fs_tree.getFileRemoteInfo(path_to);
+        fs_tree.removeFile(path_to);
+        fs_tree.recordFile(path_to, file_from_remote_info.value());
+
         object_storage->removeObjectIfExists(StoredObject(remote_path_to));
     }
     else
     {
-        fs_tree.addFile(path_to);
+        fs_tree.recordFile(path_to, file_from_remote_info.value());
         created_target_file = true;
     }
 
@@ -506,7 +514,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
 {
     if (moved_file)
-        fs_tree.addFile(path_from);
+        fs_tree.recordFile(path_from, file_from_remote_info.value());
 
     const auto read_settings = getReadSettings();
     const auto write_settings = getWriteSettings();
@@ -541,6 +549,9 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             /*object_to=*/StoredObject(remote_path_to),
             read_settings,
             write_settings);
+
+        fs_tree.removeFile(path_to);
+        fs_tree.recordFile(path_to, file_to_remote_info.value());
 
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
     }

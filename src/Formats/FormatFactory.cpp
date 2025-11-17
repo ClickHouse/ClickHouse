@@ -34,7 +34,6 @@ namespace Setting
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
-    extern const SettingsBool allow_experimental_object_type;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsBool log_queries;
@@ -175,7 +174,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.validate_types_from_metadata = settings[Setting::input_format_json_validate_types_from_metadata];
     format_settings.json.validate_utf8 = settings[Setting::output_format_json_validate_utf8];
     format_settings.json_object_each_row.column_for_object_name = settings[Setting::format_json_object_each_row_column_for_object_name];
-    format_settings.json.allow_deprecated_object_type = context->getSettingsRef()[Setting::allow_experimental_object_type];
     format_settings.json.compact_allow_variable_number_of_columns = settings[Setting::input_format_json_compact_allow_variable_number_of_columns];
     format_settings.json.try_infer_objects_as_tuples = settings[Setting::input_format_json_try_infer_named_tuples_from_objects];
     format_settings.json.throw_on_bad_escape_sequence = settings[Setting::input_format_json_throw_on_bad_escape_sequence];
@@ -382,6 +380,20 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     return format_settings;
 }
 
+FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
+{
+    auto creator = getCreators(format);
+    return creator.file_bucket_info_creator();
+}
+
+void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info)
+{
+    chassert(bucket_info);
+    auto & creators = getOrCreateCreators(format);
+    if (creators.file_bucket_info_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Bucket splitter for format {} is already registered", format);
+    creators.file_bucket_info_creator = std::move(bucket_info);
+}
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
@@ -557,7 +569,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         /// TODO: Consider using parser_shared_resources->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
-            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
+            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::PARALLEL_READ),
             max_download_threads,
             settings[Setting::max_download_buffer_size],
             file_size);
@@ -701,6 +713,21 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     creators.input_creator = std::move(input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
+}
+
+void FormatFactory::registerSplitter(const String & format, BucketSplitterCreator splitter)
+{
+    chassert(splitter);
+    auto & creators = getOrCreateCreators(format);
+    if (creators.bucket_splitter_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Bucket splitter for format {} is already registered", format);
+    creators.bucket_splitter_creator = std::move(splitter);
+}
+
+BucketSplitter FormatFactory::getSplitter(const String & format)
+{
+    auto creator = getCreators(format);
+    return creator.bucket_splitter_creator();
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)

@@ -143,7 +143,6 @@ public:
     /// Information required to read the posting list.
     struct FuturePostings
     {
-        MergeTreeIndexDeserializationState state;
         UInt64 header = 0;
         UInt64 offset_in_file = 0;
         UInt32 cardinality = 0;
@@ -257,11 +256,14 @@ private:
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     /// Header of the text index contains the number of tokens, bloom filter and sparse index.
     TextIndexHeaderPtr header;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// ---------------------------------------
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
@@ -288,18 +290,20 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens_and_postings.empty(); }
-    size_t memoryUsageBytes() const override { return 0; }
+    size_t memoryUsageBytes() const override;
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
-
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
+    /// ---------------------------------------
 };
 
 struct MergeTreeIndexTextGranuleBuilder

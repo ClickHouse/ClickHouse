@@ -1555,7 +1555,7 @@ LIMIT 10
 Converts a `String`, `Date`, or `DateTime` to a Unix timestamp (seconds since `1970-01-01 00:00:00 UTC`) as `UInt32`.
     )";
     FunctionDocumentation::Syntax syntax_to_unix_timestamp = R"(
-toUnixTimestamp(date, [timezone])
+toUnixTimestamp(date[, timezone])
     )";
     FunctionDocumentation::Arguments arguments_to_unix_timestamp = {
         {"date", "Value to convert.", {"Date", "Date32", "DateTime", "DateTime64", "String"}},
