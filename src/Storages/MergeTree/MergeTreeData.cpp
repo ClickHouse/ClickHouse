@@ -10281,13 +10281,14 @@ void MergeTreeData::decrefColumnsDescriptionForColumns(const NamesAndTypesList &
     std::lock_guard lock(columns_descriptions_cache_mutex);
     if (auto it = columns_descriptions_cache.find(columns); it != columns_descriptions_cache.end())
     {
-        if (it->second.original.use_count() != it->second.with_collected_nested.use_count())
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Reference count for columns description cache does not match (original: {}, with_collected_nested: {})",
-                it->second.original.use_count(),
-                it->second.with_collected_nested.use_count());
-        }
         /// 1 in the container + 1 in the iterator
+        ///
+        /// Note, we cannot check original.use_count() == with_collected_nested.use_count(),
+        /// since in IMergeTreeDataPart::setColumns() there is a tiny window when it is not correct.
+        ///
+        /// But, if original.use_count() == 2 then it is **always** safe to delete,
+        /// since this means that there are no other references to the shared_ptr
+        /// except in the columns_descriptions_cache and local copy here in iterator.
         if (it->second.original.use_count() == 2)
         {
             columns_descriptions_cache.erase(it);
