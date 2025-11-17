@@ -380,7 +380,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 zookeeper_connection_loss = true;
             }
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
 
