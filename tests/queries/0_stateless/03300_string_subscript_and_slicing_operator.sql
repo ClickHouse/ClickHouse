@@ -1,4 +1,4 @@
--- Test string subscript operator
+SELECT 'Test string subscript operator';
 -- Basic single character access
 SELECT 'ClickHouse'[1];
 SELECT 'ClickHouse'[2];
@@ -7,38 +7,22 @@ SELECT 'ClickHouse'[10];
 -- Regression tests for short literals
 SELECT 'abc'[3];
 SELECT 'abc'[-1];
-SELECT 'abc'[4];
 
 -- Negative indexing (from end)
 SELECT 'ClickHouse'[-1];
 SELECT 'ClickHouse'[-5];
-SELECT 'ClickHouse'[-10];
-
--- Edge cases
-SELECT 'ClickHouse'[0];  -- Should return empty string
-SELECT 'ClickHouse'[100];  -- Out of bounds, should return empty string
-SELECT 'ClickHouse'[-100];  -- Out of bounds, should return empty string
-
--- Empty string
-SELECT ''[1];
-SELECT ''[-1];
 
 -- Single character strings
 SELECT 'a'[1];
 SELECT 'a'[-1];
-SELECT 'a'[2];
 
 -- Range slicing
 SELECT 'abc'[1:1];
 SELECT 'abc'[2:3];
-SELECT 'abc'[2:10];
 SELECT 'ClickHouse'[3:7];
 SELECT 'ClickHouse'[-5:-1];
 SELECT 'ClickHouse'[4:-2];
 SELECT 'ClickHouse'[-4:9];
-SELECT 'ClickHouse'[5:3]; -- start greater than end -> empty
-SELECT 'abc'[4:5]; -- start out of range -> empty
-SELECT 'ClickHouse'[-20:-15]; -- invalid negative bounds -> empty
 
 -- Using arrayElement function explicitly
 SELECT arrayElement('ClickHouse', 1);
@@ -55,7 +39,7 @@ DROP TABLE test_string_subscript;
 
 -- Testing with tuple-based slicing from columns
 CREATE TABLE test_string_slice (s String, start Int32, stop Int32) ENGINE = Memory;
-INSERT INTO test_string_slice VALUES ('clickhouse', 2, 5), ('column', 1, 3), ('tuple', 2, 10), ('xyz', 3, 2);
+INSERT INTO test_string_slice VALUES ('clickhouse', 2, 5), ('column', 1, 3), ('tuple', 2, 4);
 
 SELECT s, start, stop, s[start:stop] FROM test_string_slice ORDER BY s;
 SELECT start, stop, 'CONSTANT'[start:stop] FROM test_string_slice ORDER BY start, stop;
@@ -72,4 +56,17 @@ SELECT lower('CLICKHOUSE')[5];
 
 -- Testing with NULL
 SELECT NULL[1];
+
+-- Out of bounds error tests (should throw ILLEGAL_INDEX error code 127)
+SELECT 'abc'[4]; -- { serverError ILLEGAL_INDEX }
+SELECT 'abc'[0]; -- { serverError ILLEGAL_INDEX }
+SELECT 'abc'[-10]; -- { serverError ILLEGAL_INDEX }
+SELECT ''[1]; -- { serverError ILLEGAL_INDEX }
+SELECT 'ClickHouse'[-20]; -- { serverError ILLEGAL_INDEX }
+
+-- Out of bounds slice tests
+SELECT 'abc'[1:10]; -- { serverError ILLEGAL_INDEX }
+SELECT 'ab'[-5:-1]; -- { serverError ILLEGAL_INDEX }
+SELECT 'abc'[10:20]; -- { serverError ILLEGAL_INDEX }
+SELECT 'ClickHouse'[3:1]; -- { serverError ILLEGAL_INDEX }
 
