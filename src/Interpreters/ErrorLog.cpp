@@ -100,7 +100,7 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(code);
     columns[column_idx++]->insert(ErrorCodes::getName(code));
-    columns[column_idx++]->insert(last_error_time_ms / 1000);
+    columns[column_idx++]->insert(last_error_time);
     columns[column_idx++]->insert(last_error_message);
     columns[column_idx++]->insert(value);
     columns[column_idx++]->insert(remote);
@@ -136,7 +136,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement local_elem {
                 .event_time=event_time,
                 .code=code,
-                .last_error_time_ms=error.local.error_time_ms,
+                .last_error_time=(error.local.error_time_ms / 1000),
                 .last_error_message=error.local.message,
                 .value=error.local.count - previous_values.at(code).local,
                 .remote=false,
@@ -151,7 +151,7 @@ void ErrorLog::stepFunction(TimePoint current_time)
             ErrorLogElement remote_elem {
                 .event_time=event_time,
                 .code=code,
-                .last_error_time_ms=error.remote.error_time_ms,
+                .last_error_time=(error.remote.error_time_ms / 1000),
                 .last_error_message=error.remote.message,
                 .value=error.remote.count - previous_values.at(code).remote,
                 .remote=true,

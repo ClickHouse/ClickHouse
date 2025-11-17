@@ -17,7 +17,7 @@ struct ErrorLogElement
 {
     time_t event_time{};
     ErrorCodes::ErrorCode code{};
-    UInt64 last_error_time_ms = 0;
+    UInt64 last_error_time = 0;
     std::string last_error_message{};
     ErrorCodes::Value value{};
     bool remote{};
