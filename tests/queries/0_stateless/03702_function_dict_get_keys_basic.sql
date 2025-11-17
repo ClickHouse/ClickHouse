@@ -38,6 +38,9 @@ SELECT dictGetKeys('dict_neg', 'u64', toUInt64(7), 1); -- { serverError NUMBER_O
 
 SELECT dictGetKeys('dict_neg', 'i32n', tuple(number)) FROM numbers(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+SELECT dictGetKeys('non_a_dict_name', 'i32n', tuple(number)) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
+
+SELECT dictGetKeys('dict_neg', 'not_a_attr_col', tuple(number)) FROM numbers(3); -- { serverError ILLEGAL_COLUMN }
 
 SELECT 'Simple Key';
 
