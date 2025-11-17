@@ -839,7 +839,6 @@ class JobConfigs:
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/buzzhouse_job.py",
-        run_in_docker="clickhouse/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/docker/fuzzer",
