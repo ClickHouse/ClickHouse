@@ -205,32 +205,48 @@ public:
 
 REGISTER_FUNCTION(Serial)
 {
-    factory.registerFunction<FunctionSerial>(FunctionDocumentation
-    {
-        .description=R"(
+    FunctionDocumentation::Description description = R"(
 Generates and returns sequential numbers starting from the previous counter value.
 This function takes a string argument - a series identifier, and an optional starting value.
-
 The server should be configured with Keeper.
-The series are stored in Keeper nodes under the path, which can be configured in `series_keeper_path` in the server configuration.
-)",
-        .syntax = "generateSerialID('series_identifier'[, start_value])",
-        .arguments{
-            {"series_identifier", "Series identifier, (a short constant String)"},
-            {"start_value", "Optional starting value for the counter. Defaults to 0. Note: this value is only used when creating a new series and is ignored if the series already exists"}
-
-        },
-        .returned_value = {"Returns sequential numbers starting from the previous counter value."},
-        .examples{
-            {"first call", "SELECT generateSerialID('id1')", R"(
+The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/operations/server-configuration-parameters/settings#series_keeper_path) in the server configuration.
+    )";
+    FunctionDocumentation::Syntax syntax = "generateSerialID(series_identifier[, start_value])";
+    FunctionDocumentation::Arguments arguments = {
+        {"series_identifier", "Series identifier", {"const String"}},
+        {"start_value", "Optional. Starting value for the counter. Defaults to 0. Note: this value is only used when creating a new series and is ignored if the series already exists", {"UInt*"}},
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns sequential numbers starting from the previous counter value.", {"UInt64"}};
+    FunctionDocumentation::Examples examples =
+    {
+    {
+        "first call",
+        R"(
+SELECT generateSerialID('id1')
+        )",
+        R"(
 ┌─generateSerialID('id1')──┐
 │                        1 │
-└──────────────────────────┘)"},
-            {"second call", "SELECT generateSerialID('id1')", R"(
+└──────────────────────────┘
+        )"
+    },
+    {
+        "second call",
+        R"(
+SELECT generateSerialID('id1')
+        )",
+        R"(
 ┌─generateSerialID('id1')──┐
 │                        2 │
-└──────────────────────────┘)"},
-            {"column call", "SELECT *, generateSerialID('id1') FROM test_table", R"(
+└──────────────────────────┘
+        )"
+    },
+    {
+        "column call",
+        R"(
+SELECT *, generateSerialID('id1') FROM test_table
+        )",
+        R"(
 ┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')──┐
 │         1 │      3 │   3 │                        3 │
 │         1 │      1 │   1 │                        4 │
@@ -238,17 +254,36 @@ The series are stored in Keeper nodes under the path, which can be configured in
 │         1 │      5 │   5 │                        6 │
 │         1 │      4 │   4 │                        7 │
 └───────────┴────────┴─────┴──────────────────────────┘
-                  )"},
-            {"with start value", "SELECT generateSerialID('id2', 100)", R"(
+        )"
+    },
+    {
+        "with start value",
+        R"(
+SELECT generateSerialID('id2', 100)
+        )",
+        R"(
 ┌─generateSerialID('id2', 100)──┐
 │                           100 │
-└───────────────────────────────┘)"},
-            {"with start value second call", "SELECT generateSerialID('id2', 100)", R"(
+└───────────────────────────────┘
+        )"
+    },
+    {
+        "with start value second call",
+        R"(
+SELECT generateSerialID('id2', 100)
+        )",
+        R"(
 ┌─generateSerialID('id2', 100)──┐
 │                           101 │
-└───────────────────────────────┘)"}},
-        .category = FunctionDocumentation::Category::Other
-    });
+└───────────────────────────────┘
+        )"
+}
+};
+FunctionDocumentation::IntroducedIn introduced_in = {25, 1};
+FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+factory.registerFunction<FunctionSerial>(documentation);
 }
 
 }

@@ -92,6 +92,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
+    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -493,6 +494,29 @@ char * ColumnUnique<ColumnType>::serializeValueIntoMemory(size_t n, char * memor
     }
 
     return column_holder->serializeValueIntoMemory(n, memory);
+}
+
+template <typename ColumnType>
+StringRef ColumnUnique<ColumnType>::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    if (is_nullable)
+    {
+        static constexpr auto s = sizeof(UInt8);
+
+        auto * pos = arena.allocContinue(s, begin);
+        UInt8 flag = (n == getNullValueIndex() ? 1 : 0);
+        unalignedStore<UInt8>(pos, flag);
+
+        if (n == getNullValueIndex())
+            return StringRef(pos, s);
+
+        auto nested_ref = column_holder->serializeAggregationStateValueIntoArena(n, arena, begin);
+
+        /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
+        return StringRef(nested_ref.data - s, nested_ref.size + s);
+    }
+
+    return column_holder->serializeAggregationStateValueIntoArena(n, arena, begin);
 }
 
 template <typename ColumnType>

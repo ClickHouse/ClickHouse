@@ -5,6 +5,8 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
+ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
+
 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
     job.name
     for job in JobConfigs.functional_tests_jobs
@@ -42,6 +44,10 @@ workflow = Workflow.Config(
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_dependency(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
         *[
+            job.set_dependency(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.extra_validation_build_jobs
+        ],
+        *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.release_build_jobs
         ],
@@ -49,7 +55,13 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
-        *JobConfigs.unittest_jobs,
+        # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
+        *JobConfigs.stateless_tests_flaky_pr_jobs,
+        *JobConfigs.integration_test_asan_flaky_pr_jobs,
+        JobConfigs.bugfix_validation_ft_pr_job,
+        JobConfigs.bugfix_validation_it_job,
         *[
             j.set_dependency(
                 FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
@@ -58,9 +70,6 @@ workflow = Workflow.Config(
             )
             for j in JobConfigs.functional_tests_jobs
         ],
-        JobConfigs.bugfix_validation_it_job,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        *JobConfigs.stateless_tests_flaky_pr_jobs,
         *[
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_required[:]
@@ -69,8 +78,8 @@ workflow = Workflow.Config(
             job.set_dependency(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.docker_sever.set_dependency(
+        *JobConfigs.unittest_jobs,
+        JobConfigs.docker_server.set_dependency(
             FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
         ),
         JobConfigs.docker_keeper.set_dependency(
@@ -130,7 +139,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
-        # "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/quick_sync.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/team_notifications.py",
     ],
     workflow_filter_hooks=[should_skip_job],
