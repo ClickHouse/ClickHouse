@@ -323,8 +323,8 @@
     M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
     M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
     M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
-    M(TextIndexHeaderCacheBytes, "Size of the text index posting lists cache in bytes") \
-    M(TextIndexHeaderCacheCells, "Number of entries in text index posting lists cache") \
+    M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
+    M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
     M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
@@ -462,6 +462,9 @@
     M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
+    \
+    M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

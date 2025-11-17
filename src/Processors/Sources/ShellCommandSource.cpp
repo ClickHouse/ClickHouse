@@ -5,6 +5,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
