@@ -128,6 +128,7 @@
 
 #include <Common/Jemalloc.h>
 
+#include <Coordination/KeeperAsynchronousMetrics.h>
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -188,6 +189,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
     extern const ServerSettingsUInt32 asynchronous_metrics_update_period_s;
     extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
+    extern const ServerSettingsBool asynchronous_metrics_keeper_metrics_only;
     extern const ServerSettingsBool async_insert_queue_flush_on_shutdown;
     extern const ServerSettingsUInt64 async_insert_threads;
     extern const ServerSettingsBool async_load_databases;
@@ -1369,32 +1371,54 @@ try
         global_context->getPageCache());
 
     /// This object will periodically calculate some metrics.
-    ServerAsynchronousMetrics async_metrics(
-        global_context,
-        server_settings[ServerSetting::asynchronous_metrics_update_period_s],
-        server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
-        server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
-        [&]() -> std::vector<ProtocolServerMetrics>
-        {
-            std::vector<ProtocolServerMetrics> metrics;
+    std::unique_ptr<AsynchronousMetrics> async_metrics;
+    const bool async_metrics_keeper_metrics_only = server_settings[ServerSetting::asynchronous_metrics_keeper_metrics_only];
 
-            std::lock_guard lock(servers_lock);
-            metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+    DB::AsynchronousMetrics::ProtocolServerMetricsFunc asynchronous_metrics_protocol_server_metrics_func = [&]() -> std::vector<ProtocolServerMetrics>
+    {
+        std::vector<ProtocolServerMetrics> metrics;
 
-            for (const auto & server : servers_to_start_before_tables)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+        std::lock_guard lock(servers_lock);
+        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
 
-            for (const auto & server : servers)
-                metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
-            return metrics;
-        },
-        /*update_jemalloc_epoch_=*/memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc,
-        /*update_rss_=*/memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None);
+        for (const auto & server : servers_to_start_before_tables)
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+
+        for (const auto & server : servers)
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+        return metrics;
+    };
+    const unsigned async_metrics_update_period_s = server_settings[ServerSetting::asynchronous_metrics_update_period_s];
+    const bool async_metrics_update_jemalloc_epoch = memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc;
+    const bool async_metrics_update_rss = memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None;
+
+    if (async_metrics_keeper_metrics_only)
+    {
+        async_metrics = std::make_unique<KeeperAsynchronousMetrics>(
+            global_context,
+            async_metrics_update_period_s,
+            asynchronous_metrics_protocol_server_metrics_func,
+            async_metrics_update_jemalloc_epoch,
+            async_metrics_update_rss
+        );
+    }
+    else
+    {
+        async_metrics = std::make_unique<ServerAsynchronousMetrics>(
+            global_context,
+            async_metrics_update_period_s,
+            server_settings[ServerSetting::asynchronous_metrics_enable_heavy_metrics],
+            server_settings[ServerSetting::asynchronous_heavy_metrics_update_period_s],
+            asynchronous_metrics_protocol_server_metrics_func,
+            async_metrics_update_jemalloc_epoch,
+            async_metrics_update_rss
+        );
+    }
 
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
-        async_metrics.stop();
+        async_metrics->stop();
 
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
@@ -2288,7 +2312,7 @@ try
                 if (global_context->isServerCompletelyStarted())
                 {
                     std::lock_guard lock(servers_lock);
-                    updateServers(*config, server_pool, async_metrics, servers, servers_to_start_before_tables);
+                    updateServers(*config, server_pool, *async_metrics, servers, servers_to_start_before_tables);
                 }
             }
 
@@ -2469,7 +2493,7 @@ try
             interserver_listen_hosts,
             listen_try,
             server_pool,
-            async_metrics,
+            *async_metrics,
             servers_to_start_before_tables,
             /* start_servers= */ false);
     }
@@ -2578,7 +2602,7 @@ try
             listen_hosts,
             listen_try,
             server_pool,
-            async_metrics,
+            *async_metrics,
             servers,
             /* start_servers= */ true,
             server_type);
@@ -2772,11 +2796,11 @@ try
 #endif
 
     {
-        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
+        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), *async_metrics);
 
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), listen_hosts, listen_try, server_pool, async_metrics, servers);
+            createServers(config(), listen_hosts, listen_try, server_pool, *async_metrics, servers);
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                                 "No servers started (add valid listen_host and 'tcp_port' or 'http_port' "
@@ -2795,8 +2819,8 @@ try
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
-        async_metrics.start();
-        global_context->setAsynchronousMetrics(&async_metrics);
+        async_metrics->start();
+        global_context->setAsynchronousMetrics(async_metrics.get());
 
         main_config_reloader->start();
         access_control.startPeriodicReloading();
@@ -3005,7 +3029,7 @@ try
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
         {
             metrics_transmitters.emplace_back(std::make_unique<MetricsTransmitter>(
-                global_context->getConfigRef(), graphite_key, async_metrics));
+                global_context->getConfigRef(), graphite_key, *async_metrics));
         }
 
         waitForTerminationRequest();
@@ -3432,6 +3456,9 @@ void Server::createServers(
         {
             /// Prometheus (if defined and not setup yet with http_port)
             port_name = "prometheus.port";
+
+            const char * handler_name = config.getBool("prometheus.keeper_metrics_only", false) ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
+
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
                 Poco::Net::ServerSocket socket;
@@ -3443,7 +3470,7 @@ void Server::createServers(
                     port_name,
                     "Prometheus: http://" + address.toString(),
                     std::make_unique<HTTPServer>(
-                        httpContext(), createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
+                        httpContext(), createHandlerFactory(*this, config, async_metrics, handler_name), server_pool, socket, http_params, nullptr, ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes));
             });
         }
     }
