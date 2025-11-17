@@ -176,22 +176,26 @@ def main():
         "remote_secure_servers": ["localhost:9440"],
         "http_servers": ["localhost:8123"],
         "https_servers": ["localhost:8443"],
-        # These settings are slow
         "disallowed_settings": [
+            # Disable old analyzer always
             "enable_analyzer",
+            # Don't always apply settings from the server
             "apply_settings_from_server",
+            # Keep all debugging messages
+            "send_logs_level",
+            # Slow settings
             "grace_hash_join_initial_buckets",
             "join_default_strictness",
-            "restore_replace_external_dictionary_source_to_null",
-            "restore_replace_external_engines_to_null",
-            "restore_replace_external_table_functions_to_null",
-            "send_logs_level",
             "query_plan_max_limit_for_lazy_materialization",
             "max_download_buffer_size",
-            "data_type_default_nullable",
             "enable_producing_buckets_out_of_order_in_aggregation",
             "max_temporary_data_on_disk_size_for_query",
             "max_temporary_data_on_disk_size_for_user",
+            # Makes everything nullable, not handy
+            "data_type_default_nullable",
+            "restore_replace_external_dictionary_source_to_null",
+            "restore_replace_external_engines_to_null",
+            "restore_replace_external_table_functions_to_null",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [
@@ -217,7 +221,7 @@ def main():
         ],
     }
     with open(buzz_config_file, "w") as outfile:
-        outfile.write(json.dumps(buzz_config_file))
+        outfile.write(json.dumps(buzz_config))
 
     run_fuzz_job()
 
