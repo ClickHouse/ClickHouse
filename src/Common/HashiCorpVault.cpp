@@ -51,7 +51,6 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
 
     params.certificateFile = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, "");
 
-    // TODO refactor it
     if (auth_method == HashiCorpVaultAuthMethod::Cert)
     {
         if (params.privateKeyFile.empty())
@@ -175,7 +174,6 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
 
     if (!body.empty())
     {
-        LOG_DEBUG(log, "body is {}", body);
         request.setContentType("application/json");
         request.setContentLength(body.length());
     }
@@ -188,7 +186,7 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
     Poco::Net::HTTPResponse response;
     std::istream & is = session->receiveResponse(response);
 
-    std::stringstream responseStream;
+    std::stringstream responseStream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::StreamCopier::copyStream(is, responseStream);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
@@ -204,7 +202,7 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
 String HashiCorpVault::login()
 {
     std::string json_str;
-    std::ostringstream oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     Poco::JSON::Object obj;
     try
     {
@@ -213,8 +211,6 @@ String HashiCorpVault::login()
             obj.set("password", password);
             Poco::JSON::Stringifier::stringify(obj, oss);
             String uri = fmt::format("/v1/auth/userpass/login/{}", username);
-            LOG_DEBUG(log, "userpass uri {}", uri);
-            LOG_DEBUG(log, "userpass body {}", oss.str());
             json_str = makeRequest("POST", uri, "", oss.str());
         }
         else
