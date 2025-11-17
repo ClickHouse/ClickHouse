@@ -137,7 +137,7 @@ void updateStatistics(const DB::ManyAggregatedDataVariants & data_variants, cons
     for (size_t i = 0; i < data_variants.size(); ++i)
         sizes[i] = data_variants[i]->size();
     const auto median_size = sizes.begin() + sizes.size() / 2; // not precisely though...
-    std::nth_element(sizes.begin(), median_size, sizes.end());
+    ::nth_element(sizes.begin(), median_size, sizes.end());
     const auto sum_of_sizes = std::accumulate(sizes.begin(), sizes.end(), 0ull);
     DB::getHashTablesStatistics<DB::AggregationEntry>().update({.sum_of_sizes = sum_of_sizes, .median_size = *median_size}, params);
 }
@@ -2676,7 +2676,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         }
     };
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
     try
     {
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
@@ -3653,7 +3653,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         if (use_thread_pool)
         {
-            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "AggregatorPool");
+            ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::AGGREGATOR_POOL);
             try
             {
                 for (size_t i = 0; i < params.max_threads; ++i)

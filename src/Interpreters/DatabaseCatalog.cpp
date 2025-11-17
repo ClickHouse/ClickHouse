@@ -737,15 +737,13 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     }
 }
 
-void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
+void DatabaseCatalog::updateMetadataFile(const String & database_name, const ASTPtr & create_query)
 {
     std::lock_guard lock{databases_mutex};
-    ASTPtr ast = database->getCreateDatabaseQuery();
-    if (!ast)
-        throw Exception(
-            ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database->getDatabaseName()));
+    if (!create_query)
+        throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
 
-    auto * ast_create_query = ast->as<ASTCreateQuery>();
+    auto * ast_create_query = create_query->as<ASTCreateQuery>();
     ast_create_query->attach = true;
 
     WriteBufferFromOwnString statement_buf;
@@ -754,8 +752,8 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
-    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql.tmp");
-    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database->getDatabaseName()) + ".sql");
+    auto database_metadata_tmp_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql.tmp");
+    auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     writeMetadataFile(
@@ -1170,7 +1168,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
 
     LOG_INFO(log, "Found {} partially dropped tables. Will load them and retry removal.", dropped_metadata.size());
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
     for (const auto & elem : dropped_metadata)
     {
         auto full_path = elem.first;
@@ -1432,7 +1430,7 @@ void DatabaseCatalog::dropTablesParallel(std::vector<DatabaseCatalog::TablesMark
     if (tables_to_drop.empty())
         return;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), "DropTables");
+    ThreadPoolCallbackRunnerLocal<void> runner(getDatabaseCatalogDropTablesThreadPool().get(), ThreadName::DROP_TABLES);
 
     for (const auto & item : tables_to_drop)
     {
