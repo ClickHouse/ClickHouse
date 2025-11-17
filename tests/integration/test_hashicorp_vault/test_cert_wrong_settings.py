@@ -42,10 +42,23 @@ def test_empty_ssl():
         "DB::Exception: privateKeyFile is not specified for vault",
     )
 
+def test_empty_private_key():
+    start_clickhouse(
+        "configs/config_cert_empty_private_key.xml",
+        "configs/users.xml",
+        "DB::Exception: privateKeyFile is not specified for vault",
+    )
 
 def test_missing_certificate():
     start_clickhouse(
         "configs/config_cert_missing_certificate.xml",
+        "configs/users.xml",
+        "DB::Exception: certificateFile is not specified for vault",
+    )
+
+def test_empty_certificate():
+    start_clickhouse(
+        "configs/config_cert_empty_certificate.xml",
         "configs/users.xml",
         "DB::Exception: certificateFile is not specified for vault",
     )
