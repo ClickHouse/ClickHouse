@@ -534,7 +534,14 @@ private:
 
 REGISTER_FUNCTION(DictGetKeys)
 {
-    FunctionDocumentation::Description description = "Inverse dictionary lookup: return keys where attribute equals the given value.";
+    FunctionDocumentation::Description description = R"(
+Returns the dictionary key(s) whose attribute equals the specified value. This is the inverse of the function `dictGet` on a single attribute.
+
+Use setting `max_reverse_dictionary_lookup_cache_size_bytes` to cap the size of the per-query reverse-lookup cache used by `dictGetKeys`.
+The cache stores serialized key tuples for each attribute value to avoid re-scanning the dictionary within the same query.
+The cache is not persistent across queries. When the limit is reached, entries are evicted with LRU.
+This is most effective with large dictionaries when the input has low cardinality and the working set fits in the cache. Set to `0` to disable caching.
+    )";
     FunctionDocumentation::Syntax syntax = "dictGetKeys('dict_name', 'attr_name', value_expr)";
     FunctionDocumentation::Arguments arguments
         = {{"dict_name", "Name of the dictionary.", {"String"}},
@@ -546,6 +553,16 @@ REGISTER_FUNCTION(DictGetKeys)
            "then an empty array is returned. ClickHouse throws an exception if it cannot parse the value of the attribute or the value "
            "cannot be converted to the attribute data type.",
            {}};
+    FunctionDocumentation::Examples examples
+        = {{"Sample usage",
+            R"(
+SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+    )",
+            R"(
+ ┌─ids───┐
+ │ [4,2] │
+ └───────┘
+    )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Dictionary;
     FunctionDocumentation docs{description, syntax, arguments, returned_value, {}, introduced_in, category};
