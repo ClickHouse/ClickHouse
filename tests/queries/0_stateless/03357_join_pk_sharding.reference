@@ -183,7 +183,7 @@ where e like '%ReadFromMergeTree%' or e like '%Expression%' or e like '%Join%' o
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
     Join
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     Clauses: [(multiply(__table1.a, 2_UInt8), plus(__table1.b, __table1.c)) = (plus(__table2.c, __table2.d), multiply(__table2.b, 2_UInt8))]
     Sharding: [(multiply(a, 2) = plus(c, d)), (plus(b, c) = multiply(b, 2))]
       Expression (Left Pre Join Actions)
