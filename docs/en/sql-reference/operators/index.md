@@ -16,6 +16,25 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a[N]` – Access to an element of an array. The `arrayElement(a, N)` function.
 
+`s[N]` – Access to a character in a string by index. Returns a `String` containing a single character. The `arrayElement(s, N)` function.
+- Index `N` is 1-based (first character is at index 1)
+- Negative indices count from the end (last character is at index -1)
+- Returns an empty string if the index is out of bounds
+
+`s[N:M]` – String slicing. Returns a substring from index `N` to index `M` (inclusive). The `arrayElement(s, tuple(N, M))` function.
+- Both `N` and `M` are 1-based indices
+- Negative indices are supported and count from the end
+- Returns an empty string if the slice is invalid or out of bounds
+
+Examples:
+
+```sql
+SELECT 'ClickHouse'[1];    -- 'C'
+SELECT 'ClickHouse'[-1];   -- 'e'
+SELECT 'ClickHouse'[3:7];  -- 'ickHo'
+SELECT 'ClickHouse'[-5:-1]; -- 'House'
+```
+
 `a.N` – Access to a tuple element. The `tupleElement(a, N)` function.
 
 ## Numeric Negation Operator {#numeric-negation-operator}
