@@ -38,63 +38,63 @@ for direct_read_setting in 0 1; do
     SETTINGS="$SETTINGS --query_plan_direct_read_from_text_index=$direct_read_setting "
     cat <<EOF | $CLICKHOUSE_CLIENT -n $SETTINGS
 -- { echoOn }
-SELECT * FROM tab WHERE hasAnyTokens(message, ['abc']);
-SELECT * FROM tab WHERE hasAllTokens(message, ['abc']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['abc']);
+SELECT count() FROM tab WHERE hasAllTokens(message, ['abc']);
 
-SELECT * FROM tab WHERE hasAnyTokens(message, ['']);
-SELECT * FROM tab WHERE hasAllTokens(message, ['']);
+SELECT count() FROM tab WHERE hasAnyTokens(message, ['']);
+SELECT count() FROM tab WHERE hasAllTokens(message, ['']);
 
-SELECT * FROM tab WHERE hasAnyTokens(message, []);
-SELECT * FROM tab WHERE hasAllTokens(message, []);
+SELECT count() FROM tab WHERE hasAnyTokens(message, []);
+SELECT count() FROM tab WHERE hasAllTokens(message, []);
 
-SELECT * FROM tab WHERE hasAnyTokens(message, 'abc');
-SELECT * FROM tab WHERE hasAllTokens(message, 'abc');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'abc');
+SELECT count() FROM tab WHERE hasAllTokens(message, 'abc');
 
-SELECT * FROM tab WHERE hasAnyTokens(message, '');
-SELECT * FROM tab WHERE hasAllTokens(message, '');
+SELECT count() FROM tab WHERE hasAnyTokens(message, '');
+SELECT count() FROM tab WHERE hasAllTokens(message, '');
 
 SELECT tokens('abc', 'ngrams', 4) AS tokens;
 
-SELECT * from tab WHERE hasToken(message, 'abc');
+SELECT count() FROM tab WHERE hasToken(message, 'abc');
 
 -- Arrays
-SELECT * FROM tab WHERE hasAnyTokens(arr, ['abc']);
-SELECT * FROM tab WHERE hasAllTokens(arr, ['abc']);
+SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);
+SELECT count() FROM tab WHERE hasAllTokens(arr, ['abc']);
 
-SELECT * FROM tab WHERE hasAnyTokens(arr, ['']);
-SELECT * FROM tab WHERE hasAllTokens(arr, ['']);
+SELECT count() FROM tab WHERE hasAnyTokens(arr, ['']);
+SELECT count() FROM tab WHERE hasAllTokens(arr, ['']);
 
-SELECT * FROM tab WHERE hasAnyTokens(arr, []);
-SELECT * FROM tab WHERE hasAllTokens(arr, []);
+SELECT count() FROM tab WHERE hasAnyTokens(arr, []);
+SELECT count() FROM tab WHERE hasAllTokens(arr, []);
 
-SELECT * FROM tab WHERE hasAnyTokens(arr, 'abc');
-SELECT * FROM tab WHERE hasAllTokens(arr, 'abc');
+SELECT count() FROM tab WHERE hasAnyTokens(arr, 'abc');
+SELECT count() FROM tab WHERE hasAllTokens(arr, 'abc');
 
-SELECT * FROM tab WHERE hasAnyTokens(arr, '');
-SELECT * FROM tab WHERE hasAllTokens(arr, '');
+SELECT count() FROM tab WHERE hasAnyTokens(arr, '');
+SELECT count() FROM tab WHERE hasAllTokens(arr, '');
 
-SELECT * from tab WHERE has(arr, 'abc');
+SELECT count() FROM tab WHERE has(arr, 'abc');
 
 -- Maps
-SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
-SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), ['abc']);
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), ['abc']);
 
-SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), ['']);
-SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), ['']);
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['']);
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), ['']);
 
-SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), []);
-SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), []);
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), []);
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), []);
 
-SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), 'abc');
-SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), 'abc');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), 'abc');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), 'abc');
 
-SELECT * FROM tab WHERE hasAnyTokens(mapKeys(map), '');
-SELECT * FROM tab WHERE hasAllTokens(mapKeys(map), '');
+SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), '');
+SELECT count() FROM tab WHERE hasAllTokens(mapKeys(map), '');
 
-SELECT * FROM tab WHERE mapContains(map, 'abc');
-SELECT * FROM tab WHERE mapContains(map, '');
+SELECT count() FROM tab WHERE mapContains(map, 'abc');
+SELECT count() FROM tab WHERE mapContains(map, '');
 
-SELECT * from tab WHERE has(map, 'abc');
+SELECT count() FROM tab WHERE has(map, 'abc');
 -- { echoOff }
 EOF
 
