@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashSet.h>
@@ -12,9 +11,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
-#include <base/TypeName.h>
-#include <base/sort.h>
-
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
@@ -23,6 +19,11 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <base/TypeName.h>
+#include <base/sort.h>
+
+#include <algorithm>
 
 
 namespace DB
