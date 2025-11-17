@@ -70,6 +70,7 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     : data_part_name(data_part_name_)
     , serializations(serializations_)
     , index_granularity_info(index_granularity_info_)
+    /// TODO: make projection aware settings
     , storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
     , virtual_columns(virtual_columns_)

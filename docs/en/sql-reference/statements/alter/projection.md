@@ -188,7 +188,28 @@ The following operations with [projections](/engines/table-engines/mergetree-fam
 
 ## ADD PROJECTION {#add-projection}
 
-`ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] )` - Adds projection description to tables metadata.
+`ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [OPTIONS ( option_name1 = option_value1, option_name2 = option_value2, ...)]` - Adds projection description to tables metadata.
+
+### `OPTIONS` Clause
+
+`OPTIONS` defines **projection-level settings**, which customize how the projection stores data (for example, `index_granularity` or `index_granularity_bytes`).
+These correspond directly to **MergeTree table settings**, but apply **only to this projection**.
+
+The keyword `OPTIONS` is used instead of `SETTINGS` to avoid ambiguity with the `ALTER TABLE ... SETTINGS` clause that configures the ALTER command itself.
+
+Example:
+
+```sql
+ALTER TABLE t
+ADD PROJECTION p (
+    SELECT x ORDER BY x
+) OPTIONS (
+    index_granularity = 4096,
+    index_granularity_bytes = 1048576
+);
+```
+
+Projection options override the effective table settings for the projection, subject to validation rules (e.g., invalid or incompatible overrides will be rejected).
 
 ## DROP PROJECTION {#drop-projection}
 

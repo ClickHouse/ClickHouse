@@ -17,7 +17,7 @@ class IMergedBlockOutputStream
 {
 public:
     IMergedBlockOutputStream(
-        const MergeTreeSettingsPtr & storage_settings_,
+        MergeTreeSettingsPtr storage_settings_,
         MutableDataPartStoragePtr data_part_storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const NamesAndTypesList & columns_list,

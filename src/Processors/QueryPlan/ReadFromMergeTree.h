@@ -23,6 +23,8 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
+struct QueryIdHolder;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
@@ -148,7 +150,14 @@ public:
         AnalysisResult(AnalysisResult &&) noexcept = default;
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
-        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
+
+        /// Check query limits: max_rows_to_read, max_rows_to_read_leaf, max_partitions_to_read, max_concurrent_queries.
+        /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
+        std::shared_ptr<QueryIdHolder> checkLimits(
+            const Context & context_,
+            const MergeTreeData & data_,
+            const MergeTreeSettings & data_settings_,
+            const SelectQueryInfo & query_info_) const;
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
@@ -158,6 +167,7 @@ public:
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot_,
         Names all_column_names_,
         const MergeTreeData & data_,
+        MergeTreeSettingsPtr data_settings_,
         const SelectQueryInfo & query_info_,
         const StorageSnapshotPtr & storage_snapshot,
         const ContextPtr & context_,
@@ -230,6 +240,7 @@ public:
         size_t num_streams,
         PartitionIdToMaxBlockPtr max_block_numbers_to_read,
         const MergeTreeData & data,
+        const MergeTreeSettingsPtr & data_settings_,
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
@@ -293,6 +304,7 @@ public:
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
 private:
+    MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 
     RangesInDataParts prepared_parts;

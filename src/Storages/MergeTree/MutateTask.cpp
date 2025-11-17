@@ -1808,6 +1808,7 @@ private:
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
+            ctx->data->getSettings(),
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_indices,
@@ -2045,6 +2046,7 @@ private:
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
+                ctx->data->getSettings(),
                 ctx->metadata_snapshot,
                 ctx->updated_header.getNamesAndTypesList(),
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
