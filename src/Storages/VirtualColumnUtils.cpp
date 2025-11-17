@@ -62,6 +62,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool use_hive_partitioning;
+}
 
 namespace VirtualColumnUtils
 {
@@ -160,13 +164,17 @@ NameSet getVirtualNamesForFileLikeStorage()
     return getCommonVirtualsForFileLikeStorage().getNameSet();
 }
 
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns)
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    ContextPtr context,
+    const std::string & path)
 {
     VirtualColumnsDescription desc;
 
     auto add_virtual = [&](const NameAndTypePair & pair)
     {
         const auto & name = pair.getNameInStorage();
+        LOG_TEST(getLogger("KSSENII"), "KSSENII add virtual {}", name);
         const auto & type = pair.getTypeInStorage();
         if (storage_columns.has(name))
         {
@@ -179,10 +187,35 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & sto
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item);
 
+    if (!context)
+        context = Context::getGlobalContextInstance();
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    {
+        LOG_TEST(getLogger("KSSENII"), "KSSENII sample path {}", path);
+        auto map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+        //auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+        auto format_settings = getFormatSettings(context);
+        for (auto & item : map)
+        {
+            auto type = tryInferDataTypeByEscapingRule(std::string(item.second), format_settings, FormatSettings::EscapingRule::Raw, nullptr);
+            if (type == nullptr)
+                type = std::make_shared<DataTypeString>();
+            if (type->canBeInsideLowCardinality())
+                add_virtual({std::string(item.first), std::make_shared<DataTypeLowCardinality>(type)});
+            else
+                add_virtual({std::string(item.first), type});
+        }
+    }
+
     return desc;
 }
 
-static void addPathAndFileToVirtualColumns(Block & block, const String & path, size_t idx, const FormatSettings & format_settings, bool parse_hive_columns)
+static void addPathAndFileToVirtualColumns(
+    Block & block,
+    const String & path,
+    size_t idx,
+    const FormatSettings & format_settings,
+    bool parse_hive_columns)
 {
     if (block.has("_path"))
         block.getByName("_path").column->assumeMutableRef().insert(path);
@@ -215,7 +248,11 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
     block.getByName("_idx").column->assumeMutableRef().insert(idx);
 }
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context, const NamesAndTypesList & hive_columns)
+std::optional<ActionsDAG> createPathAndFileFilterDAG(
+    const ActionsDAG::Node * predicate,
+    const NamesAndTypesList & virtual_columns,
+    const ContextPtr & context,
+    const NamesAndTypesList & hive_columns)
 {
     if (!predicate || virtual_columns.empty())
         return {};
@@ -237,7 +274,12 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
     return splitFilterDagForAllowedInputs(predicate, &block, context);
 }
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+ColumnPtr getFilterByPathAndFileIndexes(
+    const std::vector<String> & paths,
+    const ExpressionActionsPtr & actions,
+    const NamesAndTypesList & virtual_columns,
+    const NamesAndTypesList & hive_columns,
+    const ContextPtr & context)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
