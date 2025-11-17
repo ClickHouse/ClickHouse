@@ -168,7 +168,7 @@ def main():
             use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
-        elif to == "database disk":
+        elif to == "db disk":
             use_database_disk = True
         elif to == "flaky":
             is_flaky_check = True
