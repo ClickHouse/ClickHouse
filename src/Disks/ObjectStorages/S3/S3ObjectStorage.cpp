@@ -421,21 +421,23 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
     /// Shortcut for S3
     if (auto * dest_s3 = dynamic_cast<S3ObjectStorage * >(&object_storage_to); dest_s3 != nullptr)
     {
-        auto current_client = dest_s3->client.get();
-        auto settings_ptr = s3_settings.get();
-        auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
-        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
+        const auto src_client = client.get();
+        const auto dest_client = dest_s3->client.get();
+        const auto settings_ptr = s3_settings.get();
         const auto read_settings_to_use = patchSettings(read_settings);
+
+        auto size = S3::getObjectSize(*src_client, uri.bucket, object_from.remote_path, {});
+        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
 
         try
         {
             copyS3File(
-                /*src_s3_client=*/current_client,
+                /*src_s3_client=*/src_client,
                 /*src_bucket=*/uri.bucket,
                 /*src_key=*/object_from.remote_path,
                 /*src_offset=*/0,
                 /*src_size=*/size,
-                /*dest_s3_client=*/current_client,
+                /*dest_s3_client=*/dest_client,
                 /*dest_bucket=*/dest_s3->uri.bucket,
                 /*dest_key=*/object_to.remote_path,
                 settings_ptr->request_settings,
