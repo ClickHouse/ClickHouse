@@ -325,7 +325,13 @@ public:
             push(std::move(counter));
         }
 
-        readAlphaMap(rb);
+        /// It is possible that the state was written before the set was initialized, which would add 0 Counters and the alpha map
+        /// The size of the alpha map depends on the version and what was the default but we can just ignore it (no Counters mean there
+        /// should be no errors in the alpha map)
+        if (count)
+            readAlphaMap(rb);
+        else
+            skipAlphaMap(rb);
     }
 
     void readAlphaMap(ReadBuffer & rb)
@@ -346,6 +352,18 @@ public:
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
             alpha_map[i] = alpha;
+        }
+    }
+
+    void skipAlphaMap(ReadBuffer & rb)
+    {
+        size_t alpha_size = 0;
+        readVarUInt(alpha_size, rb);
+
+        for (size_t i = 0; i < alpha_size; ++i)
+        {
+            UInt64 alpha = 0;
+            readVarUInt(alpha, rb);
         }
     }
 
