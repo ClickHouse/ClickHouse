@@ -122,6 +122,7 @@ def main():
     # No PARALLEL WITH with slow sanitizers
     min_nested_rows = random.randint(0, 5)
     min_insert_rows = random.randint(1, 100)
+    min_string_length = random.randint(0, 100)
     buzz_config = {
         "seed": random.randint(1, 18446744073709551615),
         "max_depth": random.randint(2, 5),
@@ -135,7 +136,8 @@ def main():
         "max_nested_rows": random.randint(min_nested_rows, min_nested_rows + 5),
         "min_insert_rows": min_insert_rows,
         "max_insert_rows": random.randint(min_insert_rows, min_insert_rows + 400),
-        "min_string_length": random.randint(0, 100),
+        "min_string_length": min_string_length,
+        "max_string_length": random.randint(min_string_length, min_string_length + 500),
         "max_parallel_queries": (
             1
             if (
