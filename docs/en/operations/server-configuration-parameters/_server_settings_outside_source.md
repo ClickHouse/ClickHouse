@@ -860,6 +860,7 @@ The location and format of log messages.
 | `log`                  | The path to the log file.                                                                                                                                          |
 | `errorlog`             | The path to the error log file.                                                                                                                                    |
 | `size`                 | Rotation policy: Maximum size of the log files in bytes. Once the log file size exceeds this threshold, it is renamed and archived, and a new log file is created. |
+| `rotation`             | Rotation policy: Controls when log files are rotated. Rotation can be based on size, time, or a combination of both. Examples: 100M, daily, 100M,daily. Once the log file exceeds the specified size or when the specified time interval is reached, it is renamed and archived, and a new log file is created. |
 | `count`                | Rotation policy: How many historical log files Clickhouse are kept at most.                                                                                        |
 | `stream_compress`      | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                   |
 | `console`              | Enable logging to the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise.                            |
