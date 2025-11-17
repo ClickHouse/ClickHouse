@@ -4496,7 +4496,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 int64_t Context::getZooKeeperLastZXIDSeen() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
-    return shared->zookeeper->getLastZXIDSeen();
+    return shared->zookeeper ? shared->zookeeper->getLastZXIDSeen() : 0;
 }
 
 namespace

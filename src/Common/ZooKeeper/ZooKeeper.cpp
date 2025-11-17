@@ -1123,7 +1123,7 @@ ZooKeeperPtr ZooKeeper::startNewSession() const
     auto args_copy = args;
     args_copy.last_zxid_seen = impl->getLastZXIDSeen();
 
-    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(std::move(args_copy), zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
+    auto res = std::shared_ptr<ZooKeeper>(new ZooKeeper(args_copy, zk_log, aggregated_zookeeper_log, availability_zones, std::move(optimal_impl)));
     res->initSession();
     return res;
 }
