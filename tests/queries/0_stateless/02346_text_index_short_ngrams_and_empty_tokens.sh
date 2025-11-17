@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# This test tests 2 things with and without the direct read optimization:
+# 1. That short ngrams (parsing words shorter than the ngram length N) return an empty set when tokenized
+# 2. That empty inputs to the search tokens return 0 rows instead of the whole table
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
