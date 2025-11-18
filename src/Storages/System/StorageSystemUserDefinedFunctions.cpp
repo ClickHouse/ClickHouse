@@ -7,11 +7,11 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExternalLoaderStatus.h>
+#include <Common/ExternalLoaderStatus.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunction.h>
 #include <Processors/Sources/ShellCommandSource.h>
-#include <Common/getExceptionMessage.h>
+#include <Common/Exception.h>
 
 
 namespace DB
