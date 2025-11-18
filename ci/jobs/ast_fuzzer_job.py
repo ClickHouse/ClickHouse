@@ -116,12 +116,15 @@ def run_fuzz_job(check_name: str):
             error_output = "\n".join(error_lines)
             info += f"Error:\n{error_output}\n"
 
-        if result.results and result.results[-1].name in [
+        patterns = [
             "Let op!",
             "Killed",
             "Unknown error",
             "BuzzHouse fuzzer exception",
-        ]:
+        ]
+        if result.results and any(
+            pattern in result.results[-1].name for pattern in patterns
+        ):
             info += "---\n\nFuzzer log (last 30 lines):\n"
             info += Shell.get_output(f"tail -n30 {fuzzer_log}", verbose=False) + "\n"
         else:
