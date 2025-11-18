@@ -207,6 +207,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static NodePtr makeThrottler(EventQueue &, const WorkloadSettings &, CostUnit)
     {
         chassert(false);
+        return {};
     }
 
     static void updateThrottler(const NodePtr &, const WorkloadSettings &, CostUnit)
