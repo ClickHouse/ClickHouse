@@ -77,7 +77,6 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
-regexpExtract
 sigmoid
 sin
 structureToCapnProtoSchema

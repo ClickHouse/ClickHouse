@@ -120,7 +120,6 @@ public:
         {
             return per_offset_flags[f.getOffset()].load();
         }
-
     }
 
     template <bool use_flags, bool flag_per_row, typename FindResult>
@@ -178,6 +177,15 @@ public:
             bool expected = false;
             return per_offset_flags[offset].compare_exchange_strong(expected, true);
         }
+    }
+
+    /// Are all offset flags set? (index 0 is skipped as it is a service index)
+    bool allOffsetFlagsSet() const noexcept
+    {
+        for (const auto & per_offset_flag : per_offset_flags)
+            if (!per_offset_flag.load(std::memory_order_relaxed))
+                return false;
+        return true;
     }
 };
 

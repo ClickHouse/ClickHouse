@@ -155,7 +155,7 @@ ORDER BY day DESC
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
-    def query(self, query: str, retries: int = 1):
+    def query(self, query: str, retries: int = 1, log_level="warning"):
         """
         Executes a SELECT query on CI DB with retry support.
 
@@ -166,8 +166,10 @@ ORDER BY day DESC
         params = {
             "database": Settings.CI_DB_DB_NAME,
             "query": query,
-            "send_logs_level": "warning",
         }
+
+        if log_level:
+            params["send_logs_level"] = log_level
 
         for attempt in range(1, retries + 1):
             try:
