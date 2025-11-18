@@ -1,6 +1,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
+#include <Common/SymbolIndex.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -110,7 +111,19 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     last_error_trace_array.reserve(last_error_trace.size());
 
     for (auto * ptr : last_error_trace)
-        last_error_trace_array.emplace_back(reinterpret_cast<UInt64>(ptr));
+    {
+        uintptr_t addr = reinterpret_cast<uint64_t>(ptr);
+
+        /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
+        uintptr_t offset = 0;
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        const auto * object = SymbolIndex::instance().thisObject();
+        if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
+            offset = uintptr_t(object->address_begin);
+#endif
+
+        last_error_trace_array.emplace_back(static_cast<UInt64>(addr) - offset);
+    }
 
     columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
 }
