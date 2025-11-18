@@ -21,13 +21,10 @@ cwd = Utils.cwd()
 def get_run_command(
     workspace_path: Path,
     image: DockerImage,
-    check_name: str,
+    buzzhouse: bool,
 ) -> str:
-    fuzzer_name = (
-        "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
-    )
     envs = [
-        f"-e FUZZER_TO_RUN='{fuzzer_name}'",
+        f"-e FUZZER_TO_RUN='{"BuzzHouse" if buzzhouse else "AST Fuzzer"}'",
     ]
 
     env_str = " ".join(envs)
@@ -49,6 +46,7 @@ def get_run_command(
 
 def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
+    buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     temp_dir = Path(f"{cwd}/ci/tmp/")
     assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
@@ -85,6 +83,8 @@ def run_fuzz_job(check_name: str):
         fuzzer_log,
         dmesg_log,
     ]
+    if buzzhouse:
+        paths.extend([workspace_path / "fuzzer_out.sql", workspace_path / "fuzz.json"])
 
     try:
         with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:
