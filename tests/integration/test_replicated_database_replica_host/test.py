@@ -179,7 +179,17 @@ def test_replica_host_special_characters(started_cluster):
     )
     node1.query("SYSTEM SYNC DATABASE REPLICA test_escape")
 
-    # Get host_id from ZooKeeper
+    # Get host_id from ZooKeeper - use name column which contains the replica name, value contains host_id
+    replicas = node1.query(
+        "SELECT name, value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas'"
+    ).strip()
+
+    print(f"Replicas in ZooKeeper: {replicas}")
+
+    # The replica name 'node1' should exist
+    assert "node1" in replicas, f"Expected replica 'node1' in ZooKeeper, got: {replicas}"
+
+    # Get the host_id value for node1
     host_id = node1.query(
         "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas' AND name = 'node1'"
     ).strip()
@@ -246,14 +256,19 @@ def test_replica_host_cluster_view(started_cluster):
     node1.query("SYSTEM SYNC DATABASE REPLICA test_cluster")
     node2.query("SYSTEM SYNC DATABASE REPLICA test_cluster")
 
-    # Query system.replicas to see replica information
-    replicas_on_node1 = node1.query(
-        "SELECT database, shard_num, replica_num FROM system.replicas WHERE database = 'test_cluster'"
+    # Query system.clusters to see cluster information
+    # DatabaseReplicated creates a cluster with the same name as the database
+    cluster_info = node1.query(
+        "SELECT cluster, shard_num, replica_num, host_name FROM system.clusters WHERE cluster = 'test_cluster' ORDER BY replica_num"
     )
-    print(f"Replicas visible from node1: {replicas_on_node1}")
+    print(f"Cluster info from node1: {cluster_info}")
 
-    # Should see replicas from both nodes
-    assert "test_cluster" in replicas_on_node1
+    # Should see cluster named 'test_cluster' with replicas
+    assert "test_cluster" in cluster_info, f"Expected cluster 'test_cluster', got: {cluster_info}"
+
+    # Verify we have at least 2 replicas (node1 and node2)
+    lines = [line for line in cluster_info.strip().split('\n') if line]
+    assert len(lines) >= 2, f"Expected at least 2 replicas, got {len(lines)}: {cluster_info}"
 
     # Cleanup
     node1.query("DROP DATABASE test_cluster SYNC")
