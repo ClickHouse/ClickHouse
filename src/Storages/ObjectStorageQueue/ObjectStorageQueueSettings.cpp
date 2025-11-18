@@ -49,6 +49,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
     DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
     DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
     DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \

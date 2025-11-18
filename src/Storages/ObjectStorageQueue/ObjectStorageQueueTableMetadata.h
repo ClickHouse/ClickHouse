@@ -24,6 +24,7 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
+    const UInt32 after_processing_retries;
     const String after_processing_move_uri;
     const String after_processing_move_prefix;
     const String after_processing_move_access_key_id;
@@ -53,6 +54,7 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
+        , after_processing_retries(other.after_processing_retries)
         , after_processing_move_uri(other.after_processing_move_uri)
         , after_processing_move_prefix(other.after_processing_move_prefix)
         , after_processing_move_access_key_id(other.after_processing_move_access_key_id)
@@ -104,6 +106,7 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
+            "after_processing_retries",
             "after_processing_move_uri",
             "after_processing_move_prefix",
             "after_processing_move_access_key_id",

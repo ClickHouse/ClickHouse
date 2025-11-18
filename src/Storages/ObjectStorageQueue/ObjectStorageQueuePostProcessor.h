@@ -20,10 +20,14 @@ public:
         String engine_name_,
         const ObjectStorageQueueTableMetadata & table_metadata_);
 
+    /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
+    /// The method intercepts exceptions caused by remote storage interaction and reports them to the log.
     void process(const StoredObjects & objects) const;
 
 private:
     String getName() const { return engine_name; }
+
+    void doWithRetries(std::function<void()> action) const;
 
     /// Move processed objects to another prefix
     void moveWithinBucket(const StoredObjects & objects, const String & move_prefix) const;

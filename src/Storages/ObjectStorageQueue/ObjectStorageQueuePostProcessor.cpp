@@ -13,6 +13,9 @@
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 
+#include <chrono>
+#include <thread>
+
 
 namespace ProfileEvents
 {
@@ -60,7 +63,21 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
     {
         /// We do need to apply after-processing action before committing requests to keeper.
         /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(objects);
+        try
+        {
+            doWithRetries([&]{
+                object_storage->removeObjectsIfExist(objects);
+            });
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Failed to tag all {} objects with exception: {}",
+                objects.size(),
+                getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+            );
+        }
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, objects.size());
     }
     else if (after_processing_action == ObjectStorageQueueAction::MOVE)
@@ -86,7 +103,21 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         const String & tag_key = table_metadata.after_processing_tag_key;
         const String & tag_value = table_metadata.after_processing_tag_value;
         LOG_INFO(log, "executing TAG action in ObjectStorage Queue commit stage, {} = {}", tag_key, tag_value);
-        object_storage->tagObjects(objects, tag_key, tag_value);
+        try
+        {
+            doWithRetries([&]{
+                object_storage->tagObjects(objects, tag_key, tag_value);
+            });
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Failed to tag all {} objects with exception: {}",
+                objects.size(),
+                getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+            );
+        }
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
 #endif
     }
@@ -98,6 +129,40 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
     }
 
+}
+
+static constexpr size_t post_process_initial_backoff_ms = 100;
+static constexpr size_t post_process_max_backoff_ms = 5000;
+
+void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action) const
+{
+    size_t backoff_ms = post_process_initial_backoff_ms;
+    size_t retries = table_metadata.after_processing_retries;
+
+    for (size_t try_no = 0; try_no <= retries; ++try_no)
+    {
+        try
+        {
+            action();
+            break;
+        }
+        catch (...)
+        {
+            LOG_DEBUG(
+                log,
+                "Action attempt #{} out of {} failed with exception: {}",
+                try_no + 1,
+                retries + 1,
+                getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+            );
+            if (try_no >= retries)
+            {
+                throw;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+            backoff_ms = std::min(backoff_ms * 2, post_process_max_backoff_ms);
+        }
+    }
 }
 
 static StoredObject applyMovePrefixIfPresent(const StoredObject & src, const String & move_prefix)
@@ -134,19 +199,35 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
 
+    size_t moved_objects = 0;
     for (const auto & object_from : objects)
     {
-        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
-        LOG_TRACE(log, "copying object {} to {}", object_from.remote_path, object_to.remote_path);
-        object_storage->copyObject(
-            object_from,
-            object_to,
-            read_settings,
-            write_settings);
-        LOG_INFO(log, "removing object {}", object_from.remote_path);
-        object_storage->removeObjectIfExists(object_from);
+        try
+        {
+            doWithRetries([&]{
+                auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                LOG_TRACE(log, "copying object {} to {}", object_from.remote_path, object_to.remote_path);
+                object_storage->copyObject(
+                    object_from,
+                    object_to,
+                    read_settings,
+                    write_settings);
+                LOG_INFO(log, "removing object {}", object_from.remote_path);
+                object_storage->removeObjectIfExists(object_from);
+            });
+            moved_objects += 1;
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Failed to move S3 object {} within bucket with exception: {}",
+                object_from.remote_path,
+                getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+            );
+        }
     }
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, objects.size());
+    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
 }
 
 void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects) const
@@ -188,38 +269,55 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
                 IObjectStorage::getThreadPoolWriter(),
                 "ObjStorQueue_move_s3");
+
+            size_t moved_objects = 0;
             for (const auto & object_from : objects)
             {
-                const String src_bucket = s3_storage->getObjectsNamespace();
-                size_t object_size = S3::getObjectSize(
-                    *src_client,
-                    src_bucket,
-                    object_from.remote_path);
-                auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                try
+                {
+                    doWithRetries([&]{
+                        const String src_bucket = s3_storage->getObjectsNamespace();
+                        size_t object_size = S3::getObjectSize(
+                            *src_client,
+                            src_bucket,
+                            object_from.remote_path);
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
 
-                LOG_INFO(log, "copying {} (size {}B) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
-                copyS3File(
-                    src_client,
-                    /*src_bucket=*/ src_bucket,
-                    /*src_key=*/ object_from.remote_path,
-                    /*src_offset=*/ 0,
-                    /*src_size=*/ object_size,
-                    /*dest_s3_client=*/ dst_client,
-                    /*dest_bucket=*/ dst_uri.bucket,
-                    /*dest_key=*/ object_to.remote_path,
-                    /*settings=*/ settings->request_settings,
-                    /*read_settings=*/ read_settings_to_use,
-                    BlobStorageLogWriter::create(getName()),
-                    scheduler,
-                    /*fallback_file_reader=*/ [&]{
-                        return s3_storage->readObject(object_from, read_settings_to_use);
-                    }
-                    /*object_metadata=*/);
+                        LOG_INFO(log, "copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
+                        copyS3File(
+                            src_client,
+                            /*src_bucket=*/ src_bucket,
+                            /*src_key=*/ object_from.remote_path,
+                            /*src_offset=*/ 0,
+                            /*src_size=*/ object_size,
+                            /*dest_s3_client=*/ dst_client,
+                            /*dest_bucket=*/ dst_uri.bucket,
+                            /*dest_key=*/ object_to.remote_path,
+                            /*settings=*/ settings->request_settings,
+                            /*read_settings=*/ read_settings_to_use,
+                            BlobStorageLogWriter::create(getName()),
+                            scheduler,
+                            /*fallback_file_reader=*/ [&]{
+                                return s3_storage->readObject(object_from, read_settings_to_use);
+                            }
+                            /*object_metadata=*/);
 
-                LOG_INFO(log, "removing object {}", object_from.remote_path);
-                object_storage->removeObjectIfExists(object_from);
+                        LOG_INFO(log, "removing object {}", object_from.remote_path);
+                        object_storage->removeObjectIfExists(object_from);
+                    });
+                    moved_objects += 1;
+                }
+                catch (...)
+                {
+                    LOG_WARNING(
+                        log,
+                        "Failed to move S3 object {} with exception: {}",
+                        object_from.remote_path,
+                        getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+                    );
+                }
             }
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, objects.size());
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
         }
         else
         {
@@ -266,38 +364,54 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                 connection_params,
                 is_readonly);
 
+            size_t moved_objects = 0;
             for (const auto & object_from : objects)
             {
-                Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
-                auto properties = blobClient.GetProperties().Value;
-                auto blob_size = properties.BlobSize;
-                auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
-                auto settings = azure_storage->getSettings();
-                auto read_settings = getReadSettings();
-                const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
-                auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
-                    IObjectStorage::getThreadPoolWriter(),
-                    "ObjStorQueue_move_azure");
+                try
+                {
+                    doWithRetries([&]{
+                        Azure::Storage::Blobs::BlobClient blobClient = src_client->GetBlobClient(object_from.remote_path);
+                        auto properties = blobClient.GetProperties().Value;
+                        auto blob_size = properties.BlobSize;
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        auto settings = azure_storage->getSettings();
+                        auto read_settings = getReadSettings();
+                        const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
+                        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
+                            IObjectStorage::getThreadPoolWriter(),
+                            "ObjStorQueue_move_azure");
 
-                LOG_INFO(log, "copying {} (size {}B) to container {}", object_from.remote_path, blob_size, move_container);
-                copyAzureBlobStorageFile(
-                    src_client,
-                    dst_client,
-                    connection_params.getContainer(),
-                    /* src_blob */ object_from.remote_path,
-                    /* src_offset */ 0,
-                    blob_size,
-                    move_container,
-                    /* dest_blob */ object_to.remote_path,
-                    settings,
-                    read_settings,
-                    std::optional<ObjectAttributes>(),
-                    scheduler
-                );
-                LOG_INFO(log, "removing object {}", object_from.remote_path);
-                object_storage->removeObjectIfExists(object_from);
+                        LOG_INFO(log, "copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
+                        copyAzureBlobStorageFile(
+                            src_client,
+                            dst_client,
+                            connection_params.getContainer(),
+                            /* src_blob */ object_from.remote_path,
+                            /* src_offset */ 0,
+                            blob_size,
+                            move_container,
+                            /* dest_blob */ object_to.remote_path,
+                            settings,
+                            read_settings,
+                            std::optional<ObjectAttributes>(),
+                            scheduler
+                        );
+                        LOG_INFO(log, "removing object {}", object_from.remote_path);
+                        object_storage->removeObjectIfExists(object_from);
+                    });
+                    moved_objects += 1;
+                }
+                catch (...)
+                {
+                    LOG_WARNING(
+                        log,
+                        "Failed to move Azure object {} with exception: {}",
+                        object_from.remote_path,
+                        getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+                    );
+                }
             }
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, objects.size());
+            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
         }
         else
         {

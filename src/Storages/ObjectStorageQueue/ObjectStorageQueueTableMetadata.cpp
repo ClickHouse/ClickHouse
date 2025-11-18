@@ -15,6 +15,7 @@ namespace DB
 namespace ObjectStorageQueueSetting
 {
     extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
+    extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
     extern const ObjectStorageQueueSettingsString after_processing_move_uri;
     extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
     extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
@@ -66,6 +67,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , after_processing_retries(engine_settings[ObjectStorageQueueSetting::after_processing_retries])
     , after_processing_move_uri(engine_settings[ObjectStorageQueueSetting::after_processing_move_uri])
     , after_processing_move_prefix(engine_settings[ObjectStorageQueueSetting::after_processing_move_prefix])
     , after_processing_move_access_key_id(engine_settings[ObjectStorageQueueSetting::after_processing_move_access_key_id])
@@ -91,6 +93,7 @@ String ObjectStorageQueueTableMetadata::toString() const
 {
     Poco::JSON::Object json;
     json.set("after_processing", actionToString(after_processing.load()));
+    json.set("after_processing_retries", after_processing_retries);
     json.set("after_processing_move_uri", after_processing_move_uri);
     json.set("after_processing_move_prefix", after_processing_move_prefix);
     json.set("after_processing_move_access_key_id", after_processing_move_access_key_id);
@@ -169,6 +172,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , columns(json->getValue<String>("columns"))
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , after_processing_retries(getOrDefault(json, "after_processing_retries", "", 10U))
     , after_processing_move_uri(getOrDefault<String>(json, "after_processing_move_uri", "", ""))
     , after_processing_move_prefix(getOrDefault<String>(json, "after_processing_move_prefix", "", ""))
     , after_processing_move_access_key_id(getOrDefault<String>(json, "after_processing_move_access_key_id", "", ""))
