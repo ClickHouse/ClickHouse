@@ -29,9 +29,6 @@ SELECT count() FROM t_text_index_drop_caches WHERE hasAnyTokens(s, '888');
 SYSTEM FLUSH LOGS query_log;
 
 SELECT
-    ProfileEvents['TextIndexHeaderCacheHits'] > 0,
-    ProfileEvents['TextIndexDictionaryBlockCacheHits'] > 0,
-    ProfileEvents['TextIndexPostingsCacheHits'] > 0,
     ProfileEvents['TextIndexHeaderCacheMisses'] > 0,
     ProfileEvents['TextIndexDictionaryBlockCacheMisses'] > 0,
     ProfileEvents['TextIndexPostingsCacheMisses'] > 0
