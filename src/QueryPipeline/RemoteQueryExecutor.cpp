@@ -858,7 +858,10 @@ bool RemoteQueryExecutor::finish()
         }
         return false;
     }
+
+#if defined (OS_LINUX)
     return true;
+#endif
 }
 
 void RemoteQueryExecutor::cancel()
@@ -1054,6 +1057,7 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
     return false;
 }
 
+#if defined(OS_LINUX)
 bool RemoteQueryExecutor::hasDrainingPackets()
 {
     chassert(connections);
@@ -1072,5 +1076,6 @@ void RemoteQueryExecutor::finalizeAsyncCancel()
     if (log)
         LOG_TRACE(log, "consumed all of the remaining packets after sendCancel from {}", connections_addresses);
 }
+#endif
 
 }
