@@ -4,7 +4,7 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
-#include "Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h"
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 
 
 namespace Paimon 

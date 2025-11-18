@@ -6,10 +6,16 @@
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNullable.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+}
 
 namespace Paimon 
 {
-
     DB::ASTPtr createPartitionKeyAST(const PaimonTableSchema & table_schema)
     {
         std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
@@ -34,7 +40,7 @@ namespace Paimon
             auto column_idx_it = table_schema.fields_by_name_indexes.find(column_name);
             /// Only supports partition keys in table schema fields
             if (column_idx_it == table_schema.fields_by_name_indexes.end())
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Not found partition column in schema: {}", column_name);
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Not found partition column in schema: {}", column_name);
             auto column = table_schema.fields[column_idx_it->second];
             names_and_types.emplace_back(column_name, removeNullable(column.type.clickhouse_data_type));
         }
@@ -69,10 +75,10 @@ namespace Paimon
 
         
         DB::Row partition_key_values = Paimon::getPartitionFields(manifest_entry.partition, table_schema);
-        for(auto it = partition_key_values.begin(); it != partition_key_values.end(); ++it)
+        for (auto & value : partition_key_values)
         {
-            if (it->isNull())
-                *it = POSITIVE_INFINITY;
+            if (value.isNull())
+                value = POSITIVE_INFINITY;
         }
         // log partition_key_values
         for (const auto & value : partition_key_values)
