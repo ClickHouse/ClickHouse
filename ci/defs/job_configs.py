@@ -807,7 +807,6 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
             ],
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
@@ -839,11 +838,13 @@ class JobConfigs:
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/buzzhouse_job.py",
-        run_in_docker="clickhouse/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/stateless-test",
+                "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
             ],
         ),
         allow_merge_on_failure=True,
