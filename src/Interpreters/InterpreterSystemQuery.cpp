@@ -567,7 +567,13 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_DISK_METADATA_CACHE:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+
+            auto metadata = getContext()->getDisk(query.disk)->getMetadataStorage();
+            if (metadata)
+                metadata->dropCache();
+
+            break;
         }
         case Type::DROP_PAGE_CACHE:
         {
@@ -1321,6 +1327,8 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     String create_query = fmt::format("CREATE DATABASE `{}` ENGINE=Atomic", restoring_database_name);
 
     auto create_ctx = Context::createCopy(Context::getGlobalContextInstance());
+    create_ctx->makeQueryContext();
+    create_ctx->setCurrentQueryId({});
     executeQuery(create_query, create_ctx, QueryFlags{.internal = true});
 
     TablesDependencyGraph tables_dependencies("Memory (" + restoring_database_name + ")");
@@ -1585,6 +1593,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             String restoring_database_name = RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX + getRandomASCIIString(32);
             SCOPE_EXIT({
                 auto drop_ctx = Context::createCopy(Context::getGlobalContextInstance());
+                drop_ctx->makeQueryContext();
                 drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
                 String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", restoring_database_name);
                 executeQuery(drop_query, drop_ctx);

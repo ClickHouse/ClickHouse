@@ -425,13 +425,11 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_skipped():
+                if result_.is_skipped() and result.is_dropped():
                     # job was skipped in workflow configuration by a user' hook
                     print(
                         f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
-                    if not result.is_dropped():
-                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)

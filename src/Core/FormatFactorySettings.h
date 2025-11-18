@@ -182,9 +182,9 @@ When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
     DECLARE(Bool, input_format_parquet_use_native_reader, false, R"(
 Use native parquet reader v1. It's relatively fast but unfinished. Deprecated.
 )", 0) \
-    DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
-Use Parquet reader v3. Experimental.
-)", EXPERIMENTAL) \
+    DECLARE(Bool, input_format_parquet_use_native_reader_v3, true, R"(
+Use Parquet reader v3.
+)", 0) \
     DECLARE(UInt64, input_format_parquet_memory_low_watermark, 2ul << 20, R"(
 Schedule prefetches more aggressively if memory usage is below than threshold. Potentially useful e.g. if there are many small bloom filters to read over network.
 )", 0) \
