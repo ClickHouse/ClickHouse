@@ -301,6 +301,20 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
             func2(link1, link2);
         });
     }
+
+    template <class Func>
+    void executeFromScheduler(const String & resource, Func func)
+    {
+        bool done = false;
+        manager->forEachNode([&, func2 = std::move(func)] (const String & r, const String &, ISchedulerNode *) mutable
+        {
+            if (!done && r == resource)
+            {
+                func2();
+                done = true;
+            }
+        });
+    }
 };
 
 using TestGuard = ResourceTest::Guard;
@@ -1736,13 +1750,15 @@ private:
     friend struct TestDecreaseRequest;
 
 public:
-    TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size)
+    TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size, std::function<void()> approved_callback_ = {})
         : ResourceAllocation(*link.allocation_queue)
         , name(name_)
     {
+        std::unique_lock lock(mutex);
         chassert(link.allocation_queue);
         DBG_PRINT("{}: New allocation, initial size = {}", name, initial_size);
         real_size = initial_size;
+        approved_callback = approved_callback_;
         queue.insertAllocation(*this, initial_size);
         if (initial_size > 0)
             increase_enqueued = true;
@@ -1781,11 +1797,12 @@ public:
         DBG_PRINT("{}: Allocation removed", name);
     }
 
-    void setSize(ResourceCost new_real_size)
+    void setSize(ResourceCost new_real_size, std::function<void()> approved_callback_ = {})
     {
         std::unique_lock lock(mutex);
         DBG_PRINT("{}: Set size from {} to {}", name, real_size, new_real_size);
         real_size = new_real_size;
+        approved_callback = approved_callback_;
         syncSize();
     }
 
@@ -1852,6 +1869,8 @@ private: // interaction with the scheduler thread
         increase_enqueued = false;
         DBG_PRINT("{}: Approved increase by {}. size = {}", name, increase.size, allocated_size);
         syncSize();
+        if (auto callback = std::exchange(approved_callback, {}))
+            callback();
     }
 
     void decreaseApproved(const DecreaseRequest & decrease) override
@@ -1864,6 +1883,8 @@ private: // interaction with the scheduler thread
             removed = true;
         DBG_PRINT("{}: Approved decrease by {}. size = {}", name, decrease.size, allocated_size);
         syncSize();
+        if (auto callback = std::exchange(approved_callback, {}))
+            callback();
     }
 
     void allocationFailed(const std::exception_ptr & reason) override
@@ -1880,6 +1901,8 @@ private: // interaction with the scheduler thread
     /// NOTE: Lock ordering: first queue.mutex, then allocation.mutex
     std::mutex mutex;
     std::condition_variable cv;
+
+    std::function<void()> approved_callback;
 
     String name;
     std::exception_ptr kill_reason;
@@ -1918,6 +1941,90 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
         a1.waitSync();
         a2.waitSync();
         a3.waitSync();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingFifoOrder)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        std::array<std::optional<TestAllocation>, 9> allocations;
+
+        std::mutex mutex;
+        String approve_order;
+
+        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        t.executeFromScheduler("memory", [&]
+        {
+            int idx = 0;
+            for (int mem : {9,1,8,2,7,3,6,4,5})
+            {
+                allocations[idx].emplace(link, fmt::format("A{}", idx), mem, [&, mem]()
+                {
+                    std::unique_lock lock(mutex);
+                    approve_order += std::to_string(mem);
+                });
+                ++idx;
+            }
+        });
+
+        for (auto & alloc : allocations)
+            alloc->waitSync();
+
+        std::unique_lock lock(mutex);
+        ASSERT_EQ(approve_order, "918273645");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseMaxMinFairOrder)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+
+    ClassifierPtr c = t.manager->acquire("all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link = c->get("memory");
+        std::array<std::optional<TestAllocation>, 8> allocations;
+        for (int idx = 0; idx < allocations.size(); idx++)
+        {
+            allocations[idx].emplace(link, fmt::format("A{}", idx), 1);
+            allocations[idx]->waitSync();
+        }
+
+        std::mutex mutex;
+        String approve_order;
+
+        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        t.executeFromScheduler("memory", [&]
+        {
+            int idx = 0;
+            for (int mem : {9,2,8,3,7,4,6,5})
+            {
+                allocations[idx++]->setSize(mem, [&, mem]
+                {
+                    std::unique_lock lock(mutex);
+                    approve_order += std::to_string(mem);
+                });
+            }
+        });
+
+        for (auto & alloc : allocations)
+            alloc->waitSync();
+
+        std::unique_lock lock(mutex);
+        ASSERT_EQ(approve_order, "23456789");
     }
 }
 
