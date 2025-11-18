@@ -7,7 +7,7 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 
 
-namespace Paimon 
+namespace Paimon
 {
     class PartitionPruner
     {

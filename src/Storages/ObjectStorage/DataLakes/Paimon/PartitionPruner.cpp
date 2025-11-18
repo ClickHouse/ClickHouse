@@ -14,7 +14,7 @@ extern const int BAD_ARGUMENTS;
 }
 }
 
-namespace Paimon 
+namespace Paimon
 {
     DB::ASTPtr createPartitionKeyAST(const PaimonTableSchema & table_schema)
     {
@@ -61,7 +61,7 @@ namespace Paimon
                 partition_key_ast,
                 partition_columns_description,
                 context_);
-            
+
             DB::ActionsDAGWithInversionPushDown inverted_dag(filter_dag_.getOutputs().front(), context_);
             key_condition.emplace(
                 inverted_dag, context_, partition_key.column_names, partition_key.expression, true /* single_point */);
@@ -73,7 +73,7 @@ namespace Paimon
         if (!key_condition.has_value())
             return false;
 
-        
+
         DB::Row partition_key_values = Paimon::getPartitionFields(manifest_entry.partition, table_schema);
         for (auto & value : partition_key_values)
         {
