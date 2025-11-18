@@ -752,7 +752,7 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
 
                     for (size_t j = offset; j != end; ++j)
                     {
-                        if (j != i && src_shared_data_paths->getDataAt(i).toView() == path)
+                        if (j != i && src_shared_data_paths->getDataAt(j).toView() == path)
                             throw Exception(
                             ErrorCodes::LOGICAL_ERROR,
                             "Path {} is duplicated inside shared data at offsets {} and {}. First value type: {}. Second value type: {}",
