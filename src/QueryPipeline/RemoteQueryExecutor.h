@@ -360,6 +360,7 @@ public:
     /// If it is set, it will cancel the remote query in fiber
     const bool async_cancel = false;
 
+#if defined(OS_LINUX)
     /// Used for logging in the finalizeAsyncCancel, because when finalizeAsyncCancel is called, all of
     /// the connections have dropped and we can not get the addresses info from the connections anymore
     String connections_addresses;
@@ -370,6 +371,7 @@ public:
     /// This function is called when all of the remaining packets after the async sendCancel have been consumed.
     /// Used to cancel the fiber task
     void finalizeAsyncCancel();
+#endif
 };
 
 }

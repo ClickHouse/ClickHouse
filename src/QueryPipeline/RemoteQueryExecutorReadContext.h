@@ -113,7 +113,7 @@ private:
 
 public:
     void asyncCancel() { is_async_cancelling = true; }
-    bool isAsyncCancelled() { return is_async_cancelling; }
+    bool isAsyncCancelled() const { return is_async_cancelling; }
 };
 
 }

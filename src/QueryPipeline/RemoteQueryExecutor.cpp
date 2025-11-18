@@ -805,7 +805,9 @@ bool RemoteQueryExecutor::finish()
     if (!connections || !sent_query || finished)
         return false;
 
+#if defined (OS_LINUX)
     if (!async_cancel)
+#endif
     {
         /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
         /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
@@ -954,30 +956,36 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
     if (was_cancelled)
         return;
 
+#if defined (OS_LINUX)
     if (!async_cancel)
+#endif
+    {
         was_cancelled = true;
 
-    /// When async_cancel is enabled, fiber tasks receive sendCancel signals instead of immediate cancellation
-    if (read_context && !async_cancel)
-        read_context->cancel();
+        if (read_context)
+            read_context->cancel();
 
-    /// Query could be cancelled during connection creation, query sending or data receiving.
-    /// We should send cancel request if connections were already created, query were sent
-    /// and remote query is not finished.
-    if (connections && sent_query && !finished)
-    {
-        /// If async_cancel is enabled, the sendCancel will be triggered in the fiber task
-        /// by the above asyncCancel call
-        if (!async_cancel)
+        /// Query could be cancelled during connection creation, query sending or data receiving.
+        /// We should send cancel request if connections were already created, query were sent
+        /// and remote query is not finished.
+        if (connections && sent_query && !finished)
+        {
             connections->sendCancel();
-        else
-            read_context->asyncCancel();
+            if (log)
+                LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);
+        }
+    }
+#if defined (OS_LINUX)
+    else if (connections && sent_query && !finished)
+    {
+        read_context->asyncCancel();
         if (log)
         {
             connections_addresses = connections->dumpAddresses();
             LOG_TRACE(log, "({}) {}", connections_addresses, reason);
         }
     }
+#endif
 }
 
 bool RemoteQueryExecutor::isQueryPending() const
