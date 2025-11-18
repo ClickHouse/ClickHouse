@@ -11,7 +11,7 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int TEXT_INDEX_USED_IN_BOTH_PREWHERE_AND_WHERE;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -338,7 +338,7 @@ void optimizeWhereDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes 
     /// Simply forbid the case that PREWHERE and WHERE contain eligible functions.
     auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo();
     if (prewhere_info && isSupportedDirectReadTextFunctionsWithinDAG(prewhere_info->prewhere_actions, index_conditions) && isSupportedDirectReadTextFunctionsWithinDAG(filter_dag, index_conditions))
-        throw Exception(ErrorCodes::TEXT_INDEX_USED_IN_BOTH_PREWHERE_AND_WHERE,
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Using text index in both PREWHERE and WHERE is not supported. Please move all text-index conditions into PREWHERE.");
 
     bool applied = applyTextIndexDirectReadToDAG(read_from_merge_tree_step, filter_dag, index_conditions, false);
