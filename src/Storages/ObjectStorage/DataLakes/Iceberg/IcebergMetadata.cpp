@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <fmt/format.h>
 #include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Formats/FormatFilterInfo.h>
@@ -28,6 +29,7 @@
 
 #include <Databases/DataLake/Common.h>
 #include <Disks/DiskType.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -39,17 +41,17 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/IcebergMetadataLog.h>
 
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
@@ -460,9 +462,9 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     if (!iceberg_object_info)
         return nullptr;
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
-    return (iceberg_object_info->underlying_format_read_schema_id != iceberg_object_info->schema_id_relevant_to_iterator
-            || (!iceberg_object_info->equality_deletes_objects.empty()))
-        ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->underlying_format_read_schema_id)
+    return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
+            || (!iceberg_object_info->info.equality_deletes_objects.empty()))
+        ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
         : nullptr;
 }
 
@@ -471,9 +473,9 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
     IcebergDataObjectInfo * iceberg_object_info = dynamic_cast<IcebergDataObjectInfo *>(object_info.get());
     if (!iceberg_object_info)
         return nullptr;
-    return (iceberg_object_info->underlying_format_read_schema_id != iceberg_object_info->schema_id_relevant_to_iterator)
+    return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator)
         ? persistent_components.schema_processor->getSchemaTransformationDagByIds(
-              iceberg_object_info->underlying_format_read_schema_id, iceberg_object_info->schema_id_relevant_to_iterator)
+              iceberg_object_info->info.underlying_format_read_schema_id, iceberg_object_info->info.schema_id_relevant_to_iterator)
         : nullptr;
 }
 
@@ -861,6 +863,7 @@ StorageInMemoryMetadata IcebergMetadata::getStorageSnapshotMetadata(ContextPtr l
     result.setColumns(
         ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id)});
     result.setDataLakeTableState(actual_table_state_snapshot);
+    result.sorting_key = getSortingKey(local_context, actual_table_state_snapshot);
     return result;
 }
 
@@ -882,21 +885,21 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (!iceberg_object_info->position_deletes_objects.empty())
+    if (!iceberg_object_info->info.position_deletes_objects.empty())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
             { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, local_context); });
     }
-    const auto & delete_files = iceberg_object_info->equality_deletes_objects;
+    const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
-    for (const ManifestFileEntry & delete_file : delete_files)
+    for (const EqualityDeleteObject & delete_file : delete_files)
     {
         auto simple_transform_adder = [&](const SharedHeader & header)
         {
             /// get header of delete file
             Block delete_file_header;
-            ObjectInfo delete_file_object(delete_file.file_path);
+            RelativePathWithMetadata delete_file_object(delete_file.file_path);
             {
                 auto schema_read_buffer = createReadBuffer(delete_file_object, object_storage, local_context, log);
                 auto schema_reader = FormatFactory::instance().getSchemaReader(delete_file.file_format, *schema_read_buffer, local_context);
@@ -967,7 +970,7 @@ void IcebergMetadata::addDeleteTransformers(
             for (Int32 col_id : equality_ids)
             {
                 NameAndTypePair name_and_type = persistent_components.schema_processor->getFieldCharacteristics(
-                    iceberg_object_info->underlying_format_read_schema_id, col_id);
+                    iceberg_object_info->info.underlying_format_read_schema_id, col_id);
                 auto it = outputs.find(name_and_type.name);
                 if (it == outputs.end())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in dag outputs", name_and_type.name);
@@ -1032,7 +1035,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     if (Poco::toLower(*object_info->getFileFormat()) != "parquet")
         return nullptr;
 
-    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->underlying_format_read_schema_id);
+    return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
 }
 
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
@@ -1048,6 +1051,64 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
     }
     return persistent_components.schema_processor->getColumnMapperById(iceberg_table_state->schema_id);
 }
+
+KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableStateSnapshot actual_table_state_snapshot) const
+{
+    auto metadata_object = getMetadataJSONObject(
+        actual_table_state_snapshot.metadata_file_path,
+        object_storage,
+        getConfiguration(),
+        persistent_components.metadata_cache,
+        local_context,
+        log,
+        persistent_components.metadata_compression_method);
+
+
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+    {
+        source_id_to_column_name[source_id] = col_name;
+    }
+
+    KeyDescription key_description;
+    auto ch_schema = persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id);
+    ColumnsDescription column_description;
+    for (size_t i = 0; i < ch_schema->size(); ++i)
+        column_description.add(ColumnDescription(ch_schema->getNames()[i], ch_schema->getTypes()[i]));
+
+    String order_by_str;
+
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            auto source_id = field->getValue<Int64>(f_source_id);
+            auto column_name = source_id_to_column_name[source_id];
+            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+
+            if (direction == 1)
+                order_by_str += fmt::format("{} ASC,", column_name);
+            else
+                order_by_str += fmt::format("{} DESC,", column_name);
+        }
+        break;
+    }
+    if (order_by_str.empty())
+        return KeyDescription{};
+    order_by_str.pop_back();
+    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+}
+
 }
 
 #endif

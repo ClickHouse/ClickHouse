@@ -2,7 +2,6 @@
 #include <memory>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
-#include <Interpreters/BloomFilter.h>
 
 namespace DB
 {
@@ -21,6 +20,7 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
+        UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_);
 
@@ -39,7 +39,7 @@ private:
 
     FunctionBasePtr cast_to_target_type;
 
-    std::unique_ptr<BloomFilter> built_filter;
+    std::unique_ptr<RuntimeFilter> built_filter;
 
     void finish();
 };

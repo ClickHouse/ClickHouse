@@ -130,11 +130,6 @@ std::string getChineseZodiac()
     return zodiacs[offset];
 }
 
-bool isCloudEndpoint(const std::string & host)
-{
-    return endsWith(host, ".clickhouse.cloud") || endsWith(host, ".clickhouse-staging.com") || endsWith(host, ".clickhouse-dev.com");
-}
-
 #if USE_REPLXX
 /// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
 /// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
@@ -228,6 +223,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         return;
     }
 
+    /// Also if the cursor is at an identifier or alias, highlight all identifiers and aliases with the same name
+    const char * cursor_char_position = cursor_position >= 0
+        ? begin + UTF8::computeBytesBeforeCodePoint(
+            reinterpret_cast<const UInt8 *>(begin), query.size(), cursor_position)
+        : end;
+    const HighlightedRange * highlight_matching_identifiers = nullptr;
+
     /// We have to map from byte positions to Unicode positions.
     size_t code_point_pos = 0;
     const char * char_pos = begin;
@@ -246,6 +248,13 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
             {
                 ++code_point_pos;
                 char_pos += UTF8::seqLength(*char_pos);
+            }
+
+            if (!highlight_matching_identifiers
+                && range.begin <= cursor_char_position && cursor_char_position < range.end
+                && (range.highlight == Highlight::identifier || range.highlight == Highlight::alias))
+            {
+                highlight_matching_identifiers = &range;
             }
 
             int escaped = 0;
@@ -270,6 +279,31 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
                 ++code_point_pos;
                 char_pos += UTF8::seqLength(*char_pos);
+            }
+        }
+    }
+
+    if (highlight_matching_identifiers)
+    {
+        const char * identifiers_char_pos = begin;
+        size_t identifiers_code_point_pos = 0;
+        for (const auto & range : expected.highlights)
+        {
+            if ((range.highlight == Highlight::identifier || range.highlight == Highlight::alias)
+                && std::string_view(range.begin, range.end) == std::string_view(highlight_matching_identifiers->begin, highlight_matching_identifiers->end))
+            {
+                while (identifiers_char_pos < range.begin)
+                {
+                    ++identifiers_code_point_pos;
+                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
+                }
+
+                while (identifiers_char_pos < range.end)
+                {
+                    colors[identifiers_code_point_pos] = replxx::color::underline(colors[identifiers_code_point_pos]);
+                    ++identifiers_code_point_pos;
+                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
+                }
             }
         }
     }
@@ -307,8 +341,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     IParser::Pos highlight_token_iterator(
         tokens,
         static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_depth]),
-        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks])
-    );
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks]));
 
     try
     {

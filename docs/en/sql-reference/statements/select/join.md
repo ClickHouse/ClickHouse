@@ -321,7 +321,7 @@ For example, consider the following tables:
 ```text
          table_1                           table_2
       event   | ev_time | user_id       event   | ev_time | user_id
-    ----------|---------|---------- ----------|---------|----------
+    ----------|---------|----------   ----------|---------|----------
                   ...                               ...
     event_1_1 |  12:00  |  42         event_2_1 |  11:59  |   42
                   ...                 event_2_2 |  12:30  |   42

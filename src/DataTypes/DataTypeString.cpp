@@ -40,7 +40,7 @@ SerializationPtr DataTypeString::doGetDefaultSerialization() const
 
 SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
 {
-    return IDataType::getSerialization(info.getKind(), std::make_shared<SerializationString>(info.getSettings().string_serialization_version));
+    return IDataType::getSerialization(info.getKindStack(), std::make_shared<SerializationString>(info.getSettings().string_serialization_version));
 }
 
 static DataTypePtr create(const ASTPtr & arguments)
@@ -102,7 +102,7 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("VARBINARY", "String", DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("GEOMETRY", "String", DataTypeFactory::Case::Insensitive); //mysql
+
 }
 
 }

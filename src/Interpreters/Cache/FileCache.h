@@ -214,6 +214,8 @@ public:
 
     void freeSpaceRatioKeepingThreadFunc();
 
+    const String & getName() const { return name; }
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -233,6 +235,7 @@ private:
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
 
+    String name;
     LoggerPtr log;
 
     std::exception_ptr init_exception;
@@ -252,24 +255,6 @@ private:
     FileCachePriorityPtr main_priority;
     mutable CachePriorityGuard cache_guard;
 
-    struct HitsCountStash
-    {
-        HitsCountStash(size_t hits_threashold_, size_t queue_size_);
-        void clear();
-
-        const size_t hits_threshold;
-        const size_t queue_size;
-
-        std::unique_ptr<LRUFileCachePriority> queue;
-        using Records = std::unordered_map<KeyAndOffset, Priority::IteratorPtr, FileCacheKeyAndOffsetHash>;
-        Records records;
-    };
-
-    /**
-     * A HitsCountStash allows to cache certain data only after it reached
-     * a certain hit rate, e.g. if hit rate it 5, then data is cached on 6th cache hit.
-     */
-    mutable std::unique_ptr<HitsCountStash> stash;
     /**
      * A QueryLimit allows to control cache write limit per query.
      * E.g. if a query needs n bytes from cache, but it has only k bytes, where 0 <= k <= n
@@ -319,8 +304,7 @@ private:
         size_t offset,
         size_t size,
         FileSegment::State state,
-        const CreateFileSegmentSettings & create_settings,
-        const CachePriorityGuard::Lock *);
+        const CreateFileSegmentSettings & create_settings);
 
     struct SizeLimits
     {

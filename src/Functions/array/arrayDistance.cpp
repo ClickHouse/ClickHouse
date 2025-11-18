@@ -8,6 +8,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <cmath>
+
 #if USE_MULTITARGET_CODE
 #include <immintrin.h>
 #endif
@@ -189,7 +191,7 @@ struct LpDistance
     template <typename ResultType>
     static void accumulate(State<ResultType> & state, ResultType x, ResultType y, const ConstParams & params)
     {
-        state.sum += static_cast<ResultType>(pow(fabs(x - y), params.power));
+        state.sum += static_cast<ResultType>(std::pow(fabs(x - y), params.power));
     }
 
     template <typename ResultType>
@@ -201,7 +203,7 @@ struct LpDistance
     template <typename ResultType>
     static ResultType finalize(const State<ResultType> & state, const ConstParams & params)
     {
-        return static_cast<ResultType>(pow(state.sum, params.inverted_power));
+        return static_cast<ResultType>(std::pow(state.sum, params.inverted_power));
     }
 };
 

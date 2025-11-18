@@ -14,6 +14,7 @@
 #include <aws/s3/model/HeadBucketRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/HashingUtils.h>
@@ -226,7 +227,12 @@ std::unique_ptr<Client> Client::create(
 
 std::unique_ptr<Client> Client::clone() const
 {
-    return std::unique_ptr<Client>(new Client(*this, client_configuration));
+    return cloneWithConfigurationOverride(this->client_configuration);
+}
+
+std::unique_ptr<Client> Client::cloneWithConfigurationOverride(const PocoHTTPClientConfiguration & client_configuration_override) const
+{
+    return std::unique_ptr<Client>(new Client(*this, client_configuration_override));
 }
 
 namespace
@@ -267,7 +273,7 @@ Client::Client(
 
     provider_type = deduceProviderType(initial_endpoint);
     LOG_TRACE(log, "Provider type: {}", toString(provider_type));
-
+    LOG_TRACE(log, "Client configured with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
     if (provider_type == ProviderType::GCS)
     {
         /// GCS can operate in 2 modes for header and query params names:
@@ -287,27 +293,7 @@ Client::Client(
 
     LOG_TRACE(log, "API mode of the S3 client: {}", api_mode);
 
-    if (client_configuration.for_disk_s3)
-    {
-        LOG_TRACE(
-            log,
-            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
-            client_configuration.opt_disk_name.value_or(""),
-            client_configuration.retry_strategy.max_retries);
-        LOG_TRACE(
-            log,
-            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
-            client_configuration.opt_disk_name.value_or(""),
-            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
-    }
-    else
-    {
-        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
-        LOG_TRACE(
-            log,
-            "S3 client: slowing down threads on retryable errors is {}",
-            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
-    }
+    logConfiguration();
 
     detect_region = provider_type == ProviderType::AWS && explicit_region == Aws::Region::AWS_GLOBAL;
 
@@ -329,12 +315,15 @@ Client::Client(
     , explicit_region(other.explicit_region)
     , detect_region(other.detect_region)
     , provider_type(other.provider_type)
+    , api_mode(other.api_mode)
     , max_redirects(other.max_redirects)
     , sse_kms_config(other.sse_kms_config)
     , log(getLogger("S3Client"))
 {
     cache = std::make_shared<ClientCache>(*other.cache);
     ClientCacheRegistry::instance().registerClient(cache);
+
+    logConfiguration();
 
     ProfileEvents::increment(ProfileEvents::TinyS3Clients);
 }
@@ -502,6 +491,12 @@ Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
 
 /// For each request, we wrap the request functions from Aws::S3::Client with doRequest
 /// doRequest calls virtuall function from Aws::S3::Client while DB::S3::Client has not virtual calls for each request type
+
+Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest & request) const
+{
+    return processRequestResult(
+        doRequest(request, [this](const Model::GetObjectTaggingRequest & req) { return GetObjectTagging(req); }));
+}
 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
@@ -705,21 +700,25 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
             continue;
         }
 
-        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY)
+        /// IllegalLocationConstraintException may indicate that we are working with an opt-in region (e.g. me-south-1)
+        /// In that case, we need to update the region and try again
+        bool is_illegal_constraint_exception = error.GetExceptionName() == "IllegalLocationConstraintException";
+        if (error.GetResponseCode() != Aws::Http::HttpResponseCode::MOVED_PERMANENTLY && !is_illegal_constraint_exception)
             return result;
 
         // maybe we detect a correct region
-        if (!detect_region)
+        if (!detect_region || is_illegal_constraint_exception)
         {
             if (auto region = GetErrorMarshaller()->ExtractRegion(error); !region.empty() && region != explicit_region)
             {
+                LOG_INFO(log, "Detected new region: {}", region);
                 request.overrideRegion(region);
                 insertRegionOverride(bucket, region);
             }
         }
 
         // we possibly got new location, need to try with that one
-        auto new_uri = getURIFromError(error);
+        auto new_uri = is_illegal_constraint_exception ? std::optional<S3::URI>(initial_endpoint) : getURIFromError(error);
         if (!new_uri)
             return result;
 
@@ -899,6 +898,31 @@ void Client::slowDownAfterRetryableError() const
     }
 }
 
+void Client::logConfiguration() const
+{
+    if (client_configuration.for_disk_s3)
+    {
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}' initialized with s3_retry_attempts: {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client for disk '{}': slowing down threads on retryable errors is {}",
+            client_configuration.opt_disk_name.value_or(""),
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
+    else
+    {
+        LOG_TRACE(log, "S3 client initialized with s3_retry_attempts: {}", client_configuration.retry_strategy.max_retries);
+        LOG_TRACE(
+            log,
+            "S3 client: slowing down threads on retryable errors is {}",
+            client_configuration.s3_slow_all_threads_after_retryable_error ? "enabled" : "disabled");
+    }
+}
+
 bool Client::supportsMultiPartCopy() const
 {
     return provider_type != ProviderType::GCS;
@@ -916,6 +940,24 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
         /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
         httpRequest->DeleteHeader("x-amz-api-version");
     }
+}
+
+std::string Client::getGCSOAuthToken() const
+{
+    if (provider_type != ProviderType::GCS)
+        return "";
+
+    const auto & http_client = GetHttpClient();
+
+    if (!http_client)
+        return "";
+
+    auto * gcp_oauth_client = dynamic_cast<PocoHTTPClientGCPOAuth *>(http_client.get());
+
+    if (!gcp_oauth_client)
+        return "";
+
+    return gcp_oauth_client->getBearerToken();
 }
 
 std::string Client::getRegionForBucket(const std::string & bucket, bool force_detect) const
@@ -1158,9 +1200,15 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
             credentials_configuration);
 
     if (!credentials_configuration.role_arn.empty())
-        credentials_provider = std::make_shared<AwsAuthSTSAssumeRoleCredentialsProvider>(credentials_configuration.role_arn,
-            credentials_configuration.role_session_name, credentials_configuration.expiration_window_seconds,
-            std::move(credentials_provider), client_configuration, credentials_configuration.sts_endpoint_override);
+    {
+        credentials_provider = AwsAuthSTSAssumeRoleCredentialsProvider::create(
+            credentials_configuration.role_arn,
+            credentials_configuration.role_session_name,
+            credentials_configuration.expiration_window_seconds,
+            std::move(credentials_provider),
+            client_configuration,
+            credentials_configuration.sts_endpoint_override);
+    }
 
     /// Disable per-thread retry loops if global retry coordination is in use.
     if (client_configuration.s3_slow_all_threads_after_retryable_error)
@@ -1196,8 +1244,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
     bool enable_s3_requests_logging,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    const ThrottlerPtr & get_request_throttler,
-    const ThrottlerPtr & put_request_throttler,
+    const HTTPRequestThrottler & request_throttler,
     const String & protocol)
 {
     auto context = Context::getGlobalContextInstance();
@@ -1219,8 +1266,7 @@ PocoHTTPClientConfiguration ClientFactory::createClientConfiguration( // NOLINT
         for_disk_s3,
         opt_disk_name,
         context->getGlobalContext()->getSettingsRef()[Setting::s3_use_adaptive_timeouts],
-        get_request_throttler,
-        put_request_throttler,
+        request_throttler,
         error_report);
 
     config.scheme = Aws::Http::SchemeMapper::FromString(protocol.c_str());

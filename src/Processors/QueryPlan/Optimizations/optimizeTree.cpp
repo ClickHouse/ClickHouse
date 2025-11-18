@@ -187,11 +187,6 @@ void optimizeTreeSecondPass(
         if (optimization_settings.direct_read_from_text_index)
             optimizeDirectReadFromTextIndex(stack, nodes);
 
-        /// NOTE: optimizePrewhere can modify the stack.
-        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
-        if (optimization_settings.optimize_prewhere)
-            optimizePrewhere(stack, nodes);
-
         auto & frame = stack.back();
 
         /// Traverse all children first.
@@ -203,8 +198,24 @@ void optimizeTreeSecondPass(
             continue;
         }
 
+        /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
+        if (optimization_settings.optimize_prewhere)
+            optimizePrewhere(*frame.node);
+
         stack.pop_back();
     }
+
+    /// Materialize subplan references before other optimizations.
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        materializeQueryPlanReferences(frame_node, nodes);
+    });
+
+    /// Remove CommonSubplanSteps (they must be not used at that point).
+    traverseQueryPlan(stack, root, [&](auto & frame_node)
+    {
+        optimizeUnusedCommonSubplans(frame_node);
+    });
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
@@ -220,38 +231,30 @@ void optimizeTreeSecondPass(
             convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings);
         });
 
-
     /// If join runtime filters were added re-run optimizePrewhere and filter push down optimizations
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
-        stack.push_back({.node = &root});
-        while (!stack.empty())
-        {
-            if (optimization_settings.optimize_prewhere)
-                optimizePrewhere(stack, nodes);
-
-            /// NOTE: optimizePrewhere can modify the stack.
-            auto & frame = stack.back();
-
-            if (frame.next_child == 0)
+        traverseQueryPlan(stack, root,
+            [&](auto & frame_node)
             {
-                tryMergeExpressions(frame.node, nodes, {});
-                tryMergeFilters(frame.node, nodes, {});
-                tryPushDownFilter(frame.node, nodes, {});
-            }
+                /// If there are multiple Expression nodes below Filter node then we need to repeat merging Filter and Expression
+                while (true)
+                {
+                    size_t changed_nodes = 0;
+                    changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
+                    changed_nodes += tryMergeFilters(&frame_node, nodes, {});
+                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
 
-            /// Traverse all children first.
-            if (frame.next_child < frame.node->children.size())
+                    if (!changed_nodes)
+                        break;
+                }
+            },
+            [&](auto & frame_node)
             {
-                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-                ++frame.next_child;
-                stack.push_back(next_frame);
-                continue;
-            }
-
-            stack.pop_back();
-        }
+                if (optimization_settings.optimize_prewhere)
+                    optimizePrewhere(frame_node);
+            });
     }
 
     traverseQueryPlan(stack, root,

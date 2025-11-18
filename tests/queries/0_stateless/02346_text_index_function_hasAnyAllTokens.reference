@@ -1,43 +1,101 @@
 Negative tests
-Test what happens hasAnyTokens/All are called on columns without index
--- It is expected that the default tokenizer is used
+Test singular aliases
+Test what happens when hasAnyTokens/All is called on a column without index
+-- We expected that the default tokenizer is used
 -- { echoOn }
 SELECT hasAnyTokens('a b', ['b']);
 1
 SELECT hasAnyTokens('a b', ['c']);
 0
+SELECT hasAnyTokens('a b', 'b');
+1
+SELECT hasAnyTokens('a b', 'c');
+0
 SELECT hasAnyTokens(materialize('a b'), ['b']);
 1
 SELECT hasAnyTokens(materialize('a b'), ['c']);
+0
+SELECT hasAnyTokens(materialize('a b'), 'b');
+1
+SELECT hasAnyTokens(materialize('a b'), 'c');
 0
 --
 SELECT hasAllTokens('a b', ['a', 'b']);
 1
 SELECT hasAllTokens('a b', ['a', 'c']);
 0
+SELECT hasAllTokens('a b', 'a b');
+1
+SELECT hasAllTokens('a b', 'a c');
+0
 SELECT hasAllTokens(materialize('a b'), ['a', 'b']);
 1
 SELECT hasAllTokens(materialize('a b'), ['a', 'c']);
 0
-SELECT 'Test singular aliases';
-Test singular aliases
-SELECT hasAnyToken('a b', ['b']);
+SELECT hasAllTokens(materialize('a b'), 'a b');
 1
-SELECT hasAnyToken('a b', ['c']);
+SELECT hasAllTokens(materialize('a b'), 'a c');
 0
-SELECT hasAllToken('a b', ['b']);
-1
-SELECT hasAllToken('a b', ['c']);
-0
+-- These are equivalent to the lines above, but using Search{Any,All} in the filter step.
+-- We keep this test because the direct read optimization substituted Search{Any,All} only
+-- when they are in the filterStep, and we want to detect any variation eagerly.
+SELECT id FROM tab WHERE hasAnyTokens('a b', ['b']);
 1
 2
 3
+SELECT id FROM tab WHERE hasAnyTokens('a b', ['c']);
+SELECT id FROM tab WHERE hasAnyTokens(col_str, ['b']);
+1
+SELECT id FROM tab WHERE hasAnyTokens(col_str, ['c']);
+2
+SELECT id FROM tab WHERE hasAnyTokens('a b', 'b');
 1
 2
-Testing edge cases on non-indexed column
 3
+SELECT id FROM tab WHERE hasAnyTokens('a b', 'c');
+SELECT id FROM tab WHERE hasAnyTokens(col_str, 'b');
+1
+SELECT id FROM tab WHERE hasAnyTokens(col_str, 'c');
+2
+SELECT id FROM tab WHERE hasAllTokens('a b', ['a b']);
+SELECT id FROM tab WHERE hasAllTokens('a b', ['a c']);
+SELECT id FROM tab WHERE hasAllTokens(col_str, ['a b']);
+SELECT id FROM tab WHERE hasAllTokens(col_str, ['a c']);
+SELECT id FROM tab WHERE hasAllTokens('a b', 'a b');
+1
+2
 3
+SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
+SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
+SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
+-- Test search without needle on non-empty columns (all are expected to match)
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
+3
+SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
+3
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
+0
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
+3
+-- { echoOn }
+SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
+1
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
+2
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
+1
+SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
+3
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
 FixedString input columns
+[1]
+[1]
 [1]
 [1]
 -- Default tokenizer
@@ -50,6 +108,10 @@ FixedString input columns
 [1,2,3,4,5,6]
 [1,3,5]
 []
+[]
+[1,3,5]
+[1,2,3,4,5,6]
+[]
 [1,2,3,4,5,6]
 []
 [1,3,5]
@@ -58,8 +120,10 @@ FixedString input columns
 [2,4,6]
 []
 []
-[1,2,3,4,5,6]
-[1,2,3,4,5,6]
+[]
+[1,3,5]
+[1,3,5]
+[]
 -- Ngram tokenizer
 [3,4,5]
 []
@@ -68,9 +132,19 @@ FixedString input columns
 [1,2,3,4]
 [1,2,3,4,5]
 [3,4,5]
+[1,2,3,4,5]
+[3,4,5]
+[1,2,3,4]
+[1,2,3,4,5]
+[3,4,5]
 []
 [1,2,3]
 [2,3,4]
+[2,3]
+[3]
+[3,4,5]
+[1,2,3,4,5]
+[4,5]
 [2,3]
 [3]
 -- Split tokenizer
@@ -80,22 +154,41 @@ FixedString input columns
 [2,3,4,5]
 [2,3,5]
 [2,4,5]
+[]
+[]
+[2,5]
+[2,3,4,5]
+[]
+[3]
 [2,3]
 [2,4,5]
 [2,5]
 [2]
 [2]
 [2,5]
+[]
+[]
+[2,5]
+[2]
+[]
+[3]
 -- NoOp tokenizer
 []
 []
 []
 [4]
 []
+[1]
+[]
 []
 []
 [4]
+[]
+[1]
+[]
 Duplicate tokens
+2
+2
 2
 2
 2
@@ -156,15 +249,27 @@ Combination with the tokens function
 [4]
 Text index analysis
 hasAnyTokens is used during index analysis
-Text index should choose none for non-existent term
+Text index overload 1 should choose none for non-existent term
 Description: text GRANULARITY 1
 Parts: 0/4
 Granules: 0/4096
-Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Text index overload 2 should choose none for non-existent term
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
 Description: text GRANULARITY 1
 Parts: 1/4
 Granules: 1024/4096
-Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
 Description: text GRANULARITY 1
 Parts: 1/4
 Granules: 1024/4096
@@ -189,19 +294,35 @@ Description: text GRANULARITY 1
 Parts: 4/4
 Granules: 4096/4096
 hasAllTokens is used during index analysis
-Text index should choose none for non-existent term
+Text index overload 1 should choose none for non-existent term
 Description: text GRANULARITY 1
 Parts: 0/4
 Granules: 0/4096
-Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Text index overload 2 should choose none for non-existent term
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
 Description: text GRANULARITY 1
 Parts: 1/4
 Granules: 1024/4096
-Text index should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
 Description: text GRANULARITY 1
 Parts: 1/4
 Granules: 1024/4096
-Text index should choose none if any term does not exists in dictionary
+Text index overload 1 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index overload 2 should choose 1 part and 1024 granules out of 4 parts and 4096 granules
+Description: text GRANULARITY 1
+Parts: 1/4
+Granules: 1024/4096
+Text index overload 1 should choose none if any term does not exists in dictionary
+Description: text GRANULARITY 1
+Parts: 0/4
+Granules: 0/4096
+Text index overload 2 should choose none if any term does not exists in dictionary
 Description: text GRANULARITY 1
 Parts: 0/4
 Granules: 0/4096
@@ -239,11 +360,34 @@ Description: text GRANULARITY 1
 Parts: 1/1
 Granules: 256/1024
 Test hasAnyTokens and hasAllTokens on a non-indexed FixedString column
+-- { echoOn }
+SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
 1
 3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['moon', 'goodbye']) ORDER BY id;
 2
 3
+SELECT id FROM tab WHERE hasAnyTokens(s, ['unknown', 'goodbye']) ORDER BY id;
 2
+SELECT id FROM tab WHERE hasAnyTokens(s, 'hello') ORDER BY id;
 1
+3
+SELECT id FROM tab WHERE hasAnyTokens(s, 'moon goodbye') ORDER BY id;
 2
 3
+SELECT id FROM tab WHERE hasAnyTokens(s, 'unknown goodbye') ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'world']) ORDER BY id;
+1
+SELECT id FROM tab WHERE hasAllTokens(s, ['goodbye']) ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'moon']) ORDER BY id;
+3
+SELECT id FROM tab WHERE hasAllTokens(s, ['hello', 'unknown']) ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello world') ORDER BY id;
+1
+SELECT id FROM tab WHERE hasAllTokens(s, 'goodbye') ORDER BY id;
+2
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello moon') ORDER BY id;
+3
+SELECT id FROM tab WHERE hasAllTokens(s, 'hello unknown') ORDER BY id;

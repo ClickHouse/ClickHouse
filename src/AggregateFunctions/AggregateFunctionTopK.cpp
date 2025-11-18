@@ -497,7 +497,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
 
         }
 
-        if (!is_approx_top_k)
+        if (!is_approx_top_k || params.size() == 1)
         {
             reserved = threshold * load_factor;
         }

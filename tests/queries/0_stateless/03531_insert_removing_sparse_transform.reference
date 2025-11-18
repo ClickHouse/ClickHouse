@@ -13,12 +13,13 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="PlanSquashingTransform_4"];
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
-    n6[label="ApplySquashingTransform_10"];
+    n6[label="ApplySquashingTransform_11"];
     n7[label="ConvertingTransform_6"];
     n8[label="NestedElementsValidationTransform_7"];
-    n9[label="RemovingSparseTransform_8"];
-    n10[label="LogSink_9"];
-    n11[label="EmptySink_11"];
+    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n10[label="RemovingSparseTransform_9"];
+    n11[label="LogSink_10"];
+    n12[label="EmptySink_12"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -31,6 +32,7 @@ digraph
   n8 -> n9;
   n9 -> n10;
   n10 -> n11;
+  n11 -> n12;
 }
 -- MergeTree support sparse columns - no RemovingSparseTransform
 create table t_mt (key Int) engine=MergeTree order by ();
@@ -45,11 +47,12 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="PlanSquashingTransform_4"];
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
-    n6[label="ApplySquashingTransform_9"];
+    n6[label="ApplySquashingTransform_10"];
     n7[label="ConvertingTransform_6"];
     n8[label="NestedElementsValidationTransform_7"];
-    n9[label="MergeTreeSink_8"];
-    n10[label="EmptySink_10"];
+    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n10[label="MergeTreeSink_9"];
+    n11[label="EmptySink_11"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -61,6 +64,7 @@ digraph
   n7 -> n8;
   n8 -> n9;
   n9 -> n10;
+  n10 -> n11;
 }
 -- MergeTree pushes to Log, which does not support sparse columns - RemovingSparseTransform added
 create materialized view mv to t_log as select * from t_mt;
@@ -75,21 +79,23 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="PlanSquashingTransform_4"];
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
-    n6[label="ApplySquashingTransform_19"];
+    n6[label="ApplySquashingTransform_21"];
     n7[label="ConvertingTransform_6"];
     n8[label="NestedElementsValidationTransform_7"];
-    n9[label="MergeTreeSink_8"];
-    n10[label="Copy_16"];
-    n11[label="BeginingViewsTransform_9"];
-    n12[label="ExecutingInnerQueryFromView_12"];
-    n13[label="CountingTransform_11"];
-    n14[label="PlanSquashingTransform_18"];
-    n15[label="ApplySquashingTransform_10"];
-    n16[label="NestedElementsValidationTransform_13"];
-    n17[label="RemovingSparseTransform_14"];
-    n18[label="LogSink_15"];
-    n19[label="FinalizingViewsTransform_17"];
-    n20[label="EmptySink_20"];
+    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n10[label="MergeTreeSink_9"];
+    n11[label="Copy_18"];
+    n12[label="BeginingViewsTransform_10"];
+    n13[label="ExecutingInnerQueryFromView_13"];
+    n14[label="CountingTransform_12"];
+    n15[label="PlanSquashingTransform_20"];
+    n16[label="ApplySquashingTransform_11"];
+    n17[label="NestedElementsValidationTransform_14"];
+    n18[label="RemovingReplicatedColumnsTransform_15"];
+    n19[label="RemovingSparseTransform_16"];
+    n20[label="LogSink_17"];
+    n21[label="FinalizingViewsTransform_19"];
+    n22[label="EmptySink_22"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -111,6 +117,8 @@ digraph
   n17 -> n18;
   n18 -> n19;
   n19 -> n20;
+  n20 -> n21;
+  n21 -> n22;
 }
 drop table mv;
 -- Log does not support sparse columns - RemovingSparseTransform added
@@ -126,21 +134,23 @@ digraph
     n3[label="CountingTransform_3"];
     n4[label="PlanSquashingTransform_4"];
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
-    n6[label="ApplySquashingTransform_19"];
+    n6[label="ApplySquashingTransform_21"];
     n7[label="ConvertingTransform_6"];
     n8[label="NestedElementsValidationTransform_7"];
-    n9[label="RemovingSparseTransform_8"];
-    n10[label="LogSink_9"];
-    n11[label="Copy_16"];
-    n12[label="BeginingViewsTransform_10"];
-    n13[label="ExecutingInnerQueryFromView_13"];
-    n14[label="CountingTransform_12"];
-    n15[label="PlanSquashingTransform_18"];
-    n16[label="ApplySquashingTransform_11"];
-    n17[label="NestedElementsValidationTransform_14"];
-    n18[label="MergeTreeSink_15"];
-    n19[label="FinalizingViewsTransform_17"];
-    n20[label="EmptySink_20"];
+    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n10[label="RemovingSparseTransform_9"];
+    n11[label="LogSink_10"];
+    n12[label="Copy_18"];
+    n13[label="BeginingViewsTransform_11"];
+    n14[label="ExecutingInnerQueryFromView_14"];
+    n15[label="CountingTransform_13"];
+    n16[label="PlanSquashingTransform_20"];
+    n17[label="ApplySquashingTransform_12"];
+    n18[label="NestedElementsValidationTransform_15"];
+    n19[label="RemovingReplicatedColumnsTransform_16"];
+    n20[label="MergeTreeSink_17"];
+    n21[label="FinalizingViewsTransform_19"];
+    n22[label="EmptySink_22"];
   }
   n0 -> n1;
   n1 -> n2;
@@ -162,4 +172,6 @@ digraph
   n17 -> n18;
   n18 -> n19;
   n19 -> n20;
+  n20 -> n21;
+  n21 -> n22;
 }

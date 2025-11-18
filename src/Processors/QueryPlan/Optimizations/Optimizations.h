@@ -147,7 +147,7 @@ using Stack = std::vector<Frame>;
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void optimizeDirectReadFromTextIndex(const Stack & stack, QueryPlan::Nodes & nodes);
-void optimizePrewhere(Stack & stack, QueryPlan::Nodes & nodes);
+void optimizePrewhere(QueryPlan::Node & parent_node);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, size_t max_limit_for_lazy_materialization);
@@ -156,6 +156,8 @@ void optimizeJoinByShards(QueryPlan::Node & root);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
+void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+void optimizeUnusedCommonSubplans(QueryPlan::Node & node);
 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.

@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
+#include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -324,7 +325,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
     /// indexes are build simultaneously (e.g. multiple merges run at the same time).
     auto & thread_pool = Context::getGlobalContextInstance()->getBuildVectorSimilarityIndexThreadPool();
 
-    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "VectorSimIndex");
+    ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, ThreadName::MERGETREE_VECTOR_SIM_INDEX);
     auto add_vector_to_index = [&](USearchIndex::vector_key_t key, size_t row)
     {
         const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];

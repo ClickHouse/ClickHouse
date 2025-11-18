@@ -19,7 +19,7 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Processors/Formats/Impl/AvroRowOutputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
+#include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
@@ -712,8 +712,8 @@ void generateManifestList(
             {
                 auto manifest_list = snapshots->getObject(static_cast<UInt32>(i))->getValue<String>(Iceberg::f_manifest_list);
 
-                StorageObjectStorage::ObjectInfo object_info(filename_generator.convertMetadataPathToStoragePath(manifest_list));
-                auto manifest_list_buf = createReadBuffer(object_info, object_storage, context, getLogger("IcebergWrites"));
+                RelativePathWithMetadata relative_path_with_metadata(filename_generator.convertMetadataPathToStoragePath(manifest_list));
+                auto manifest_list_buf = createReadBuffer(relative_path_with_metadata, object_storage, context, getLogger("IcebergWrites"));
 
                 auto input_stream = std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf);
                 avro::DataFileReader<avro::GenericDatum> reader(std::move(input_stream));

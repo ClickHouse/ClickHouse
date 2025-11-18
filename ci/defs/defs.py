@@ -59,14 +59,17 @@ SECRETS = [
     Secret.Config(
         name="clickhouse-test-stat-url",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-login",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     Secret.Config(
         name="clickhouse-test-stat-password",
         type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
     ),
     azure_secret,
     chcache_secret,
@@ -286,8 +289,9 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     AMD_UBSAN = "amd_ubsan"
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
+    ARM_TSAN = "arm_tsan"
 
-    ARM_COVERAGE = "arm_coverage"
+    AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     ARM_TIDY = "arm_tidy"
@@ -308,6 +312,7 @@ class JobNames:
     DOCKER_BUILDS_ARM = "Dockers build (arm)"
     DOCKER_BUILDS_AMD = "Dockers build (amd)"
     STYLE_CHECK = "Style check"
+    PR_BODY = "PR formatter"
     FAST_TEST = "Fast test"
     BUILD = "Build"
     UNITTEST = "Unit tests"
@@ -318,7 +323,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
-    Docs = "Docs check"
+    DOCS = "Docs check"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
     DOCKER_KEEPER = "Docker keeper image"
@@ -354,6 +359,7 @@ class ArtifactNames:
     CH_AMD_BINARY = "CH_AMD_BINARY"
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
+    CH_ARM_TSAN = "CH_ARM_TSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
@@ -377,7 +383,6 @@ class ArtifactNames:
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
     DEB_AMD_MSAN = "DEB_AMD_MSAM"
@@ -411,6 +416,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
+            ArtifactNames.CH_ARM_TSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -438,7 +444,6 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_AMD_UBSAN,
-            ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
             ArtifactNames.DEB_ARM_ASAN,
         ]

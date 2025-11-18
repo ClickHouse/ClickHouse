@@ -164,6 +164,13 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
+ISerialization::KindStack SerializationSparse::getKindStack() const
+{
+    auto kind_stack = nested->getKindStack();
+    kind_stack.push_back(Kind::SPARSE);
+    return kind_stack;
+}
+
 SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
     return std::make_shared<SerializationSparse>(prev);
