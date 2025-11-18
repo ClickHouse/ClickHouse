@@ -1,4 +1,3 @@
-import logging
 import time
 
 import pytest
@@ -52,7 +51,9 @@ def kafka_setup_teardown():
 def test_missing_mv_target(kafka_cluster, create_query_generator):
     admin = k.get_admin_client(kafka_cluster)
     topic = "mv_target_missing" + k.get_topic_postfix(create_query_generator)
-    topic_other = "mv_target_missing_other" + k.get_topic_postfix(create_query_generator)
+    topic_other = "mv_target_missing_other" + k.get_topic_postfix(
+        create_query_generator
+    )
     k.kafka_create_topic(admin, topic)
 
     settings = {
@@ -80,6 +81,10 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         settings=settings,
     )
 
+    kafka_mv_not_ready_before = instance.query(
+        "SELECT value FROM system.events WHERE event='KafkaMVNotReady'"
+    )
+
     instance.query(
         f"""
         SET allow_materialized_view_with_bad_select = true;
@@ -94,41 +99,53 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
 
         CREATE MATERIALIZED VIEW test.mv1 TO test.target1 AS SELECT * FROM test.kafkamiss;
         CREATE MATERIALIZED VIEW test.mv2 TO test.target2 AS SELECT * FROM test.kafkamiss;
+        """
+    )
+
+    kafka_mv_not_ready_after = instance.query_with_retry(
+        "SELECT value FROM system.events WHERE event='KafkaMVNotReady'",
+        check_callback=lambda x: int(x) > 2 * kafka_mv_not_ready_before,
+    )
+
+    skc = instance.query(
+        # "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='kafkamiss' FORMAT Vertical"
+        "SELECT dependencies, missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') ORDER BY table FORMAT Vertical"
+    )
+    assert (
+        skc
+        == """Row 1:
+──────
+dependencies:         [['test.kafkamiss','test.mv2'],['test.kafkamiss','test.mv1']]
+missing_dependencies: [['test.kafkamiss','test.mv2'],['test.kafkamiss','test.mv1']]
+
+Row 2:
+──────
+dependencies:         [['test.kafkamissother']]
+missing_dependencies: []
+"""
+    )
+
+    instance.query(
+        """
+        SET allow_materialized_view_with_bad_select = true;
+        CREATE TABLE test.target2 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a;
         CREATE MATERIALIZED VIEW test.mvother TO test.targetother AS SELECT * FROM test.kafkamissother;
         """
     )
 
     skc = instance.query(
-        # "SELECT dependencies_database, dependencies_table, missing_dependencies_database, missing_dependencies_table FROM system.kafka_consumers WHERE table='kafkamiss' FORMAT Vertical"
-        "SELECT missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') FORMAT Vertical"
+        "SELECT dependencies, missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') ORDER BY table FORMAT Vertical"
     )
     assert (
         skc
         == """Row 1:
 ──────
-missing_dependencies: [['test.kafkamiss','test.mv2'],['test.kafkamiss','test.mv1']]
-
-Row 2:
-──────
-missing_dependencies: [['test.kafkamissother','test.mvother']]
-"""
-    )
-
-    instance.query(
-        "CREATE TABLE test.target2 (a UInt64, b String) ENGINE = MergeTree() ORDER BY a"
-    )
-
-    skc = instance.query(
-        "SELECT missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') FORMAT Vertical"
-    )
-    assert (
-        skc
-        == """Row 1:
-──────
+dependencies:         [['test.kafkamiss','test.mv2','test.target2'],['test.kafkamiss','test.mv1']]
 missing_dependencies: [['test.kafkamiss','test.mv1']]
 
 Row 2:
 ──────
+dependencies:         [['test.kafkamissother','test.mvother']]
 missing_dependencies: [['test.kafkamissother','test.mvother']]
 """
     )
@@ -138,16 +155,18 @@ missing_dependencies: [['test.kafkamissother','test.mvother']]
     )
 
     skc = instance.query(
-        "SELECT missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') FORMAT Vertical"
+        "SELECT dependencies, missing_dependencies FROM system.kafka_consumers WHERE table in ('kafkamiss', 'kafkamissother') ORDER BY table FORMAT Vertical"
     )
     assert (
         skc
         == """Row 1:
 ──────
+dependencies:         [['test.kafkamiss','test.mv2','test.target2'],['test.kafkamiss','test.mv1','test.target1']]
 missing_dependencies: []
 
 Row 2:
 ──────
+dependencies:         [['test.kafkamissother','test.mvother']]
 missing_dependencies: [['test.kafkamissother','test.mvother']]
 """
     )
@@ -181,6 +200,7 @@ missing_dependencies: [['test.kafkamissother','test.mvother']]
         """
     )
     k.kafka_delete_topic(admin, topic)
+
 
 @pytest.mark.parametrize(
     "create_query_generator",

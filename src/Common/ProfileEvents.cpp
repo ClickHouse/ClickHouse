@@ -846,6 +846,7 @@ The server successfully detected this situation and will download merged part fr
     M(KafkaCommits, "Number of successful commits of consumed offsets to Kafka (normally should be the same as KafkaBackgroundReads)", ValueType::Number) \
     M(KafkaCommitFailures, "Number of failed commits of consumed offsets to Kafka (usually is a sign of some data duplication)", ValueType::Number) \
     M(KafkaConsumerErrors, "Number of errors reported by librdkafka during polls", ValueType::Number) \
+    M(KafkaMVNotReady, "Number of failed attempts to stream data to a materialized view that is not ready", ValueType::Number) \
     M(KafkaWrites, "Number of writes (inserts) to Kafka tables ", ValueType::Number) \
     M(KafkaRowsWritten, "Number of rows inserted into Kafka tables", ValueType::Number) \
     M(KafkaProducerFlushes, "Number of explicit flushes to Kafka producer", ValueType::Number) \
