@@ -502,37 +502,37 @@ Model::GetObjectTaggingOutcome Client::GetObjectTagging(GetObjectTaggingRequest 
 Model::ListObjectsV2Outcome Client::ListObjectsV2(ListObjectsV2Request & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
-        request, [this](const Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
+        request, [this](Model::ListObjectsV2Request & req) { return ListObjectsV2(req); });
 }
 
 Model::ListObjectsOutcome Client::ListObjects(ListObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ true>(
-        request, [this](const Model::ListObjectsRequest & req) { return ListObjects(req); });
+        request, [this](Model::ListObjectsRequest & req) { return ListObjects(req); });
 }
 
 Model::GetObjectOutcome Client::GetObject(GetObjectRequest & request) const
 {
     return processRequestResult(
-        doRequest(request, [this](const Model::GetObjectRequest & req) { return GetObject(req); }));
+        doRequest(request, [this](Model::GetObjectRequest & req) { return GetObject(req); }));
 }
 
 Model::AbortMultipartUploadOutcome Client::AbortMultipartUpload(AbortMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
+        request, [this](Model::AbortMultipartUploadRequest & req) { return AbortMultipartUpload(req); });
 }
 
 Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipartUploadRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
+        request, [this](Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
+        request, [this](Model::CompleteMultipartUploadRequest & req) { return CompleteMultipartUpload(req); });
 
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
@@ -579,42 +579,42 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
 Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::CopyObjectRequest & req) { return CopyObject(req); });
+        request, [this](Model::CopyObjectRequest & req) { return CopyObject(req); });
 }
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::PutObjectRequest & req) { return PutObject(req); });
+        request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
 Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::UploadPartRequest & req) { return UploadPart(req); });
+        request, [this](Model::UploadPartRequest & req) { return UploadPart(req); });
 }
 
 Model::UploadPartCopyOutcome Client::UploadPartCopy(UploadPartCopyRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
+        request, [this](Model::UploadPartCopyRequest & req) { return UploadPartCopy(req); });
 }
 
 Model::DeleteObjectOutcome Client::DeleteObject(DeleteObjectRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); });
+        request, [this](Model::DeleteObjectRequest & req) { Expect404ResponseScope scope; return DeleteObject(req); });
 }
 
 Model::DeleteObjectsOutcome Client::DeleteObjects(DeleteObjectsRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
-        request, [this](const Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); });
+        request, [this](Model::DeleteObjectsRequest & req) { Expect404ResponseScope scope; return DeleteObjects(req); });
 }
 
 Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & request) const
 {
-    auto request_fn = [this](const ComposeObjectRequest & req)
+    auto request_fn = [this](ComposeObjectRequest & req)
     {
         auto & endpoint_provider = const_cast<Client &>(*this).accessEndpointProvider();
         AWS_OPERATION_CHECK_PTR(endpoint_provider, ComposeObject, Aws::Client::CoreErrors, Aws::Client::CoreErrors::ENDPOINT_RESOLUTION_FAILURE);
@@ -643,7 +643,7 @@ Client::ComposeObjectOutcome Client::ComposeObject(ComposeObjectRequest & reques
 }
 
 template <typename RequestType, typename RequestFn>
-std::invoke_result_t<RequestFn, RequestType>
+std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequest(RequestType & request, RequestFn request_fn) const
 {
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
@@ -742,17 +742,16 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 }
 
 template <bool IsReadMethod, typename RequestType, typename RequestFn>
-std::invoke_result_t<RequestFn, RequestType>
+std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
-    auto with_retries = [this, request_fn_ = std::move(request_fn)] (const RequestType & request_)
+    auto with_retries = [this, request_fn_ = std::move(request_fn)] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
         chassert(max_attempts > 0);
         std::exception_ptr last_exception = nullptr;
-        bool inside_retry_loop = false;
 
         Int64 attempt_no = 0;
 
@@ -777,7 +776,6 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
             updateNextTimeToRetryAfterRetryableError(error, attempt_no);
-            inside_retry_loop = true;
             return false;
         };
 
@@ -786,6 +784,18 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
+
+            if (attempt_no > 0)
+            {
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
+                if (isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
+
+                // update ClickHouse-specific attempt number in the request
+                // to help choose the right timeouts on the HTTP client which depends on retry attempt number
+                auto clickhouse_request_attept = getClickhouseAttemptNumber(request_);
+                setClickhouseAttemptNumber(request_, clickhouse_request_attept + attempt_no);
+            }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
             slowDownAfterRetryableError();
@@ -811,18 +821,11 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                     && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                 {
-                    incrementProfileEvents<IsReadMethod>(
-                        ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
-                    if (isClientForDisk())
-                        incrementProfileEvents<IsReadMethod>(
-                            ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
-
                     updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
-                    inside_retry_loop = true;
                     continue;
                 }
 
-                if (inside_retry_loop)
+                if (attempt_no > 0)
                     LOG_TRACE(log, "Request succeeded after {} retries. Max retries: {}", attempt_no, max_attempts);
 
                 return outcome;

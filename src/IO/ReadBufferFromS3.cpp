@@ -176,7 +176,7 @@ bool ReadBufferFromS3::nextImpl()
         }
         catch (...)
         {
-            if (!processException(getPosition(), attempt) || last_attempt)
+                if (!processException(getPosition(), attempt) || last_attempt)
                 throw;
 
             /// Pause before next attempt.
@@ -458,7 +458,7 @@ Aws::S3::Model::GetObjectResult ReadBufferFromS3::sendRequest(size_t attempt, si
     if (!version_id.empty())
         req.SetVersionId(version_id);
 
-    req.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+    S3::setClickhouseAttemptNumber(req, attempt);
 
     if (range_end_incl)
     {
