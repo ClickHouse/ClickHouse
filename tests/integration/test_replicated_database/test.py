@@ -1714,6 +1714,21 @@ def test_lag_after_recovery(started_cluster):
         == "0\n"
     )
 
+
+def test_correct_skip_indexes(started_cluster):
+    competing_node.query("DROP DATABASE IF EXISTS correct_skip_indexes")
+    dummy_node.query("DROP DATABASE IF EXISTS correct_skip_indexes")
+
+    competing_node.query(
+        "CREATE DATABASE correct_skip_indexes ENGINE = Replicated('/clickhouse/databases/correct_skip_indexes', 'shard1', 'replica1');"
+        "CREATE TABLE correct_skip_indexes.test (`id` UInt64, `a` String, `b` String ALIAS a, INDEX bf_a assumeNotNull(b) TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = ReplicatedMergeTree ORDER BY (id);"
+    )
+    dummy_node.query(
+        "CREATE DATABASE correct_skip_indexes ENGINE = Replicated('/clickhouse/databases/correct_skip_indexes', 'shard1', 'replica2');"
+        "SYSTEM SYNC DATABASE REPLICA correct_skip_indexes;"
+    )
+
+
 def test_implicit_index(started_cluster):
     competing_node.query("DROP DATABASE IF EXISTS implicit_index")
     dummy_node.query("DROP DATABASE IF EXISTS implicit_index")
