@@ -25,6 +25,7 @@ constexpr size_t arg_value = 0;
 constexpr size_t arg_tokenizer = 1;
 constexpr size_t arg_ngrams = 2;
 constexpr size_t arg_separators = 2;
+constexpr size_t arg_stop_words = 2;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
 {
@@ -84,10 +85,44 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
 
         return std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
+    if (tokenizer_arg == StandardTokenExtractor::getExternalName())
+    {
+        std::vector<String> stop_words;
+        if (arguments.size() < 3)
+        {
+            stop_words = {"，", "。", "！", "？", "；", "：", "、", "“", "”", "‘", "’"};
+        }
+        else
+        {
+            const ColumnArray * col_stop_words = checkAndGetColumn<ColumnArray>(arguments[arg_stop_words].column.get());
+            const ColumnArray * col_stop_words_const = checkAndGetColumnConstData<ColumnArray>(arguments[arg_stop_words].column.get());
+
+            if (!col_stop_words_const && !col_stop_words)
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "3rd argument of function {} should be Array(String), got: {}",
+                    name,
+                    arguments[arg_stop_words].column->getFamilyName());
+            }
+
+            if (col_stop_words_const)
+                col_stop_words = col_stop_words_const;
+
+            Field separator_field = (*col_stop_words)[0];
+            const Array & separator_array = separator_field.safeGet<Array>();
+
+            for (const auto & separator : separator_array)
+                stop_words.emplace_back(separator.safeGet<String>());
+        }
+
+        return std::make_unique<StandardTokenExtractor>(stop_words);
+    }
 
     throw Exception(
         ErrorCodes::BAD_ARGUMENTS,
-        "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', 'array', and 'sparseGrams'", name);
+        "Function '{}' supports only tokenizers 'splitByNonAlpha', 'ngrams', 'splitByString', 'array', 'sparseGrams' and 'standard'",
+        name);
 }
 
 class ExecutableFunctionTokens : public IExecutableFunction
@@ -235,6 +270,8 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+                else if (tokenizer == StandardTokenExtractor::getExternalName())
+                    optional_args.emplace_back("stop_words", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
 
             if (arguments.size() == 4 || arguments.size() == 5)

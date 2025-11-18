@@ -1142,19 +1142,36 @@ UInt64 extractNgramParam(const std::vector<Field> & params)
     return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params.at(0), "ngram_size");
 }
 
+std::vector<String> extractStringsParam(const std::vector<Field> & params, const std::string & argument_name)
+{
+    std::vector<String> values;
+    if (params.empty())
+        return values;
+
+    auto array = castAs<Array>(params.at(0), argument_name);
+
+    for (const auto & value : array)
+        values.emplace_back(castAs<String>(value, argument_name));
+
+    return values;
+}
+
 std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 {
     assertParamsCount(SplitTokenExtractor::getExternalName(), params.size(), 1);
-    if (params.empty())
-        return std::vector<String>{" "};
+    auto separators = extractStringsParam(params, "separators");
+    if (separators.empty())
+        separators.push_back(" ");
+    return separators;
+}
 
-    std::vector<String> values;
-    auto array = castAs<Array>(params.at(0), "separators");
-
-    for (const auto & value : array)
-        values.emplace_back(castAs<String>(value, "separator"));
-
-    return values;
+std::vector<String> extractStopWordsByStringParam(const std::vector<Field> & params)
+{
+    assertParamsCount(StandardTokenExtractor::getExternalName(), params.size(), 1);
+    auto stop_words = extractStringsParam(params, "stop_words");
+    if (stop_words.empty())
+        stop_words = {"，", "。", "！", "？", "；", "：", "、", "“", "”", "‘", "’"};
+    return stop_words;
 }
 
 std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(const std::vector<Field> & params)
@@ -1208,6 +1225,11 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
         token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
+    else if (tokenizer == StandardTokenExtractor::getExternalName())
+    {
+        auto stop_words = extractStopWordsByStringParam(params);
+        token_extractor = std::make_unique<StandardTokenExtractor>(stop_words);
+    }
     else
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Tokenizer {} not supported", tokenizer);
@@ -1244,12 +1266,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                                       || tokenizer == NgramTokenExtractor::getExternalName()
                                       || tokenizer == SplitTokenExtractor::getExternalName()
                                       || tokenizer == NoOpTokenExtractor::getExternalName()
-                                      || tokenizer == SparseGramTokenExtractor::getExternalName());
+                                      || tokenizer == SparseGramTokenExtractor::getExternalName()
+                                      || tokenizer == StandardTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
             ErrorCodes::INCORRECT_QUERY,
-            "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', 'sparseGrams', and 'array', but got {}",
+            "Text index argument '{}' supports only 'splitByNonAlpha', 'ngrams', 'splitByString', 'sparseGrams', 'standard' and 'array', "
+            "but got {}",
             ARGUMENT_TOKENIZER,
             tokenizer);
     }

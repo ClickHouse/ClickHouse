@@ -4,8 +4,9 @@
 #include <base/types.h>
 #include <Interpreters/BloomFilter.h>
 #include <Common/assert_cast.h>
-
 #include <Functions/sparseGrams.h>
+
+#include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
@@ -21,6 +22,7 @@ public:
         Split,
         NoOp,
         SparseGram,
+        Standard,
     };
 
     ITokenExtractor() = default;
@@ -40,7 +42,7 @@ public:
 
     /// Special implementation for creating bloom filter for LIKE function.
     /// It skips unescaped `%` and `_` and supports escaping symbols, but it is less lightweight.
-    virtual bool nextInStringLike(const char * data, size_t length, size_t * pos, String & out) const = 0;
+    virtual bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const = 0;
 
     /// Updates Bloom filter from exact-match string filter value
     virtual void stringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
@@ -111,10 +113,11 @@ private:
     void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const override
     {
         size_t cur = 0;
-        String token;
+        size_t token_start = 0;
+        size_t token_len = 0;
 
-        while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
-            bloom_filter.add(token.c_str(), token.size());
+        while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, &token_start, &token_len))
+            bloom_filter.add(data + token_start, token_len);
     }
 
     void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
@@ -130,10 +133,11 @@ private:
     void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
     {
         size_t cur = 0;
-        String token;
+        size_t token_start = 0;
+        size_t token_len = 0;
 
-        while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, token))
-            tokens.push_back(token);
+        while (cur < length && static_cast<const Derived *>(this)->nextInStringLike(data, length, &cur, &token_start, &token_len))
+            tokens.push_back({data + token_start, token_len});
     }
 };
 
@@ -147,7 +151,7 @@ struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtrac
     static const char * getExternalName() { return "ngrams"; }
 
     bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
 
     size_t getN() const { return n; }
 
@@ -166,9 +170,24 @@ struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenEx
 
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const;
-    bool nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const override;
-    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
+
+    void
+    substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
     void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
@@ -184,8 +203,7 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
-
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
     bool supportsStringLike() const override { return false; }
 private:
     std::vector<String> separators;
@@ -200,8 +218,7 @@ struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtracto
     static const char * getExternalName() { return getName(); }
 
     bool nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
-
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const override;
     bool supportsStringLike() const override { return false; }
 };
 
@@ -215,15 +232,109 @@ struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramT
     static const char * getName() { return "sparseGrams"; }
     static const char * getExternalName() { return getName(); }
 
-    bool nextInString(const char * data, size_t length, size_t *  __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const override;
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
 
-    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+    bool nextInStringLike(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
+
     bool supportsStringLike() const override { return true; }
 
 private:
     mutable SparseGramsImpl<true> sparse_grams_iterator;
     mutable const char * previous_data = nullptr;
     mutable size_t previous_len = 0;
+};
+
+/// 1. ASCII Alphanumeric Tokens
+///
+/// * ASCII letters (`A-Z`, `a-z`) and digits (`0-9`) are accumulated into tokens.
+/// * `_` can appear at the **start, middle, or end** of a token, but a token cannot be **only `_` characters**.
+///
+///   * E.g., `a_b` → token
+///   * `_a` → token
+///   * `__` → ignored (no alphanumeric)
+///
+/// 2. Connectors
+///
+/// * `:` connects **letters only**, not digits.
+/// * `.` and `'` connect **letters-letters** or **digits-digits**.
+/// * If the connector cannot connect both sides, it is treated as a **token boundary**.
+///
+/// 3. Unicode / Chinese
+///
+/// * Chinese characters are **always single-character tokens**.
+/// * Certain Unicode punctuation (Chinese punctuation) are **stop characters** and **break tokens**.
+///
+/// 4. Token Validity
+///
+/// * Tokens must contain at least **one ASCII letter or digit** to be valid.
+/// * Connectors `_`, `:`, `.`, `'` cannot form a token by themselves.
+/// * `_` can start or end the token but must **not be the only character**.
+///
+/// 5. Stream Processing
+///
+/// * Tokenization is **stream-based** — return tokens as soon as they are complete.
+/// * ASCII fast path should be taken first for performance.
+/// * Only parse Unicode for **non-ASCII characters or stop characters**.
+///
+/// ---
+///
+/// Examples
+///
+/// | Input                    | Output Tokens                         |
+/// | ------------------------ | ------------------------------------- |
+/// | `a_b a_3 a_ _a __a_b_3_` | `['a_b','a_3','a_','_a','__a_b_3_']`  |
+/// | `3_b 3_3 3_ _3 __3_4_3_` | `['3_b','3_3','3_','_3','__3_4_3_']`  |
+/// | `a:b a:3 a: :a ::a:b:3:` | `['a:b','a','3','a','a','a:b','3']`   |
+/// | `a'b a'3 a' 'a ''a'b'3'` | `['a\'b','a','3','a','a','a\'b','3']` |
+/// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
+struct StandardTokenExtractor final : public ITokenExtractorHelper<StandardTokenExtractor>
+{
+    explicit StandardTokenExtractor(const std::vector<String> & stop_words_)
+        : ITokenExtractorHelper(Type::Standard)
+        , stop_words(stop_words_.begin(), stop_words_.end())
+    {
+    }
+
+    static const char * getName() { return "standard"; }
+    static const char * getExternalName() { return getName(); }
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
+
+    void
+    substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
+
+private:
+    template <bool is_like_pattern>
+    bool nextInStringImpl(
+        const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const;
+
+    absl::flat_hash_set<String> stop_words;
 };
 
 template <Fn<bool(const char *, size_t)> Callback>
@@ -386,6 +497,12 @@ void forEachToken(const ITokenExtractor & extractor, const char * __restrict dat
         {
             const auto & sparse_gram_extractor = assert_cast<const SparseGramTokenExtractor &>(extractor);
             detail::forEachTokenImpl(sparse_gram_extractor, data, length, callback);
+            return;
+        }
+        case ITokenExtractor::Type::Standard:
+        {
+            const auto & standard_extractor = assert_cast<const StandardTokenExtractor &>(extractor);
+            detail::forEachTokenImpl(standard_extractor, data, length, callback);
             return;
         }
     }
