@@ -257,28 +257,70 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
     empty = false;
 }
 
-void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(size_t n, std::vector<size_t> & result)
+void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(size_t n, std::vector<MinMaxGranule> & result)
 {
     if (n >= granules.size())
     {
-        for (const auto & granule : granules)
-            result.push_back(granule.granule_num);
+        result.insert(result.end(), granules.begin(), granules.end());
         return;
     }
 
-    if (direction == 1)
-        std::sort(granules.begin(), granules.end(),
-                    [](const MinMaxGranule & granule_a, const MinMaxGranule & granule_b) { return granule_a.min_or_max_value > granule_b.min_or_max_value; });
-    else
-        std::sort(granules.begin(), granules.end(),
-                    [](const MinMaxGranule & granule_a, const MinMaxGranule & granule_b) { return granule_a.min_or_max_value < granule_b.min_or_max_value; });
+    std::priority_queue<MinMaxGranuleItem> queue;
 
-    auto start = granules.begin() + (granules.size() - n);
-    while (start != granules.end())
+    for (const auto & granule : granules)
     {
-        result.push_back(start->granule_num);
-        start++;
+        MinMaxGranuleItem item{direction, 0, granule.granule_num, granule.min_or_max_value};
+        if (queue.size() < n)
+            queue.push({direction, 0, granule.granule_num, granule.min_or_max_value});
+        else if ((direction == 1 && granule.min_or_max_value < queue.top().min_or_max_value) ||
+                    (direction == -1 && granule.min_or_max_value > queue.top().min_or_max_value))
+        {
+            queue.pop();
+            queue.push({direction, 0, granule.granule_num, granule.min_or_max_value});
+            
+        }
     }
+
+    while (!queue.empty())
+    {
+        result.push_back({queue.top().granule_num, queue.top().min_or_max_value});
+        queue.pop();
+    }
+}
+
+/// This routine is for top-N of top-N granules from all parts
+void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(int direction,
+                                                    size_t n,
+                                                    const std::vector<std::vector<MinMaxGranule>> & parts,
+                                                    std::vector<MarkRanges> & result)
+{
+    std::priority_queue<MinMaxGranuleItem> queue;
+
+    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+    {
+        for (const auto & granule : parts[part_index])
+        {
+            if (queue.size() < n)
+                queue.push({direction, part_index, granule.granule_num, granule.min_or_max_value});
+            else if ((direction == 1 && granule.min_or_max_value < queue.top().min_or_max_value) ||
+                        (direction == -1 && granule.min_or_max_value > queue.top().min_or_max_value))
+            {
+                queue.pop();
+                queue.push({direction, part_index, granule.granule_num, granule.min_or_max_value});
+            }
+        }
+    }
+
+    result.resize(parts.size(), {});
+    while (!queue.empty())
+    {
+        const auto & item = queue.top();
+        result[item.part_index].push_back({item.granule_num, item.granule_num + 1});
+        queue.pop();
+    }
+
+    for (auto & part_ranges : result)
+        std::sort(part_ranges.begin(), part_ranges.end());
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

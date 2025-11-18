@@ -87,15 +87,31 @@ public:
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules
 {
-    explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_, int direction_, size_t size_hint_, bool store_map_ = false);
-    void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
-    void getTopNMarks(size_t n, std::vector<size_t> & result);
-
     struct MinMaxGranule
     {
         size_t granule_num;
         Field min_or_max_value;
     };
+
+    struct MinMaxGranuleItem
+    {
+        int direction;
+        size_t part_index;
+        size_t granule_num;
+        Field min_or_max_value;
+        /// If sort by ASC, then max-heap of min values, if sort by DESC, min-heap of max values
+        bool operator < (const MinMaxGranuleItem & b) const
+        {
+            return (direction == 1 ? (min_or_max_value < b.min_or_max_value) : (min_or_max_value > b.min_or_max_value));
+        }
+    };
+
+    explicit MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,
+                                              int direction_, size_t size_hint_, bool store_map_ = false);
+    void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+
+    void getTopNMarks(size_t n, std::vector<MinMaxGranule> & result);
+    static void getTopNMarks(int direction, size_t n, const std::vector<std::vector<MinMaxGranule>> & parts, std::vector<MarkRanges> & result);
 
     std::vector<MinMaxGranule> granules;
     std::unordered_map<size_t, size_t> granules_map;
