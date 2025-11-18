@@ -104,6 +104,7 @@ allow_reorder_prewhere_conditions	1
 allow_settings_after_format_in_insert	0
 allow_simdjson	1
 allow_special_bool_values_inside_variant	0
+allow_special_serialization_kinds_in_output_formats	0
 allow_statistic_optimize	0
 allow_statistics_optimize	0
 allow_suspicious_codecs	0
@@ -366,6 +367,7 @@ enable_http_compression	1
 enable_job_stack_trace	0
 enable_join_runtime_filters	0
 enable_json_type	1
+enable_lazy_columns_replication	0
 enable_lightweight_delete	1
 enable_lightweight_update	1
 enable_memory_bound_merging_of_aggregation_results	1
@@ -417,6 +419,7 @@ extract_kvp_max_pairs_per_row	1000
 extremes	0
 fallback_to_stale_replicas_for_distributed_queries	1
 filesystem_cache_boundary_alignment	0
+filesystem_cache_allow_background_download	1
 filesystem_cache_enable_background_download_during_fetch	1
 filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage	1
 filesystem_cache_max_download_size	137438953472
@@ -1271,7 +1274,7 @@ s3_max_unexpected_write_error_retries	4
 s3_max_upload_part_size	5368709120
 s3_min_upload_part_size	16777216
 s3_request_timeout_ms	30000
-s3_retry_attempts	100
+s3_retry_attempts	500
 s3_skip_empty_files	1
 s3_slow_all_threads_after_network_error	1
 s3_slow_all_threads_after_retryable_error	0
@@ -1285,7 +1288,7 @@ s3_validate_request_settings	1
 s3queue_allow_experimental_sharded_mode	0
 s3queue_default_zookeeper_path	/clickhouse/s3queue/
 s3queue_enable_logging_to_s3queue_log	0
-s3queue_keeper_fault_injection_probablility	0
+s3queue_keeper_fault_injection_probability	0
 s3queue_migrate_old_metadata_to_buckets	0
 schema_inference_cache_require_modification_time_for_url	1
 schema_inference_hints	

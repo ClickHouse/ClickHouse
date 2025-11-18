@@ -1,5 +1,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Analyzer/FunctionNode.h>
@@ -9,7 +10,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -25,6 +29,8 @@
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
 
+#include <stack>
+
 
 namespace DB
 {
@@ -37,6 +43,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
+    extern const SettingsInt64 optimize_const_name_size;
 }
 
 namespace ErrorCodes
@@ -254,6 +261,94 @@ private:
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
 
+class ReplaceLongConstWithScalarVisitor : public InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<ReplaceLongConstWithScalarVisitor>;
+    using Base::Base;
+
+    explicit ReplaceLongConstWithScalarVisitor(const ContextPtr & context, Int64 max_size_)
+        : Base(context)
+        , max_size(max_size_)
+    {}
+
+    static bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    {
+        if (auto * function_node = parent->as<FunctionNode>())
+        {
+            // Do not traverse "getScalar"
+            if (function_node->getFunctionName() == "__getScalar")
+                return false;
+
+            // Do not visit parameters node
+            if (function_node->getParametersNode() == child)
+                return false;
+        }
+        return true;
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        // Do not visit second argument of "in" functions
+        if (!in_second_argument.empty() && in_second_argument.top() == node)
+        {
+            in_second_argument.pop();
+            return;
+        }
+
+        if (auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
+        {
+            in_second_argument.push(function_node->getArguments().getNodes()[1]);
+            return;
+        }
+
+        auto * constant_node = node->as<ConstantNode>();
+
+        if (!constant_node)
+            return;
+
+        const auto * col_const = typeid_cast<const ColumnConst *>(constant_node->getColumn().get());
+
+        if (max_size > 0)
+        {
+            WriteBufferFromOwnString name_buf;
+            IColumn::Options options {.optimize_const_name_size = max_size};
+            col_const->getValueNameAndTypeImpl(name_buf, 0, options);
+            if (options.notFull(name_buf))
+                return;
+        }
+
+        const auto & context = getContext();
+
+        auto node_without_alias = constant_node->clone();
+        node_without_alias->removeAlias();
+
+        QueryTreeNodePtrWithHash node_with_hash(node_without_alias);
+        auto str_hash = DB::toString(node_with_hash.hash);
+
+        Block scalar_block({{constant_node->getColumn(), constant_node->getResultType(), "_constant"}});
+
+        context->getQueryContext()->addScalar(str_hash, scalar_block);
+
+        auto scalar_query_hash_string = DB::toString(node_with_hash.hash);
+
+
+        auto scalar_query_hash_constant_node = std::make_shared<ConstantNode>(std::move(scalar_query_hash_string), std::make_shared<DataTypeString>());
+
+        auto get_scalar_function_node = std::make_shared<FunctionNode>("__getScalar");
+        get_scalar_function_node->getArguments().getNodes().push_back(std::move(scalar_query_hash_constant_node));
+
+        auto get_scalar_function = FunctionFactory::instance().get("__getScalar", context);
+        get_scalar_function_node->resolveAsFunction(get_scalar_function->build(get_scalar_function_node->getArgumentColumns()));
+
+        node = std::move(get_scalar_function_node);
+    }
+
+private:
+    Int64 max_size = 0;
+    std::stack<QueryTreeNodePtr> in_second_argument;
+};
+
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
 void addDistinctRecursively(const QueryTreeNodePtr & node)
 {
@@ -311,7 +406,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
         auto actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
             sample_block_with_unique_names.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position);
+            ActionsDAG::MatchColumnsMode::Position,
+            context_copy);
         auto converting_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
         query_plan.addStep(std::move(converting_step));
     }
@@ -321,7 +417,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto external_storage_holder = TemporaryTableHolder(
         mutable_context,
-        ColumnsDescription{columns},
+        ColumnsDescription(columns, false),
         ConstraintsDescription{},
         nullptr /*query*/,
         true /*create_for_global_subquery*/);
@@ -486,6 +582,13 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
     // are written into the query context and will be sent by the query pipeline.
     if (auto * query_node = query_tree_to_modify->as<QueryNode>())
         query_node->clearSettingsChanges();
+
+    auto max_const_name_size = planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
+    if (max_const_name_size >= 0)
+    {
+        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context->getQueryContext(), max_const_name_size);
+        scalar_visitor.visit(query_tree_to_modify);
+    }
 
     return query_tree_to_modify;
 }

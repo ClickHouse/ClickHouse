@@ -112,7 +112,7 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
                         num_rows, columns[col]->size());
 
                 encodeDataType(types[col], out);
-                auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = types[col]->getSerialization({ISerialization::Kind::DEFAULT});
                 NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
             }
         }
@@ -180,7 +180,7 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             for (size_t col = 0; col < num_columns; ++col)
             {
                 auto type = decodeDataType(in);
-                auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
+                auto serialization = type->getSerialization({ISerialization::Kind::DEFAULT});
                 ColumnPtr column = type->createColumn();
                 NativeReader::readData(*serialization, column, in, {}, num_rows, nullptr, nullptr);
 

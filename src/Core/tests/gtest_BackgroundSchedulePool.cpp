@@ -8,7 +8,7 @@ using namespace DB;
 
 TEST(BackgroundSchedulePool, Schedule)
 {
-    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
     std::atomic<size_t> counter;
     std::mutex mutex;
@@ -36,7 +36,7 @@ TEST(BackgroundSchedulePool, Schedule)
 
 TEST(BackgroundSchedulePool, ScheduleAfter)
 {
-    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+    auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
     std::atomic<size_t> counter;
     std::mutex mutex;
@@ -69,7 +69,7 @@ TEST(BackgroundSchedulePool, ActivateAfterTerminitePool)
     BackgroundSchedulePoolTaskHolder delayed_task;
 
     {
-        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
         task = pool->createTask("test", [&] {});
         delayed_task = pool->createTask("delayed_test", [&] {});
@@ -89,7 +89,7 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
     BackgroundSchedulePoolTaskHolder delayed_task;
 
     {
-        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), "tests");
+        auto pool = BackgroundSchedulePool::create(4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
 
         task = pool->createTask("test", [&] {});
         delayed_task = pool->createTask("delayed_test", [&] {});
