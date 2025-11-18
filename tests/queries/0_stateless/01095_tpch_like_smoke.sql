@@ -181,7 +181,8 @@ order by
     n_name,
     s_name,
     p_partkey
-limit 100;
+limit 100
+SETTINGS enable_analyzer=1;
 
 select 3;
 select
@@ -229,7 +230,8 @@ where
 group by
     o_orderpriority
 order by
-    o_orderpriority;
+    o_orderpriority
+SETTINGS enable_analyzer=1;
 
 select 5;
 select
@@ -599,7 +601,8 @@ where
             lineitem
         where
             l_partkey = p_partkey
-    );
+    )
+SETTINGS enable_analyzer=1;
 
 select 18;
 select
@@ -710,7 +713,8 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'CANADA'
 order by
-    s_name;
+    s_name
+SETTINGS enable_analyzer=1;
 
 select 21;
 select
@@ -752,7 +756,8 @@ group by
 order by
     numwait desc,
     s_name
-limit 100;
+limit 100
+SETTINGS enable_analyzer=1;
 
 select 22;
 select
@@ -791,7 +796,8 @@ from
 group by
     cntrycode
 order by
-    cntrycode;
+    cntrycode
+SETTINGS enable_analyzer=1;
 
 DROP TABLE part;
 DROP TABLE supplier;
