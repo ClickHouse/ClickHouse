@@ -2,6 +2,7 @@ import dataclasses
 import json
 import os
 import re
+import shlex
 import tempfile
 import time
 import traceback
@@ -100,30 +101,58 @@ class GH:
             repo = _Environment.get().REPOSITORY
         if not pr:
             pr = _Environment.get().PR_NUMBER
-        if or_update_comment_with_substring:
-            print(f"check comment [{comment_body}] created")
-            cmd_check_created = f'gh api -H "Accept: application/vnd.github.v3+json" \
-                "/repos/{repo}/issues/{pr}/comments" \
-                --jq \'.[] | {{id: .id, body: .body}}\' | grep -F "{or_update_comment_with_substring}"'
-            output = Shell.get_output(cmd_check_created)
-            if output:
-                comment_ids = []
+
+        temp_file_path = None
+        try:
+            if or_update_comment_with_substring:
+                print(f"check comment [{comment_body}] created")
+                safe_substr = shlex.quote(or_update_comment_with_substring)
+                cmd_check_created = (
+                    f'gh api -H "Accept: application/vnd.github.v3+json" '
+                    f'"/repos/{repo}/issues/{pr}/comments" '
+                    f"--jq '.[] | {{id: .id, body: .body}}' | grep -F {safe_substr}"
+                )
+                output = Shell.get_output(cmd_check_created)
+                if output:
+                    comment_ids = []
+                    try:
+                        comment_ids = [
+                            json.loads(item.strip())["id"]
+                            for item in output.split("\n")
+                            if item.strip()
+                        ]
+                    except Exception as ex:
+                        print(f"Failed to retrieve PR comments with [{ex}]")
+                    if comment_ids:
+                        with tempfile.NamedTemporaryFile(
+                            mode="w", delete=False, suffix=".txt", encoding="utf-8"
+                        ) as temp_file:
+                            temp_file.write(comment_body)
+                            temp_file_path = temp_file.name
+                        for id in comment_ids:
+                            cmd = f'gh api \
+                               -X PATCH \
+                                  -H "Accept: application/vnd.github.v3+json" \
+                                     "/repos/{repo}/issues/comments/{id}" \
+                                     -F body=@{temp_file_path}'
+                            print(f"Update existing comments [{id}]")
+                            return cls.do_command_with_retries(cmd)
+
+            # default: create a new comment using a temporary file to avoid shell escaping/injection
+            with tempfile.NamedTemporaryFile(
+                mode="w", delete=False, suffix=".txt", encoding="utf-8"
+            ) as temp_file:
+                temp_file.write(comment_body)
+                temp_file_path = temp_file.name
+
+            cmd = f"gh pr comment {pr} --body-file {temp_file_path}"
+            return cls.do_command_with_retries(cmd)
+        finally:
+            if temp_file_path and os.path.exists(temp_file_path):
                 try:
-                    comment_ids = [
-                        json.loads(item.strip())["id"] for item in output.split("\n")
-                    ]
-                except Exception as ex:
-                    print(f"Failed to retrieve PR comments with [{ex}]")
-                for id in comment_ids:
-                    cmd = f'gh api \
-                       -X PATCH \
-                          -H "Accept: application/vnd.github.v3+json" \
-                             "/repos/{repo}/issues/comments/{id}" \
-                             -f body=\'{comment_body}\''
-                    print(f"Update existing comments [{id}]")
-                    return cls.do_command_with_retries(cmd)
-        cmd = f'gh pr comment {pr} --body "{comment_body}"'
-        return cls.do_command_with_retries(cmd)
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
 
     @classmethod
     def post_updateable_comment(
@@ -335,16 +364,21 @@ class GH:
         :return: True or False in case of error
         """
         description_max_size = 80  # GH limits to 140, but 80 is reasonable
-        description = description[:description_max_size].replace(
-            "'", "'\"'\"'"
-        )  # escape single quote
+        description = description[:description_max_size]
         status = cls.convert_to_gh_status(status)
         repo = _Environment.get().REPOSITORY
+        sha = _Environment.get().SHA
+
+        safe_state = shlex.quote(str(status))
+        safe_target = shlex.quote(str(url))
+        safe_description = shlex.quote(str(description))
+        safe_context = shlex.quote(str(name))
+
         command = (
             f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
-            f"/repos/{repo}/statuses/{_Environment.get().SHA} "
-            f"-f state='{status}' -f target_url='{url}' "
-            f"-f description='{description}' -f context='{name}'"
+            f"/repos/{repo}/statuses/{sha} "
+            f"-f state={safe_state} -f target_url={safe_target} "
+            f"-f description={safe_description} -f context={safe_context}"
         )
         return cls.do_command_with_retries(command)
 
@@ -363,15 +397,19 @@ class GH:
         :return: True or False in case of error
         """
         description_max_size = 80  # GH limits to 140, but 80 is reasonable
-        description = description[:description_max_size].replace(
-            "'", "'\"'\"'"
-        )  # escape single quote
+        description = description[:description_max_size]
         status = cls.convert_to_gh_status(status)
+
+        safe_state = shlex.quote(str(status))
+        safe_target = shlex.quote(str(url))
+        safe_description = shlex.quote(str(description))
+        safe_context = shlex.quote(str(name))
+
         command = (
             f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
             f"/repos/{repo}/statuses/{commit_sha} "
-            f"-f state='{status}' -f target_url='{url}' "
-            f"-f description='{description}' -f context='{name}'"
+            f"-f state={safe_state} -f target_url={safe_target} "
+            f"-f description={safe_description} -f context={safe_context}"
         )
         return cls.do_command_with_retries(command)
 
