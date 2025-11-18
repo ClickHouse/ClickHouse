@@ -5,6 +5,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 class MetadataGenerator
 {
 public:
@@ -43,5 +45,7 @@ private:
     Int64 getMaxSequenceNumber();
     Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
 };
+
+#endif
 
 }

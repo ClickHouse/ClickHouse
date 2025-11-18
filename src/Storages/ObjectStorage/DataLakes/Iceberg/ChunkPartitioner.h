@@ -12,6 +12,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 class ChunkPartitioner
 {
 public:
@@ -41,5 +43,6 @@ private:
     std::vector<DataTypePtr> result_data_types;
 };
 
+#endif
 
 }

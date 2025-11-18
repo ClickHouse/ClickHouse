@@ -6,6 +6,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 DataFileStatistics::DataFileStatistics(Poco::JSON::Array::Ptr schema_)
 {
     field_ids.resize(schema_->size());
@@ -98,5 +100,7 @@ std::vector<std::pair<size_t, Field>> DataFileStatistics::getUpperBounds() const
     }
     return result;
 }
+
+#endif
 
 }

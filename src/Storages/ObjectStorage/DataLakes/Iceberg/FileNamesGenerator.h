@@ -8,6 +8,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 class FileNamesGenerator
 {
 public:
@@ -60,5 +62,7 @@ private:
 
     Int32 initial_version = 0;
 };
+
+#endif
 
 }

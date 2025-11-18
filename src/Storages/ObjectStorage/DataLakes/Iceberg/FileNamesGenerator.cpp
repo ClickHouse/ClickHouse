@@ -2,6 +2,8 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
+#if USE_AVRO
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -145,3 +147,5 @@ String FileNamesGenerator::convertMetadataPathToStoragePath(const String & metad
 }
 
 }
+
+#endif

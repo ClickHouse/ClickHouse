@@ -7,9 +7,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
+
+#if USE_AVRO
 
 namespace ErrorCodes
 {
@@ -148,5 +151,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
     }
     return result;
 }
+
+#endif
 
 }

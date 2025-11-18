@@ -10,6 +10,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 class DataFileStatistics
 {
 public:
@@ -31,5 +33,7 @@ private:
     std::vector<Int64> null_counts;
     std::vector<Range> ranges;
 };
+
+#endif
 
 }

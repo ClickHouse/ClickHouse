@@ -10,6 +10,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#if USE_AVRO
+
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -335,3 +337,5 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
 }
 
 }
+
+#endif
