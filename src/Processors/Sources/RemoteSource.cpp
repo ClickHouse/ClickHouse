@@ -109,11 +109,16 @@ ISource::Status RemoteSource::prepare()
                 return Status::Ready;
             case DrainStatus::NeedDrain:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "The prepare function cannot have NeedDrain status");
+#if defined(OS_LINUX)
             case DrainStatus::Draining:
                 return Status::Ready;
             case DrainStatus::Drained:
                 query_executor->finalizeAsyncCancel();
                 return Status::Finished;
+#else
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected drain status");
+#endif
         }
     }
 
@@ -217,6 +222,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
             return Chunk();
         }
 
+#if defined(OS_LINUX)
         if (drain_status == DrainStatus::Draining && res.getType() == RemoteQueryExecutor::ReadResult::Type::Data)
         {
             is_async_state = false;
@@ -226,6 +232,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
                 drain_status = DrainStatus::Drained;
             return Chunk();
         }
+#endif
 
         is_async_state = false;
 
