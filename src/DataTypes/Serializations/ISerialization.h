@@ -37,6 +37,7 @@ using SerializationPtr = std::shared_ptr<const ISerialization>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+using SerializationInfoMutablePtr = std::shared_ptr<SerializationInfo>;
 
 using ValueSizeMap = std::map<std::string, double>;
 
@@ -44,6 +45,8 @@ class Field;
 
 struct FormatSettings;
 struct NameAndTypePair;
+
+struct MergeTreeSettings;
 
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
@@ -63,15 +66,24 @@ public:
         DEFAULT = 0,
         SPARSE = 1,
         DETACHED = 2,
-        DETACHED_OVER_SPARSE = 3,
+        REPLICATED = 3,
     };
 
-    virtual Kind getKind() const { return Kind::DEFAULT; }
+    /// We can have multiple serialization kinds created over each other.
+    /// For example:
+    ///  - Detached over Sparse over Default
+    ///  - Detached over Replicated over Default
+    ///  - etc
+    using KindStack = std::vector<Kind>;
+
+    virtual KindStack getKindStack() const { return {Kind::DEFAULT}; }
     SerializationPtr getPtr() const { return shared_from_this(); }
 
-    static Kind getKind(const IColumn & column);
-    static String kindToString(Kind kind);
-    static Kind stringToKind(const String & str);
+    static KindStack getKindStack(const IColumn & column);
+    static String kindStackToString(const KindStack & kind);
+    static KindStack stringToKindStack(const String & str);
+    /// Check if provided kind stack contains specific kind.
+    static bool hasKind(const KindStack & kind_stack, Kind kind);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -191,6 +203,9 @@ public:
 
             SparseElements,
             SparseOffsets,
+
+            ReplicatedElements,
+            ReplicatedIndexes,
 
             DeprecatedObjectStructure,
             DeprecatedObjectData,
@@ -514,6 +529,13 @@ public:
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
+    /// Method that is used to serialize value for generic hash calculation of a value in the column.
+    /// Note that this method should respect compatibility.
+    virtual void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+    {
+        serializeBinary(column, row_num, ostr, {});
+    }
+
     /** Text serialization with escaping but without quoting.
       */
     virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
@@ -573,8 +595,16 @@ public:
 
     virtual void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
-    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+    struct StreamFileNameSettings
+    {
+        StreamFileNameSettings() = default;
+        explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
+
+        bool escape_variant_substreams = true;
+    };
+
+    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
+    static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings);
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 

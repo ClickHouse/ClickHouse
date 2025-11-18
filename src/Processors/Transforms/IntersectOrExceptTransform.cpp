@@ -124,7 +124,7 @@ size_t IntersectOrExceptTransform::buildFilter(
 
 void IntersectOrExceptTransform::accumulate(Chunk chunk)
 {
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
 
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -162,7 +162,7 @@ void IntersectOrExceptTransform::accumulate(Chunk chunk)
 
 void IntersectOrExceptTransform::filter(Chunk & chunk)
 {
-    convertToFullIfSparse(chunk);
+    removeSpecialColumnRepresentations(chunk);
 
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();

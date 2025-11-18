@@ -60,7 +60,7 @@ FROM FixedStringTable;
 └──────┴──────────────────┴──────────────┴─────────────┘
 ```
 
-Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
+Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](/sql-reference/functions/array-functions#empty) function returns `1` in this case.
 
 Selecting data with `WHERE` clause return various result depending on how the condition is specified:
 

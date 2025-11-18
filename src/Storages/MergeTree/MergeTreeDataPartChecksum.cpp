@@ -244,6 +244,11 @@ void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_s
     files[file_name] = Checksum(file_size, file_hash);
 }
 
+void MergeTreeDataPartChecksums::addFile(const String & file_name, const Checksum & checksum)
+{
+    files[file_name] = checksum;
+}
+
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
 {
     for (auto && checksum : rhs_checksums.files)

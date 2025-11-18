@@ -95,6 +95,7 @@
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
+#include <csignal>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -128,6 +129,7 @@ namespace Setting
     extern const SettingsString promql_database;
     extern const SettingsString promql_table;
     extern const SettingsFloatAuto promql_evaluation_time;
+    extern const SettingsBool into_outfile_create_parent_directories;
 }
 
 namespace ErrorCodes
@@ -150,6 +152,7 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int CANNOT_WRITE_TO_FILE;
+    extern const int CANNOT_CREATE_DIRECTORY;
 }
 
 }
@@ -340,6 +343,9 @@ class LocalFormatError : public Exception
 {
 public:
     using Exception::Exception;
+
+    LocalFormatError * clone() const override { return new LocalFormatError(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
 };
 
 
@@ -515,14 +521,14 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.empty())
         return;
 
-    processed_rows += block.rows();
+    processed_rows_from_blocks += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
     /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
-    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
+    if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows_from_blocks >= 100))
         return;
 
     /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
@@ -539,7 +545,9 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     try
     {
-        output_format->write(materializeBlock(block));
+        output_format->write(materializeBlock(
+            block,
+            !output_format->supportsSpecialSerializationKinds()));
         written_first_block = true;
     }
     catch (const NetException &)
@@ -606,14 +614,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setTotals(materializeBlock(block));
+    output_format->setTotals(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initOutputFormat(block, parsed_query);
-    output_format->setExtremes(materializeBlock(block));
+    output_format->setExtremes(materializeBlock(block, !output_format->supportsSpecialSerializationKinds()));
 }
 
 
@@ -651,18 +659,13 @@ try
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
-            /// We need to reset signals that had been installed in the
-            /// setupSignalHandler() since terminal will send signals to both
-            /// processes and so signals will be delivered to the
-            /// clickhouse-client/local as well, which will be terminated when
-            /// signal will be delivered second time.
-            if (SIG_ERR == signal(SIGINT, SIG_IGN))
-                throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
             if (SIG_ERR == signal(SIGQUIT, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
             ShellCommand::Config config(pager);
             config.pipe_stdin_only = true;
+            config.terminate_in_destructor_strategy.terminate_in_destructor = true;
+            config.terminate_in_destructor_strategy.termination_signal = SIGTERM;
             pager_cmd = ShellCommand::execute(config);
             out_buf = &pager_cmd->in;
         }
@@ -1195,6 +1198,28 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                 out_file = fmt::format("tmp_{}.{}", UUIDHelpers::generateV4(), out_file);
             }
 
+            if (client_context->getSettingsRef()[Setting::into_outfile_create_parent_directories])
+            {
+                fs::path file_path(out_file);
+                fs::path parent_dir = file_path.parent_path();
+
+                if (!parent_dir.empty() && !fs::exists(parent_dir))
+                {
+                    try
+                    {
+                        fs::create_directories(parent_dir);
+                    }
+                    catch (const fs::filesystem_error & e)
+                    {
+                        throw Exception(
+                            ErrorCodes::CANNOT_CREATE_DIRECTORY,
+                            "Cannot create parent directories for INTO OUTFILE '{}': {}",
+                            parent_dir.string(),
+                            e.what());
+                    }
+                }
+            }
+
             std::string compression_method_string;
 
             if (query_with_output->compression)
@@ -1299,7 +1324,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
-            if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
+            if (processed_rows_from_blocks == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
             {
                 error_stream << "Got a transient error from the server, will"
                         << " retry (" << retries_left << " retries left)";
@@ -1465,6 +1490,13 @@ void ClientBase::onProgress(const Progress & value)
         // Just a keep-alive update.
         return;
     }
+
+    /// Tracks inserted rows for server-side operations like INSERT ... SELECT where data bypasses the client and thus isn't captured in
+    // `processed_rows_from_blocks`. We exclude `read_rows` to avoid incorrect counting:
+    ///   - INSERT ... SELECT is an INSERT operation, so counting read rows would be misleading.
+    ///   - Pure SELECT would show internal scan count rather than actual results returned to client. SELECT queries already track correct
+    //      row count in `processed_rows_from_blocks` and we want `processed_rows_from_progress` to be 0 in such scenario.
+    processed_rows_from_progress += value.written_rows;
 
     if (output_format)
         output_format->onProgress(value);
@@ -1658,12 +1690,12 @@ void ClientBase::resetOutput()
     if (pager_cmd)
     {
         pager_cmd->in.close();
-        pager_cmd->wait();
+        /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
+        if (!cancelled)
+            pager_cmd->wait();
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
-        if (SIG_ERR == signal(SIGINT, SIG_DFL))
-            throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGINT");
         if (SIG_ERR == signal(SIGQUIT, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGQUIT");
 
@@ -1919,9 +1951,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             ConstraintsDescription{},
             String{},
             {},
-            String{},
         };
-        StoragePtr storage = std::make_shared<StorageFile>(in_file, client_context->getUserFilesPath(), args);
+        StoragePtr storage = std::make_shared<StorageFile>(StorageFile::FileSource::parse(in_file, client_context), args);
         storage->startup();
         SelectQueryInfo query_info;
 
@@ -2061,7 +2092,7 @@ void ClientBase::sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_m
         if (!block.empty())
         {
             connection->sendData(block, /* name */"", /* scalar */false);
-            processed_rows += block.rows();
+            processed_rows_from_blocks += block.rows();
         }
     }
 
@@ -2230,7 +2261,8 @@ void ClientBase::processParsedSingleQuery(
         }
     }
 
-    processed_rows = 0;
+    processed_rows_from_blocks = 0;
+    processed_rows_from_progress = 0;
     written_first_block = false;
     progress_indication.resetProgress();
     progress_table.resetTable();
@@ -2358,6 +2390,8 @@ void ClientBase::processParsedSingleQuery(
 
         profile_events.last_block = {};
     }
+
+    auto processed_rows = std::max(processed_rows_from_blocks, processed_rows_from_progress);
 
     if (is_interactive)
     {
@@ -2853,7 +2887,7 @@ bool ClientBase::processQueryText(const String & text)
 {
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
 
-    if (exit_strings.end() != exit_strings.find(trimmed_input))
+    if (exit_strings.contains(trimmed_input))
         return false;
 
     if (trimmed_input.starts_with("\\i"))
@@ -3256,14 +3290,14 @@ void ClientBase::addSettingsToProgramOptionsAndSubscribeToChanges(OptionsDescrip
 
 void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & options)
 {
-    if (options.count("verbose"))
+    if (options.contains("verbose"))
         getClientConfiguration().setBool("verbose", true);
 
     /// Output execution time to stderr in batch mode.
-    if (options.count("time"))
+    if (options.contains("time"))
         getClientConfiguration().setBool("print-time-to-stderr", true);
 
-    if (options.count("memory-usage"))
+    if (options.contains("memory-usage"))
     {
         const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
         if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
@@ -3271,40 +3305,40 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
     }
 
-    if (options.count("query"))
+    if (options.contains("query"))
         queries = options["query"].as<std::vector<std::string>>();
-    if (options.count("query_id"))
+    if (options.contains("query_id"))
         getClientConfiguration().setString("query_id", options["query_id"].as<std::string>());
-    if (options.count("database"))
+    if (options.contains("database"))
         getClientConfiguration().setString("database", options["database"].as<std::string>());
-    if (options.count("config-file"))
+    if (options.contains("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
-    if (options.count("queries-file"))
+    if (options.contains("queries-file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not allowed, because the client runs in an embedded mode");
         queries_files = options["queries-file"].as<std::vector<std::string>>();
     }
-    if (options.count("multiline"))
+    if (options.contains("multiline"))
         getClientConfiguration().setBool("multiline", true);
-    if (options.count("ignore-error"))
+    if (options.contains("ignore-error"))
         getClientConfiguration().setBool("ignore-error", true);
-    if (options.count("format"))
+    if (options.contains("format"))
         getClientConfiguration().setString("format", options["format"].as<std::string>());
-    if (options.count("output-format"))
+    if (options.contains("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
-    if (options.count("vertical"))
+    if (options.contains("vertical"))
         getClientConfiguration().setBool("vertical", true);
-    if (options.count("stacktrace"))
+    if (options.contains("stacktrace"))
         getClientConfiguration().setBool("stacktrace", true);
-    if (options.count("print-profile-events"))
+    if (options.contains("print-profile-events"))
         getClientConfiguration().setBool("print-profile-events", true);
-    if (options.count("profile-events-delay-ms"))
+    if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     /// Whether to print the number of processed rows at
-    if (options.count("processed-rows"))
+    if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);
-    if (options.count("progress"))
+    if (options.contains("progress"))
     {
         switch (options["progress"].as<ProgressOption>())
         {
@@ -3322,7 +3356,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.count("progress-table"))
+    if (options.contains("progress-table"))
     {
         switch (options["progress-table"].as<ProgressOption>())
         {
@@ -3340,48 +3374,48 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.count("enable-progress-table-toggle"))
+    if (options.contains("enable-progress-table-toggle"))
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
-    if (options.count("echo"))
+    if (options.contains("echo"))
         getClientConfiguration().setBool("echo", true);
-    if (options.count("disable_suggestion"))
+    if (options.contains("disable_suggestion"))
         getClientConfiguration().setBool("disable_suggestion", true);
-    if (options.count("wait_for_suggestions_to_load"))
+    if (options.contains("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.count("suggestion_limit"))
+    if (options.contains("suggestion_limit"))
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
-    if (options.count("highlight"))
+    if (options.contains("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
-    if (options.count("history_file"))
+    if (options.contains("history_file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
     }
-    if (options.count("history_max_entries"))
+    if (options.contains("history_max_entries"))
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
-    if (options.count("interactive"))
+    if (options.contains("interactive"))
         getClientConfiguration().setBool("interactive", true);
-    if (options.count("pager"))
+    if (options.contains("pager"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom pager is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
     }
 
-    if (options.count("prompt"))
+    if (options.contains("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
-    if (options.count("log-level"))
+    if (options.contains("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
-    if (options.count("server_logs_file"))
+    if (options.contains("server_logs_file"))
     {
         if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
         server_logs_file = options["server_logs_file"].as<std::string>();
     }
 
-    if (options.count("proto_caps"))
+    if (options.contains("proto_caps"))
     {
         std::string proto_caps_str = options["proto_caps"].as<std::string>();
 
@@ -3463,10 +3497,12 @@ void ClientBase::runInteractive()
     replxx::Replxx::highlighter_callback_with_pos_t highlight_callback{};
 
     if (getClientConfiguration().getBool("highlight", true))
+    {
         highlight_callback = [this](const String & query, std::vector<replxx::Replxx::Color> & colors, int pos)
         {
             highlight(query, colors, *client_context, pos);
         };
+    }
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;

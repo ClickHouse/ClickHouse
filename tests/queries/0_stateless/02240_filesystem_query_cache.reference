@@ -9,7 +9,7 @@ CREATE TABLE test (key UInt32, value String)
 Engine=MergeTree()
 ORDER BY key
 SETTINGS min_bytes_for_wide_part = 10485760,
-         serialization_info_version = 'default',
+         serialization_info_version = 'basic',
          compress_marks=false,
          compress_primary_key=false,
          disk = disk(

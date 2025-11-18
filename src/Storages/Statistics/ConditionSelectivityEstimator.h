@@ -24,6 +24,11 @@ struct RelationProfile
     std::unordered_map<String, ColumnStats> column_stats = {};
 };
 
+class IMergeTreeDataPart;
+using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
 {
@@ -34,10 +39,12 @@ class ConditionSelectivityEstimator : public WithContext
 public:
     explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
 
-    RelationProfile estimateRelationProfile(const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(const ActionsDAG::Node * node) const;
-    RelationProfile estimateRelationProfile(const RPNBuilderTreeNode & node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
+    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile() const;
+
+    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
 
     struct RPNElement
     {
@@ -82,7 +89,7 @@ private:
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn) const;
-    bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
@@ -93,6 +100,7 @@ private:
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
+    Strings parts_names;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
@@ -103,6 +111,7 @@ public:
     explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
     void addStatistics(ColumnStatisticsPtr column_stats);
     void incrementRowCount(UInt64 rows);
+    void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
 
 private:

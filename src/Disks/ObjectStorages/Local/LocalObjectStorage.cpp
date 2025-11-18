@@ -134,7 +134,7 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
@@ -148,7 +148,7 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
     return object_metadata;
 }
 
-std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path) const
+std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
@@ -184,7 +184,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path())));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
 }
 
