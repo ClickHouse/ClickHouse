@@ -244,6 +244,21 @@ ColumnsWithTypeAndName createBlockFromCollection(
         return res;
     }
 
+#ifndef NDEBUG
+    if (construct_nullable_tuple_column_later)
+    {
+        chassert(!row_actions.empty());
+        chassert(row_actions.size() == rhs_collection.size());
+    }
+
+    if (construct_nullable_tuple_column_later && !columns.empty())
+    {
+        const auto rows_in_columns = columns.front()->size();
+        for (size_t i = 1; i < num_elements; ++i)
+            chassert(columns[i]->size() == rows_in_columns);
+    }
+#endif
+
     /// If we are here, then it means that lhs is Nullable(Tuple(..)) and we have NULLs in the rhs collection
     DataTypePtr tuple_type = std::make_shared<DataTypeTuple>(lhs_unpacked_types);
     DataTypePtr nullable_tuple_type = std::make_shared<DataTypeNullable>(tuple_type);
@@ -268,6 +283,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
             }
 
             case RowAction::InsertValue: {
+                chassert(non_null_pos < columns.front()->size());
                 for (size_t i = 0; i < num_elements; ++i)
                     nested_tuple_column.getColumn(i).insertFrom(*columns[i], non_null_pos);
 
@@ -283,7 +299,7 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
     }
 
-    chassert(columns.empty() || non_null_pos == columns.front()->size());
+    chassert(non_null_pos == columns.front()->size());
 
     ColumnsWithTypeAndName res(1);
     res[0].type = nullable_tuple_type;
