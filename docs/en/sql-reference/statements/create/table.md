@@ -525,7 +525,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 To create a temporary table, use the following syntax:
 
 ```sql
-CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],

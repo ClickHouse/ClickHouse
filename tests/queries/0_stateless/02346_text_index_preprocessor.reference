@@ -1,0 +1,32 @@
+Positive tests on preprocessor construction and use.
+- Test single tokenizer and preprocessor argument.
+1
+1
+1
+1
+1
+1
+- Test preprocessor declaration using column more than once.
+1
+0
+1
+1
+0
+0
+- Test preprocessor declaration using udf.
+1
+0
+1
+1
+0
+0
+Negative tests on preprocessor construction validations.
+- The preprocessor argument must not reference non-indexed columns
+- Index definition may not be and expression when there is preprocessor
+-- Not even the same expression
+- The preprocessor must be an expression
+- The preprocessor must be an expression, with existing functions
+- The preprocessor must have input and output values of the same type (here: String)
+- The preprocessor expression must use the column identifier
+- The preprocessor expression must use only deterministic functions
+- The preprocessor expression is not compatible with array columns (yet)

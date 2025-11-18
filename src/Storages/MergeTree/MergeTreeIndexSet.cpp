@@ -751,7 +751,7 @@ MergeTreeIndexBulkGranulesPtr MergeTreeIndexSet::createIndexBulkGranules() const
     return std::make_shared<MergeTreeIndexBulkGranulesSet>(index.sample_block);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexSet::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorSet>(index.name, index.sample_block, max_rows);
 }

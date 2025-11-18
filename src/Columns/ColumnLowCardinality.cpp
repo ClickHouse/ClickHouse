@@ -240,6 +240,8 @@ static void checkIndexesAreLimited(const IColumn & indexes, UInt64 limit)
 
         const auto & data = column_ptr->getData();
         size_t num_rows = data.size();
+        if (num_rows == 0)
+            return true;
         UInt64 max_position = 0;
         for (size_t i = 0; i < num_rows; ++i)
             max_position = std::max<UInt64>(max_position, data[i]);
