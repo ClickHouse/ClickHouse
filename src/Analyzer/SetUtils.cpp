@@ -138,6 +138,22 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
     }
 
+    /// Skip: if conversion failed between lhs_tuple and rhs_element and does not raise
+    ///       exception (like unknown enum value and `validate_enum_literals_in_operators = 0`)
+    /// InsertNull: if rhs_element is NULL
+    /// InsertValue: if conversion succeeded
+
+    enum class RowAction : UInt8
+    {
+        Skip,
+        InsertNull,
+        InsertValue,
+    };
+
+    std::vector<RowAction> row_actions;
+    if (construct_nullable_tuple_column_later)
+        row_actions.assign(rhs_collection.size(), RowAction::Skip);
+
     MutableColumns columns(num_elements);
     for (size_t i = 0; i < num_elements; ++i)
     {
@@ -153,6 +169,9 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
         if (rhs_element.isNull())
         {
+            if (construct_nullable_tuple_column_later)
+                row_actions[collection_index] = RowAction::InsertNull;
+
             continue;
         }
 
@@ -204,8 +223,13 @@ ColumnsWithTypeAndName createBlockFromCollection(
         }
 
         if (i == tuple_size)
+        {
             for (i = 0; i < tuple_size; ++i)
                 columns[i]->insert(converted_rhs_element_unpacked[i]);
+
+            if (construct_nullable_tuple_column_later)
+                row_actions[collection_index] = RowAction::InsertValue;
+        }
     }
 
     if (!construct_nullable_tuple_column_later)
@@ -235,23 +259,31 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
     for (size_t collection_index = 0; collection_index < rhs_collection.size(); ++collection_index)
     {
-        const auto & rhs_element = rhs_collection[collection_index];
-
-        if (rhs_element.isNull())
+        switch (row_actions[collection_index])
         {
-            nested_tuple_column.insertDefault();
-            null_map.getData().push_back(1);
-        }
-        else
-        {
-            for (size_t i = 0; i < num_elements; ++i)
-            {
-                nested_tuple_column.getColumn(i).insertFrom(*columns[i], non_null_pos);
+            case RowAction::InsertNull: {
+                nested_tuple_column.insertDefault();
+                null_map.getData().push_back(1);
+                break;
             }
-            null_map.insertDefault();
-            ++non_null_pos;
+
+            case RowAction::InsertValue: {
+                for (size_t i = 0; i < num_elements; ++i)
+                    nested_tuple_column.getColumn(i).insertFrom(*columns[i], non_null_pos);
+
+                null_map.insertDefault();
+                ++non_null_pos;
+                break;
+            }
+
+            case RowAction::Skip: {
+                /// No row for this rhs element (conversion failure, or NULL that shouldn't be transformed).
+                break;
+            }
         }
     }
+
+    chassert(columns.empty() || non_null_pos == columns.front()->size());
 
     ColumnsWithTypeAndName res(1);
     res[0].type = nullable_tuple_type;
