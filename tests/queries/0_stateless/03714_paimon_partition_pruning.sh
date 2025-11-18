@@ -387,8 +387,8 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 $CLICKHOUSE_CLIENT --query "
-        SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log 
-        WHERE query_id like '%test_03714%' and query_id like '%$CLICKHOUSE_TEST_UNIQUE_NAME%' AND 
-        current_database = currentDatabase() and type='QueryFinish' order by query_id;"
+        SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log 
+        WHERE initial_query_id like '%test_03714%' and initial_query_id like '%$CLICKHOUSE_TEST_UNIQUE_NAME%' AND 
+        current_database = currentDatabase() and type='QueryFinish' group by initial_query_id order by initial_query_id;"
 
 
