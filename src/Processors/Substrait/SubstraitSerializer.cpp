@@ -36,6 +36,97 @@ namespace ErrorCodes
 
 class SubstraitSerializer::Impl
 {
+private: 
+    // Extension registry to track function references
+    struct FunctionExtension
+    {
+        String urn;
+        String name;
+        int reference_id;
+    };
+    
+    std::vector<FunctionExtension> function_extensions_;
+    std::unordered_map<String, int> function_name_to_ref_;
+    int next_function_ref_ = 0;
+
+    // Register a function and get its reference ID
+    int registerFunction(const String & function_name)
+    {
+        // Check if already registered
+        auto it = function_name_to_ref_.find(function_name);
+        if (it != function_name_to_ref_.end())
+            return it->second;
+        
+        // Register new function
+        int ref_id = next_function_ref_++;
+        
+        // Use standard Substrait function URNs (format: extension:<OWNER>:<ID>)
+        String urn;
+        if (function_name == "equals" || function_name == "notEquals" || 
+            function_name == "less" || function_name == "lessOrEquals" ||
+            function_name == "greater" || function_name == "greaterOrEquals")
+        {
+            urn = "extension:substrait:functions_comparison";
+        }
+        else if (function_name == "and" || function_name == "or" || function_name == "not")
+        {
+            urn = "extension:substrait:functions_boolean";
+        }
+        else if (function_name == "plus" || function_name == "minus" || 
+                 function_name == "multiply" || function_name == "divide")
+        {
+            urn = "extension:substrait:functions_arithmetic";
+        }
+        else if (function_name == "sum" || function_name == "avg" || 
+                 function_name == "count" || function_name == "min" || function_name == "max")
+        {
+            urn = "extension:substrait:functions_aggregate_generic";
+        }
+        else
+        {
+            // Custom ClickHouse function
+            urn = "extension:clickhouse:functions";
+        }
+        
+        function_extensions_.push_back({urn, function_name, ref_id});
+        function_name_to_ref_[function_name] = ref_id;
+        
+        return ref_id;
+    }
+    
+    // Add extensions to the plan using extension_urns
+    void addExtensionsToPlan(substrait::Plan & substrait_plan)
+    {
+        // Group functions by URN
+        std::unordered_map<String, std::vector<const FunctionExtension*>> urn_to_functions;
+        for (const auto & ext : function_extensions_)
+        {
+            urn_to_functions[ext.urn].push_back(&ext);
+        }
+        
+        // Create extension URN declarations using extension_urns
+        std::unordered_map<String, uint32_t> urn_to_anchor;
+        uint32_t anchor = 0;
+        for (const auto & [urn, functions] : urn_to_functions)
+        {
+            auto * extension_urn = substrait_plan.add_extension_urns();
+            extension_urn->set_extension_urn_anchor(anchor);
+            extension_urn->set_urn(urn);
+            urn_to_anchor[urn] = anchor;
+            ++anchor;
+        }
+        
+        // Create function extension declarations
+        for (const auto & ext : function_extensions_)
+        {
+            auto * extension = substrait_plan.add_extensions();
+            auto * func_ext = extension->mutable_extension_function();
+            func_ext->set_extension_urn_reference(urn_to_anchor[ext.urn]);
+            func_ext->set_function_anchor(static_cast<uint32_t>(ext.reference_id));
+            func_ext->set_name(ext.name);
+        }
+    }
+    
 public:
     explicit Impl() = default;
 
@@ -43,6 +134,11 @@ public:
     {
         if (!query_plan.isInitialized())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize uninitialized query plan to Substrait");
+
+        // Clear extension registry for new plan
+        function_extensions_.clear();
+        function_name_to_ref_.clear();
+        next_function_ref_ = 0;
 
         // Set Substrait version
         auto * version = substrait_plan.mutable_version();
@@ -61,6 +157,9 @@ public:
         auto * root_rel = plan_rel->mutable_root();
         auto rel = convertNode(root);
         root_rel->mutable_input()->Swap(&rel);
+        
+        // Add all registered function extensions to the plan
+        addExtensionsToPlan(substrait_plan);
     }
 
 private:
@@ -208,42 +307,11 @@ private:
             {
                 // Function call
                 const String & func_name = node->function_base->getName();
-                
-                // Map ClickHouse function names to Substrait
                 auto * scalar_func = expr.mutable_scalar_function();
                 
-                // Map function names to Substrait function references
-                // In a full implementation, these would be registered in an extension URI
-                static const std::unordered_map<String, int> function_map = {
-                    {"equals", 1},
-                    {"notEquals", 2},
-                    {"less", 3},
-                    {"lessOrEquals", 4},
-                    {"greater", 5},
-                    {"greaterOrEquals", 6},
-                    {"plus", 7},
-                    {"minus", 8},
-                    {"multiply", 9},
-                    {"divide", 10},
-                    {"and", 11},
-                    {"or", 12},
-                    {"not", 13},
-                    {"sum", 20},
-                    {"avg", 21},
-                    {"count", 22},
-                    {"min", 23},
-                    {"max", 24}
-                };
-                
-                auto it = function_map.find(func_name);
-                if (it == function_map.end())
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "Function {} not yet supported for Substrait conversion", func_name);
-                }
-                
-                // Set function reference
-                scalar_func->set_function_reference(it->second);
+                // Register function and get reference ID (will be added to extension_urns)
+                int ref_id = registerFunction(func_name);
+                scalar_func->set_function_reference(ref_id);
                 
                 // Convert children arguments
                 for (const auto * child : node->children)
@@ -534,24 +602,10 @@ private:
             auto * measure = agg_rel->add_measures();
             auto * agg_func = measure->mutable_measure();
             
-            // Map aggregate function name
-            static const std::unordered_map<String, int> agg_function_map = {
-                {"sum", 20},
-                {"avg", 21},
-                {"count", 22},
-                {"min", 23},
-                {"max", 24}
-            };
-            
-            auto it = agg_function_map.find(aggregate.function->getName());
-            if (it == agg_function_map.end())
-            {
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Aggregate function {} not yet supported for Substrait conversion",
-                    aggregate.function->getName());
-            }
-            
-            agg_func->set_function_reference(it->second);
+            // Register aggregate function and get reference ID (will be added to extension_urns)
+            const String & func_name = aggregate.function->getName();
+            int ref_id = registerFunction(func_name);
+            agg_func->set_function_reference(ref_id);
             
             // Convert aggregate arguments
             for (const auto & arg_column : aggregate.argument_names)
