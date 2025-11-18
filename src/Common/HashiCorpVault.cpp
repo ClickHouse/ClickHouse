@@ -54,6 +54,11 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
         if (params.certificateFile.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "certificateFile is not specified for vault.");
     }
+    else
+    {
+        if (!params.certificateFile.empty() && params.privateKeyFile.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "privateKeyFile is not specified for vault.");
+    }
 
     std::string caLocation = config.getString(ssl_prefix + "caLocation", "");
     if (!caLocation.empty())
@@ -144,7 +149,11 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
         }
 
         if (scheme == "https")
+#if USE_SSL
             initRequestContext(config, prefix);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL is disabled, because ClickHouse was built without SSL library");
+#endif
 
         loaded = true;
     }
