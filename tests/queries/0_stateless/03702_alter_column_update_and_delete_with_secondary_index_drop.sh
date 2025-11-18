@@ -22,10 +22,10 @@ client() {
     # SET enable_analyzer=1; -- Different EXPLAIN output
     # SET use_skip_indexes_on_data_read = 0; -- Need it for proper explain
     # SET use_query_condition_cache = 0; -- Need it because we rerun some queries (with different settings) and we want to execute the full analysis
-    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_skip_indexes_on_data_read=0 --use_query_condition_cache=0 -q "$1"
+    $CLICKHOUSE_CLIENT --echo --enable-analyzer=1 --use_skip_indexes_on_data_read=0 --use_query_condition_cache=0 --alter_sync=2 --mutations_sync=2 -q "$1"
 }
 
-declare -a table_settings=("min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0" "min_bytes_for_full_part_storage ='1G'")
+declare -a table_settings=("min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage=0")
 
 ## loop through above array
 for part_type_setting in "${table_settings[@]}"
@@ -83,12 +83,12 @@ do
     client """
     INSERT INTO test_table SELECT number, number FROM numbers(1000, 10);
 
-    EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '1001';
-    SELECT count() FROM test_table WHERE value = '1001';
+    EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '2000';
+    SELECT 'first', count() FROM test_table WHERE value = '2000';
     ALTER TABLE test_table DELETE WHERE value = '8';
 
-    EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '1001';
-    SELECT count() FROM test_table WHERE value = '1001';
+    EXPLAIN indexes = 1 SELECT count() FROM test_table WHERE value = '2000';
+    SELECT 'second', count() FROM test_table WHERE value = '2000';
     """
 
     client """
