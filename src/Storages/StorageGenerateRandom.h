@@ -8,8 +8,13 @@
 namespace DB
 {
 
+/// If `fuzzy` is true, tries to generate more "interesting" values. asdqwe Currently this only affects
+/// numbers: small numbers are made more likely (e.g. uniformly generated UInt64 would ~never be zero,
+/// while `fuzzy` = true it'll be zero ~2% of the time). We could make it also generate interesting
+/// strings, e.g. string representations of numbers or datetime or random type names, etc; but
+/// currently this is not particularly needed: the user of this function achieves that in another way.
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, ContextPtr context);
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy = false);
 
 /* Generates random data for given schema.
  */

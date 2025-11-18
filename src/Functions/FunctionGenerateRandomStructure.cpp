@@ -433,6 +433,17 @@ String FunctionGenerateRandomStructure::generateRandomStructure(size_t seed, con
     return buf.str();
 }
 
+String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types)
+{
+    WriteBufferFromOwnString buf;
+    String column_name = "c";
+    if (allow_complex_types)
+        writeRandomType<true>(column_name, rng, buf, allow_suspicious_lc_types);
+    else
+        writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types);
+    return buf.str();
+}
+
 REGISTER_FUNCTION(GenerateRandomStructure)
 {
     FunctionDocumentation::Description description = R"(
