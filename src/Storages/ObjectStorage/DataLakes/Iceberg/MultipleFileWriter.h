@@ -57,6 +57,4 @@ private:
     UInt64 total_bytes = 0;
 };
 
-
-
 }

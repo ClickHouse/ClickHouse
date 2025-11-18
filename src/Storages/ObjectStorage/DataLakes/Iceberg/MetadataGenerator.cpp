@@ -10,6 +10,12 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+
 namespace DB
 {
 

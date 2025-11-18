@@ -2,6 +2,11 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace DB
 {
 

@@ -6,7 +6,7 @@
 
 #include <Core/Range.h>
 #include <Processors/Chunk.h>
-#include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Functions/IFunction.h>
 
 namespace DB
