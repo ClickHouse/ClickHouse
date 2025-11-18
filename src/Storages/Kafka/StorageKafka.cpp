@@ -54,7 +54,6 @@ namespace ProfileEvents
     extern const Event KafkaDirectReads;
     extern const Event KafkaBackgroundReads;
     extern const Event KafkaWrites;
-    extern const Event KafkaWrites;
     extern const Event KafkaMVNotReady;
 }
 
