@@ -1,3 +1,4 @@
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 #include <Columns/IColumn.h>
@@ -23,9 +24,9 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 }
 
 MergeTreeIndexFormat
-IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
         return {1, ".idx"};
     return {0 /*unknown*/, ""};
 }
