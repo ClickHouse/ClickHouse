@@ -1,5 +1,6 @@
 SET use_legacy_to_time=0;
 SET enable_time_time64_type=1;
+SET enable_analyzer=1;
 
 -- Time + Time -> Time
 SELECT toTypeName([toTime('00:00:00'), toTime('00:00:01')]);
