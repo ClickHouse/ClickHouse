@@ -99,7 +99,9 @@ class Targeting:
         from ci.praktika.settings import Settings
 
         assert self.job_type, "Unsupported job type"
-        assert self.info.pr_number > 0, "Find tests by previous failures applicable only for PRs"
+        assert (
+            self.info.pr_number > 0
+        ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
         cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")

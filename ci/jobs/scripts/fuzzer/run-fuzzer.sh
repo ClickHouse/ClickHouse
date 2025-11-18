@@ -194,20 +194,7 @@ function fuzz
         FUZZER_ARGS="--query-fuzzer-runs=1000 --create-query-fuzzer-runs=50 --queries-file $QUERIES_FILE $NEW_TESTS_OPT"
     elif [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
     then
-        touch fuzzer_out.sql fuzz.json
-        FUZZER_OUTPUT_SQL_FILE=$(realpath fuzzer_out.sql)
-        BUZZHOUSE_CONFIG_FILE=$(realpath fuzz.json)
-cat << EOF > $BUZZHOUSE_CONFIG_FILE
-{
-    "db_file_path": "/var/lib/clickhouse/user_files",
-    "log_path": "$FUZZER_OUTPUT_SQL_FILE",
-    "seed": 0,
-    "read_log": false,
-    "use_dump_table_oracle": false,
-    "time_to_run": 180
-}
-EOF
-        FUZZER_ARGS="--buzz-house-config=$BUZZHOUSE_CONFIG_FILE"
+        FUZZER_ARGS="--buzz-house-config=fuzz.json"
     else
         >&2 echo "Fuzzer \"$FUZZER_TO_RUN\" unknown, provide either \"AST Fuzzer\" or \"BuzzHouse\""
         exit 1
@@ -299,14 +286,7 @@ EOF
 
     # Make files with status and description we'll show for this check on Github.
     task_exit_code=$fuzzer_exit_code
-    if [ "$FUZZER_TO_RUN" = "BuzzHouse" ]
-    then
-        echo "BuzzHouse may fail for now. Please inspect the log to find the issues it found."
-
-        task_exit_code=0
-        echo "OK" > status.txt
-        echo "OK" > description.txt
-    elif [ "$server_died" == 1 ]
+    if [ "$server_died" == 1 ]
     then
         # The server has died.
         if rg --text -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' server.log > description.txt
