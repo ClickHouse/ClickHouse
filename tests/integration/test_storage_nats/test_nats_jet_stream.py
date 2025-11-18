@@ -64,7 +64,7 @@ async def receive_messages(cluster_inst, stream_name, consumer_name, subject, de
                 await msg.ack()
     except nats.errors.TimeoutError:
         pass
-   
+
     await sub.unsubscribe()
 
     await nc.drain()
@@ -79,10 +79,10 @@ async def add_stream(cluster_inst, stream_name, stream_subjects):
 
     # Create JetStream context.
     js = nc.jetstream()
-        
+
     stream_info = await js.add_stream(name=stream_name, subjects=stream_subjects)
     logging.debug("added NATS jet stream: " + str(stream_info))
-    
+
     await nc.close()
 
 async def get_stream_info(cluster_inst, stream_name) -> api.StreamInfo:
@@ -91,10 +91,10 @@ async def get_stream_info(cluster_inst, stream_name) -> api.StreamInfo:
 
     # Create JetStream context.
     js = nc.jetstream()
-        
+
     stream_info = await js.stream_info(stream_name)
     logging.debug("recived NATS jet stream info: " + str(stream_info))
-    
+
     await nc.close()
     return stream_info
 
@@ -104,7 +104,7 @@ async def delete_stream(cluster_inst, stream_name):
 
     # Create JetStream context.
     js = nc.jetstream()
-        
+
     # Persist messages on 'foo's subject.
     await js.delete_stream(name=stream_name)
 
@@ -117,7 +117,7 @@ async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
 
     # Create JetStream context.
     js = nc.jetstream()
-    
+
     consumer_config = api.ConsumerConfig(name=consumer_name, durable_name=consumer_name)
 
     # Persist messages on 'foo's subject.
@@ -132,7 +132,7 @@ async def delete_durable_consumer(cluster_inst, stream_name, consumer_name):
 
     # Create JetStream context.
     js = nc.jetstream()
-        
+
     # Persist messages on 'foo's subject.
     await js.delete_consumer(stream_name, consumer_name)
 
@@ -161,7 +161,7 @@ def nats_setup_teardown():
     instance.query("CREATE DATABASE test")
 
     asyncio.run(add_stream(cluster, "test_stream", ["test_subject", "right_insert1" ,"right_insert2"]))
-    
+
     yield  # run test
 
     asyncio.run(delete_stream(cluster, "test_stream"))
@@ -172,9 +172,9 @@ def nats_setup_teardown():
 # Tests
 
 def test_nats_select_empty(nats_cluster):
-    
+
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
-    
+
     instance.query(
         f"""
         CREATE TABLE test.nats (key UInt64, value UInt64)
@@ -241,7 +241,7 @@ def test_nats_json_without_delimiter(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    
+
     messages = ""
     for i in range(25):
         messages += json.dumps({"key": i, "value": i}) + "\n"
@@ -340,7 +340,7 @@ def test_nats_macros(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    
+
     message = ""
     for i in range(50):
         message += json.dumps({"key": i, "value": i}) + "\n"
@@ -375,7 +375,7 @@ def test_nats_materialized_view(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    
+
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
@@ -406,7 +406,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
             SELECT * FROM (SELECT * FROM test.nats);
         """
     )
-    
+
     messages = []
     for i in range(50):
         messages.append(json.dumps({"key": i, "value": i}))
@@ -564,7 +564,7 @@ def test_nats_mv_combo(nats_cluster):
     stream_info = asyncio.run(get_stream_info(nats_cluster, "test_stream"))
     assert (stream_info.state.messages == messages_num * threads_num
     ), "NATS server lost some messages: {}".format(stream_info.state.messages)
-    
+
     assert (
         int(result) == expected_result
     ), "Clickhouse server lost some messages: {}".format(result)
@@ -621,7 +621,7 @@ def test_fetching_messages_without_mv(nats_cluster):
     values = ",".join(values)
 
     instance.query_with_retry("INSERT INTO test.nats VALUES {}".format(values))
-    
+
     insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject"))
     result = "\n".join(insert_messages)
     nats_helpers.check_result(result, True)
@@ -647,8 +647,8 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
 
     # This NATS engine reads from multiple subjects
     assert(
-        "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to." 
-        in 
+        "This NATS engine reads from multiple subjects. You must specify `stream_like_engine_insert_queue` to choose the subject to write to."
+        in
         instance.query_and_get_error("INSERT INTO test.nats VALUES {}".format(values)))
 
     # Can not publish to wildcard subject
@@ -661,7 +661,7 @@ def test_nats_many_subjects_insert_wrong(nats_cluster):
         "Can not publish to wildcard subject"
         in
         instance.query_and_get_error("INSERT INTO test.nats SETTINGS stream_like_engine_insert_queue='insert3.*.foo' VALUES {}".format(values)))
-    
+
     # Selected subject is not among engine subjects
     assert(
         "Selected subject is not among engine subjects"
@@ -824,11 +824,16 @@ def test_nats_overloaded_insert(nats_cluster):
     for thread in threads:
         thread.join()
 
-    assert (
-        int(result) == messages_num * threads_num
-    ), "ClickHouse lost some messages or got duplicated ones. Total count: {}".format(
-        result
-    )
+    if int(result) != messages_num * threads_num:
+        repeated_msgs = TSV(
+            instance.query(
+                f"SELECT key, count() AS count FROM test.view_overload GROUP BY key HAVING count != {threads_num} ORDER BY count DESC"
+            )
+        )
+
+        assert (
+            False
+        ), f"ClickHouse lost some messages or got duplicated ones. Total count: {result}, problematic messages: {repeated_msgs}"
 
 
 def test_nats_virtual_column(nats_cluster):
@@ -848,7 +853,7 @@ def test_nats_virtual_column(nats_cluster):
             SELECT value, key, _subject FROM test.nats_virtuals;
         """
     )
-    
+
     message_num = 10
     i = 0
     messages = []
@@ -902,7 +907,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
             FROM test.nats_virtuals_mv;
         """
     )
-    
+
     message_num = 10
     i = 0
     messages = []
@@ -987,9 +992,9 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
 
 
 def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
-    
+
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
-    
+
     instance.query(
         f"""
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -1023,7 +1028,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
     values = ",".join(values)
 
     instance.query_with_retry("INSERT INTO test.producer_reconnect VALUES {}".format(values))
-    
+
     result = instance.query_with_retry("SELECT count() FROM test.view", sleep_time = 0.1, check_callback = lambda num_rows: int(num_rows) != 0)
     assert(int(result) != 0)
 
@@ -1043,7 +1048,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
 
     asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
 
-    assert( 
+    assert(
         "Cannot connect to Nats"
         in
         instance.query_and_get_error(
@@ -1058,7 +1063,7 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
                         nats_num_consumers = '5',
                         nats_row_delimiter = '\\n';
             """
-        ))
+    ))
     assert "Table `cs` doesn't exist" in instance.query_and_get_error("SHOW TABLE test.cs;")
 
 
@@ -1146,7 +1151,7 @@ def test_nats_format_factory_settings(nats_cluster):
         """SELECT parseDateTimeBestEffort(CAST('2021-01-19T14:42:33.1829214Z', 'String'))"""
     )
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [message]))
-    
+
     result = instance.query_with_retry("SELECT date FROM test.view", check_callback = lambda result: result == expected)
 
     assert result == expected
@@ -1165,8 +1170,8 @@ def test_nats_bad_args(nats_cluster):
         """
     )
     assert(
-        "To read from NATS jet stream, you must specify `nats_consumer_name` setting" 
-        in 
+        "To read from NATS jet stream, you must specify `nats_consumer_name` setting"
+        in
         instance.query_and_get_error("SELECT * FROM test.producer_table"))
 
     assert(
@@ -1203,7 +1208,7 @@ def test_nats_drop_mv(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    
+
     messages = []
     for i in range(20):
         messages.append(json.dumps({"key": i, "value": i}))
@@ -1226,7 +1231,6 @@ def test_nats_drop_mv(nats_cluster):
         """
     )
     nats_helpers.wait_query_result(instance, "SELECT count() FROM test.view", 40)
-
 
     instance.query("DROP VIEW test.consumer")
 
@@ -1263,12 +1267,12 @@ def test_nats_predefined_configuration(nats_cluster):
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 1, "value": 2})]))
 
     result = instance.query_with_retry(
-        "SELECT * FROM test.view ORDER BY key", 
+        "SELECT * FROM test.view ORDER BY key",
         ignore_error = True,
         check_callback = lambda query_result: query_result == "1\t2\n")
 
     assert result == "1\t2\n"
-        
+
 
 def test_format_with_prefix_and_suffix(nats_cluster):
 
@@ -1338,7 +1342,7 @@ def test_max_rows_per_message(nats_cluster):
 
 
 def test_row_based_formats(nats_cluster):
-    
+
     asyncio.run(add_durable_consumer(cluster, "test_stream", "table_consumer"))
     asyncio.run(add_durable_consumer(cluster, "test_stream", "external_consumer"))
 
@@ -1368,14 +1372,14 @@ def test_row_based_formats(nats_cluster):
             f"""
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.nats;
-               
+
             CREATE TABLE test.nats (key UInt64, value UInt64)
                 ENGINE = NATS
                 SETTINGS nats_url = 'nats1:4444',
                          nats_stream = 'test_stream',
                          nats_consumer_name = 'table_consumer',
                          nats_subjects = 'test_subject',
-                         nats_format = '{format_name}';      
+                         nats_format = '{format_name}';
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.nats;
             """
@@ -1384,7 +1388,7 @@ def test_row_based_formats(nats_cluster):
         instance.query(
             f"INSERT INTO test.nats select number*10 as key, number*100 as value from numbers({num_rows})"
         )
-        
+
         insert_messages = asyncio.run(receive_messages(nats_cluster, "test_stream", "external_consumer", 'test_subject', decode_data=False))
         assert len(insert_messages) == num_rows
 
@@ -1418,7 +1422,7 @@ def test_block_based_formats_1(nats_cluster):
     instance.query_with_retry(
         "INSERT INTO test.nats SELECT number * 10 as key, number * 100 as value FROM numbers(5) settings max_block_size=2, optimize_trivial_insert_select=0;",
         retry_count=100)
-    
+
     data = []
     for message in asyncio.run(receive_messages(nats_cluster, "test_stream", "test_consumer", "test_subject")):
         splitted = message.split("\n")
@@ -1463,14 +1467,14 @@ def test_block_based_formats_2(nats_cluster):
             f"""
             DROP TABLE IF EXISTS test.view;
             DROP TABLE IF EXISTS test.nats;
-               
+
             CREATE TABLE test.nats (key UInt64, value UInt64)
                 ENGINE = NATS
                 SETTINGS nats_url = 'nats1:4444',
                          nats_stream = 'test_stream',
                          nats_consumer_name = 'table_consumer',
                          nats_subjects = 'test_subject',
-                         nats_format = '{format_name}';      
+                         nats_format = '{format_name}';
             CREATE MATERIALIZED VIEW test.view Engine=Log AS
                 SELECT key, value FROM test.nats;
             """

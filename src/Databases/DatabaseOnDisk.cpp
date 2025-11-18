@@ -558,14 +558,13 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
+ASTPtr DatabaseOnDisk::getCreateDatabaseQueryImpl() const
 {
     auto default_db_disk = getContext()->getDatabaseDisk();
     ASTPtr ast;
 
     const auto & settings = getContext()->getSettingsRef();
     {
-        std::lock_guard lock(mutex);
         auto database_metadata_path = fs::path("metadata") / (escapeForFileName(database_name) + ".sql");
         ast = parseQueryFromMetadata(log, getContext(), default_db_disk, database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
@@ -576,16 +575,16 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     {
         /// Handle databases (such as default) for which there are no database.sql files.
         /// If database.sql doesn't exist, then engine is Ordinary
-        String query = "CREATE DATABASE " + backQuoteIfNeed(getDatabaseName()) + " ENGINE = Ordinary";
+        String query = "CREATE DATABASE " + backQuoteIfNeed(database_name) + " ENGINE = Ordinary";
         ParserCreateQuery parser;
         ast = parseQuery(
             parser, query.data(), query.data() + query.size(), "", 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
     }
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
+    if (!comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(comment));
     }
 
     return ast;
@@ -735,7 +734,7 @@ void DatabaseOnDisk::iterateMetadataFiles(const IteratingFunction & process_meta
         pool.scheduleOrThrow(
             [batch, &process_metadata_file, &process_tmp_drop_metadata_file]() mutable
             {
-                setThreadName("DatabaseOnDisk");
+                DB::setThreadName(ThreadName::DATABASE_ON_DISK);
                 for (const auto & file : batch)
                     if (file.second)
                         process_metadata_file(file.first);
@@ -925,11 +924,6 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
-}
-
-void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
