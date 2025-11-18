@@ -15,12 +15,10 @@ set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthre
 
 if(NOT CMAKE_CROSSCOMPILING)
     execute_process(
-        COMMAND readlink -f /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk
-        OUTPUT_VARIABLE ACTUAL_SDK_PATH
+        COMMAND xcrun --sdk macosx --show-sdk-version
+        OUTPUT_VARIABLE OS_DARWIN_SDK_VERSION
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
-    string(REGEX MATCH "MacOSX([0-9]+\\.[0-9]+)" _ ${ACTUAL_SDK_PATH})
-    set(OS_DARWIN_SDK_VERSION ${CMAKE_MATCH_1})
     if(${OS_DARWIN_SDK_VERSION} MATCHES "^[0-9]+\\.[0-9]+")
         message(STATUS "Detected OSX SDK Version: ${OS_DARWIN_SDK_VERSION}")
     else ()
