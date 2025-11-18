@@ -2770,6 +2770,13 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
         }
     }
 
+    /// TTL DELETE may remove parts that were previously written with quorum. In that case
+    /// information about the part could remain in the quorum/last_part ZooKeeper node and
+    /// trigger REPLICA_IS_NOT_IN_QUORUM errors for sequentially consistent reads. Clean the
+    /// node proactively once the drop range has been executed.
+    if (!drop_range_info.isFakeDropRangePart())
+        cleanLastPartNode(drop_range_info.getPartitionId());
+    
     /// Forcibly remove parts from ZooKeeper
     removePartsFromZooKeeperWithRetries(parts_to_remove);
     paranoidCheckForCoveredPartsInZooKeeper(getZooKeeper(), replica_path, format_version, entry.new_part_name, *this);
