@@ -65,28 +65,6 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 
 def should_use_sparse_checkout_of_submodules(build_type: str) -> bool:
-    COMPATIBLE_JOBS = [
-        BuildTypes.AMD_ASAN,
-        BuildTypes.AMD_BINARY,
-        BuildTypes.AMD_COMPAT,
-        BuildTypes.AMD_COVERAGE,
-        BuildTypes.AMD_DEBUG,
-        BuildTypes.AMD_MSAN,
-        BuildTypes.AMD_MUSL,
-        BuildTypes.AMD_RELEASE,
-        BuildTypes.AMD_TIDY,
-        BuildTypes.AMD_TSAN,
-        BuildTypes.AMD_UBSAN,
-        BuildTypes.ARM_ASAN,
-        BuildTypes.ARM_BINARY,
-        BuildTypes.ARM_RELEASE,
-        BuildTypes.ARM_TIDY,
-        BuildTypes.ARM_TSAN,
-        BuildTypes.ARM_V80COMPAT,
-        BuildTypes.FUZZERS,
-        BuildTypes.LOONGARCH64,
-    ]
-
     NOT_COMPATIBLE_JOBS = [
         BuildTypes.AMD_DARWIN,
         BuildTypes.AMD_FREEBSD,
@@ -96,10 +74,7 @@ def should_use_sparse_checkout_of_submodules(build_type: str) -> bool:
         BuildTypes.S390X,
     ]
 
-    assert (
-        build_type in COMPATIBLE_JOBS + NOT_COMPATIBLE_JOBS
-    ), f"Please decide whether the script should be used for type '{build_type}' or not"
-    return build_type in COMPATIBLE_JOBS
+    return build_type not in NOT_COMPATIBLE_JOBS
 
 
 def parse_args():
