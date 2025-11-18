@@ -35,7 +35,7 @@ FractionalOffsetTransform::FractionalOffsetTransform(const Block & header_, Floa
 
 IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers & updated_output_ports)
 {
-    // Check Can we still pull input?
+    // Check Can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
         auto process = [&](size_t pos)
@@ -73,7 +73,7 @@ IProcessor::Status FractionalOffsetTransform::prepare(const PortNumbers & update
             return Status::NeedData;
 
         // Calculate target offset
-        offset = static_cast<UInt64>(std::ceil(rows_cnt * fractional_offset));
+        offset = static_cast<UInt64>(std::ceil(rows_cnt * fractional_offset)) - evicted_rows_cnt;
     }
 
     // If we reached here then all input ports are finished.
@@ -123,6 +123,14 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
     rows_cnt += rows;
     chunks_cache.push_back({data.output_port, std::move(data.current_chunk)});
 
+    /// Detect blocks that will 100% get removed by the offset and remove them as early as possible.
+    /// example: if we have 10 blocks with same num of rows and offset 0.1 we can freely drop the first block even before reading all data.
+    while (!chunks_cache.empty() && std::ceil(rows_cnt * fractional_offset) - evicted_rows_cnt >= chunks_cache.front().chunk.getNumRows())
+    {
+        evicted_rows_cnt += chunks_cache.front().chunk.getNumRows();
+        chunks_cache.pop_front();
+    }
+
     if (input.isFinished())
         return Status::Finished;
 
@@ -132,6 +140,7 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pullData(PortsData 
 
 FractionalOffsetTransform::Status FractionalOffsetTransform::pushData()
 {
+    /// If a specific output port is finished, drop all its chunks.
     while (!chunks_cache.empty() && chunks_cache.front().output_port->isFinished())
         chunks_cache.pop_front();
 
@@ -143,23 +152,14 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pushData()
     if (!output.canPush())
         return Status::PortFull;
 
-    UInt64 rows = 0;
-    do
+    UInt64 rows = chunks_cache.front().chunk.getNumRows();
+    /// The early removal of blocks at pullData() should have detected all chunks that will be dropped
+    /// entirely, but we may still need to offset inside the first block and drop a portion of it.
+    if (rows <= std::numeric_limits<UInt64>::max() - offset && offset)
     {
-        rows = chunks_cache.front().chunk.getNumRows();
-        rows_read += rows;
-        if (rows_read <= offset)
-            chunks_cache.pop_front();
-    } while (rows_read <= offset && !chunks_cache.empty());
-
-    if (chunks_cache.empty())
-    {
-        output.finish();
-        return Status::Finished;
-    }
-
-    if (!(rows <= std::numeric_limits<UInt64>::max() - offset && rows_read >= offset + rows))
         splitChunk(chunks_cache.front().chunk);
+        offset = 0; // Done.
+    }
 
     output.push(std::move(chunks_cache.front().chunk));
     chunks_cache.pop_front();
@@ -170,31 +170,22 @@ FractionalOffsetTransform::Status FractionalOffsetTransform::pushData()
 
 void FractionalOffsetTransform::splitChunk(Chunk & current_chunk) const
 {
+    /// return a piece of the block
+
     UInt64 num_rows = current_chunk.getNumRows();
     UInt64 num_columns = current_chunk.getNumColumns();
 
-    /// return a piece of the block
-    UInt64 start = 0;
+    /// [....(.....]
+    /// <----------> num_rows
+    /// <---> offset
 
-    /// ------------[....(.....]
-    /// <----------------------> rows_read
-    ///             <----------> num_rows
-    /// <---------------> offset
-    ///             <---> start
+    assert(offset < num_rows);
 
-    assert(offset < rows_read);
-
-    if (offset + num_rows > rows_read)
-        start = offset + num_rows - rows_read;
-    else
-        return;
-
-    UInt64 length = num_rows - start;
-
+    UInt64 length = num_rows - offset;
     auto columns = current_chunk.detachColumns();
 
     for (UInt64 i = 0; i < num_columns; ++i)
-        columns[i] = columns[i]->cut(start, length);
+        columns[i] = columns[i]->cut(offset, length);
 
     current_chunk.setColumns(std::move(columns), length);
 }
