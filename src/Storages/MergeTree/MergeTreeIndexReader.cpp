@@ -72,7 +72,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     if (stream)
         return;
 
-    auto index_format = index->getDeserializedFormat(part->getDataPartStorage(), index->getFileName());
+    auto index_format = index->getDeserializedFormat(part->checksums, index->getFileName());
 
     stream = makeIndexReader(
         index_format.extension,

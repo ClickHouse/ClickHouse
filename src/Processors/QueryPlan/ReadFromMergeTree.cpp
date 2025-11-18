@@ -1798,7 +1798,8 @@ static void buildIndexes(
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
-        for (const auto& part : parts)
+
+        for (const auto & part : parts)
         {
             auto &index_order = skip_indexes.per_part_index_orders.emplace_back();
             index_order.resize(skip_indexes.useful_indices.size());
@@ -1808,7 +1809,7 @@ static void buildIndexes(
 
             for (const auto &idx : skip_indexes.useful_indices)
             {
-                const auto *extension = idx.index->getDeserializedFormat(part.data_part->getDataPartStorage(), idx.index->getFileName()).extension;
+                const auto *extension = idx.index->getDeserializedFormat(part.data_part->checksums, idx.index->getFileName()).extension;
                 auto sz = part.data_part->getFileSizeOrZero(idx.index->getFileName() + extension);
                 index_sizes.emplace_back(sz);
             }

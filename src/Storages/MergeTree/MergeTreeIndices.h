@@ -70,9 +70,9 @@ evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUs
 
 class ActionsDAG;
 class Block;
-class IDataPartStorage;
 struct MergeTreeWriterSettings;
 struct SelectQueryInfo;
+struct MergeTreeDataPartChecksums;
 
 class GinIndexStore;
 using GinIndexStorePtr = std::shared_ptr<GinIndexStore>;
@@ -318,7 +318,7 @@ struct IMergeTreeIndex
     ///
     /// Return pair<extension, version>.
     virtual MergeTreeIndexFormat
-    getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const;
+    getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
