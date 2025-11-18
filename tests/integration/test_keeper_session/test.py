@@ -192,8 +192,8 @@ def test_create2(started_cluster):
     wait_nodes()
     node1_zk = None
     node1_zk = get_fake_zk(node1.name)
-    uuid = str(uuid.uuid4()).replace('-', '')
-    _, stats = node1_zk.create(f'/tea_{uuid}', include_data=True)
+    uid = str(uuid.uuid4()).replace('-', '')
+    _, stats = node1_zk.create(f'/tea_{uid}', include_data=True)
     assert stats is not None
     assert stats.numChildren == 0
     assert stats.ephemeralOwner == 0
