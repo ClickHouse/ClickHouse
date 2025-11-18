@@ -1,26 +1,19 @@
-#include <string>
-#include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
-#include <base/JSON.h>
-#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
-#include <Poco/URI.h>
-#include <Common/Exception.h>
-#include <Common/HashiCorpVault.h>
-
-#include <Poco/JSON/Stringifier.h>
-#include <Poco/Net/Context.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <Poco/Net/HTTPSClientSession.h>
-#include <Poco/Net/InvalidCertificateHandler.h>
-#include <Poco/Net/PrivateKeyPassphraseHandler.h>
-#include <Poco/Net/SSLManager.h>
+
+#if USE_SSL
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/HTTPSClientSession.h>
+#    include <Poco/Net/SSLManager.h>
+#endif
+
 #include <Poco/StreamCopier.h>
+#include <Poco/URI.h>
+#include <Common/HashiCorpVault.h>
 
 namespace DB
 {
@@ -30,6 +23,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int CANNOT_PARSE_JSON;
 extern const int INVALID_JSON_STRUCTURE;
+extern const int SUPPORT_IS_DISABLED;
 }
 
 HashiCorpVault & HashiCorpVault::instance()
@@ -38,6 +32,7 @@ HashiCorpVault & HashiCorpVault::instance()
     return ret;
 }
 
+#if USE_SSL
 void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     if (!config.has(prefix + ".ssl") && auth_method == HashiCorpVaultAuthMethod::Cert)
@@ -76,6 +71,7 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
 
     request_context = new Poco::Net::Context(Poco::Net::Context::CLIENT_USE, params);
 }
+#endif
 
 void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, const String & prefix, ContextPtr context_)
 {
@@ -123,12 +119,16 @@ void HashiCorpVault::load(const Poco::Util::AbstractConfiguration & config, cons
         }
         else if (config.has(prefix + ".cert"))
         {
+#if USE_SSL
             cert_name = config.getString(prefix + ".cert.name", "");
 
             // Name of role validation is not required. Because if name of role is not specified then
             // Vault tries all roles and uses any one that matches.
 
             auth_method = HashiCorpVaultAuthMethod::Cert;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         else
         {
@@ -157,7 +157,11 @@ String HashiCorpVault::makeRequest(const String & method, const String & path, c
 
     if (scheme == "https")
     {
+#if USE_SSL
         session = std::make_unique<Poco::Net::HTTPSClientSession>(host, port, request_context);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL is disabled, because ClickHouse was built without SSL library");
+#endif
     }
     else
         session = std::make_unique<Poco::Net::HTTPClientSession>(host, port);

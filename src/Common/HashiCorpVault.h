@@ -2,7 +2,11 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <base/types.h>
-#include <Poco/Net/Context.h>
+
+#if USE_SSL
+#    include <Poco/Net/Context.h>
+#endif
+
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/Logger.h>
 namespace DB
@@ -36,16 +40,20 @@ public:
 private:
     void reset()
     {
+        loaded = false;
         url = "";
         token = "";
         username = "";
         password = "";
         client_token = "";
         cert_name = "";
+#if USE_SSL
         request_context = nullptr;
-        loaded = false;
+#endif
     }
+#if USE_SSL
     void initRequestContext(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+#endif
     String makeRequest(const String & method, const String & path, const String & request_token, const String & body);
     String login();
     LoggerPtr log;
@@ -61,7 +69,9 @@ private:
     int port;
     HashiCorpVaultAuthMethod auth_method;
     ContextPtr context;
+#if USE_SSL
     Poco::Net::Context::Ptr request_context;
+#endif
 };
 
 }
