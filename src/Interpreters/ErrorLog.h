@@ -17,11 +17,11 @@ struct ErrorLogElement
 {
     time_t event_time{};
     ErrorCodes::ErrorCode code{};
-    UInt64 last_error_time = 0;
-    std::string last_error_message{};
     ErrorCodes::Value value{};
     bool remote{};
-    std::string last_error_query_id;
+    UInt64 last_error_time = 0;
+    String last_error_message{};
+    String last_error_query_id{};
     std::vector<void *> last_error_trace{};
     static std::string name() { return "ErrorLog"; }
     static ColumnsDescription getColumnsDescription();
