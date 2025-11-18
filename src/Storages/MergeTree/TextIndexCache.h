@@ -1,9 +1,8 @@
 #pragma once
 
+#include <Columns/ColumnString.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-
-#include <vector>
 
 #include <absl/container/flat_hash_map.h>
 

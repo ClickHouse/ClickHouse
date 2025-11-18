@@ -844,7 +844,7 @@ void PostingListBuilder::add(UInt32 value, PostingListsHolder & postings_holder)
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(StringRef document)
 {
-    forEachTokenPadded(*token_extractor, document.data, document.size, [&](const char * token_start, size_t token_length)
+    forEachToken(*token_extractor, document.data, document.size, [&](const char * token_start, size_t token_length)
     {
         bool inserted;
         TokenToPostingsMap::LookupResult it;
