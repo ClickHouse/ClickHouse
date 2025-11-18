@@ -251,16 +251,19 @@ private:
 
 REGISTER_FUNCTION(IcebergHash)
 {
-    FunctionDocumentation::Description description = R"(Implements logic of iceberg hashing transform: https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements.)";
-    FunctionDocumentation::Syntax syntax = "icebergHash(N, value)";
-    FunctionDocumentation::Arguments arguments
-        = {{"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time, datetime."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Int32"};
+    FunctionDocumentation::Description description = R"(Implements the logic of the iceberg [hashing transform](https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements))";
+    FunctionDocumentation::Syntax syntax = "icebergHash(value)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"value", "Source value to take the hash of", {"Integer", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit Murmur3 hash, x86 variant, seeded with 0", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergHash(1.0 :: Float32)", "-142385009"}};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIcebergHash>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergHash>(documentation);
 }
 
 class FunctionIcebergBucket : public IFunction
@@ -339,18 +342,20 @@ public:
 REGISTER_FUNCTION(IcebergBucket)
 {
     FunctionDocumentation::Description description
-        = R"(Implements logic of iceberg bucket transform: https://iceberg.apache.org/spec/#bucket-transform-details.)";
+        = R"(Implements logic for the [iceberg bucket transform](https://iceberg.apache.org/spec/#bucket-transform-details.))";
     FunctionDocumentation::Syntax syntax = "icebergBucket(N, value)";
-    FunctionDocumentation::Arguments arguments
-        = {{"N", "modulo, positive integer, always constant."},
-           {"value", "Integer, bool, decimal, float, string, fixed_string, uuid, date, time or datetime value."}};
-    FunctionDocumentation::ReturnedValue returned_value = {"Int32"};
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"N", "The number of buckets, modulo.", {"const (U)Int*"}},
+        {"value", "The source value to transform.", {"(U)Int*", "Bool", "Decimal", "Float*", "String", "FixedString", "UUID", "Date", "Time", "DateTime"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a 32-bit hash of the source value.", {"Int32"}};
     FunctionDocumentation::Examples examples = {{"Example", "SELECT icebergBucket(5, 1.0 :: Float32)", "4"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-
-    factory.registerFunction<FunctionIcebergBucket>({description, syntax, arguments, returned_value, examples, introduced_in, category});
+    factory.registerFunction<FunctionIcebergBucket>(documentation);
 }
 
 }

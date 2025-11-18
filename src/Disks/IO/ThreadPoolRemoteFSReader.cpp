@@ -11,6 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/assert_cast.h>
+#include <Common/setThreadName.h>
 #include "config.h"
 
 #include <future>

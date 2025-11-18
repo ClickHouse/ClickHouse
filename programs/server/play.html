@@ -69,10 +69,8 @@
             --progress-color: #0C4;
             --progress: 0%;
 
-            ::selection {
-                color: #FFF;
-                background-color: #456;
-            }
+            --selection-color: #FFF;
+            --selection-background-color: #456;
         }
 
         [data-theme="dark"] {
@@ -102,10 +100,13 @@
 
             --progress-color: #FF0;
 
-            ::selection {
-                color: #000;
-                background-color: #FF8;
-            }
+            --selection-color: #000;
+            --selection-background-color: #FF8;
+        }
+
+        :root::selection {
+            color: var(--selection-color);
+            background-color: var(--selection-background-color);
         }
 
         *
@@ -157,6 +158,9 @@
         #main
         {
             overflow: auto;
+            grid-area: main;
+            padding: 0.5rem;
+            position: relative; /* for stacking context */
         }
 
         .menu-icon
@@ -205,7 +209,9 @@
             padding: 0;
             user-select: none;
             color: var(--text-color);
-            border-bottom: 1px dashed var(--text-color);
+            &:hover {
+                text-decoration: 1px underline dotted var(--text-color);
+            }
         }
 
         .database button:hover
@@ -245,7 +251,7 @@
         .table-addendum
         {
             position: absolute;
-            z-index: 1;
+            z-index: 999;
             display: none;
             white-space: pre;
             transform: translate(0.25rem, calc(-50% + 0.5em));
@@ -273,10 +279,13 @@
             display: inline-block;
         }
 
-        #main
+        .table-addendum-elem
         {
-            grid-area: main;
-            padding: 0.5rem;
+            display: block;
+            cursor: pointer;
+            &:hover {
+                text-decoration: 1px underline dotted var(--element-background-color);
+            }
         }
 
         #controls
@@ -366,8 +375,8 @@
             display: grid;
             place-items: center;
             gap: 1rem;
-            grid-template-columns: auto auto auto 1fr auto auto;
-            grid-template-areas: "run hint hourglass progress-bar progress-text theme";
+            grid-template-columns: auto auto auto 1fr auto auto auto;
+            grid-template-areas: "run hint hourglass progress-bar download progress-text theme";
         }
 
         #run
@@ -382,7 +391,7 @@
             font-size: 100%; /* Otherwise button element will have a lower font size. */
         }
 
-        #run:hover, #run:focus
+        #run:hover, #run:focus, #download-div:hover, #download-div:focus
         {
             color: var(--button-active-text-color);
             background-color: var(--button-active-color);
@@ -420,6 +429,98 @@
         #stats b
         {
             color: var(--progress-color);
+        }
+
+        #download-div
+        {
+            grid-area: download;
+            display: none;
+            user-select: none;
+            color: var(--button-text-color);
+            background-color: var(--button-color);
+            padding: 0.25rem 0.65rem;
+            cursor: pointer;
+            position: relative;
+        }
+
+        #download
+        {
+            width: 1em;
+            height: 1em;
+        }
+
+        #download-dropdown
+        {
+            display: none;
+            position: absolute;
+            background-color: var(--button-color);
+            border: 1px solid var(--button-text-color);
+            padding: 0.5rem;
+            z-index: 999;
+            box-shadow: 0 4px 6px var(--shadow-color);
+        }
+
+        #download-dropdown.show
+        {
+            display: block;
+        }
+
+        .download-option
+        {
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .download-option label
+        {
+            color: var(--button-text-color);
+            white-space: nowrap;
+            margin-right: 0.5rem;
+        }
+
+        .download-option select,
+        #download-format-other
+        {
+            flex: 1;
+            padding: 0.25rem;
+            background-color: var(--element-background-color);
+            color: var(--text-color);
+            border: 1px solid var(--shadow-color);
+
+            &:focus {
+                outline: none;
+            }
+        }
+
+        #download-format-other
+        {
+            display: none;
+            margin-top: 0.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        #download-format-other.show
+        {
+            display: block;
+        }
+
+        #download-button
+        {
+            width: 100%;
+            margin-top: 0rem;
+            padding: 0.5rem 0.5rem;
+            background-color: var(--element-background-color);
+            color: var(--text-color);
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+
+            &:hover {
+                background-color: var(--button-active-color);
+                color: var(--button-active-text-color);
+            }
         }
 
         #progress
@@ -530,13 +631,15 @@
             display: none;
             position: absolute;
             user-select: none;
-            right: 0;
-            top: -1.25em;
+            left: 0;
+            top: -1px;
+            transform: translateY(-100%);
             font-size: 75%;
             font-weight: normal;
             color: var(--misc-text-color);
-            z-index: 1;
             background: var(--element-background-color);
+            max-height: 5em;
+            white-space: pre;
         }
 
         th:hover .type-hint
@@ -787,6 +890,13 @@
                 <div id="hourglass">⧗</div>
                 <div id="check-mark">✔</div>
                 <div id="progress"></div>
+                <div id="download-div" class="shadow">
+                    <svg id="download" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </div>
                 <div id="stats"></div>
                 <div id="theme"><span id="toggle-dark">🌘</span><span id="toggle-light">☀️</span></div>
             </div>
@@ -805,6 +915,24 @@
             </a>
             <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
         </p>
+        <div id="download-dropdown">
+            <div>
+                <div class="download-option">
+                    <label for="download-format">Format:</label>
+                    <select id="download-format">
+                        <option value="CSV">CSV</option>
+                        <option value="TSV">TSV</option>
+                        <option value="JSON">JSON</option>
+                        <option value="NDJSON" selected>JSONLines</option>
+                        <option value="Parquet">Parquet</option>
+                        <option value="Markdown">Markdown</option>
+                        <option value="other">Other...</option>
+                    </select>
+                </div>
+                <input type="text" id="download-format-other" placeholder="Enter format name (e.g., Arrow, Avro)" />
+            </div>
+            <button id="download-button">Download</button>
+        </div>
     </div>
 </body>
 
@@ -1003,25 +1131,42 @@ async function loadTables(server_address, user, password, database, container) {
         let table_addendum = document.createElement('span');
         table_addendum.className = 'table-addendum';
 
-        let addendum = '';
-        if (+elem.total_bytes) addendum += formatReadableBytes(elem.total_bytes) + '\n';
-        if (+elem.total_rows) addendum += formatReadableRows(elem.total_rows) + ' rows\n';
-        addendum += elem.engine;
-        table_addendum.append(addendum);
-
-        table.appendChild(table_link);
-        table.appendChild(table_addendum);
-        tables_elem.appendChild(table);
-
-        table.addEventListener('click', e => {
-            const value = `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`;
+        const set_query_or_run = (e, value) => {
             if (query_area.value == value) {
                 /// Double click will run the query.
                 post();
             } else {
                 query_area.value = value;
             }
-        });
+            e.stopPropagation();
+        }
+
+        const show_table_properties = e => set_query_or_run(e, `SELECT * FROM system.tables WHERE database = '${database}' AND table = '${elem.table}'`);
+
+        if (+elem.total_bytes) {
+            let bytes_elem = document.createElement('span');
+            bytes_elem.className = 'table-addendum-elem';
+            bytes_elem.textContent = formatReadableBytes(elem.total_bytes) + '\n';
+            bytes_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(bytes_elem);
+        }
+        if (+elem.total_rows) {
+            let rows_elem = document.createElement('span');
+            rows_elem.className = 'table-addendum-elem';
+            rows_elem.textContent = formatReadableRows(elem.total_rows) + ' rows\n';
+            rows_elem.addEventListener('click', show_table_properties);
+            table_addendum.append(rows_elem);
+        }
+        let engine_elem = document.createElement('span');
+        engine_elem.textContent = elem.engine;
+        engine_elem.className = 'table-addendum-elem';
+        engine_elem.addEventListener('click', e => set_query_or_run(e, `SHOW TABLE "${database}"."${elem.table}"`));
+        table_addendum.append(engine_elem);
+
+        table.appendChild(table_link);
+        table.appendChild(table_addendum);
+        table.addEventListener('click', e => set_query_or_run(e, `SELECT * FROM "${database}"."${elem.table}" LIMIT 100`));
+        tables_elem.appendChild(table);
     }
 
     if (json.data.length == 0) {
@@ -1131,6 +1276,9 @@ async function postImpl(posted_request_num, query)
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     url += '&default_format=' + default_format + '&enable_http_compression=1';
+    /// We will put the result in the query cache, so it can be used when download is initiated later.
+    /// But we don't use cached results, so the results that we get here, are always fresh.
+    url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save';
 
     /// Extremes only if the format is likely to be unchanged. This is imprecise.
     if (!query.match(/\bFORMAT\s+\w+/i)) url += '&extremes=1';
@@ -1138,6 +1286,7 @@ async function postImpl(posted_request_num, query)
     last_query_start = performance.now();
 
     document.getElementById('check-mark').style.display = 'none';
+    document.getElementById('download-div').style.display = 'none';
     document.getElementById('hourglass').style.display = 'inline-block';
 
     clear();
@@ -1174,6 +1323,7 @@ async function postImpl(posted_request_num, query)
             }
 
             document.getElementById('hourglass').style.display = 'none';
+            document.getElementById('download-div').style.display = 'none';
             document.documentElement.style.setProperty('--progress', '0');
             return;
         } else if (format == default_format) {
@@ -1247,6 +1397,7 @@ async function postImpl(posted_request_num, query)
         }
         renderError(reply);
         document.getElementById('hourglass').style.display = 'none';
+        document.getElementById('download-div').style.display = 'none';
         document.documentElement.style.setProperty('--progress', '0');
         return;
     }
@@ -1260,6 +1411,8 @@ async function postImpl(posted_request_num, query)
 
     document.getElementById('check-mark').style.display = 'inline-block';
     document.getElementById('hourglass').style.display = 'none';
+    document.getElementById('download-div').style.display = 'block';
+    last_query_for_download = query;
 
     if (is_raw) {
         elapsed_ns = 1e6 * (performance.now() - last_query_start);
@@ -2372,5 +2525,110 @@ document.getElementById('toggle-light').onclick = function() {
 document.getElementById('toggle-dark').onclick = function() {
     setColorTheme('dark', true);
 }
+
+// Download functionality
+let last_query_for_download = '';
+
+// Toggle download dropdown
+document.getElementById('download-div').addEventListener('click', function(e) {
+    e.stopPropagation();
+    const dropdown = document.getElementById('download-dropdown');
+    const button = document.getElementById('download-div');
+    const context = document.getElementById('main');
+
+    if (dropdown.classList.contains('show')) {
+        dropdown.classList.remove('show');
+    } else {
+        // Position the dropdown relative to the button
+        dropdown.classList.add('show');
+        const button_rect = button.getBoundingClientRect();
+        const context_rect = context.getBoundingClientRect();
+        const dropdown_rect = dropdown.getBoundingClientRect();
+
+        dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
+        dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+    }
+});
+
+// Prevent dropdown from closing when clicking inside it
+document.getElementById('download-dropdown').addEventListener('click', function(e) {
+    e.stopPropagation();
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', function() {
+    const dropdown = document.getElementById('download-dropdown');
+    dropdown.classList.remove('show');
+});
+
+// Handle "Other" format selection
+document.getElementById('download-format').addEventListener('change', function() {
+    const otherInput = document.getElementById('download-format-other');
+    if (this.value === 'other') {
+        otherInput.classList.add('show');
+        otherInput.focus();
+    } else {
+        otherInput.classList.remove('show');
+    }
+});
+
+// Handle download button click
+document.getElementById('download-button').addEventListener('click', async function() {
+    const formatSelect = document.getElementById('download-format');
+    const formatOther = document.getElementById('download-format-other');
+
+    let format = formatSelect.value;
+    if (format === 'other') {
+        format = formatOther.value.trim();
+        if (!format) {
+            alert('Please enter a format name');
+            return;
+        }
+    }
+
+    // Get current values
+    const user = user_elem.value;
+    const password = password_elem.value;
+    const server_address = url_elem.value;
+    const query = last_query_for_download;
+
+    if (!query) {
+        alert('No query to download results for');
+        return;
+    }
+
+    // Build download URL
+    let url = server_address +
+        (server_address.indexOf('?') >= 0 ? '&' : '?') +
+        'add_http_cors_header=1' +
+        '&enable_http_compression=1' +
+        '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save' +
+        '&default_format=' + encodeURIComponent(format) +
+        '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(format.toLowerCase())}"'}`);
+    if (user) url += '&user=' + encodeURIComponent(user);
+    if (password) url += '&password=' + encodeURIComponent(password);
+
+    let downloadQuery = query.replaceAll(/\bFORMAT\s+\w+/ig, '');
+
+    // Create a form and submit it to trigger download
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    form.enctype = 'multipart/form-data';
+    form.style.display = 'none';
+
+    const queryInput = document.createElement('input');
+    queryInput.type = 'hidden';
+    queryInput.name = 'query';
+    queryInput.value = downloadQuery;
+    form.appendChild(queryInput);
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+
+    // Close dropdown
+    document.getElementById('download-dropdown').classList.remove('show');
+});
 </script>
 </html>

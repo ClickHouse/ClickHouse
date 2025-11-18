@@ -9,6 +9,7 @@
 #include <base/hex.h>
 #include <Formats/FormatFactory.h>
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnIndex.h>

@@ -440,6 +440,9 @@ def test_mv_generates_several_blocks(parser):
             SET update_insert_deduplication_token_in_dependent_materialized_views=1;
             SET deduplicate_blocks_in_dependent_materialized_views=1;
 
+            SET min_joined_block_size_rows = 1;
+            SET max_joined_block_size_rows = 1;
+
             SET max_block_size=1;
             SET min_insert_block_size_rows=0;
             SET min_insert_block_size_bytes=0;

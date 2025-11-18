@@ -9,7 +9,7 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/supportWritingWithAppend.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/copyData.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -151,13 +151,10 @@ static bool supportTransaction(const Disks & disks, LoggerPtr log)
 {
     for (const auto & disk : disks)
     {
-        if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
+        if (!supportWritingWithAppend(disk))
         {
-            if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
-            {
-                LOG_DEBUG(log, "Disk {} does not support writing with append", object_storage->getName());
-                return false;
-            }
+            LOG_DEBUG(log, "Disk {} does not support writing with append", disk->getName());
+            return false;
         }
     }
     return true;

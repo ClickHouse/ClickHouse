@@ -2271,7 +2271,7 @@ bool MutateTask::execute()
             //
             // Fetching a byte-identical part (in case of checksum mismatches) will fail with
             // `Part ... should be deleted after previous attempt before fetch`.
-            promise.set_value(std::move(ctx->new_data_part));
+            promise.set_value(std::exchange(ctx->new_data_part, nullptr));
             return false;
         }
     }
@@ -2282,6 +2282,9 @@ void MutateTask::cancel() noexcept
 {
     if (task)
         task->cancel();
+
+    if (ctx->new_data_part)
+        ctx->new_data_part->removeIfNeeded();
 }
 
 void MutateTask::updateProfileEvents() const

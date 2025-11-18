@@ -9,7 +9,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Storages/IStorage_fwd.h>
 #include <base/types.h>
-#include <Common/AsyncLoader.h>
+#include <Common/AsyncLoader_fwd.h>
 
 #include <ctime>
 #include <functional>
@@ -365,7 +365,11 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery() const = 0;
+    ASTPtr getCreateDatabaseQuery() const
+    {
+        std::lock_guard lock{mutex};
+        return getCreateDatabaseQueryImpl();
+    }
 
     String getDatabaseComment() const
     {
@@ -441,6 +445,7 @@ public:
     virtual ~IDatabase();
 
 protected:
+    virtual ASTPtr getCreateDatabaseQueryImpl() const = 0;
     virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, ContextPtr /*context*/, bool throw_on_error) const;
 
     mutable std::mutex mutex;

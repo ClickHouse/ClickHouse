@@ -43,6 +43,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -477,7 +478,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             log->flushBufferToLog(std::chrono::system_clock::now());
 
             auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, log->getLastLogIndex()});
+            logs_to_wait.push_back({log, last_log_index});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }

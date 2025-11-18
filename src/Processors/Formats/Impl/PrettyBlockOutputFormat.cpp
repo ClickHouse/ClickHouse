@@ -10,6 +10,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <Common/setThreadName.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 

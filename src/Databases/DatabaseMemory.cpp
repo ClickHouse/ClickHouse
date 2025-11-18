@@ -92,17 +92,17 @@ void DatabaseMemory::dropTable(
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
+ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -217,11 +217,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
-}
-
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

@@ -330,7 +330,7 @@ protected:
     static constexpr std::array mandatory_argument_names = {"year", "month", "day", "hour", "minute", "second"};
 };
 
-/// makeDateTime(year, month, day, hour, minute, second, [timezone])
+/// makeDateTime(year, month, day, hour, minute, second[, timezone])
 class FunctionMakeDateTime : public FunctionMakeDateTimeBase
 {
 private:

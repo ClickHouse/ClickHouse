@@ -478,13 +478,13 @@ The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
+### Text index {#text}
+
+Supports full-text search, see [here](invertedindexes.md) for details.
+
 #### Vector similarity {#vector-similarity}
 
 Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
-
-### Text (experimental) {#text}
-
-Support full-text search, see [here](invertedindexes.md) for details.
 
 ### Functions support {#functions-support}
 

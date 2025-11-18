@@ -66,6 +66,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/S3/Credentials.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/ServerAsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -360,6 +361,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 jemalloc_flush_profile_interval_bytes;
     extern const ServerSettingsBool jemalloc_flush_profile_on_memory_exceeded;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsUInt64 s3_credentials_provider_max_cache_size;
 }
 
 namespace ErrorCodes
@@ -914,7 +916,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
-                executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                startup_context->setCurrentQueryId("");
+
+                {
+                    CurrentThread::QueryScope query_scope(startup_context);
+                    executeQuery(condition_read_buffer, condition_write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
+                }
 
                 auto result = condition_write_buffer.str();
                 if (result != "1\n" && result != "true\n")
@@ -943,6 +950,10 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
             LOG_DEBUG(log, "Executing query `{}`", query);
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+            startup_context->setCurrentQueryId("");
+
+            CurrentThread::QueryScope query_scope(startup_context);
+
             executeQuery(read_buffer, write_buffer, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
@@ -1179,6 +1190,10 @@ try
         LOG_INFO(
             log, "ClickHouse is bound to a subset of NUMA nodes. Total memory of all available nodes: {}", ReadableSize(*total_numa_memory));
     }
+
+#if USE_AWS_S3
+    DB::S3::setCredentialsProviderCacheMaxSize(server_settings[ServerSetting::s3_credentials_provider_max_cache_size]);
+#endif
 
     registerInterpreters();
     registerFunctions();

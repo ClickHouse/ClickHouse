@@ -19,6 +19,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/re2.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 

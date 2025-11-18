@@ -39,18 +39,18 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
-#include <filesystem>
 #include <memory>
 #include <mutex>
 
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_ELEMENTS_IN_CONFIG;
 }
-
-namespace DB
-{
 
 namespace ACME
 {
@@ -89,6 +89,9 @@ std::optional<VersionedCertificate> Client::requestCertificate() const
 
     std::string pkey;
     std::string certificate;
+
+    if (domains.empty())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "List of domains handled by ACME client is empty, please check configuration.");
 
     /// All domains have the same certificate
     std::string domain = domains.front();
@@ -144,7 +147,8 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     for (const auto & key : domains_keys)
         served_domains.push_back(config.getString("acme.domains." + key));
 
-    chassert(!served_domains.empty());
+    if (served_domains.empty())
+        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "List of domains handled by ACME client is empty, please check configuration.");
 
     domains = served_domains;
     refresh_certificates_task_interval = config.getInt("acme.refresh_certificates_task_interval", /* one hour */ 1000 * 60 * 60);

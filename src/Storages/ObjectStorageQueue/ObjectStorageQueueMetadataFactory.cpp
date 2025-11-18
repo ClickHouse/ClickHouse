@@ -2,6 +2,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Common/setThreadName.h>
 
 namespace CurrentMetrics
 {

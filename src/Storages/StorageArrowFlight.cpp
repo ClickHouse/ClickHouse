@@ -3,6 +3,7 @@
 #if USE_ARROWFLIGHT
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -27,6 +28,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int ARROWFLIGHT_FETCH_SCHEMA_ERROR;
     extern const int ARROWFLIGHT_WRITE_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
 }
 
 StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_)
@@ -117,7 +123,7 @@ StorageArrowFlight::StorageArrowFlight(
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
-        storage_metadata.setColumns(getTableStructureFromData(connection_, dataset_name_));
+        storage_metadata.setColumns(getTableStructureFromData(connection_, dataset_name_, context_));
     else
         storage_metadata.setColumns(columns_);
 
@@ -127,12 +133,22 @@ StorageArrowFlight::StorageArrowFlight(
 
 ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     std::shared_ptr<ArrowFlightConnection> connection_,
-    const String & dataset_name_)
+    const String & dataset_name_,
+    ContextPtr context_)
 {
     auto client = connection_->getClient();
     auto options = connection_->getOptions();
 
-    arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
+    arrow::flight::FlightDescriptor descriptor;
+    if (context_->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
+    {
+        String query = "SELECT * FROM " + dataset_name_;
+        descriptor = arrow::flight::FlightDescriptor::Command(query);
+    }
+    else
+    {
+        descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
+    }
     auto status = client->GetSchema(*options, descriptor);
     if (!status.ok())
     {
@@ -154,7 +170,7 @@ Pipe StorageArrowFlight::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    ContextPtr context_,
     QueryProcessingStage::Enum,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
@@ -168,7 +184,7 @@ Pipe StorageArrowFlight::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block));
+    return Pipe(std::make_shared<ArrowFlightSource>(connection, dataset_name, sample_block, context_));
 }
 
 class ArrowFlightSink : public SinkToStorage
@@ -177,11 +193,13 @@ public:
     explicit ArrowFlightSink(
         const StorageMetadataPtr & metadata_snapshot_,
         std::shared_ptr<ArrowFlightConnection> connection_,
-        const String & dataset_name_)
+        const String & dataset_name_,
+        ContextPtr context_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
         , metadata_snapshot(metadata_snapshot_)
         , connection(connection_)
         , dataset_name(dataset_name_)
+        , context(context_)
     {
     }
 
@@ -194,7 +212,16 @@ public:
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
-        arrow::flight::FlightDescriptor descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
+        arrow::flight::FlightDescriptor descriptor;
+        if (context && context->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
+        {
+            String query = "SELECT * FROM " + dataset_name;
+            descriptor = arrow::flight::FlightDescriptor::Command(query);
+        }
+        else
+        {
+            descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
+        }
 
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
@@ -268,12 +295,13 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::shared_ptr<ArrowFlightConnection> connection;
     String dataset_name;
+    ContextPtr context;
 };
 
 SinkToStoragePtr
-StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr, bool /*async_write*/)
+StorageArrowFlight::write(const ASTPtr & /* query */, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool /*async_write*/)
 {
-    return std::make_shared<ArrowFlightSink>(metadata_snapshot, connection, dataset_name);
+    return std::make_shared<ArrowFlightSink>(metadata_snapshot, connection, dataset_name, context_);
 }
 
 void registerStorageArrowFlight(StorageFactory & factory)

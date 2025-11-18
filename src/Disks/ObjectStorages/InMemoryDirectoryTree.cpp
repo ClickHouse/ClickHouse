@@ -151,7 +151,7 @@ void InMemoryDirectoryTree::apply(std::unordered_map<std::string, DirectoryRemot
         remote_path_to_inode[info.remote_path] = inode;
         inode->remote_info = std::move(info);
         remote_layout_directories_count.add();
-        remote_layout_files_count.add(inode->remote_info->file_names.size());
+        remote_layout_files_count.add(inode->remote_info->files.size());
     }
 }
 
@@ -178,12 +178,30 @@ std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> InMemoryDire
     const auto normalized_path = normalizePath(path);
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> subtree_info;
-    traverseSubtree(normalized_path, [&subtree_info](const std::string & node_path, const std::shared_ptr<INode> & node)
+    traverseSubtree(normalized_path, [&subtree_info](const std::string & node_path, const std::shared_ptr<const INode> & node)
     {
         subtree_info[node_path] = node->remote_info;
     });
 
     return subtree_info;
+}
+
+std::optional<FileRemoteInfo> InMemoryDirectoryTree::getFileRemoteInfo(const std::string & path) const
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path.parent_path());
+
+    if (!inode)
+        return std::nullopt;
+
+    if (inode->isVirtual())
+        return std::nullopt;
+
+    if (!inode->remote_info->files.contains(normalized_path.filename()))
+        return std::nullopt;
+
+    return inode->remote_info->files.at(normalized_path.filename());
 }
 
 void InMemoryDirectoryTree::recordDirectoryPath(const std::string & path, DirectoryRemoteInfo info)
@@ -201,7 +219,29 @@ void InMemoryDirectoryTree::recordDirectoryPath(const std::string & path, Direct
     remote_path_to_inode[info.remote_path] = inode;
     inode->remote_info = std::move(info);
     remote_layout_directories_count.add();
-    remote_layout_files_count.add(inode->remote_info->file_names.size());
+    remote_layout_files_count.add(inode->remote_info->files.size());
+}
+
+void InMemoryDirectoryTree::recordFile(const std::string & path, FileRemoteInfo info)
+{
+    std::lock_guard guard(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto inode = walk(normalized_path.parent_path());
+
+    if (!inode)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
+
+    if (inode->isVirtual())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Creation of a file under the virtual directory is not possible");
+
+    if (inode->subdirectories.contains(normalized_path.filename()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a subdirectory '{}' under the path '{}'. Can't create file", normalized_path.filename().string(), normalized_path.parent_path().string());
+
+    if (inode->remote_info->files.contains(normalized_path.filename()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File '{}' already exists", normalized_path.string());
+
+    inode->remote_info->files.emplace(normalized_path.filename(), std::move(info));
+    remote_layout_files_count.add();
 }
 
 void InMemoryDirectoryTree::unlinkTree(const std::string & path)
@@ -216,13 +256,13 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
     if (inode->isRoot())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_path.string());
 
-    traverseSubtree(normalized_path, [&](const std::string &, const std::shared_ptr<INode> & node) TSA_REQUIRES(mutex)
+    traverseSubtree(normalized_path, [&](const std::string &, const std::shared_ptr<const INode> & node) TSA_REQUIRES(mutex)
     {
         if (!node->remote_info.has_value())
             return;
 
         remote_path_to_inode.erase(node->remote_info->remote_path);
-        remote_layout_files_count.sub(node->remote_info->file_names.size());
+        remote_layout_files_count.sub(node->remote_info->files.size());
         remote_layout_directories_count.sub();
     });
 
@@ -254,7 +294,7 @@ void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::s
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a subdirectory '{}' under the path '{}', can't move", normalized_to.filename().string(), normalized_to.parent_path().string());
 
     if (!inode_to_parent->isVirtual())
-        if (inode_to_parent->remote_info->file_names.contains(normalized_to.filename()))
+        if (inode_to_parent->remote_info->files.contains(normalized_to.filename()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a file '{}' under the path '{}', can't move", normalized_to.filename().string(), normalized_to.parent_path().string());
 
     inode_from_parent->subdirectories.erase(normalized_from.filename());
@@ -277,7 +317,7 @@ std::vector<std::string> InMemoryDirectoryTree::listDirectory(const std::string 
     result.append_range(inode->subdirectories | std::views::keys);
 
     if (!inode->isVirtual())
-        result.append_range(inode->remote_info->file_names);
+        result.append_range(inode->remote_info->files | std::views::keys);
 
     return result;
 }
@@ -309,29 +349,7 @@ bool InMemoryDirectoryTree::existsFile(const std::string & path) const
     if (inode->isVirtual())
         return false;
 
-    return inode->remote_info->file_names.contains(normalized_path.filename());
-}
-
-void InMemoryDirectoryTree::addFile(const std::string & path)
-{
-    std::lock_guard guard(mutex);
-    const auto normalized_path = normalizePath(path);
-    const auto inode = walk(normalized_path.parent_path());
-
-    if (!inode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
-
-    if (inode->isVirtual())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Creation of a file under the virtual directory is not possible");
-
-    if (inode->subdirectories.contains(normalized_path.filename()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a subdirectory '{}' under the path '{}'. Can't create file", normalized_path.filename().string(), normalized_path.parent_path().string());
-
-    if (inode->remote_info->file_names.contains(normalized_path.filename()))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File '{}' already exists", normalized_path.string());
-
-    inode->remote_info->file_names.insert(normalized_path.filename());
-    remote_layout_files_count.add();
+    return inode->remote_info->files.contains(normalized_path.filename());
 }
 
 void InMemoryDirectoryTree::removeFile(const std::string & path)
@@ -346,10 +364,10 @@ void InMemoryDirectoryTree::removeFile(const std::string & path)
     if (inode->isVirtual())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Removal of a file under the virtual directory is not possible");
 
-    if (!inode->remote_info->file_names.contains(normalized_path.filename()))
+    if (!inode->remote_info->files.contains(normalized_path.filename()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "File '{}' does not exist", normalized_path.string());
 
-    inode->remote_info->file_names.erase(normalized_path.filename());
+    inode->remote_info->files.erase(normalized_path.filename());
     remote_layout_files_count.sub();
 }
 

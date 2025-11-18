@@ -1,9 +1,6 @@
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <mutex>
-#include <future>
 #include <condition_variable>
 #include <variant>
 #include <utility>
@@ -17,7 +14,6 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
-#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
@@ -34,6 +30,7 @@ struct TaskProfileEvents
     ProfileEvents::Event wait_ms = ProfileEvents::end();
 };
 using TaskRuntimeDataPtr = std::shared_ptr<TaskRuntimeData>;
+enum class ThreadName : uint8_t;
 
 /**
  * Has RAII class to determine how many tasks are waiting for the execution and executing at the moment.

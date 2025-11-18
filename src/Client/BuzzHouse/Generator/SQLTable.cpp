@@ -284,7 +284,10 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_version"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_sign"}));
         }
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
+        if (!this->inside_projection || rg.nextSmallNumber() < 2)
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_table"}));
+        }
     }
     return rel;
 }
@@ -1777,6 +1780,18 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             buf += has_paren ? ")" : "";
             idef->add_params()->set_unescaped_sval(std::move(buf));
+
+            if (rg.nextSmallNumber() < 4)
+            {
+                IndexKeyVal * ikv = idef->add_params()->mutable_kval();
+
+                ikv->set_key("preprocessor");
+                flatTableColumnPath(
+                    flat_tuple | flat_nested | flat_json | skip_nested_node, t.cols, [](const SQLColumn &) { return true; });
+                colRefOrExpression(
+                    rg, createTableRelation(rg, rg.nextSmallNumber() < 2, "", t), t, rg.pickRandomly(this->entries), ikv->mutable_value());
+                this->entries.clear();
+            }
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(1, 512);
@@ -2174,7 +2189,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         }
         tname = next.tname = this->table_counter++;
     }
-    ct->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
+    ct->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
     next.setName(ct->mutable_est(), false);
     if (!collectionHas<SQLTable>(tableLikeLambda) || rg.nextSmallNumber() < 9)
     {
@@ -2394,7 +2410,8 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         tname = next.tname = this->table_counter++;
     }
-    cd->set_create_opt(replace ? CreateReplaceOption::Replace : CreateReplaceOption::Create);
+    cd->set_create_opt(
+        replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
     next.setName(cd->mutable_est(), false);
 
     const auto & dictionary_table_lambda

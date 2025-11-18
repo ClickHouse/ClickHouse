@@ -36,7 +36,11 @@ CREATE TABLE tab
     `str` String,
     INDEX text_idx(str) TYPE text(
                                 -- Mandatory parameters:
-                                tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
+                                tokenizer = splitByNonAlpha
+                                            | splitByString[(S)]
+                                            | ngrams[(N)]
+                                            | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
+                                            | array
                                 -- Optional parameters:
                                 [, preprocessor = expression(str)]
                                 -- Optional advanced parameters:
@@ -50,7 +54,7 @@ ENGINE = MergeTree
 ORDER BY key
 ```
 
-**Tokenizer argument**. The `tokenizer` argument specifies the tokenizer:
+**Tokenizer argument (mandatory)**. The `tokenizer` argument specifies the tokenizer:
 
 - `splitByNonAlpha` splits strings along non-alphanumeric ASCII characters (also see function [splitByNonAlpha](/sql-reference/functions/splitting-merging-functions.md/#splitByNonAlpha)).
 - `splitByString(S)` splits strings along certain user-defined separator strings `S` (also see function [splitByString](/sql-reference/functions/splitting-merging-functions.md/#splitByString)).
@@ -58,10 +62,14 @@ ORDER BY key
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `ngrams(N)` splits strings into equally large `N`-grams (also see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
- The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
+  The ngram length can be specified using an optional integer parameter between 2 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
+- `sparseGrams(min_length, max_length, min_cutoff_length)` splits strings into variable-length n-grams of at least `min_length` and at most `max_length` (inclusive) characters (also see function [sparseGrams](/sql-reference/functions/string-functions#sparseGrams)).
+  Unless specified explicitly, `min_length` and `max_length` default to 3 and 100.
+  If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are stored in the index.
+  Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
+  For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are stored in the index.
 - `array` performs no tokenization, i.e. every row value is a token (also see function [array](/sql-reference/functions/array-functions.md/#array)).
-- `sparseGrams(min_length, max_length, min_cutoff_length)` — uses the algorithm as in the [sparseGrams](/sql-reference/functions/string-functions#sparseGrams) function to split a string into all ngrams of `min_length` and several ngrams of larger size up to `max_length`, inclusive. If `min_cutoff_length` is specified, only N-grams with length greater than or equal to `min_cutoff_length` are saved in the index. Unlike `ngrams(N)`, which generates only fixed-length N-grams, `sparseGrams` produces a set of variable-length N-grams within the specified range, allowing for a more flexible representation of text context. For example, `tokenizer = sparseGrams(3, 5, 4)` will generate 3-, 4-, 5-grams from the input string and save only the 4- and 5-grams in the index.
 
 :::note
 The `splitByString` tokenizer applies the split separators left-to-right.
@@ -80,24 +88,22 @@ We plan to add specialized language-specific tokenizers in future which will han
 
 To test how the tokenizers split the input string, you can use ClickHouse's [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function:
 
-As an example,
+Example:
 
 ```sql
-SELECT tokens('abc def', 'ngrams', 3) AS tokens;
+SELECT tokens('abc def', 'ngrams', 3);
 ```
 
-returns
+Result:
 
 ```result
-+-tokens--------------------------+
-| ['abc','bc ','c d',' de','def'] |
-+---------------------------------+
+['abc','bc ','c d',' de','def']
 ```
 
-**Preprocessor argument**. The optional argument `preprocessor` is an expression which transforms the input string before tokenization.
+**Preprocessor argument (optional)**. The argument `preprocessor` is an expression which is applied to the input string before tokenization.
 
 Typical use cases for the preprocessor argument include
-1. Lower-casing (or upper-casing) the input strings to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8), see the first example below.
+1. Lower- or upper-casing to enable case-insensitive matching, e.g., [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8), see the first example below.
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
 3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode).
 
@@ -113,7 +119,7 @@ Using non-deterministic functions is not allowed.
 
 Functions [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken), [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens) and [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens) use the preprocessor to first transform the search term before tokenizing it.
 
-For example:
+For example,
 
 ```sql
 CREATE TABLE tab
@@ -143,7 +149,7 @@ ORDER BY tuple();
 SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
 ```
 
-**Other arguments**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
+**Other arguments (optional)**. Text indexes in ClickHouse are implemented as [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#skip-index-types).
 However, unlike other skipping indexes, text indexes have a default index GRANULARITY of 64.
 This value has been chosen empirically and it provides a good trade-off between speed and index size for most use cases.
 Advanced users can specify a different index granularity (we do not recommend this).
@@ -188,7 +194,7 @@ WHERE string_search_function(column_with_text_index)
 
 #### `=` and `!=` {#functions-example-equals-notequals}
 
-`=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) and `!=` ([notEquals](/sql-reference/functions/comparison-functions.md/#notEquals) ) match the entire given search term.
+`=` ([equals](/sql-reference/functions/comparison-functions.md/#equals)) and `!=` ([notEquals](/sql-reference/functions/comparison-functions.md/#notEquals)) match the entire given search term.
 
 Example:
 
@@ -196,7 +202,7 @@ Example:
 SELECT * from tab WHERE str = 'Hello';
 ```
 
-The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `array` tokenizer (which causes the index to store entire row values).
+The text index supports `=` and `!=`, yet equality and inequality search only make sense with the `array` tokenizer (it causes the index to store entire row values).
 
 #### `IN` and `NOT IN` {#functions-example-in-notin}
 
@@ -216,7 +222,7 @@ The same restrictions as for `=` and `!=` apply, i.e. `IN` and `NOT IN` only mak
 These functions currently use the text index for filtering only if the index tokenizer is either `splitByNonAlpha` or `ngrams`.
 :::
 
-In order to use `LIKE` [like](/sql-reference/functions/string-search-functions.md/#like), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
+In order to use `LIKE` ([like](/sql-reference/functions/string-search-functions.md/#like)), `NOT LIKE` ([notLike](/sql-reference/functions/string-search-functions.md/#notLike)), and the [match](/sql-reference/functions/string-search-functions.md/#match) function with text indexes, ClickHouse must be able to extract complete tokens from the search term.
 
 Example:
 
@@ -305,7 +311,7 @@ SELECT count() FROM tab WHERE has(array, 'clickhouse');
 
 #### `mapContains` {#functions-example-mapcontains}
 
-Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)(alias of: `mapContainsKey`) matches against a single token in the keys of a map.
+Function [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains) (an alias of `mapContainsKey`) matches against a single token in the keys of a map.
 
 Example:
 
@@ -322,17 +328,17 @@ Access [operator[]](/sql-reference/operators#access-operators) can be used with 
 Example:
 
 ```sql
-SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text index if defined
+SELECT count() FROM tab WHERE map['engine'] = 'clickhouse';
 ```
 
-See the following examples for the usage of `Array(T)` and `Map(K, V)` with the text index.
+See the following examples for using columns of type `Array(T)` and `Map(K, V)` with the text index.
 
-### Examples for the text index `Array` and `Map` support. {#text-index-array-and-map-examples}
+### Examples for `Array` and `Map` columns with text indexes {#text-index-array-and-map-examples}
 
-#### Indexing Array(String) {#text-index-example-array}
+#### Indexing Array(String) columns {#text-index-example-array}
 
-In a simple blogging platform, authors assign keywords to their posts to categorize content.
-A common feature allows users to discover related content by clicking on keywords or searching for topics.
+Imagine a blogging platform, where authors categorize their blog posts using keywords.
+We like users to discover related content by searching for or clicking on topics.
 
 Consider this table definition:
 
@@ -341,7 +347,7 @@ CREATE TABLE posts (
     post_id UInt64,
     title String,
     content String,
-    keywords Array(String) COMMENT 'Author-defined keywords'
+    keywords Array(String)
 )
 ENGINE = MergeTree
 ORDER BY (post_id);
@@ -354,24 +360,18 @@ SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- slow full-table 
 ```
 
 As the platform grows, this becomes increasingly slow because the query must examine every keywords array in every row.
-
-To overcome this performance issue, we can define a text index for the `keywords` that creates a search-optimized structure that pre-processes all keywords, enabling instant lookups:
+To overcome this performance issue, we define a text index for column `keywords`:
 
 ```sql
 ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE posts MATERIALIZE INDEX keywords_idx; -- Don't forget to rebuild the index for existing data
 ```
 
-:::note
-Important: After adding the text index, you must rebuild it for existing data:
+#### Indexing Map columns {#text-index-example-map}
 
-```sql
-ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
-```
-:::
-
-#### Indexing Map {#text-index-example-map}
-
-In a logging system, server requests often store metadata in key-value pairs. Operations teams need to efficiently search through logs for debugging, security incidents, and monitoring.
+In many observability use cases, log messages are split into "components" and stored as appropriate data types, e.g. date time for the timestamp, enum for the log level etc.
+Metrics fields are best stored as key-value pairs.
+Operations teams need to efficiently search through logs for debugging, security incidents, and monitoring.
 
 Consider this logs table:
 
@@ -388,58 +388,157 @@ ORDER BY (timestamp);
 
 Without a text index, searching through [Map](/sql-reference/data-types/map.md) data requires full table scans:
 
-1. Finds all logs with rate limiting:
-
 ```sql
+-- Finds all logs with rate limiting data:
 SELECT count() FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- slow full-table scan
-```
 
-2. Finds all logs from a specific IP:
-
-```sql
+-- Finds all logs from a specific IP:
 SELECT count() FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- slow full-table scan
 ```
 
 As log volume grows, these queries become slow.
 
 The solution is creating a text index for the [Map](/sql-reference/data-types/map.md) keys and values.
-
 Use [mapKeys](/sql-reference/functions/tuple-map-functions.md/#mapkeys) to create a text index when you need to find logs by field names or attribute types:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
+ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
 ```
 
 Use [mapValues](/sql-reference/functions/tuple-map-functions.md/#mapvalues) to create a text index when you need to search within the actual content of attributes:
 
 ```sql
 ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
-```
-
-:::note
-Important: After adding the text index, you must rebuild it for existing data:
-
-```sql
-ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
 ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
 ```
-:::
 
-1. Find all rate-limited requests:
+Example queries:
 
 ```sql
+-- Find all rate-limited requests:
 SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
-```
 
-2. Finds all logs from a specific IP:
-
-```sql
+-- Finds all logs from a specific IP:
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 ```
 
-## Implementation {#implementation}
+## Performance Tuning {#performance-tuning}
 
-### Index layout {#index-layout}
+### Direct read {#direct-read}
+
+Certain types of text queries can be speed up significantly by an optimization called "direct read".
+More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
+
+Example:
+
+```sql
+SELECT column_a, column_b, ... -- not: column_with_text_index
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
+Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
+
+Direct read is controlled by two settings:
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+
+Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
+
+**Supported functions**
+The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
+These functions can also be combined by AND, OR, and NOT operators.
+The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
+
+To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
+As an example, a query with disabled direct read
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
+         use_skip_indexes_on_data_read = 1;
+```
+
+returns
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+whereas the same query run with `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
+         use_skip_indexes_on_data_read = 1;
+```
+
+returns
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
+[...]
+```
+
+The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
+If this column is present, then direct read is used.
+
+### Caching {#caching}
+
+Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
+Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
+They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+By default, all caches are disabled.
+
+Please refer the following server settings to configure the caches.
+
+#### Dictionary blocks cache settings {#caching-dictionary}
+
+| Setting                                                                                                                                                  | Description                                                                                                    |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)                | Text index dictionary block cache policy name.                                                                 |
+| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                    | Maximum cache size in bytes.                                                                                   |
+| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)      | Maximum number of deserialized dictionary blocks in cache.                                                     |
+| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)        | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.  |
+
+#### Header cache settings {#caching-header}
+
+| Setting                                                                                                                              | Description                                                                                          |
+|--------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| [text_index_header_cache_policy](/operations/server-configuration-parameters/settings#text_index_header_cache_policy)                | Text index header cache policy name.                                                                 |
+| [text_index_header_cache_size](/operations/server-configuration-parameters/settings#text_index_header_cache_size)                    | Maximum cache size in bytes.                                                                         |
+| [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)      | Maximum number of deserialized headers in cache.                                                     |
+| [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)        | The size of the protected queue in the text index header cache relative to the cache\'s total size.  |
+
+#### Posting lists cache settings {#caching-posting-lists}
+
+| Setting                                                                                                                               | Description                                                                                             |
+|---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| [text_index_postings_cache_policy](/operations/server-configuration-parameters/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  |
+| [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            |
+| [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
+| [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
+
+## Implementation Details {#implementation}
 
 Each text index consists of two (abstract) data structures:
 - a dictionary which maps each token to a postings list, and
@@ -465,81 +564,6 @@ The bloom filter allows to skip dictionary blocks early if the searched token is
 The posting lists for all tokens are laid out sequentially in the postings list file.
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the cardinality of a posting list is less than 16 (configurable by parameter `max_cardinality_for_embedded_postings`), it is embedded into the dictionary.
-
-### Direct read {#direct-read}
-
-Certain types of text queries can be speed up significantly by an optimization called "direct read".
-More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
-
-Example:
-
-```sql
-SELECT column_a, column_b, ... -- not: column_with_text_index
-FROM [...]
-WHERE string_search_function(column_with_text_index)
-```
-
-The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
-Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
-
-Direct read is controlled by two settings:
-- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
-
-Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
-
-**Supported functions**
-The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-These functions can also be combined by AND, OR, and NOT operators.
-The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
-
-To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
-As an example, a query with disabled direct read
-
-```sql
-EXPLAIN PLAN actions = 1
-SELECT count()
-FROM tab
-WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0;
-```
-
-returns
-
-```text
-[...]
-Filter ((WHERE + Change column names to column identifiers))
-Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
-Actions: INPUT : 0 -> col String : 0
-         COLUMN Const(String) -> 'some_token'_String String : 1
-         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
-[...]
-```
-
-whereas the same query run with `query_plan_direct_read_from_text_index = 1`
-
-```sql
-EXPLAIN PLAN actions = 1
-SELECT count()
-FROM tab
-WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1;
-```
-
-returns
-
-```text
-[...]
-Expression (Before GROUP BY)
-Positions:
-  Filter
-  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
-  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
-[...]
-```
-
-The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
-If this column is present, then direct read is used.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
@@ -760,43 +784,6 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 
 By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data.
 For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
-
-## Tuning the text index {#tuning-the-text-index}
-
-Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
-
-They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache) and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) respectively. By default, they are disabled.
-
-Refer the following server settings to configure the cache.
-
-### Server Settings {#text-index-tuning-server-settings}
-
-#### Dictionary blocks cache settings {#text-index-tuning-dictionary-blocks-cache}
-
-| Setting                                                                                                                                                  | Description                                                                                                       | Default      |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                    | `SLRU`       |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                      | `1073741824` |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                        | `1'000'000`  |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.     | `0.5`        |
-
-#### Header cache settings {#text-index-tuning-header-cache}
-
-| Setting                                                                                                                              | Description                                                                                             | Default      |
-|--------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_header_cache_policy](/operations/server-configuration-parameters/settings#text_index_header_cache_policy)             | Text index header cache policy name.                                                                    | `SLRU`       |
-| [text_index_header_cache_size](/operations/server-configuration-parameters/settings#text_index_header_cache_size)                 | Maximum cache size in bytes.                                                                            | `1073741824` |
-| [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)   | Maximum number of deserialized headers in cache.                                                        | `100'000`    |
-| [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)     | The size of the protected queue in the text index header cache relative to the cache\'s total size.     | `0.5`        |
-
-#### Posting lists cache settings {#text-index-tuning-posting-lists-cache}
-
-| Setting                                                                                                                               | Description                                                                                             | Default      |
-|---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_postings_cache_policy](/operations/server-configuration-parameters/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  | `SLRU`       |
-| [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            | `2147483648` |
-| [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       | `1'000'000`  |
-| [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   | `0.5`        |
 
 ## Related content {#related-content}
 

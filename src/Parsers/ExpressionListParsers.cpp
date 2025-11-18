@@ -2457,6 +2457,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::OR),            Operator("or",              3,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::AND),           Operator("and",             4,  2, OperatorType::Mergeable)},
     {toStringView(Keyword::IS_NOT_DISTINCT_FROM), Operator("isNotDistinctFrom", 6, 2)},
+    {toStringView(Keyword::IS_DISTINCT_FROM), Operator("isDistinctFrom", 6, 2)},
     {toStringView(Keyword::IS_NULL),       Operator("isNull",          6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},

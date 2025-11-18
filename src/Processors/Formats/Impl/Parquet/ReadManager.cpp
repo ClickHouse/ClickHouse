@@ -6,7 +6,9 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 
+#include <mutex>
 #include <shared_mutex>
+#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -41,11 +43,18 @@ std::optional<size_t> AtomicBitSet::findFirst()
     return std::nullopt;
 }
 
-void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_)
+void ReadManager::init(FormatParserSharedResourcesPtr parser_shared_resources_, const std::optional<std::vector<size_t>> & buckets_to_read_)
 {
     parser_shared_resources = parser_shared_resources_;
     reader.file_metadata = Reader::readFileMetaData(reader.prefetcher);
-    reader.prefilterAndInitRowGroups();
+
+    if (buckets_to_read_)
+    {
+        row_groups_to_read = std::unordered_set<UInt64>{};
+        for (auto rg : *buckets_to_read_)
+            row_groups_to_read->insert(rg);
+    }
+    reader.prefilterAndInitRowGroups(row_groups_to_read);
     reader.preparePrewhere();
 
     ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups, reader.row_groups.size());
@@ -337,7 +346,7 @@ void ReadManager::finishRowSubgroupStage(size_t row_group_idx, size_t row_subgro
         case ReadStage::PrewhereData:
         {
             chassert(!reader.prewhere_steps.empty());
-            reader.applyPrewhere(row_subgroup);
+            reader.applyPrewhere(row_subgroup, row_group);
             size_t prev = row_group.prewhere_ptr.exchange(row_subgroup_idx + 1);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             chassert(prev == row_subgroup_idx);
             if (row_subgroup_idx + 1 < row_group.subgroups.size())
@@ -846,7 +855,7 @@ ReadManager::ReadResult ReadManager::read()
             bool thread_pool_was_idle = parser_shared_resources->parsing_runner.isIdle();
 
             if (exception)
-                std::rethrow_exception(exception);
+                std::rethrow_exception(copyMutableException(exception));
 
             /// If `preserve_order`, only deliver chunks from `first_incomplete_row_group`.
             /// This ensures that row groups are delivered in order. Within a row group, row

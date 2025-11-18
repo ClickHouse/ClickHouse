@@ -3,6 +3,7 @@
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
