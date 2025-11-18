@@ -1,4 +1,5 @@
 import pytest
+import json
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -14,9 +15,10 @@ def get_array(query_result: str):
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
+    pytest.skip("Disabled because spark cannot correctly set sort_order_id for manifest files, issue https://github.com/apache/iceberg/issues/13634")
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
-    TABLE_NAME = "test_position_deletes_" + storage_type + "_" + get_uuid_str()
+    TABLE_NAME = "test_read_in_order_" + storage_type + "_" + get_uuid_str()
 
     spark.sql(f"""
         CREATE TABLE {TABLE_NAME} (
