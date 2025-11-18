@@ -115,11 +115,6 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainObjectStorage::getLastMod
     return std::nullopt;
 }
 
-bool MetadataStorageFromPlainObjectStorage::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
-}
-
 std::vector<std::string> MetadataStorageFromPlainObjectStorage::listDirectory(const std::string & path) const
 {
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
@@ -180,7 +175,7 @@ ObjectMetadataEntryPtr MetadataStorageFromPlainObjectStorage::getObjectMetadataE
     auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
     auto get = [&] -> ObjectMetadataEntryPtr
     {
-        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize()))
+        if (auto metadata = object_storage->tryGetObjectMetadata(object_key.serialize(), /*with_tags=*/ false))
             return std::make_shared<ObjectMetadataEntry>(metadata->size_bytes, metadata->last_modified.epochTime());
         return nullptr;
     };
@@ -273,13 +268,13 @@ void MetadataStorageFromPlainObjectStorageTransaction::replaceFile(const std::st
         true, path_from, path_to, *metadata_storage.getFsTree(), object_storage));
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & /* objects */)
+void MetadataStorageFromPlainObjectStorageTransaction::createMetadataFile(const std::string & path, const StoredObjects & objects)
 {
     if (metadata_storage.object_storage->isWriteOnce())
         return;
 
     operations.addOperation(
-        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, *metadata_storage.getFsTree(), object_storage));
+        std::make_unique<MetadataStorageFromPlainObjectStorageWriteFileOperation>(path, objects.front(), *metadata_storage.getFsTree(), object_storage));
 }
 
 void MetadataStorageFromPlainObjectStorageTransaction::createDirectory(const std::string & path)
