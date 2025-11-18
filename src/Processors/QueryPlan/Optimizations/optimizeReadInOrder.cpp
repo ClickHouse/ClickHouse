@@ -1042,7 +1042,10 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
                     const auto & table_join = join_step->getJoin()->getTableJoin();
                     auto strictness = table_join.strictness();
                     if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
+                    {
+                        LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
                         return nullptr;
+                    }
                 }
             }
 
@@ -1055,7 +1058,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
                 return nullptr;
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder();
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
         return order_info.input_order;
@@ -1075,7 +1078,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
                 return nullptr;
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder();
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
         return order_info.input_order;
@@ -1094,7 +1097,7 @@ InputOrderInfoPtr buildInputOrderInfo(SortingStep & sorting, bool & apply_virtua
             if (!can_read)
                 return nullptr;
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
-                join_step->keepLeftPipelineInOrder();
+                join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
         }
 
         return order_info.input_order;

@@ -191,6 +191,16 @@ bool JoinStep::allowPushDownToRight() const
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
 }
 
+void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
+{
+    if (disable_squashing)
+    {
+        min_block_size_rows = 0;
+        min_block_size_bytes = 0;
+    }
+    keep_left_read_in_order = true;
+}
+
 void JoinStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
