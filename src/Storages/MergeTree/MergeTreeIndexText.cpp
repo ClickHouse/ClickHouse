@@ -995,7 +995,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleText>(params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get(), preprocessor);
 }
