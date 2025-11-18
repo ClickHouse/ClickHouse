@@ -2,6 +2,7 @@
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/WriteMode.h>
+#include <Disks/supportWritingWithAppend.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -81,17 +82,6 @@ size_t getLogNumber(const std::string & path_str)
 }
 
 }
-
-static bool supportWritingWithAppend(const DiskPtr & disk)
-{
-    if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
-    {
-        if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
-            return false;
-    }
-    return true;
-}
-
 
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
     const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_)

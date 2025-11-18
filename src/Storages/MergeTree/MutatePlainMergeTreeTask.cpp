@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 
 namespace DB

@@ -90,6 +90,8 @@ public:
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
 
+    std::vector<JoinActionRef> getOutputActions() const;
+
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {
         return {std::move(expression_actions), std::move(join_operator)};
