@@ -189,9 +189,9 @@ def test_replica_host_special_characters(started_cluster):
     # The replica name 'node1' should exist
     assert "node1" in replicas, f"Expected replica 'node1' in ZooKeeper, got: {replicas}"
 
-    # Get the host_id value for node1
+    # Get the host_id value for node1 (full replica name is shard1|node1)
     host_id = node1.query(
-        "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas' AND name = 'node1'"
+        "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas' AND name = 'shard1|node1'"
     ).strip()
 
     # URL decode to get actual value
