@@ -423,9 +423,122 @@ SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- fast
 SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- fast
 ```
 
-## Implementation {#implementation}
+## Performance Tuning {#performance-tuning}
 
-### Index layout {#index-layout}
+### Direct read {#direct-read}
+
+Certain types of text queries can be speed up significantly by an optimization called "direct read".
+More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
+
+Example:
+
+```sql
+SELECT column_a, column_b, ... -- not: column_with_text_index
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
+Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
+
+Direct read is controlled by two settings:
+- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
+
+Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
+
+**Supported functions**
+The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
+These functions can also be combined by AND, OR, and NOT operators.
+The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
+
+To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
+As an example, a query with disabled direct read
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
+         use_skip_indexes_on_data_read = 1;
+```
+
+returns
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+whereas the same query run with `query_plan_direct_read_from_text_index = 1`
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
+         use_skip_indexes_on_data_read = 1;
+```
+
+returns
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
+[...]
+```
+
+The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
+If this column is present, then direct read is used.
+
+### Caching {#caching}
+
+Different caches are available to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
+Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
+They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache), and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache).
+By default, all caches are disabled.
+
+Please refer the following server settings to configure the caches.
+
+#### Dictionary blocks cache settings {#caching-dictionary}
+
+| Setting                                                                                                                                                  | Description                                                                                                    |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)                | Text index dictionary block cache policy name.                                                                 |
+| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                    | Maximum cache size in bytes.                                                                                   |
+| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)      | Maximum number of deserialized dictionary blocks in cache.                                                     |
+| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)        | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.  |
+
+#### Header cache settings {#caching-header}
+
+| Setting                                                                                                                              | Description                                                                                          |
+|--------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
+| [text_index_header_cache_policy](/operations/server-configuration-parameters/settings#text_index_header_cache_policy)                | Text index header cache policy name.                                                                 |
+| [text_index_header_cache_size](/operations/server-configuration-parameters/settings#text_index_header_cache_size)                    | Maximum cache size in bytes.                                                                         |
+| [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)      | Maximum number of deserialized headers in cache.                                                     |
+| [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)        | The size of the protected queue in the text index header cache relative to the cache\'s total size.  |
+
+#### Posting lists cache settings {#caching-posting-lists}
+
+| Setting                                                                                                                               | Description                                                                                             |
+|---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| [text_index_postings_cache_policy](/operations/server-configuration-parameters/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  |
+| [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            |
+| [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
+| [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
+
+## Implementation Details {#implementation}
 
 Each text index consists of two (abstract) data structures:
 - a dictionary which maps each token to a postings list, and
@@ -451,81 +564,6 @@ The bloom filter allows to skip dictionary blocks early if the searched token is
 The posting lists for all tokens are laid out sequentially in the postings list file.
 To save space while still allowing fast intersection and union operations, the posting lists are stored as [roaring bitmaps](https://roaringbitmap.org/).
 If the cardinality of a posting list is less than 16 (configurable by parameter `max_cardinality_for_embedded_postings`), it is embedded into the dictionary.
-
-### Direct read {#direct-read}
-
-Certain types of text queries can be speed up significantly by an optimization called "direct read".
-More specifically, the optimization can be applied if the SELECT query does _not_ project from the text column.
-
-Example:
-
-```sql
-SELECT column_a, column_b, ... -- not: column_with_text_index
-FROM [...]
-WHERE string_search_function(column_with_text_index)
-```
-
-The direct read optimization in ClickHouse answers the query exclusively using the text index (i.e., text index lookups) without accessing the underlying text column.
-Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering surviving granules).
-
-Direct read is controlled by two settings:
-- Setting [query_plan_direct_read_from_text_index](../../../operations/settings/settings#query_plan_direct_read_from_text_index) (default: 1) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](../../../operations/settings/settings#use_skip_indexes_on_data_read) (default: 1) which is another prerequisite for direct read. Note that on ClickHouse databases with [compatibility](../../../operations/settings/settings#compatibility) < 25.10, `use_skip_indexes_on_data_read` is disabled, so you either need to raise the compatibility setting value or `SET use_skip_indexes_on_data_read = 1` explicitly.
-
-Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
-
-**Supported functions**
-The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-These functions can also be combined by AND, OR, and NOT operators.
-The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
-
-To understand a query utilizes direct read, run the query with `EXPLAIN PLAN actions = 1`.
-As an example, a query with disabled direct read
-
-```sql
-EXPLAIN PLAN actions = 1
-SELECT count()
-FROM tab
-WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0;
-```
-
-returns
-
-```text
-[...]
-Filter ((WHERE + Change column names to column identifiers))
-Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
-Actions: INPUT : 0 -> col String : 0
-         COLUMN Const(String) -> 'some_token'_String String : 1
-         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
-[...]
-```
-
-whereas the same query run with `query_plan_direct_read_from_text_index = 1`
-
-```sql
-EXPLAIN PLAN actions = 1
-SELECT count()
-FROM tab
-WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1;
-```
-
-returns
-
-```text
-[...]
-Expression (Before GROUP BY)
-Positions:
-  Filter
-  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
-  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
-[...]
-```
-
-The second EXPLAIN PLAN output contains a virtual column `__text_index_<index_name>_<function_name>_<id>`.
-If this column is present, then direct read is used.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 
@@ -746,43 +784,6 @@ SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_re
 
 By combining the results from the index, the direct read query is 34 times faster (0.450s vs 0.013s) and avoids reading the 9.58 GB of column data.
 For this specific case, `hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` would be the preferred, more efficient syntax.
-
-## Tuning the text index {#tuning-the-text-index}
-
-Currently, there are caches for the deserialized dictionary blocks, headers and posting lists of the text index to reduce I/O.
-
-They can be enabled via settings [use_text_index_dictionary_cache](/operations/settings/settings#use_text_index_dictionary_cache), [use_text_index_header_cache](/operations/settings/settings#use_text_index_header_cache) and [use_text_index_postings_cache](/operations/settings/settings#use_text_index_postings_cache) respectively. By default, they are disabled.
-
-Refer the following server settings to configure the cache.
-
-### Server Settings {#text-index-tuning-server-settings}
-
-#### Dictionary blocks cache settings {#text-index-tuning-dictionary-blocks-cache}
-
-| Setting                                                                                                                                                  | Description                                                                                                       | Default      |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_dictionary_block_cache_policy](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_policy)             | Text index dictionary block cache policy name.                                                                    | `SLRU`       |
-| [text_index_dictionary_block_cache_size](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size)                 | Maximum cache size in bytes.                                                                                      | `1073741824` |
-| [text_index_dictionary_block_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_max_entries)   | Maximum number of deserialized dictionary blocks in cache.                                                        | `1'000'000`  |
-| [text_index_dictionary_block_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_dictionary_block_cache_size_ratio)     | The size of the protected queue in the text index dictionary block cache relative to the cache\'s total size.     | `0.5`        |
-
-#### Header cache settings {#text-index-tuning-header-cache}
-
-| Setting                                                                                                                              | Description                                                                                             | Default      |
-|--------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_header_cache_policy](/operations/server-configuration-parameters/settings#text_index_header_cache_policy)             | Text index header cache policy name.                                                                    | `SLRU`       |
-| [text_index_header_cache_size](/operations/server-configuration-parameters/settings#text_index_header_cache_size)                 | Maximum cache size in bytes.                                                                            | `1073741824` |
-| [text_index_header_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_header_cache_max_entries)   | Maximum number of deserialized headers in cache.                                                        | `100'000`    |
-| [text_index_header_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_header_cache_size_ratio)     | The size of the protected queue in the text index header cache relative to the cache\'s total size.     | `0.5`        |
-
-#### Posting lists cache settings {#text-index-tuning-posting-lists-cache}
-
-| Setting                                                                                                                               | Description                                                                                             | Default      |
-|---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|--------------|
-| [text_index_postings_cache_policy](/operations/server-configuration-parameters/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  | `SLRU`       |
-| [text_index_postings_cache_size](/operations/server-configuration-parameters/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            | `2147483648` |
-| [text_index_postings_cache_max_entries](/operations/server-configuration-parameters/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       | `1'000'000`  |
-| [text_index_postings_cache_size_ratio](/operations/server-configuration-parameters/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   | `0.5`        |
 
 ## Related content {#related-content}
 

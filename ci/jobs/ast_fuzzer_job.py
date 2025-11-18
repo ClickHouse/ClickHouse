@@ -3,9 +3,11 @@ import logging
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 from ci.jobs.scripts.docker_image import DockerImage
+from ci.jobs.scripts.generate_test import FuzzerTestGenerator
 from ci.jobs.scripts.stack_trace_reader import StackTraceReader
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -14,7 +16,6 @@ from ci.praktika.utils import Shell, Utils
 IMAGE_NAME = "clickhouse/fuzzer"
 
 cwd = Utils.cwd()
-temp_dir = Path(f"{cwd}/ci/tmp/")
 
 
 def get_run_command(
@@ -46,14 +47,10 @@ def get_run_command(
     )
 
 
-def main():
+def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
 
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
-
+    temp_dir = Path(f"{cwd}/ci/tmp/")
     assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
 
     docker_image = DockerImage.get_docker_image(IMAGE_NAME).pull_image()
@@ -77,12 +74,13 @@ def main():
     fuzzer_log = workspace_path / "fuzzer.log"
     dmesg_log = workspace_path / "dmesg.log"
     fatal_log = workspace_path / "fatal.log"
+    server_log = workspace_path / "server.log"
     paths = [
         workspace_path / "core.zst",
         workspace_path / "dmesg.log",
         fatal_log,
         workspace_path / "stderr.log",
-        workspace_path / "server.log",
+        server_log,
         workspace_path / "fuzzer_out.sql",
         fuzzer_log,
         dmesg_log,
@@ -98,41 +96,82 @@ def main():
         if not result_.is_ok():
             result.results = [result_]
             result.set_status(Result.Status.FAILED)
-        else:
-            pass
-    except:
+    except Exception:
         result.set_status(Result.Status.ERROR)
-        result.results = [Result(name="Unknown error", status=Result.Status.ERROR)]
+        result.results = [
+            Result(name="Unknown error", status=Result.StatusExtended.ERROR)
+        ]
 
-    fuzzer_query = ""
-    stack_trace = ""
-    info = ""
     if not result.is_ok():
-        if fuzzer_log.exists():
-            fuzzer_query = StackTraceReader.get_fuzzer_query(fuzzer_log)
-            if fuzzer_query:
-                info = f"Query: {fuzzer_query}"
-            else:
-                info = "Fuzzer log:\n ~~~\n" + Shell.get_output(
-                    f"tail {fuzzer_log}", verbose=False
+        info = ""
+        error_output = Shell.get_output(
+            f"rg --text -A 10 -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
+        )
+        if error_output:
+            error_lines = error_output.splitlines()
+            for i, line in enumerate(error_lines):
+                if "] {" in line and "} <" in line:
+                    error_lines = error_lines[:i]
+                    break
+            error_output = "\n".join(error_lines)
+            info += f"Error:\n{error_output}\n"
+
+        if result.results and result.results[-1].name in [
+            "Let op!",
+            "Killed",
+            "Unknown error",
+        ]:
+            info += "---\n\nFuzzer log (last 30 lines):\n"
+            info += Shell.get_output(f"tail -n30 {fuzzer_log}", verbose=False) + "\n"
+        else:
+            try:
+                fuzzer_test_generator = FuzzerTestGenerator(
+                    str(server_log), str(fuzzer_log)
                 )
-            info += "\n---\n"
+                failed_query = fuzzer_test_generator.get_failed_query()
+                if failed_query:
+                    info += "---\n\nFailed query:\n"
+                    info += failed_query + "\n"
+                reproduce_commands = fuzzer_test_generator.get_reproduce_commands(
+                    failed_query
+                )
+                if reproduce_commands:
+                    info += "---\n\nReproduce commands (auto-generated; may require manual adjustment):\n"
+                    if len(reproduce_commands) > 20:
+                        reproduce_file_sql = workspace_path / "reproduce_commands.sql"
+                        with open(reproduce_file_sql, "w") as f:
+                            f.write("\n".join(reproduce_commands))
+                        paths.append(reproduce_file_sql)
+                        info += f"See file: {reproduce_file_sql}"
+                    else:
+                        info += "\n".join(reproduce_commands)
+            except Exception as e:
+                info += (
+                    "---\n\nFailed to fetch relevant queries from logs:\n"
+                    + traceback.format_exc()
+                    + "\n"
+                )
+
         if fatal_log.exists():
             stack_trace = StackTraceReader.get_stack_trace(fatal_log)
             if stack_trace:
-                info += "Stack trace:\n" + stack_trace
+                info += "---\n\nStack trace:\n"
+                info += stack_trace + "\n"
+
         if result.results:
             result.results[-1].info = info
         else:
             result.info = info
 
         if Shell.check(f"dmesg > {dmesg_log}"):
-            result.results.append(
-                Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                )
+            oom_result = Result.from_commands_run(
+                name="OOM in dmesg",
+                command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
             )
+            if not oom_result.is_ok():
+                # change status: failure -> FAIL
+                oom_result.set_status(Result.StatusExtended.FAIL)
+                result.results.append(oom_result)
         else:
             print("WARNING: dmesg not enabled")
 
@@ -145,4 +184,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
+    assert (
+        check_name
+    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+
+    run_fuzz_job(check_name)

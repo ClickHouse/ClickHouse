@@ -796,7 +796,7 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
     return sizeof(*this)
         + bloom_filter.getFilterSizeBytes()
         /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
-        + tokens_and_postings.capacity() * sizeof(std::pair<StringRef, PostingListBuilder *>)
+        + tokens_and_postings.capacity() * sizeof(SortedTokensAndPostings::value_type)
         + tokens_map.getBufferSizeInBytes()
         + posting_lists_size
         + arena->allocatedBytes();
