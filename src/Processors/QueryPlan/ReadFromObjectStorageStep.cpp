@@ -178,7 +178,7 @@ static bool isPrefixInputOrder(InputOrderInfoPtr small_input_order, InputOrderIn
 
     for (size_t i = 0; i < small_input_order->sort_description_for_merging.size(); ++i)
     {
-        if (normalizeColumnName(small_input_order->sort_description_for_merging.at(i).column_name) != 
+        if (normalizeColumnName(small_input_order->sort_description_for_merging.at(i).column_name) !=
                 big_input_order->sort_description_for_merging.at(i).column_name)
             return false;
 
