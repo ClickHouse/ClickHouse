@@ -179,7 +179,8 @@ namespace
         {
             String static_jwks;
             const String static_jwks_collection = config.getString(user_config + ".static_jwks");
-            if (!static_jwks_collection.empty()) {
+            if (!static_jwks_collection.empty())
+            {
                 auto config_prefix = "named_collections." + static_jwks_collection;
                 static_jwks = config.getString(config_prefix + ".jwks");
             }
