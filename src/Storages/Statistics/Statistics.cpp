@@ -44,14 +44,7 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     if (!data_type->isValueRepresentedByNumber())
         return {};
 
-    Field value_converted;
-    if (isInteger(data_type) && !isBool(data_type))
-        /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
-        value_converted = convertFieldToType(value, DataTypeFloat64());
-    else
-        /// We should convert value to the real column data type and then translate it to Float64.
-        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
-        value_converted = convertFieldToType(value, *data_type);
+    Field value_converted = convertFieldToType(value, DataTypeFloat64());
 
     if (value_converted.isNull())
         return {};
