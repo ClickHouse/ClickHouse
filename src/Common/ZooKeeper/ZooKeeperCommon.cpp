@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB::ErrorCodes
@@ -954,7 +955,7 @@ size_t ZooKeeperMultiResponse::sizeImpl() const
     for (const auto & response : responses)
     {
         if (!response)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty response");
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty response");
         const ZooKeeperResponse & zk_response = dynamic_cast<const ZooKeeperResponse &>(*response);
         OpNum op_num = zk_response.getOpNum();
         bool done = false;
