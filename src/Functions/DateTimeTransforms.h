@@ -2493,7 +2493,24 @@ struct DateTimeTransformImpl
             }
             else if (result_data_type.isTime() || result_data_type.isTime64())
             {
-                Op::vector(sources->getData(), col_to->getData(), DateLUT::instance(), transform, vec_null_map_to, input_rows_count);
+                const IDataType * from_type = arguments[0].type.get();
+                WhichDataType from_data_type(from_type);
+                if (from_data_type.isDateTime())
+                {
+                    const auto & dt_type = static_cast<const DataTypeDateTime &>(*from_type);
+                    const DateLUTImpl & tz = dt_type.hasExplicitTimeZone() ? dt_type.getTimeZone() : DateLUT::instance();
+                    Op::vector(sources->getData(), col_to->getData(), tz, transform, vec_null_map_to, input_rows_count);
+                }
+                else if (from_data_type.isDateTime64())
+                {
+                    const auto & dt64_type = static_cast<const DataTypeDateTime64 &>(*from_type);
+                    const DateLUTImpl & tz = dt64_type.hasExplicitTimeZone() ? dt64_type.getTimeZone() : DateLUT::instance();
+                    Op::vector(sources->getData(), col_to->getData(), tz, transform, vec_null_map_to, input_rows_count);
+                }
+                else
+                {
+                    Op::vector(sources->getData(), col_to->getData(), DateLUT::instance(), transform, vec_null_map_to, input_rows_count);
+                }
             }
             else
             {

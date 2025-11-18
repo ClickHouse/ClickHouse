@@ -1232,73 +1232,73 @@ struct ConvertThroughParsing
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
-                {
-                    if constexpr (to_datetime64)
                     {
-                        DateTime64 res = 0;
-                        parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
+                        if constexpr (to_datetime64)
+                        {
+                            DateTime64 res = 0;
+                            parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                            vec_to[i] = res;
+                        }
+                        else if constexpr (to_time64)
+                        {
+                            Time64 res = 0;
+                            parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                            vec_to[i] = res;
+                        }
+                        else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                        {
+                            time_t res;
+                            parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                            convertFromTime<ToDataType>(vec_to[i], res);
+                        }
+                        else
+                        {
+                            time_t res;
+                            parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                            convertFromTime<ToDataType>(vec_to[i], res);
+                        }
                     }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 res = 0;
-                        parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                    {
-                        time_t res;
-                        parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
-                    }
-                    else
-                    {
-                        time_t res;
-                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
-                    }
-                }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
                 {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 res = 0;
-                        parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
+                        if constexpr (to_datetime64)
+                        {
+                            DateTime64 res = 0;
+                            parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                            vec_to[i] = res;
+                        }
+                        else if constexpr (to_time64)
+                        {
+                            Time64 res = 0;
+                            parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                            vec_to[i] = res;
+                        }
+                        else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                        {
+                            time_t res;
+                            parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                            convertFromTime<ToDataType>(vec_to[i], res);
+                        }
+                        else
+                        {
+                            time_t res;
+                            parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                            convertFromTime<ToDataType>(vec_to[i], res);
+                        }
                     }
-                    else if constexpr (to_time64)
-                    {
-                        Time64 res = 0;
-                        parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                    {
-                        time_t res;
-                        parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
-                    }
-                    else
-                    {
-                        time_t res;
-                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
-                    }
-                }
                 else
                 {
                     if constexpr (to_datetime64)
                     {
-                        DateTime64 value = 0;
-                        readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                        vec_to[i] = value;
-                    }
+                            DateTime64 value = 0;
+                            readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                            vec_to[i] = value;
+                        }
                     else if constexpr (to_time64)
                     {
-                        Time64 value = 0;
-                        readTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                        vec_to[i] = value;
-                    }
+                            Time64 value = 0;
+                            readTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                            vec_to[i] = value;
+                        }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                     {
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
@@ -1337,8 +1337,8 @@ struct ConvertThroughParsing
                 }
 
                 if (!isAllRead(read_buffer))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
-            }
+                        throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
+                }
             else
             {
                 bool parsed;
@@ -1715,8 +1715,12 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            if (!time_zone && arguments.size() <= 2)
-                time_zone = &DateLUT::instance();
+            if (!time_zone)
+            {
+                // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
+                const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
+                time_zone = &from_type.getTimeZone();
+            }
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -2221,6 +2225,33 @@ struct ConvertImpl
                         && (std::is_same_v<FromDataType, DataTypeTime> || std::is_same_v<FromDataType, DataTypeTime64>)))
                 {
                     vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
+                }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeTime64> && std::is_same_v<ToDataType, DataTypeTime64>)
+                {
+                    // Handle Time64 to Time64 conversions with different scales
+                    if (col_from->getScale() != col_to->getScale())
+                    {
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        {
+                            ToFieldType result;
+                            bool convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
+                            if (convert_result)
+                                vec_to[i] = result;
+                            else
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(0);
+                                (*vec_null_map_to)[i] = true;
+                            }
+                        }
+                        else
+                        {
+                            vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                        }
+                    }
+                    else
+                    {
+                        vec_to[i] = vec_from[i];
+                    }
                 }
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
@@ -3098,9 +3129,9 @@ private:
                 /// We should use ConvertFromStringExceptionMode::Null mode when converting from String (or FixedString)
                 /// to Nullable type, to avoid 'value is too short' error on attempt to parse empty string from NULL values.
                 if (to_nullable && WhichDataType(from_type).isStringOrFixedString())
-                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag);
-                else
-                    done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
+                        done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertReturnNullOnErrorTag);
+                    else
+                        done = callOnIndexAndDataType<ToDataType>(from_type->getTypeId(), call, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag);
             }
 
             if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
