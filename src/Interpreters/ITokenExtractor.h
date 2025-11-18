@@ -4,8 +4,9 @@
 #include <base/types.h>
 #include <Interpreters/BloomFilter.h>
 #include <Common/assert_cast.h>
-
 #include <Functions/sparseGrams.h>
+
+#include <absl/container/flat_hash_set.h>
 
 namespace DB
 {
@@ -21,6 +22,7 @@ public:
         SplitByString,
         Array,
         SparseGrams,
+        Standard,
     };
 
     ITokenExtractor() = default;
@@ -153,6 +155,7 @@ private:
     static UInt64 extractNgramParam(std::span<const Field> params);
     static std::vector<String> extractSplitByStringParam(std::span<const Field> params);
     static std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(std::span<const Field> params);
+    static std::vector<String> extractStandardParam(std::span<const Field> params);
 };
 
 /// Parser extracting all ngrams from string.
@@ -241,6 +244,84 @@ private:
     mutable SparseGramsImpl<true> sparse_grams_iterator;
     mutable const char * previous_data = nullptr;
     mutable size_t previous_len = 0;
+};
+
+/// 1. ASCII Alphanumeric Tokens
+///
+/// * ASCII letters (`A-Z`, `a-z`) and digits (`0-9`) are accumulated into tokens.
+/// * `_` can appear at the **start, middle, or end** of a token, but a token cannot be **only `_` characters**.
+///
+///   * E.g., `a_b` → token
+///   * `_a` → token
+///   * `__` → ignored (no alphanumeric)
+///
+/// 2. Connectors
+///
+/// * `:` connects **letters only**, not digits.
+/// * `.` and `'` connect **letters-letters** or **digits-digits**.
+/// * If the connector cannot connect both sides, it is treated as a **token boundary**.
+///
+/// 3. Unicode / Chinese
+///
+/// * Chinese characters are **always single-character tokens**.
+/// * Certain Unicode punctuation (Chinese punctuation) are **stop characters** and **break tokens**.
+///
+/// 4. Token Validity
+///
+/// * Tokens must contain at least **one ASCII letter or digit** to be valid.
+/// * Connectors `_`, `:`, `.`, `'` cannot form a token by themselves.
+/// * `_` can start or end the token but must **not be the only character**.
+///
+/// 5. Stream Processing
+///
+/// * Tokenization is **stream-based** — return tokens as soon as they are complete.
+/// * ASCII fast path should be taken first for performance.
+/// * Only parse Unicode for **non-ASCII characters or stop characters**.
+///
+/// ---
+///
+/// Examples
+///
+/// | Input                    | Output Tokens                         |
+/// | ------------------------ | ------------------------------------- |
+/// | `a_b a_3 a_ _a __a_b_3_` | `['a_b','a_3','a_','_a','__a_b_3_']`  |
+/// | `3_b 3_3 3_ _3 __3_4_3_` | `['3_b','3_3','3_','_3','__3_4_3_']`  |
+/// | `a:b a:3 a: :a ::a:b:3:` | `['a:b','a','3','a','a','a:b','3']`   |
+/// | `a'b a'3 a' 'a ''a'b'3'` | `['a\'b','a','3','a','a','a\'b','3']` |
+/// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
+struct StandardTokenExtractor final : public ITokenExtractorHelper<StandardTokenExtractor>
+{
+    explicit StandardTokenExtractor(const std::vector<String> & stop_words_)
+        : ITokenExtractorHelper(Type::Standard)
+        , stop_words(stop_words_.begin(), stop_words_.end())
+    {
+    }
+
+    static const char * getName() { return "standard"; }
+    static const char * getExternalName() { return getName(); }
+
+    bool nextInString(
+        const char * data,
+        size_t length,
+        size_t * __restrict pos,
+        size_t * __restrict token_start,
+        size_t * __restrict token_length) const override;
+
+    bool nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const override;
+
+    void
+    substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    bool supportsStringLike() const override { return true; }
+
+private:
+    template <bool is_like_pattern>
+    bool nextInStringImpl(
+        const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const;
+
+    absl::flat_hash_set<String> stop_words;
 };
 
 template <Fn<bool(const char *, size_t)> Callback>
@@ -400,6 +481,12 @@ void forEachToken(const ITokenExtractor & extractor, const char * __restrict dat
         {
             const auto & sparse_grams_extractor = assert_cast<const SparseGramsTokenExtractor &>(extractor);
             detail::forEachTokenImpl(sparse_grams_extractor, data, length, callback);
+            return;
+        }
+        case ITokenExtractor::Type::Standard:
+        {
+            const auto & standard_extractor = assert_cast<const StandardTokenExtractor &>(extractor);
+            detail::forEachTokenImpl(standard_extractor, data, length, callback);
             return;
         }
     }
