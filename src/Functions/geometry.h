@@ -72,6 +72,7 @@ Polygon<Point> getPolygonFromField(const Field & field)
     const auto & array = field.safeGet<Array>();
     std::vector<Ring<Point>> rings_outer;
     Ring<Point> ring_inner;
+
     for (size_t i = 0; i < array.size(); ++i)
     {
         const auto & ring = array.at(i);
