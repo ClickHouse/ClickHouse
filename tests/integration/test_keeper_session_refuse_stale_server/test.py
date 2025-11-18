@@ -62,6 +62,14 @@ def test_session_refused_on_stale_keeper(started_cluster):
         "All connection tries failed while connecting to ZooKeeper" in error
     )
 
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+
+    # make sure ZooKeeperClientLastZXIDSeen is still correct when keeper session is expired
+    last_zxid_seen_metric = int(
+        node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientLastZXIDSeen'").strip()
+    )
+    assert 1 <= last_zxid_seen_metric <= 1000
+
     connection_loss_metric = int(
         node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientConnectionLoss'").strip()
     )
