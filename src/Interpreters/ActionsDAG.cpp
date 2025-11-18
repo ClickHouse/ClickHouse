@@ -239,7 +239,7 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
 namespace {
-void checkNodeIsValid(const ActionsDAG::Node &  node)
+void checkNodeIsValid(const ActionsDAG::Node & node)
 {
     /// TODO(antaljanosbenjamin): Deal with placeholders
     if (node.type == ActionsDAG::ActionType::PLACEHOLDER)
