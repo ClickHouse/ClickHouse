@@ -16,7 +16,7 @@ extern const int BAD_ARGUMENTS;
 
 namespace Paimon
 {
-    DB::ASTPtr createPartitionKeyAST(const PaimonTableSchema & table_schema)
+    DB::ASTPtr createPartitionKeyAST(const DB::PaimonTableSchema & table_schema)
     {
         std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
         partition_key_ast->name = "tuple";
@@ -32,7 +32,7 @@ namespace Paimon
     }
 
     DB::ColumnsDescription getPartitionColumnsDescription(
-        const PaimonTableSchema & table_schema)
+        const DB::PaimonTableSchema & table_schema)
     {
         DB::NamesAndTypesList names_and_types;
         for (const auto & column_name : table_schema.partition_keys)
@@ -68,7 +68,7 @@ namespace Paimon
         }
     }
 
-    bool PartitionPruner::canBePruned(const PaimonManifestEntry & manifest_entry)
+    bool PartitionPruner::canBePruned(const DB::PaimonManifestEntry & manifest_entry)
     {
         if (!key_condition.has_value())
             return false;

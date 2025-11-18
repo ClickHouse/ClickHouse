@@ -12,12 +12,12 @@ namespace Paimon
     class PartitionPruner
     {
     public:
-        PartitionPruner(const PaimonTableSchema & table_schema,
+        PartitionPruner(const DB::PaimonTableSchema & table_schema,
                         const DB::ActionsDAG & filter_dag,
                         DB::ContextPtr context);
-        bool canBePruned(const PaimonManifestEntry & manifest_entry);
+        bool canBePruned(const DB::PaimonManifestEntry & manifest_entry);
     private:
-        const PaimonTableSchema & table_schema;
+        const DB::PaimonTableSchema & table_schema;
         std::optional<DB::KeyCondition> key_condition;
         DB::KeyDescription partition_key;
     };
