@@ -1,6 +1,4 @@
 <clickhouse>
-    <keeper_max_retries>16</keeper_max_retries>
-    <keeper_retry_max_backoff_ms>100</keeper_retry_max_backoff_ms>
     <zookeeper>
         <node index="1">
             <host>zoo1</host>
