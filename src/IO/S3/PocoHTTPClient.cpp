@@ -1,14 +1,13 @@
 #include <Poco/Timespan.h>
 #include <Common/NetException.h>
 #include <Common/config_version.h>
-#include "IO/S3/Requests.h"
 #include "config.h"
 
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Requests.h>
 
-#include <utility>
 #include <algorithm>
 #include <functional>
 
