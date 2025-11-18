@@ -133,17 +133,23 @@ void addPartitionColumnsToChunk(
     }
 }
 
-void sanityCheckSchemaAndHivePartitionColumns(const NamesAndTypesList & hive_partition_columns_to_read_from_file_path, const ColumnsDescription & storage_columns)
+void sanityCheckSchemaAndHivePartitionColumns(
+    const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
+    const ColumnsDescription & storage_columns,
+    bool check_contained_in_schema)
 {
-    for (const auto & column : hive_partition_columns_to_read_from_file_path)
+    if (check_contained_in_schema)
     {
-        if (!storage_columns.has(column.name))
+        for (const auto & column : hive_partition_columns_to_read_from_file_path)
         {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "All hive partitioning columns must be present in the schema. Missing column: {}. "
-                "If you do not want to use hive partitioning, try `use_hive_partitioning=0` and/or `partition_strategy != hive`",
-                column.name);
+            if (!storage_columns.has(column.name))
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "All hive partitioning columns must be present in the schema. Missing column: {}. "
+                    "If you do not want to use hive partitioning, try `use_hive_partitioning=0` and/or `partition_strategy != hive`",
+                    column.name);
+            }
         }
     }
 
@@ -201,7 +207,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
     {
         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-        sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
+        sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */true);
     }
     else if (context->getSettingsRef()[Setting::use_hive_partitioning])
     {
@@ -212,6 +218,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
             inferred_schema,
             format_settings,
             context);
+        sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);
     }
 
     if (configuration->partition_columns_in_data_file)
@@ -260,7 +267,7 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
             context);
     }
 
-    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns);
+    sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);
 
     /// Partition strategy is not implemented for File/URL storages,
     /// so there is no option to set whether hive partition columns are in the data file or not.
