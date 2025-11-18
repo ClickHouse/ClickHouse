@@ -472,8 +472,7 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.reserve_exact(offsets.back());
-    res_data.resize(offsets.back());
+    res_data.resize_exact(offsets.back());
 
     const T * src = data.data();
     T * dst = res_data.data();
