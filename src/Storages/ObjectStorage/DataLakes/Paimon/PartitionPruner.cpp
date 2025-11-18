@@ -1,4 +1,9 @@
+#include <config.h>
+
+#if USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -91,3 +96,4 @@ namespace Paimon
         return !key_condition->mayBeTrueInRange(partition_key_values_ref.size(), partition_key_values_ref.data(), partition_key_values_ref.data(), partition_key.data_types);
     }
 }
+#endif

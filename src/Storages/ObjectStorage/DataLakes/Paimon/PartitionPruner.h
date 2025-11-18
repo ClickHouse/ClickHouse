@@ -1,11 +1,18 @@
 #pragma once
+#include <config.h>
+
+#if USE_AVRO
+
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonTableSchema.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonClient.h>
 
+namespace DB
+{
+struct PaimonManifestEntry;
+}
 
 namespace Paimon
 {
@@ -22,3 +29,4 @@ namespace Paimon
         DB::KeyDescription partition_key;
     };
 }
+#endif
