@@ -7,6 +7,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 class MultipleFileWriter
 {
 public:
@@ -56,5 +58,7 @@ private:
     SharedHeader sample_block;
     UInt64 total_bytes = 0;
 };
+
+#endif
 
 }

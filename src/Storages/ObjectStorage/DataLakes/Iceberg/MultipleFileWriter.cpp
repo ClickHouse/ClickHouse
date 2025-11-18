@@ -8,6 +8,8 @@
 namespace DB
 {
 
+#if USE_AVRO
+
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
     UInt64 max_data_file_num_bytes_,
@@ -91,5 +93,7 @@ UInt64 MultipleFileWriter::getResultBytes() const
 {
     return total_bytes;
 }
+
+#endif
 
 }

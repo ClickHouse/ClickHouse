@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
