@@ -110,12 +110,11 @@ public:
         res = std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)};
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const override
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
     {
-
-        if (options.notFull(name_buf))
-            writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, name_buf);
-        return std::make_shared<DataTypeString>();
+        WriteBufferFromOwnString wb;
+        writeQuoted(std::string_view{reinterpret_cast<const char *>(&chars[offsetAt(n)]), sizeAt(n)}, wb);
+        return {wb.str(), std::make_shared<DataTypeString>()};
     }
 
     StringRef getDataAt(size_t n) const override
@@ -310,9 +309,6 @@ public:
     void validate() const;
 
     bool isCollationSupported() const override { return true; }
-
-    /// Constructs a ColumnUInt64 representing the `.size` subcolumn, derived from the string offsets.
-    ColumnPtr createSizeSubcolumn() const;
 };
 
 

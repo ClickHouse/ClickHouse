@@ -4,7 +4,6 @@ description: 'Computes the quantile of a numeric data sequence using the Greenwa
 sidebar_position: 175
 slug: /sql-reference/aggregate-functions/reference/quantileGK
 title: 'quantileGK'
-doc_type: 'reference'
 ---
 
 # quantileGK

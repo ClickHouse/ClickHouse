@@ -214,7 +214,7 @@ void ReadFromSystemProjections::applyFilters(ActionDAGNodes added_filter_nodes)
             { ColumnString::create(), std::make_shared<DataTypeString>(), "database" },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }
@@ -248,12 +248,12 @@ void ReadFromSystemProjections::initializePipeline(QueryPipelineBuilder & pipeli
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
             continue;
-        if (database->isExternal())
+        if (!database->canContainMergeTreeTables())
             continue;
 
         /// Lazy database can contain only very primitive tables, it cannot contain tables with projections.

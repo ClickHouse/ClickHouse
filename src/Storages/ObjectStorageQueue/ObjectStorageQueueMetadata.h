@@ -9,7 +9,6 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/SettingsChanges.h>
 
 namespace fs = std::filesystem;
@@ -145,10 +144,8 @@ public:
     /// Get bucket by file path in case of bucket-based processing.
     Bucket getBucketForPath(const std::string & path) const;
     /// Acquire (take unique ownership of) bucket for processing.
-    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
-
-    static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log);
-    static ZooKeeperRetriesControl getKeeperRetriesControl(LoggerPtr log);
+    ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr
+    tryAcquireBucket(const Bucket & bucket, const Processor & processor);
 
     /// Set local ref count for metadata.
     void setMetadataRefCount(std::atomic<size_t> & ref_count_) { chassert(!metadata_ref_count); metadata_ref_count = &ref_count_; }
@@ -163,7 +160,7 @@ public:
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
-    void cleanupPersistentProcessingNodes();
+    void cleanupPersistentProcessingNodes(zkutil::ZooKeeperPtr zk_client);
 
     void migrateToBucketsInKeeper(size_t value);
 

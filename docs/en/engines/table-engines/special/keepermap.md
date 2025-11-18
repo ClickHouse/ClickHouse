@@ -4,11 +4,10 @@ description: 'This engine allows you to use Keeper/ZooKeeper cluster as consiste
 sidebar_label: 'KeeperMap'
 sidebar_position: 150
 slug: /engines/table-engines/special/keeper-map
-title: 'KeeperMap table engine'
-doc_type: 'reference'
+title: 'KeeperMap'
 ---
 
-# KeeperMap table engine
+# KeeperMap {#keepermap}
 
 This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads.
 

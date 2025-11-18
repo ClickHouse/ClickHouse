@@ -5,7 +5,6 @@ description: 'Returns an array of the approximately most frequent values in the 
 sidebar_position: 202
 slug: /sql-reference/aggregate-functions/reference/topk
 title: 'topK'
-doc_type: 'reference'
 ---
 
 # topK

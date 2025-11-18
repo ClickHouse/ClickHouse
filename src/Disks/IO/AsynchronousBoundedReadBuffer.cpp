@@ -162,7 +162,7 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
                 /// new read until position is before the current position in the working buffer
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "Attempt to set read until position before already read data ({} < {}, info: {})",
+                    "Attempt to set read until position before already read data ({} > {}, info: {})",
                     position,
                     getPosition(),
                     impl->getInfoForLog());
