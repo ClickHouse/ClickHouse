@@ -1,5 +1,6 @@
 #include <base/StringRef.h>
 
+#include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -201,11 +202,11 @@ private:
         size_t out_offset = 0;
         while (executor.pull(block))
         {
-            ColumnPtr attr_col = block.getByPosition(num_keys).column->convertToFullIfNeeded();
+            ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
 
             std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                key_columns[key_pos] = block.getByPosition(key_pos).column->convertToFullIfNeeded();
+                key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
 
             const size_t rows_in_block = attr_col->size();
             for (size_t row_id = 0; row_id < rows_in_block; ++row_id)
@@ -462,13 +463,13 @@ private:
         {
             chassert(block.columns() >= num_keys + 1);
 
-            ColumnPtr attr_col = block.getByPosition(num_keys).column->convertToFullIfNeeded();
+            ColumnPtr attr_col = removeSpecialRepresentations(block.getByPosition(num_keys).column);
             const size_t rows_in_block = attr_col->size();
 
             std::vector<ColumnPtr> key_columns(num_keys);
             for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
             {
-                key_columns[key_pos] = block.getByPosition(key_pos).column->convertToFullIfNeeded();
+                key_columns[key_pos] = removeSpecialRepresentations(block.getByPosition(key_pos).column);
                 chassert(key_columns[key_pos]->size() == rows_in_block);
             }
 
