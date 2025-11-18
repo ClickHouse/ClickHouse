@@ -6,12 +6,10 @@ import logging
 import os
 import subprocess
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DEBUGGER = os.getenv("DEBUGGER", "")
 TIMEOUT = int(os.getenv("TIMEOUT", "0"))
 OUTPUT = "/test_output"
-RUNNERS = int(os.getenv("RUNNERS", "16"))
 
 
 class Stopwatch:
@@ -55,25 +53,23 @@ def run_fuzzer(fuzzer: str, timeout: int):
     fuzzer_arguments = ""
     use_fuzzer_args = False
 
-    env = {}
-
     with Path(options_file) as path:
         if path.exists() and path.is_file():
             parser = configparser.ConfigParser()
             parser.read(path)
 
             if parser.has_section("asan"):
-                env["ASAN_OPTIONS"] = (
+                os.environ["ASAN_OPTIONS"] = (
                     f"{os.environ['ASAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['asan'].items())}"
                 )
 
             if parser.has_section("msan"):
-                env["MSAN_OPTIONS"] = (
+                os.environ["MSAN_OPTIONS"] = (
                     f"{os.environ['MSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['msan'].items())}"
                 )
 
             if parser.has_section("ubsan"):
-                env["UBSAN_OPTIONS"] = (
+                os.environ["UBSAN_OPTIONS"] = (
                     f"{os.environ['UBSAN_OPTIONS']}:{':'.join(f'{key}={value}' for key, value in parser['ubsan'].items())}"
                 )
 
@@ -110,7 +106,7 @@ def run_fuzzer(fuzzer: str, timeout: int):
     env = None
     with_fuzzer_args = ""
     if use_fuzzer_args:
-        env["FUZZER_ARGS"] = f"{custom_libfuzzer_options} {libfuzzer_corpora}".strip()
+        env = {"FUZZER_ARGS": f"{custom_libfuzzer_options} {libfuzzer_corpora}".strip()}
         with_fuzzer_args = f" with FUZZER_ARGS '{env['FUZZER_ARGS']}'"
     else:
         cmd_line += f" {custom_libfuzzer_options} {libfuzzer_corpora}"
@@ -165,20 +161,10 @@ def main():
 
     timeout = 30 if TIMEOUT == 0 else TIMEOUT
 
-    current = Path(".")
-    with ThreadPoolExecutor(max_workers=RUNNERS) as executor:
-        futures = {}
+    with Path() as current:
         for fuzzer in current.iterdir():
-            if fuzzer.is_file() and os.access(fuzzer, os.X_OK):
-                futures[executor.submit(run_fuzzer, fuzzer.name, timeout)] = fuzzer.name
-
-        for future in as_completed(futures):
-            fuzzer = futures[future]
-            try:
-                result = future.result()
-                logging.info("Thread for %s finished", fuzzer)
-            except Exception as exc:
-                logging.info("Thread for %s generated an exception: %s", fuzzer, exc)
+            if (current / fuzzer).is_file() and os.access(current / fuzzer, os.X_OK):
+                run_fuzzer(fuzzer.name, timeout)
 
     subprocess.check_call(f"ls -al {OUTPUT}", shell=True)
 

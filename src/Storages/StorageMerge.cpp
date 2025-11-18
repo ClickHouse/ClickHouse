@@ -68,7 +68,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
@@ -551,20 +550,16 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
 
-    // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
-    // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
-    // because narrowPipe doesn't preserve order. Also, if we are doing a memory efficient distributed agggregation, bucket
-    // order must be preserved.
-    const bool should_not_narrow = query_info.input_order_info || (
-        context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
-        && common_processed_stage == QueryProcessingStage::Enum::WithMergeableState);
-    if (!should_not_narrow)
+    if (!query_info.input_order_info)
     {
         size_t tables_count = selected_tables.size();
         Float64 num_streams_multiplier = std::min(
             tables_count, std::max(1UL, static_cast<size_t>(context->getSettingsRef()[Setting::max_streams_multiplier_for_merge_tables])));
         size_t num_streams = static_cast<size_t>(requested_num_streams * num_streams_multiplier);
 
+        // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
+        // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
+        // because narrowPipe doesn't preserve order.
         pipeline.narrow(num_streams);
     }
 
@@ -1441,7 +1436,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         for (const auto & db : databases)
         {
@@ -1487,7 +1482,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata, local_context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, storage_metadata);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
 }

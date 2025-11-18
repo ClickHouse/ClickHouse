@@ -4,7 +4,6 @@ sidebar_label: 'EmbeddedRocksDB'
 sidebar_position: 50
 slug: /engines/table-engines/integrations/embedded-rocksdb
 title: 'EmbeddedRocksDB Engine'
-doc_type: 'reference'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

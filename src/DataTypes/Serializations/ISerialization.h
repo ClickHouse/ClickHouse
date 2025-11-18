@@ -38,8 +38,6 @@ using SerializationPtr = std::shared_ptr<const ISerialization>;
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
 
-using ValueSizeMap = std::map<std::string, double>;
-
 class Field;
 
 struct FormatSettings;
@@ -175,9 +173,6 @@ public:
             ArrayElements,
             ArraySizes,
 
-            StringSizes,
-            InlinedStringSizes,
-
             NullableElements,
             NullMap,
 
@@ -285,10 +280,6 @@ public:
         /// It may be needed when dynamic subcolumns are processed separately.
         bool enumerate_dynamic_streams = true;
 
-        /// If set to false, don't enumerate virtual subcolumns
-        /// (such as .size subcolumn in String column).
-        bool enumerate_virtual_streams = false;
-
         /// If set to true, enumerate also specialized substreams for prefixes and suffixes.
         /// For example for discriminators in Variant column we should enumerate a separate
         /// substream VariantDiscriminatorsPrefix together with substream VariantDiscriminators that is
@@ -315,13 +306,6 @@ public:
 
     /// Enumerate streams with default settings.
     void enumerateStreams(
-        const StreamCallback & callback,
-        const DataTypePtr & type = nullptr,
-        const ColumnPtr & column = nullptr) const;
-
-    /// Similar to enumerateStreams, but also includes virtual substreams.
-    /// For example, DataTypeString has a virtual `.size` substream, which is included here.
-    void enumerateAllStreams(
         const StreamCallback & callback,
         const DataTypePtr & type = nullptr,
         const ColumnPtr & column = nullptr) const;
@@ -394,6 +378,9 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings;
 
+        /// If not zero, may be used to avoid reallocations while reading column of String type.
+        double avg_value_size_hint = 0;
+
         bool object_and_dynamic_read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
@@ -418,12 +405,6 @@ public:
         /// Callback to seek specific stream to a current mark that we read from.
         /// Used only in MergeTree and Compact part for Object shared data deserialization.
         std::function<void(const SubstreamPath &)> seek_stream_to_current_mark_callback;
-
-        /// Callback used to get avg_value_size_hint for each substream.
-        std::function<double(const SubstreamPath &)> get_avg_value_size_hint_callback;
-
-        /// Callback used to update avg_value_size_hint for each substream.
-        std::function<void(const SubstreamPath &, const IColumn &)> update_avg_value_size_hint_callback;
 
         /// Type of MergeTree data part we deserialize data from if any.
         /// Some serializations may differ from type part for more optimal deserialization.
@@ -578,8 +559,8 @@ public:
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 
-    static String getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream = false);
-    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream = false);
+    static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
     static void addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows);
     static std::optional<std::pair<ColumnPtr, size_t>> getColumnWithNumReadRowsFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);

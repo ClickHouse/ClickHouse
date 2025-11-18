@@ -4,7 +4,6 @@ keywords: ['analyzer']
 sidebar_label: 'Analyzer'
 slug: /operations/analyzer
 title: 'Analyzer'
-doc_type: 'reference'
 ---
 
 # Analyzer

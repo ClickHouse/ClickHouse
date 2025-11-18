@@ -191,7 +191,7 @@ void MergeTreeDataPartWriterWide::addStreams(
         query_write_settings.use_adaptive_write_buffer = settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size());
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
-        column_streams[stream_name] = std::make_unique<MergeTreeWriterStream<false>>(
+        column_streams[stream_name] = std::make_unique<Stream<false>>(
             stream_name,
             data_part_storage,
             stream_name, DATA_FILE_EXTENSION,
@@ -593,14 +593,14 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
     if (!getDataPartStorage().existsFile(mrk_path))
         return;
 
-    auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt);
+    auto mrk_file_in = getDataPartStorage().readFile(mrk_path, {}, std::nullopt, std::nullopt);
     std::unique_ptr<ReadBuffer> mrk_in;
     if (index_granularity_info.mark_type.compressed)
         mrk_in = std::make_unique<CompressedReadBufferFromFile>(std::move(mrk_file_in));
     else
         mrk_in = std::move(mrk_file_in);
 
-    DB::CompressedReadBufferFromFile bin_in(getDataPartStorage().readFile(bin_path, {}, std::nullopt));
+    DB::CompressedReadBufferFromFile bin_in(getDataPartStorage().readFile(bin_path, {}, std::nullopt, std::nullopt));
     bool must_be_last = false;
     UInt64 offset_in_compressed_file = 0;
     UInt64 offset_in_decompressed_block = 0;

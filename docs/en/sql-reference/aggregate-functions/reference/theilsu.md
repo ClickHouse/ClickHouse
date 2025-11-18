@@ -4,7 +4,6 @@ description: 'The `theilsU` function calculates Theils'' U uncertainty coefficie
 sidebar_position: 201
 slug: /sql-reference/aggregate-functions/reference/theilsu
 title: 'theilsU'
-doc_type: 'reference'
 ---
 
 # theilsU

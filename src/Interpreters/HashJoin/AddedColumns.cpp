@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinOnKeyColumns::JoinOnKeyColumns(
     const ScatteredBlock & block, const Names & key_names_, const String & cond_column_name, const Sizes & key_sizes_)
     : key_names(key_names_)
@@ -17,41 +22,17 @@ JoinOnKeyColumns::JoinOnKeyColumns(
 {
 }
 
-size_t LazyOutput::buildOutput(
-    size_t size_to_reserve,
-    const Block & left_block,
-    const IColumn::Offsets & left_offsets,
-    MutableColumns & columns,
-    const UInt64 * row_refs_begin,
-    const UInt64 * row_refs_end,
-    size_t rows_offset,
-    size_t rows_limit,
-    size_t bytes_limit) const
+void LazyOutput::buildOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     if (!output_by_row_list)
         buildOutputFromBlocks<false>(size_to_reserve, columns, row_refs_begin, row_refs_end);
     else
     {
-        if (rows_limit)
-        {
-            PaddedPODArray<UInt64> left_sizes;
-            if (bytes_limit)
-            {
-                for (const auto & col : left_block)
-                    col.column->collectSerializedValueSizes(left_sizes, nullptr);
-            }
-            return buildOutputFromBlocksLimitAndOffset(
-                columns, row_refs_begin, row_refs_end,
-                left_sizes, left_offsets,
-                rows_offset, rows_limit, bytes_limit);
-        }
-        if (!join_data_sorted && join_data_avg_perkey_rows < output_by_row_list_threshold)
+        if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>(size_to_reserve, columns, row_refs_begin, row_refs_end);
         else
             buildOutputFromRowRefLists(size_to_reserve, columns, row_refs_begin, row_refs_end);
     }
-    /// Without rows_limit, all possible rows are added and result value is not used.
-    return 0;
 }
 
 void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
@@ -86,81 +67,6 @@ void LazyOutput::buildJoinGetOutput(size_t size_to_reserve, MutableColumns & col
         }
     }
 }
-
-/// Returns how many rows were added to columns, up to rows_limit
-size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
-    MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
-    const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
-    size_t rows_offset, size_t rows_limit, size_t bytes_limit) const
-{
-    if (columns.empty())
-        return rows_limit;
-    std::vector<const Columns *> many_columns;
-    std::vector<UInt32> row_nums;
-    many_columns.reserve(rows_limit);
-    row_nums.reserve(rows_limit);
-
-    size_t row_idx = 0;
-    size_t total_byte_size = 0;
-    size_t left_idx = 0; /// position in non-replicated left block
-    for (const UInt64 * row_ref_i = row_refs_begin; rows_limit > 0 && row_ref_i != row_refs_end; ++row_ref_i)
-    {
-        if (*row_ref_i)
-        {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(*row_ref_i);
-            for (auto it = row_ref_list->begin(); rows_limit > 0 && it.ok(); ++it)
-            {
-                if (row_idx < rows_offset)
-                {
-                    ++row_idx;
-                    continue;
-                }
-
-                if (bytes_limit)
-                {
-                    /// Check if we are still in the same left row or moved to next one
-                    while (row_idx >= left_offsets[left_idx])
-                        ++left_idx;
-                    chassert(left_sizes.size() > left_idx);
-                    total_byte_size += left_sizes[left_idx];
-
-                    /// Add size of right matched rows
-                    for (const auto & col: *it->columns)
-                        total_byte_size += col->byteSizeAt(it->row_num);
-                }
-
-                ++row_idx;
-                --rows_limit;
-                many_columns.emplace_back(it->columns);
-                row_nums.emplace_back(it->row_num);
-
-                if (bytes_limit && total_byte_size > bytes_limit)
-                    rows_limit = 0;
-            }
-        }
-        else
-        {
-            if (row_idx < rows_offset)
-            {
-                ++row_idx;
-                continue;
-            }
-            many_columns.emplace_back(nullptr);
-            row_nums.emplace_back(0);
-            ++row_idx;
-            --rows_limit;
-            /// Here we do not account byte size, since limit targets to avoid only huge blocks with large strings being replicated many times.
-            /// In case of non-matched rows, left row is added only once and right columns are filled with defaults which have fixed small size.
-        }
-    }
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], many_columns, row_nums);
-    }
-    return row_nums.size();
-}
-
 
 template<bool from_row_list>
 void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
@@ -250,6 +156,13 @@ void AddedColumns<false>::appendFromBlock(const RowRef * row_ref, const bool has
 }
 
 template <>
+__attribute__((noreturn)) void AddedColumns<false>::appendFromBlock(const RowRefList *, bool)
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "AddedColumns are not implemented for RowRefList in non-lazy mode");
+}
+
+
+template <>
 void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
 {
 #ifndef NDEBUG
@@ -261,4 +174,31 @@ void AddedColumns<true>::appendFromBlock(const RowRef * row_ref, bool)
     }
 }
 
+template <>
+void AddedColumns<true>::appendFromBlock(const RowRefList * row_ref_list, bool)
+{
+#ifndef NDEBUG
+    checkColumns(*row_ref_list->columns);
+#endif
+    if (has_columns_to_add)
+    {
+        lazy_output.addRowRefList(row_ref_list);
+    }
+}
+
+
+template<>
+void AddedColumns<false>::appendDefaultRow()
+{
+    ++lazy_defaults_count;
+}
+
+template<>
+void AddedColumns<true>::appendDefaultRow()
+{
+    if (has_columns_to_add)
+    {
+        lazy_output.addDefault();
+    }
+}
 }

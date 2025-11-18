@@ -193,7 +193,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
         }
     }
     auto exponent = 9 - sec_scale_len; // max supported length of fraction of seconds is 9
-    nanoseconds = nanoseconds * std::pow(10, exponent);
+    nanoseconds = nanoseconds * pow(10, exponent);
 
     if (sign)
         time_span = -(days * 86400 + hours * 3600 + minutes * 60 + seconds + (nanoseconds / 1000000000));

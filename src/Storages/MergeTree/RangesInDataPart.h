@@ -2,14 +2,13 @@
 
 #include <unordered_map>
 #include <vector>
-#include <deque>
 
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <Storages/MergeTree/VectorSearchUtils.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 
 
 namespace DB

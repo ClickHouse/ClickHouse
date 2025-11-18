@@ -60,4 +60,3 @@ allow_experimental_dynamic_type
 allow_experimental_json_type
 allow_experimental_vector_similarity_index
 enable_vector_similarity_index
-allow_experimental_live_view

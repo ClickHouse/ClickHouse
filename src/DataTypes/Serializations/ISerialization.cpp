@@ -62,8 +62,6 @@ ISerialization::Kind ISerialization::stringToKind(const String & str)
 
 const std::set<SubstreamType> ISerialization::Substream::named_types
 {
-    StringSizes,
-    InlinedStringSizes,
     TupleElement,
     NamedOffsets,
     NamedNullMap,
@@ -119,17 +117,6 @@ void ISerialization::enumerateStreams(
     enumerateStreams(settings, callback, data);
 }
 
-void ISerialization::enumerateAllStreams(
-    const StreamCallback & callback,
-    const DataTypePtr & type,
-    const ColumnPtr & column) const
-{
-    EnumerateStreamsSettings settings;
-    settings.enumerate_virtual_streams = true;
-    auto data = SubstreamData(getPtr()).withType(type).withColumn(column);
-    enumerateStreams(settings, callback, data);
-}
-
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
 {
     throw Exception(ErrorCodes::MULTIPLE_STREAMS_REQUIRED, "Column {} must be serialized with multiple streams", column.getName());
@@ -171,14 +158,9 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     {
         size_t prev_size = column->size();
         auto mutable_column = column->assumeMutable();
-        double avg_value_size_hint = 0.0;
-        if (settings.get_avg_value_size_hint_callback)
-            avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
-        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, avg_value_size_hint);
+        deserializeBinaryBulk(*mutable_column, *stream, rows_offset, limit, settings.avg_value_size_hint);
         column = std::move(mutable_column);
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, column->size() - prev_size);
-        if (settings.update_avg_value_size_hint_callback)
-            settings.update_avg_value_size_hint_callback(settings.path, *column);
     }
 
     settings.path.pop_back();
@@ -193,8 +175,7 @@ String getNameForSubstreamPath(
     String stream_name,
     SubstreamIterator begin,
     SubstreamIterator end,
-    bool escape_for_file_name,
-    bool encode_sparse_stream)
+    bool escape_for_file_name)
 {
     using Substream = ISerialization::Substream;
 
@@ -207,14 +188,10 @@ String getNameForSubstreamPath(
             stream_name += ".size" + toString(array_level);
         else if (it->type == Substream::ArrayElements)
             ++array_level;
-        else if (it->type == Substream::StringSizes || it->type == Substream::InlinedStringSizes)
-            stream_name += ".size";
         else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
         else if (it->type == Substream::DictionaryKeysPrefix)
             stream_name += ".dict_prefix";
-        else if (it->type == Substream::SparseElements && encode_sparse_stream)
-            stream_name += ".sparse";
         else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
         else if (Substream::named_types.contains(it->type))
@@ -317,7 +294,7 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     else
         stream_name = escapeForFileName(name_in_storage);
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false);
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true);
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
@@ -338,14 +315,14 @@ String ISerialization::getFileNameForRenamedColumnStream(const NameAndTypePair &
     return getFileNameForRenamedColumnStream(column_from.getNameInStorage(), column_to.getNameInStorage(), file_name);
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, bool encode_sparse_stream)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
 {
-    return getSubcolumnNameForStream(path, path.size(), encode_sparse_stream);
+    return getSubcolumnNameForStream(path, path.size());
 }
 
-String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream)
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -387,7 +364,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path, true), std::move(element));
+    cache->emplace(getSubcolumnNameForStream(path), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
@@ -395,7 +372,7 @@ ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstrea
     if (!cache || path.empty())
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubcolumnNameForStream(path));
     return it == cache->end() ? nullptr : it->second.get();
 }
 
@@ -404,7 +381,7 @@ void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserialize
     if (!cache || path.empty())
         return;
 
-    cache->emplace(getSubcolumnNameForStream(path, true), state);
+    cache->emplace(getSubcolumnNameForStream(path), state);
 }
 
 ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
@@ -412,7 +389,7 @@ ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsD
     if (!cache || path.empty())
         return nullptr;
 
-    auto it = cache->find(getSubcolumnNameForStream(path, true));
+    auto it = cache->find(getSubcolumnNameForStream(path));
     return it == cache->end() ? nullptr : it->second;
 }
 
@@ -422,7 +399,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     {
         if (elem.type == Substream::NullMap
             || elem.type == Substream::ArraySizes
-            || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
             || elem.type == Substream::SparseOffsets)
             return false;
@@ -523,8 +499,6 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
     return path[last_elem].type == Substream::NullMap
             || path[last_elem].type == Substream::TupleElement
             || path[last_elem].type == Substream::ArraySizes
-            || path[last_elem].type == Substream::StringSizes
-            || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::ObjectTypedPath;
@@ -536,7 +510,7 @@ bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPat
         return false;
 
     size_t last_elem = prefix_len - 1;
-    return path[last_elem].type == Substream::VariantElementNullMap || path[last_elem].type == Substream::InlinedStringSizes;
+    return path[last_elem].type == Substream::VariantElementNullMap;
 }
 
 bool ISerialization::isDynamicSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)

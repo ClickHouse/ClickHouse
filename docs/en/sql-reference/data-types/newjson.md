@@ -6,7 +6,6 @@ sidebar_label: 'JSON'
 sidebar_position: 63
 slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
-doc_type: 'reference'
 ---
 
 import {CardSecondary} from '@clickhouse/click-ui/bundled';
@@ -297,10 +296,6 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 (NOT_IMPLEMENTED)
 ```
 
-:::note
-To read subcolumns efficiently from Compact MergeTree parts make sure MergeTree setting [write_marks_for_substreams_in_compact_parts](../../operations/settings/merge-tree-settings.md#write_marks_for_substreams_in_compact_parts) is enabled.
-:::
-
 ## Reading JSON sub-objects as sub-columns {#reading-json-sub-objects-as-sub-columns}
 
 The `JSON` type supports reading nested objects as sub-columns with type `JSON` using the special syntax `json.^some.path`:
@@ -505,22 +500,6 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-## Handling JSON keys with NULL {#handling-json-keys-with-nulls}
-
-In our JSON implementation `null` and absence of the value are considered equivalent:
-
-```sql title="Query"
-SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
-```
-
-```text title="Response"
-┌─json1─┬─json2─┬─equals(json1, json2)─┐
-│ {}    │ {}    │                    1 │
-└───────┴───────┴──────────────────────┘
-```
-
-It means that it's impossible to determine whether the original JSON data contained some path with the NULL value or didn't contain it at all.
-
 ## Handling JSON keys with dots {#handling-json-keys-with-dots}
 
 Internally JSON column stores all paths and values in a flattened form. It means that by default these 2 objects are considered as the same:
@@ -631,12 +610,12 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 
 ## Reading JSON type from data {#reading-json-type-from-data}
 
-All text formats
-([`JSONEachRow`](/interfaces/formats/JSONEachRow),
-[`TSV`](/interfaces/formats/TabSeparated),
-[`CSV`](/interfaces/formats/CSV),
-[`CustomSeparated`](/interfaces/formats/CustomSeparated),
-[`Values`](/interfaces/formats/Values), etc.) support reading the `JSON` type.
+All text formats 
+([`JSONEachRow`](../../interfaces/formats/JSON/JSONEachRow.md), 
+[`TSV`](../../interfaces/formats/TabSeparated/TabSeparated.md), 
+[`CSV`](../../interfaces/formats/CSV/CSV.md), 
+[`CustomSeparated`](../../interfaces/formats/CustomSeparated/CustomSeparated.md), 
+[`Values`](../../interfaces/formats/Values.md), etc.) support reading the `JSON` type.
 
 Examples:
 
@@ -791,8 +770,6 @@ As we can see, ClickHouse kept the most frequent paths `a`, `b` and `c` and move
 As was described in the previous section, when the `max_dynamic_paths` limit is reached all new paths are stored in a single shared data structure.
 In this section we will look into the details of the shared data structure and how we read paths sub-columns from it.
 
-See section ["introspection functions"](/sql-reference/data-types/newjson#introspection-functions) for details of functions used for inspecting the contents of a JSON column.
-
 ### Shared data structure in memory {#shared-data-structure-in-memory}
 
 In memory, shared data structure is just a sub-column with type `Map(String, String)` that stores mapping from a flattened JSON path to a binary encoded value.
@@ -845,17 +822,15 @@ This serialization is quite inefficient for writing data (so it's not recommende
 Note: because of storing some additional information inside the data structure, the disk storage size is higher with this serialization compared to 
 `map` and `map_with_buckets` serializations.
 
-For more detailed overview of the new shared data serializations and implementation details read the [blog post](https://clickhouse.com/blog/json-data-type-gets-even-better).
-
 ## Introspection functions {#introspection-functions}
 
 There are several functions that can help to inspect the content of the JSON column: 
-- [`JSONAllPaths`](../functions/json-functions.md#JSONAllPaths)
-- [`JSONAllPathsWithTypes`](../functions/json-functions.md#JSONAllPathsWithTypes)
-- [`JSONDynamicPaths`](../functions/json-functions.md#JSONDynamicPaths)
-- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#JSONDynamicPathsWithTypes)
-- [`JSONSharedDataPaths`](../functions/json-functions.md#JSONSharedDataPaths)
-- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#JSONSharedDataPathsWithTypes)
+- [`JSONAllPaths`](../functions/json-functions.md#jsonallpaths)
+- [`JSONAllPathsWithTypes`](../functions/json-functions.md#jsonallpathswithtypes)
+- [`JSONDynamicPaths`](../functions/json-functions.md#jsondynamicpaths)
+- [`JSONDynamicPathsWithTypes`](../functions/json-functions.md#jsondynamicpathswithtypes)
+- [`JSONSharedDataPaths`](../functions/json-functions.md#jsonshareddatapaths)
+- [`JSONSharedDataPathsWithTypes`](../functions/json-functions.md#jsonshareddatapathswithtypes)
 - [`distinctDynamicTypes`](../aggregate-functions/reference/distinctdynamictypes.md)
 - [`distinctJSONPaths and distinctJSONPathsAndTypes`](../aggregate-functions/reference/distinctjsonpaths.md)
 

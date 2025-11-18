@@ -5,7 +5,6 @@ sidebar_label: 'FileLog'
 sidebar_position: 160
 slug: /engines/table-engines/special/filelog
 title: 'FileLog Engine'
-doc_type: 'reference'
 ---
 
 # `FileLog` engine {#filelog-engine}

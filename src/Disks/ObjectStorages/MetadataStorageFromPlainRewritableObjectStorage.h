@@ -63,7 +63,7 @@ private:
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
     std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
-    std::vector<std::string> getDirectChildrenOnDisk(const std::filesystem::path & local_path) const;
+    std::unordered_set<std::string> getDirectChildrenOnDisk(const std::filesystem::path & local_path) const;
 };
 
 }

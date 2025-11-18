@@ -4,7 +4,6 @@ sidebar_label: 'Join'
 sidebar_position: 70
 slug: /engines/table-engines/special/join
 title: 'Join Table Engine'
-doc_type: 'reference'
 ---
 
 # `Join` table engine
@@ -62,7 +61,7 @@ You can use `INSERT` queries to add data to the `Join`-engine tables. If the tab
 Main use-cases for `Join`-engine tables are following:
 
 - Place the table to the right side in a `JOIN` clause.
-- Call the [joinGet](/sql-reference/functions/other-functions.md/#joinGet) function, which lets you extract data from the table the same way as from a dictionary.
+- Call the [joinGet](/sql-reference/functions/other-functions.md/#joinget) function, which lets you extract data from the table the same way as from a dictionary.
 
 ### Deleting data {#deleting-data}
 

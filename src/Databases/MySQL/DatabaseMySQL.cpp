@@ -65,7 +65,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CANNOT_CREATE_DATABASE;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 constexpr static const auto suffix = ".remove_flag";
@@ -164,23 +163,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
 {
     std::lock_guard lock(mutex);
 
-    try
-    {
-        /// This function can throw mysql exception, we don't have enough context to handle it.
-        /// So we just catch and re-throw as known exception if needed.
-        fetchTablesIntoLocalCache(local_context);
-    }
-    catch (...)
-    {
-        if (throw_on_error)
-        {
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY,
-                            "Received error while fetching table structure for table {} from MySQL: {}",
-                            backQuote(table_name), getCurrentExceptionMessage(true));
-        }
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    fetchTablesIntoLocalCache(local_context);
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
     {
@@ -201,7 +184,7 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
         if (typeid_cast<ASTIdentifier *>(storage_engine_arguments->children[0].get()))
         {
             storage_engine_arguments->children.push_back(
-                makeASTOperator("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
+                makeASTFunction("equals", std::make_shared<ASTIdentifier>("table"), std::make_shared<ASTLiteral>(table_name)));
         }
         else
         {

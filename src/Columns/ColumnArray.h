@@ -213,7 +213,6 @@ public:
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
-    void takeDynamicStructureFromColumn(const ColumnPtr & source_column) override;
 
     bool dynamicStructureEquals(const IColumn & rhs) const override
     {

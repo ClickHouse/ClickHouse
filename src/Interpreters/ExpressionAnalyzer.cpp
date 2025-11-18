@@ -1936,7 +1936,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     bool first_stage_,
     bool second_stage_,
     bool only_types,
-    const FilterDAGInfoPtr & row_policy_info_,
+    const FilterDAGInfoPtr & filter_info_,
     const FilterDAGInfoPtr & additional_filter,
     const Block & source_header)
     : first_stage(first_stage_)
@@ -2034,10 +2034,10 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
                 columns_for_additional_filter.begin(), columns_for_additional_filter.end());
         }
 
-        if (storage && row_policy_info_)
+        if (storage && filter_info_)
         {
-            row_policy_info = row_policy_info_;
-            row_policy_info->do_remove_column = true;
+            filter_info = filter_info_;
+            filter_info->do_remove_column = true;
         }
 
         if (prewhere_dag_and_flags = query_analyzer.appendPrewhere(chain, !first_stage); prewhere_dag_and_flags)
@@ -2376,9 +2376,9 @@ std::string ExpressionAnalysisResult::dump() const
         ss << "prewhere_info " << prewhere_info->dump() << "\n";
     }
 
-    if (row_policy_info)
+    if (filter_info)
     {
-        ss << "filter_info " << row_policy_info->dump() << "\n";
+        ss << "filter_info " << filter_info->dump() << "\n";
     }
 
     if (before_aggregation)

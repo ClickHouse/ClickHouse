@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Common/Arena.h>
 
 namespace DB
 {

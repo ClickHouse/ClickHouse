@@ -520,4 +520,7 @@ private:
     /// on a given regular expression, which is relaxed for simplicity.
     bool relaxed = false;
 };
+
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix);
+
 }

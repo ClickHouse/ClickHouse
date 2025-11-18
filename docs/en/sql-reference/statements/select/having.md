@@ -3,7 +3,6 @@ description: 'Documentation for HAVING Clause'
 sidebar_label: 'HAVING'
 slug: /sql-reference/statements/select/having
 title: 'HAVING Clause'
-doc_type: 'reference'
 ---
 
 # HAVING Clause

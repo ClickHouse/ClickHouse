@@ -1,4 +1,3 @@
-#include <utility>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -8,7 +7,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace DB
+namespace DB::QueryPlanOptimizations
 {
 
 bool isPassthroughActions(const ActionsDAG & actions_dag)
@@ -16,38 +15,24 @@ bool isPassthroughActions(const ActionsDAG & actions_dag)
     return actions_dag.getOutputs() == actions_dag.getInputs() && actions_dag.trivial();
 }
 
-template <typename Step, typename ...Args>
-bool makeExpressionNodeOnTopOfImpl(
-    QueryPlan::Node & node, ActionsDAG actions_dag, QueryPlan::Nodes & nodes,
-    DescriptionHolderPtr step_description, Args && ...args)
+QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes)
 {
-    const auto & header = node.step->getOutputHeader();
+    const auto & header = node->step->getOutputHeader();
     if (!header && !actions_dag.getInputs().empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header, dag: {}", actions_dag.dumpDAG());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header, dag: {}",
+        actions_dag.dumpDAG());
 
-    QueryPlanStepPtr step = std::make_unique<Step>(header, std::move(actions_dag), std::forward<Args>(args)...);
+    if (isPassthroughActions(actions_dag))
+        return node;
 
-    if (step_description)
-        step_description->setStepDescription(*step);
+    QueryPlanStepPtr step;
 
-    auto * new_node = &nodes.emplace_back(std::move(node));
-    node = QueryPlan::Node{std::move(step), {new_node}};
-    return true;
-}
-
-bool makeExpressionNodeOnTopOf(QueryPlan::Node & node, ActionsDAG actions_dag, QueryPlan::Nodes & nodes, DescriptionHolderPtr step_description)
-{
-    return makeExpressionNodeOnTopOfImpl<ExpressionStep>(node, std::move(actions_dag), nodes, std::move(step_description));
-}
-
-bool makeFilterNodeOnTopOf(
-    QueryPlan::Node & node, ActionsDAG actions_dag, const String & filter_column_name, bool remove_filer,
-    QueryPlan::Nodes & nodes, DescriptionHolderPtr step_description)
-{
     if (filter_column_name.empty())
-        return makeExpressionNodeOnTopOfImpl<ExpressionStep>(node, std::move(actions_dag), nodes, std::move(step_description));
-    return makeExpressionNodeOnTopOfImpl<FilterStep>(node, std::move(actions_dag), nodes, std::move(step_description), filter_column_name, remove_filer);
-}
+        step = std::make_unique<ExpressionStep>(header, std::move(actions_dag));
+    else
+        step = std::make_unique<FilterStep>(header, std::move(actions_dag), filter_column_name, false);
 
+    return &nodes.emplace_back(QueryPlan::Node{std::move(step), {node}});
+}
 
 }

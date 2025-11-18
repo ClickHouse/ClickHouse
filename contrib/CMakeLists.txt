@@ -80,7 +80,6 @@ add_contrib (bzip2-cmake bzip2)
 add_contrib (minizip-ng-cmake minizip-ng)
 add_contrib (snappy-cmake snappy)
 add_contrib (thrift-cmake thrift)
-add_contrib (StringZilla-cmake StringZilla)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
@@ -220,19 +219,10 @@ if (ARCH_S390X)
     add_contrib(crc32-s390x-cmake crc32-s390x)
 endif()
 
-option(ENABLE_SIMSIMD "Enable SimSIMD" ${ENABLE_LIBRARIES})
-if (ENABLE_SIMSIMD)
-    add_contrib (SimSIMD-cmake SimSIMD)
-else ()
-    message(STATUS "Not using SimSIMD")
-endif ()
-
 option(ENABLE_USEARCH "Enable USearch" ${ENABLE_LIBRARIES})
 if (ENABLE_USEARCH)
     add_contrib (FP16-cmake FP16)
-    if (NOT ENABLE_SIMSIMD)
-        add_contrib (SimSIMD-cmake SimSIMD)
-    endif()
+    add_contrib (SimSIMD-cmake SimSIMD)
     add_contrib (usearch-cmake usearch) # requires: FP16, SimdSIMD
 else ()
     message(STATUS "Not using USearch")
@@ -275,6 +265,16 @@ add_contrib (sha3iuf-cmake SHA3IUF)
 add_contrib (ai-sdk-cpp-cmake ai-sdk-cpp)
 
 add_contrib (bech32)
+
+option(ENABLE_FASTPFOR "Enable FastPFOR" ${ENABLE_LIBRARIES})
+if (ENABLE_FASTPFOR AND ((ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER) OR ARCH_AARCH64))
+    if (ARCH_AARCH64)
+        add_contrib(simde-cmake simde)
+    endif()
+    add_contrib(FastPFOR-cmake FastPFOR) # requires simde (only on ARM)
+else ()
+    message(STATUS "Not using FastPFOR")
+endif ()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear

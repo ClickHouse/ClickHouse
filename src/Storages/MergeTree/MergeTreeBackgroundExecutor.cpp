@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 #include <algorithm>
-#include <optional>
 
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
@@ -45,10 +44,6 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     size_t max_tasks_count_,
     CurrentMetrics::Metric metric_,
     CurrentMetrics::Metric max_tasks_metric_,
-    ProfileEvents::Event execute_profile_event_,
-    ProfileEvents::Event cancel_profile_event_,
-    ProfileEvents::Event reset_profile_event_,
-    ProfileEvents::Event wait_profile_event_,
     std::string_view policy)
     : name(name_)
     , threads_count(threads_count_)
@@ -60,11 +55,6 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
 {
     if (max_tasks_count == 0)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Task count for MergeTreeBackgroundExecutor must not be zero");
-
-    task_events.execute_ms = execute_profile_event_;
-    task_events.cancel_ms = cancel_profile_event_;
-    task_events.reset_ms = reset_profile_event_;
-    task_events.wait_ms = wait_profile_event_;
 
     pending.setCapacity(max_tasks_count);
     active.set_capacity(max_tasks_count);
@@ -158,7 +148,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric, task_events));
+    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric));
 
     has_tasks.notify_one();
     return true;
@@ -220,14 +210,14 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
 
     for (auto & item : tasks_to_cancel)
     {
-        item->cancel();
+        item->task->cancel();
         item.reset();
     }
 
     /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
     {
-        item->wait();
+        item->is_done.wait();
         item.reset();
     }
 }
@@ -245,45 +235,19 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         active.erase(std::remove(active.begin(), active.end(), item_), active.end());
     };
 
-    auto release_task = [this] (TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
+    auto release_task = [] (TaskRuntimeDataPtr && item_) TSA_REQUIRES(mutex)
     {
         /// We have to call reset() under a lock, otherwise a race is possible.
         /// Imagine, that task is finally completed (last execution returned false),
         /// we removed the task from both queues, but still have pointer.
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
-        std::optional<String> captured_storage_id;
-        std::optional<String> captured_query_id;
-        bool captured_was_deleting = item_->is_currently_deleting;
-
-        Stopwatch destruction_watch;
-
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            if (item_->task)
-            {
-                captured_storage_id = item_->task->getStorageID().getNameForLogs();
-                captured_query_id = item_->task->getQueryId();
-            }
-            item_->resetTask();
+            item_->task.reset();
         });
         item_->is_done.set();
         item_.reset();
-
-        UInt64 elapsed_ms = destruction_watch.elapsedMilliseconds();
-        NOEXCEPT_SCOPE({
-            ALLOW_ALLOCATIONS_IN_SCOPE;
-            if (elapsed_ms > 60ULL * 1000ULL)
-            {
-                LOG_WARNING(log,
-                    "Releasing background task runtime data took {:.3f} seconds (> 60s), executor={}, storage={}, query_id={}, deleting={}",
-                    static_cast<double>(elapsed_ms) / 1000.0,
-                    name,
-                    captured_storage_id.value_or("unknown"),
-                    captured_query_id.value_or("unknown"),
-                    captured_was_deleting);
-            }
-        });
     };
 
     /// No TSA because of unique_lock
@@ -297,7 +261,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             guard.unlock();
             {
                 ALLOW_ALLOCATIONS_IN_SCOPE;
-                item_->cancel();
+                item_->task->cancel();
             }
             guard.lock();
             release_task(std::move(item_));
@@ -338,7 +302,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     {
         ALLOW_ALLOCATIONS_IN_SCOPE;
         query_id = item->task->getQueryId();
-        need_execute_again = item->executeStep();
+        need_execute_again = item->task->executeStep();
 
         if (!need_execute_again)
         {
@@ -357,7 +321,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         try
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
-            item->cancel();
+            item->task->cancel();
         }
         catch (...)
         {

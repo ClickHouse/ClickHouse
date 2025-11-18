@@ -178,15 +178,13 @@ void StorageView::read(
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, view_context, options, column_names);
+        InterpreterSelectQueryAnalyzer interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        auto view_context = getViewContext(context, storage_snapshot);
-        InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
+        InterpreterSelectWithUnionQuery interpreter(current_inner_query, getViewContext(context, storage_snapshot), options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
     }
@@ -242,9 +240,7 @@ void StorageView::alter(
     StorageInMemoryMetadata old_metadata = getInMemoryMetadata();
     params.apply(new_metadata, context);
 
-    DatabaseCatalog::instance()
-        .getDatabase(table_id.database_name)
-        ->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
 
     auto & instance = ViewDefinerDependencies::instance();
     if (old_metadata.sql_security_type == SQLSecurityType::DEFINER)

@@ -5,7 +5,6 @@ sidebar_label: 'DateTime64'
 sidebar_position: 18
 slug: /sql-reference/data-types/datetime64
 title: 'DateTime64'
-doc_type: 'reference'
 ---
 
 # DateTime64

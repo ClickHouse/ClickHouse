@@ -9,7 +9,6 @@
 #include <iterator>
 #include <optional>
 #include <unordered_set>
-#include <vector>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -309,7 +308,8 @@ bool MetadataStorageFromPlainRewritableObjectStorage::existsDirectory(const std:
 
 std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::listDirectory(const std::string & path) const
 {
-    return getDirectChildrenOnDisk(fs::path(path) / "");
+    std::unordered_set<std::string> result = getDirectChildrenOnDisk(fs::path(path) / "");
+    return std::vector<std::string>(std::make_move_iterator(result.begin()), std::make_move_iterator(result.end()));
 }
 
 std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::getLastModifiedIfExists(const String & path) const
@@ -324,11 +324,12 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
     return std::nullopt;
 }
 
-std::vector<std::string> MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
+std::unordered_set<std::string>
+MetadataStorageFromPlainRewritableObjectStorage::getDirectChildrenOnDisk(const fs::path & local_path) const
 {
-    std::vector<std::string> result;
-    result.append_range(path_map->listSubdirectories(local_path));
-    result.append_range(path_map->listFiles(local_path));
+    std::unordered_set<std::string> result;
+    path_map->iterateSubdirectories(local_path, [&](const auto & elem){ result.emplace(elem); });
+    path_map->iterateFiles(local_path, [&](const auto & elem){ result.emplace(elem); });
     return result;
 }
 

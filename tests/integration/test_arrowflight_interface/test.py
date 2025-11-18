@@ -11,36 +11,24 @@ from helpers.test_tools import TSV
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 
-# Overrides the hostname checked by TLS, see certs/server-ext.cnf
-SSL_HOST = "integration-tests.clickhouse.com"
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=[
-        "configs/flight_port.xml",
-        "configs/enable_ssl.xml",
-        "configs/named_collection.xml",
-        "certs/server-cert.pem",
-        "certs/server-key.pem",
-        "certs/ca-cert.pem",
+        "configs/config.xml",
+        "configs/grpc_config.xml",
+        "configs/key.pem",
+        "configs/cert.pem",
     ],
     user_configs=["configs/users.xml"],
 )
 
-
 def get_client():
-    with open(os.path.join(SCRIPT_DIR, "certs/ca-cert.pem"), "rb") as file:
-        tls_root_certs = file.read()
-    client = flight.FlightClient(
-        f"grpc+tls://{node.ip_address}:8888",
-        tls_root_certs=tls_root_certs,
-        override_hostname=SSL_HOST,
-    )
+    client = flight.FlightClient(f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True)
     token = client.authenticate_basic_token("user1", "qwe123")
     options = flight.FlightCallOptions(headers=[token])
     return client, options
-
 
 @pytest.fixture(scope="module", autouse=True)
 def start_cluster():
@@ -63,45 +51,34 @@ def test_doput():
         """
     )
     client, options = get_client()
-    schema = pa.schema(
-        [
-            ("id", pa.int64()),
-            ("name", pa.string()),
-        ]
-    )
-    batch = pa.record_batch(
-        [
-            pa.array([1, 2, 3], type=pa.int64()),
-            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
-        ],
-        schema=schema,
-    )
+    schema = pa.schema([
+        ("id", pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
     descriptor = flight.FlightDescriptor.for_path("doput_test")
     writer, _ = client.do_put(descriptor, schema, options)
     writer.write_batch(batch)
     writer.close()
 
     result = node.query(f"SELECT * FROM doput_test;")
-    assert TSV(result) == TSV("1\tAlice\n2\tBob\n3\tCharlie\n")
+    assert TSV(result) == TSV('1\tAlice\n2\tBob\n3\tCharlie\n')
 
     node.query("DROP TABLE IF EXISTS doput_test SYNC")
 
-
 def test_doput_unexisting_table():
     client, options = get_client()
-    schema = pa.schema(
-        [
-            ("id", pa.int64()),
-            ("name", pa.string()),
-        ]
-    )
-    batch = pa.record_batch(
-        [
-            pa.array([1, 2, 3], type=pa.int64()),
-            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
-        ],
-        schema=schema,
-    )
+    schema = pa.schema([
+        ("id", pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
     try:
         descriptor = flight.FlightDescriptor.for_path("unexisting_table")
         writer, _ = client.do_put(descriptor, schema, options)
@@ -111,32 +88,24 @@ def test_doput_unexisting_table():
     except flight.FlightServerError as e:
         assert "Table default.unexisting_table does not exist" in str(e)
 
-
 def test_doput_cmd_descriptor():
-    node.query(
-        """
+    node.query("""
         CREATE TABLE doput_test_cmd_descriptor (
             id   Int64,
             name String
         ) ORDER BY id
-    """
-    )
+    """)
 
     client, options = get_client()
 
-    schema = pa.schema(
-        [
-            ("id", pa.int64()),
-            ("name", pa.string()),
-        ]
-    )
-    batch = pa.record_batch(
-        [
-            pa.array([1, 2, 3], type=pa.int64()),
-            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
-        ],
-        schema=schema,
-    )
+    schema = pa.schema([
+        ("id",   pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
 
     # Testing here where descriptor constains INSERT QUERY.
     # This may be useful where some columns of the table have default values
@@ -155,30 +124,23 @@ def test_doput_cmd_descriptor():
 
 
 def test_doput_cmd_descriptor_with_data():
-    node.query(
-        """
+    node.query("""
         CREATE TABLE doput_test_cmd_descriptor_with_data (
             id   Int64,
             name String DEFAULT 'unknown'
         ) ORDER BY id
-    """
-    )
+    """)
 
     client, options = get_client()
 
-    schema = pa.schema(
-        [
-            ("id", pa.int64()),
-            ("name", pa.string()),
-        ]
-    )
-    batch = pa.record_batch(
-        [
-            pa.array([1, 2, 3], type=pa.int64()),
-            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
-        ],
-        schema=schema,
-    )
+    schema = pa.schema([
+        ("id",   pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
 
     # Testing here where descriptor constains INSERT QUERY.
     # This may be useful where some columns of the table have default values
@@ -197,28 +159,21 @@ def test_doput_cmd_descriptor_with_data():
 
 
 def test_doput_cmd_descriptor_with_default():
-    node.query(
-        """
+    node.query("""
         CREATE TABLE IF NOT EXISTS doput_test_cmd_descriptor_default (
             id   Int64,
             name String DEFAULT 'unknown'
         ) ORDER BY id
-    """
-    )
+    """)
 
     client, options = get_client()
 
-    schema = pa.schema(
-        [
-            ("id", pa.int64()),
-        ]
-    )
-    batch = pa.record_batch(
-        [
-            pa.array([10, 20, 30], type=pa.int64()),
-        ],
-        schema=schema,
-    )
+    schema = pa.schema([
+        ("id", pa.int64()),
+    ])
+    batch = pa.record_batch([
+        pa.array([10, 20, 30], type=pa.int64()),
+    ], schema=schema)
 
     # Testing here where descriptor constains INSERT QUERY.
     # This may be useful where some columns of the table have default values
@@ -231,26 +186,25 @@ def test_doput_cmd_descriptor_with_default():
     writer.close()
 
     result = node.query("SELECT * FROM doput_test_cmd_descriptor_default ORDER BY id")
-    assert TSV(result) == TSV("10\tunknown\n" "20\tunknown\n" "30\tunknown\n")
+    assert TSV(result) == TSV(
+        "10\tunknown\n"
+        "20\tunknown\n"
+        "30\tunknown\n"
+    )
 
     node.query("DROP TABLE IF EXISTS doput_test_cmd_descriptor_default SYNC")
 
 
 def test_doput_invalid_query():
     client, options = get_client()
-    schema = pa.schema(
-        [
-            ("id", pa.int64()),
-            ("name", pa.string()),
-        ]
-    )
-    batch = pa.record_batch(
-        [
-            pa.array([1, 2, 3], type=pa.int64()),
-            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
-        ],
-        schema=schema,
-    )
+    schema = pa.schema([
+        ("id", pa.int64()),
+        ("name", pa.string()),
+    ])
+    batch = pa.record_batch([
+        pa.array([1, 2, 3], type=pa.int64()),
+        pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+    ], schema=schema)
     try:
         # SELECT clause in DoPut query is forbidden
         descriptor = flight.FlightDescriptor.for_command("SELECT * FROM my_table")
@@ -259,10 +213,7 @@ def test_doput_invalid_query():
         writer.close()
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError as e:
-        assert (
-            "Unknown table expression identifier 'my_table' in scope SELECT * FROM my_table"
-            in str(e)
-        )
+        assert "Unknown table expression identifier 'my_table' in scope SELECT * FROM my_table" in str(e)
 
 
 def test_doget():
@@ -278,25 +229,22 @@ def test_doget():
     node.query(
         """
             INSERT INTO doget_test VALUES(10, 'abc'), (20, 'cde')
-        """
-    )
-
+        """)
+    
     client, options = get_client()
 
     try:
-        incorrect_ticket = flight.Ticket(
-            b"INSERT INTO doget_test_insert SELECT number, toString(number) FROM numbers(10)"
-        )
+        incorrect_ticket = flight.Ticket(b"INSERT INTO doget_test_insert SELECT number, toString(number) FROM numbers(10)")
         _ = client.do_get(incorrect_ticket, options)
     except flight.FlightServerError as e:
         assert "Table default.doget_test_insert does not exist" in str(e)
     else:
         assert False, "INSERT clause in DoGet query is forbidden, but query succeeded"
-
+    
     try:
         incorrect_ticket = flight.Ticket(b"some incorrect query")
         _ = client.do_get(incorrect_ticket, options)
-
+        
     except flight.FlightServerError as e:
         assert "Syntax error" in str(e)
     else:
@@ -304,41 +252,38 @@ def test_doget():
 
     try:
         incorrect_ticket = flight.Ticket(b"SELECT * FROM unexisting_table")
-        _ = client.do_get(incorrect_ticket, options)
+        _ = client.do_get(incorrect_ticket, options) 
     except flight.FlightServerError as e:
         assert "Unknown table expression identifier 'unexisting_table'" in str(e)
     else:
         assert False, "Table is unexisting, but query succeeded"
-
+    
     real_ticket = flight.Ticket(b"SELECT * FROM doget_test")
     reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
 
-    expected_schema = pa.schema(
-        [
-            pa.field("id", pa.int64(), nullable=False),
-            pa.field("name", pa.string(), nullable=False),
-        ]
-    )
-    expected_ids = pa.chunked_array([pa.array([10, 20], type=pa.int64())])
-    expected_names = pa.chunked_array([pa.array(["abc", "cde"], type=pa.string())])
+    expected_schema = pa.schema([
+        pa.field("id",   pa.int64(),  nullable=False),
+        pa.field("name", pa.string(), nullable=False),
+    ])
+    expected_ids   = pa.chunked_array([pa.array([10, 20],          type=pa.int64())])
+    expected_names = pa.chunked_array([pa.array(["abc", "cde"],    type=pa.string())])
 
     assert actual.schema == expected_schema
 
     assert actual.column("id").equals(expected_ids)
     assert actual.column("name").equals(expected_names)
 
+
     # Testing taking only part of the columns in the query
     real_ticket = flight.Ticket(b"SELECT id FROM doget_test")
     reader = client.do_get(real_ticket, options)
     actual = reader.read_all()
 
-    expected_schema = pa.schema(
-        [
-            pa.field("id", pa.int64(), nullable=False),
-        ]
-    )
-    expected_ids = pa.chunked_array([pa.array([10, 20], type=pa.int64())])
+    expected_schema = pa.schema([
+        pa.field("id",   pa.int64(),  nullable=False),
+    ])
+    expected_ids   = pa.chunked_array([pa.array([10, 20],          type=pa.int64())])
 
     assert actual.schema == expected_schema
 
@@ -364,20 +309,15 @@ def test_doget_custom_db():
         INSERT INTO doget_test_custom_db VALUES(10, 'abc'), (20, 'cde');
         """
     )
-
+    
     client, options = get_client()
 
     try:
         # Table in test_db, but we use another_db
-        incorrect_ticket = flight.Ticket(
-            b"SELECT * FROM another_db.doget_test_custom_db"
-        )
+        incorrect_ticket = flight.Ticket(b"SELECT * FROM another_db.doget_test_custom_db")
         _ = client.do_get(incorrect_ticket, options)
     except flight.FlightServerError as e:
-        assert (
-            "Unknown table expression identifier 'another_db.doget_test_custom_db'"
-            in str(e)
-        )
+        assert "Unknown table expression identifier 'another_db.doget_test_custom_db'" in str(e)
     else:
         assert False, "Table is unexisting, but query succeeded"
 
@@ -385,12 +325,10 @@ def test_doget_custom_db():
     reader = client.do_get(real_ticket, options)
     reader.read_all()
 
-    node.query(
-        """
+    node.query("""
                DROP DATABASE IF EXISTS test_db SYNC;
                DROP DATABASE IF EXISTS another_db SYNC;
-               """
-    )
+               """)
 
 
 def test_doget_format_json():
@@ -406,9 +344,8 @@ def test_doget_format_json():
     node.query(
         """
             INSERT INTO doget_test_format_json VALUES(10, 'abc'), (20, 'cde')
-        """
-    )
-
+        """)
+    
     client, options = get_client()
 
     # Format JSON and other custom format options are forbidden
@@ -424,21 +361,16 @@ def test_doget_format_json():
         assert False, "Expected a query with FORMAT JSON clause to be failed"
 
     try:
-        schema = pa.schema(
-            [
-                ("id", pa.int64()),
-                ("name", pa.string()),
-            ]
-        )
-        batch = pa.record_batch(
-            [
-                pa.array([1, 2, 3], type=pa.int64()),
-                pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
-            ],
-            schema=schema,
-        )
+        schema = pa.schema([
+            ("id",   pa.int64()),
+            ("name", pa.string()),
+        ])
+        batch = pa.record_batch([
+            pa.array([1, 2, 3], type=pa.int64()),
+            pa.array(["Alice", "Bob", "Charlie"], type=pa.string()),
+        ], schema=schema)
         descriptor = flight.FlightDescriptor.for_command(
-            "INSERT INTO doget_test_format_json FORMAT JSON"
+        "INSERT INTO doget_test_format_json FORMAT JSON"
         )
         writer, _ = client.do_put(descriptor, schema, options)
         writer.write_batch(batch)
@@ -464,49 +396,21 @@ def test_doget_invalid_user():
     node.query(
         """
             INSERT INTO doget_test_invalid_user VALUES(10, 'abc'), (20, 'cde')
-        """
-    )
-    client = flight.FlightClient(
-        f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True
-    )
+        """)
+    client = flight.FlightClient(f"grpc+tls://{node.ip_address}:8888", disable_server_verification=True)
     try:
-        token = client.authenticate_basic_token(b"invalid", b"password")
+        token = client.authenticate_basic_token(b'invalid', b'password')
         options = flight.FlightCallOptions(headers=[token])
         real_ticket = flight.Ticket(b"SELECT * FROM doget_test_invalid_user")
         client.do_get(real_ticket, options)
     except Exception as e:
-        assert (
-            "Authentication failed: password is incorrect, or there is no user with such name"
-            in str(e)
-        )
+        assert "Authentication failed: password is incorrect, or there is no user with such name" in str(e)
     else:
         assert False, "Expected call to fail: login and password are not correct"
-
+    
     result = node.query("SELECT * FROM doget_test_invalid_user")
 
     # This data was in the table initially
     assert TSV(result) == TSV("10\tabc\n20\tcde\n")
-
+    
     node.query("DROP TABLE IF EXISTS doget_test_invalid_user SYNC")
-
-
-def test_table_function():
-    node.query(
-        """
-        CREATE TABLE mytable (
-            id Int64,
-            name String
-        )
-        ENGINE=MergeTree
-        ORDER BY id
-        """
-    )
-
-    node.query("INSERT INTO mytable VALUES (1, 'a'), (2, 'b')")
-
-    # FIXME
-    assert "Failed to get table schema" in node.query_and_get_error(
-        "SELECT * FROM arrowFlight(flight1, dataset = 'mytable')"
-    )
-
-    node.query("DROP TABLE mytable")

@@ -472,12 +472,23 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     auto insert_dependencies = InsertDependenciesBuilder::create(
         table, query_ptr, std::make_shared<const Block>(std::move(query_sample_block)),
-        async_insert, /*skip_destination_table*/ no_destination, max_insert_threads,
+        async_insert, /*skip_destination_table*/ no_destination,
         getContext());
 
-    std::vector<Chain> sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
+    size_t sink_streams_size = table->supportsParallelInsert() ? max_insert_threads : 1;
 
-    pipeline.resize(insert_dependencies->getSinkStreamSize());
+    if (!settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved())
+    {
+        sink_streams_size = 1;
+    }
+
+    std::vector<Chain> sink_chains;
+    for (size_t i = 0; i < sink_streams_size; ++i)
+    {
+        sink_chains.push_back(insert_dependencies->createChainWithDependencies());
+    }
+
+    pipeline.resize(sink_streams_size);
 
     if (should_squash)
     {
@@ -681,17 +692,11 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals columns to the dependent views
     auto insert_dependencies = InsertDependenciesBuilder::create(
-        table,
-        query_ptr,
-        query_sample_block,
-        async_insert,
-        /*skip_destination_table*/ no_destination,
-        /*max_insert_threads*/ 1,
+        table, query_ptr, query_sample_block,
+        async_insert, /*skip_destination_table*/ no_destination,
         getContext());
 
-    auto chains = insert_dependencies->createChainWithDependenciesForAllStreams();
-    chassert(chains.size() == 1);
-    auto chain = std::move(chains.front());
+    Chain chain = insert_dependencies->createChainWithDependencies();
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
     {
@@ -742,14 +747,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 }
 
 
-std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(
-    const ASTInsertQuery & query, ContextPtr local_context)
+std::optional<QueryPipeline>
+InterpreterInsertQuery::distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context)
 {
     if (query.table_id.empty())
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+    if (!dst_storage->isMergeTree() || !dst_storage->supportsReplication())
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
@@ -804,9 +809,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
 
-    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
-    auto extension = src_storage_cluster->getTaskIteratorExtension(
-        nullptr, nullptr, local_context, src_cluster, src_storage_cluster->getInMemoryMetadataPtr());
+    auto extension = src_storage_cluster->getTaskIteratorExtension(nullptr, nullptr, local_context, src_cluster);
 
     /// -Cluster storage treats each replicas as a shard in cluster definition
     /// so, it's enough to consider only shards here
@@ -893,7 +896,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
             if (!res.pipeline.initialized())
             {
-                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(query, context); pipeline)
+                if (auto pipeline = distributedWriteIntoReplicatedMergeTreeFromClusterStorage(query, context))
                     res.pipeline = std::move(*pipeline);
             }
             if (!res.pipeline.initialized() && context->canUseParallelReplicasOnInitiator())
