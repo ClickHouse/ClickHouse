@@ -88,6 +88,10 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log);
+
+std::pair<String, String> parseTransformAndColumn(const String & object);
+KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+
 }
 
 #endif

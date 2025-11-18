@@ -18,6 +18,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <base/getThreadId.h>
 #include <base/types.h>
 #include <Poco/Dynamic/Var.h>
@@ -42,6 +43,9 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/sortBlock.h>
+
 
 using namespace DB;
 
@@ -916,6 +920,122 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     {
         return getLatestMetadataFileAndVersion(object_storage, configuration_ptr, cache_ptr, local_context, std::nullopt);
     }
+}
+
+std::pair<String, String> parseTransformAndColumn(const String & object)
+{
+    String s = object;
+
+    auto trim = [](String & str)
+    {
+        str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char c){ return !std::isspace(c); }));
+        str.erase(std::find_if(str.rbegin(), str.rend(), [](unsigned char c){ return !std::isspace(c); }).base(), str.end());
+    };
+    trim(s);
+
+    if (s.find('(') == String::npos)
+        return {"identity", s};
+
+    static const RE2 re(
+        R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(?:([0-9]+)\s*,\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$)"
+    );
+
+    String fn_name;
+    String arg;
+    String column;
+
+    if (!RE2::FullMatch(s, re, &fn_name, &arg, &column))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid transform expression: {}", object);
+    }
+
+    static const std::unordered_map<String, String> clickhouse_name_to_iceberg = {
+        {"identity", "identity"},
+        {"icebergBucket", "bucket"},
+        {"icebergTruncate", "truncate"},
+        {"toYear", "year"},
+        {"toMonth", "month"},
+        {"toDayOfMonth", "day"},
+        {"toHour", "hour"}
+    };
+
+    const auto & transform_base = clickhouse_name_to_iceberg.at(fn_name);
+
+    String transform = transform_base;
+    if (!arg.empty())
+        transform += "[" + arg + "]";
+
+    return {transform, column};
+}
+
+DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type)
+{
+    if (iceberg_transform_name.starts_with("identity") || iceberg_transform_name.starts_with("truncate"))
+        return source_type;
+    if (iceberg_transform_name.starts_with("year"))
+        return std::make_shared<DataTypeUInt16>();
+    if (iceberg_transform_name.starts_with("month") || iceberg_transform_name.starts_with("day") || iceberg_transform_name.starts_with("hour"))
+        return std::make_shared<DataTypeUInt8>();
+    return std::make_shared<DataTypeInt32>();
+}
+
+KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+{
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
+    std::unordered_map<Int64, String> source_id_to_column_name;
+    auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
+
+    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
+    for (const auto & [col_name, source_id] : mapper)
+    {
+        source_id_to_column_name[source_id] = col_name;
+    }
+
+    KeyDescription key_description;
+    ColumnsDescription column_description;
+    for (size_t i = 0; i < ch_schema.size(); ++i)
+        column_description.add(ColumnDescription(ch_schema.getNames()[i], ch_schema.getTypes()[i]));
+
+    String order_by_str;
+
+    for (UInt32 i = 0; i < sort_orders->size(); ++i)
+    {
+        auto sort_order = sort_orders->getObject(i);
+        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
+            continue;
+        auto fields = sort_order->getArray(f_fields);
+        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
+        {
+            auto field = fields->getObject(field_index);
+            auto source_id = field->getValue<Int64>(f_source_id);
+            auto column_name = source_id_to_column_name[source_id];
+            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
+            auto iceberg_transform_name = field->getValue<String>(f_transform);
+            String full_argument;
+            if (iceberg_transform_name == "identity")
+                full_argument = column_name;
+            else
+            {
+                auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+                full_argument = clickhouse_transform_name->transform_name + "(";
+                if (clickhouse_transform_name->argument)
+                {
+                    full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
+                }
+                full_argument += column_name + ")";
+            }
+            if (direction == 1)
+                order_by_str += fmt::format("{} ASC,", full_argument);
+            else
+                order_by_str += fmt::format("{} DESC,", full_argument);
+        }
+        break;
+    }
+    if (order_by_str.empty())
+        return KeyDescription{};
+    order_by_str.pop_back();
+    return KeyDescription::parse(order_by_str, column_description, local_context, true);
 }
 
 }
