@@ -156,6 +156,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
+
+        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 }
 
@@ -331,6 +333,8 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         async_read_counters->dumpToMapColumn(columns[i++].get());
     else
         columns[i++]->insertDefault();
+
+    columns[i++]->insert(is_internal);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

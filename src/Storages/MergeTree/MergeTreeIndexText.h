@@ -257,11 +257,13 @@ private:
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     /// Header of the text index contains the number of tokens, bloom filter and sparse index.
     TextIndexHeaderPtr header;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// ---------------------------------------
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
@@ -291,16 +293,17 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     size_t memoryUsageBytes() const override;
 
     /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
-
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
+    /// ---------------------------------------
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -368,7 +371,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
