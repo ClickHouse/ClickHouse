@@ -104,7 +104,7 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             writeVarUInt(0, out);
         }
     }
-    
+
     if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_DATA_LAKE_COLUMNS_METADATA)
     {
         /// This info is not used when optimization is disabled, so there is no need to send it.

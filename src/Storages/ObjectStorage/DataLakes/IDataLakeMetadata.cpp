@@ -165,7 +165,7 @@ DataFileMetaInfo DataFileMetaInfo::deserialize(ReadBuffer & in)
 
     size_t size;
     readIntBinary(size, in);
-    
+
     for (size_t i = 0; i < size; ++i)
     {
         std::string name;
