@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ## Geometry {#geometry}
 
-Geometry functions allow you to calculate perimeter and area for geometric types such as POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, and POINT. Use geometries in Geometry type.
+Geometry functions allow you to calculate perimeter and area for geometric types such as POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING, and POINT. Use geometries in Geometry type. If the input value is `NULL`, all functions below will return 0.
 
 ## perimeterCartesian {#perimetercartesian}
 
@@ -18,7 +18,7 @@ Calculates the perimeter of the given Geometry object in the Cartesian (flat) co
 perimeterCartesian(geom)
 
 **Input values**
-- `geom` — Geometry object. [Geometry](../../data-types/geometry.md).
+- `geom` — Geometry object. [Geometry](../../data-types/geo.md).
 
 **Returned values**
 - Number — Perimeter of the object in the coordinate system units. [Float64](../../data-types/float.md).
@@ -41,7 +41,7 @@ Calculates the area of the given Geometry object in the Cartesian coordinate sys
 areaCartesian(geom)
 
 **Input values**
-- `geom` — Geometry object. [Geometry](../../data-types/geometry.md).
+- `geom` — Geometry object. [Geometry](../../data-types/geo.md).
 
 **Returned values**
 - Number — Area of the object in coordinate system units. [Float64](../../data-types/float.md).
@@ -64,7 +64,7 @@ Calculates the perimeter of a Geometry object on the surface of a sphere.
 perimeterSpherical(geom)
 
 **Input values**
-- `geom` — Geometry object. [Geometry](../../data-types/geometry.md).
+- `geom` — Geometry object. [Geometry](../../data-types/geo.md).
 
 **Returned values**
 - Number — Perimeter. [Float64](../../data-types/float.md).
@@ -87,7 +87,7 @@ Calculates the area of a Geometry object on the surface of a sphere.
 areaSpherical(geom)
 
 **Input values**
-- `geom` — Geometry. [Geometry](../../data-types/geometry.md).
+- `geom` — Geometry. [Geometry](../../data-types/geo.md).
 
 **Returned values**
 - Number — Area. [Float64](../../data-types/float.md).

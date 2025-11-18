@@ -104,17 +104,6 @@ enum class GeometryColumnType
     Null = 255
 };
 
-static constexpr GeometryColumnType AllGeometryColumnType[] = {
-    GeometryColumnType::Linestring,
-    GeometryColumnType::MultiLinestring,
-    GeometryColumnType::MultiPolygon,
-    GeometryColumnType::Point,
-    GeometryColumnType::Polygon,
-    GeometryColumnType::Ring,
-    GeometryColumnType::Null,
-};
-
-
 template <typename Point, typename FunctionToCalculate>
 class FunctionGeometry : public IFunction
 {
@@ -147,7 +136,7 @@ public:
     {
         if (arguments[0]->getName() != "Geometry")
         {
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument should be Variant (Geometry)");
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} should be Geometry, got {}", getName(), arguments[0]->getName());
         }
 
         return std::make_shared<DataTypeFloat64>();
@@ -172,11 +161,10 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             column_variant.get(i, field);
-            auto type = static_cast<GeometryColumnType>(descriptors[i]);
-            if (std::find(std::begin(AllGeometryColumnType), std::end(AllGeometryColumnType), type) == std::end(AllGeometryColumnType))
+            auto type = magic_enum::enum_cast<GeometryColumnType>(descriptors[i]);
+            if (!type)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type of geometry {}", static_cast<Int32>(descriptors[i]));
-
-            switch (type)
+            switch (*type)
             {
                 case GeometryColumnType::Linestring:
                 {
