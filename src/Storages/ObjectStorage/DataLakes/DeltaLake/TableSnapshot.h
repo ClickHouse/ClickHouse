@@ -25,6 +25,8 @@ namespace DeltaLake
 class TableSnapshot
 {
 public:
+    static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
+
     explicit TableSnapshot(
         KernelHelperPtr helper_,
         DB::ObjectStoragePtr object_storage_,

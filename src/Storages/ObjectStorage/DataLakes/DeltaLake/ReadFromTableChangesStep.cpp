@@ -5,6 +5,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -38,16 +40,21 @@ private:
 }
 
 ReadFromDeltaLakeTableChangesStep::ReadFromDeltaLakeTableChangesStep(
-    DeltaLake::TableChangesPtr table_changes_,
-    const Block & source_header_,
+    const DeltaLake::TableChangesPtr & table_changes_,
+    const Block & header_,
     const Names & columns_to_read_,
     const SelectQueryInfo & query_info_,
     const StorageSnapshotPtr & storage_snapshot_,
     size_t num_streams_,
     ContextPtr context_)
-    : SourceStepWithFilter(std::make_shared<const Block>(source_header_), columns_to_read_, query_info_, storage_snapshot_, context_)
+    : SourceStepWithFilter(
+        std::make_shared<const Block>(header_),
+        columns_to_read_,
+        query_info_,
+        storage_snapshot_,
+        context_)
     , table_changes(table_changes_)
-    , source_header(source_header_)
+    , header(header_)
     , num_streams(num_streams_)
 {
 }
@@ -64,24 +71,25 @@ void ReadFromDeltaLakeTableChangesStep::applyFilters(ActionDAGNodes added_filter
 
 void ReadFromDeltaLakeTableChangesStep::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    UNUSED(prewhere_info_value);
-    //info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
-    //query_info.prewhere_info = prewhere_info_value;
-    //output_header = std::make_shared<const Block>(info.source_header);
+    query_info.prewhere_info = prewhere_info_value;
+    output_header = std::make_shared<const Block>(header);
 }
 
 void ReadFromDeltaLakeTableChangesStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto header = std::make_shared<const Block>(source_header);
+    if (filter_actions_dag)
+        table_changes->setFilter(filter_actions_dag.get());
+
+    auto source_header = std::make_shared<const Block>(header);
     Pipes pipes;
     for (size_t i = 0; i < num_streams; ++i)
     {
-        pipes.emplace_back(std::make_shared<DeltaLakeTableChangesSource>(table_changes, header));
+        pipes.emplace_back(std::make_shared<DeltaLakeTableChangesSource>(table_changes, source_header));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
-        pipe = Pipe(std::make_shared<NullSource>(header));
+        pipe = Pipe(std::make_shared<NullSource>(source_header));
 
     for (const auto & processor : pipe.getProcessors())
         processors.emplace_back(processor);

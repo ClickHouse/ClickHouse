@@ -32,6 +32,8 @@ namespace Setting
 {
     extern const SettingsBool delta_lake_log_metadata;
     extern const SettingsBool allow_experimental_delta_lake_writes;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
 }
 
 [[maybe_unused]] static void tracingCallback(struct ffi::Event event)
@@ -84,6 +86,7 @@ DeltaLakeMetadataDeltaKernel::DeltaLakeMetadataDeltaKernel(
             object_storage,
             context,
             log))
+    , format_name(configuration_.lock()->format)
 {
     object_storage_common = object_storage;
 #ifdef DEBUG_OR_SANITIZER_BUILD
@@ -105,14 +108,13 @@ void DeltaLakeMetadataDeltaKernel::update(const ContextPtr & context)
     table_snapshot->update(context);
 }
 
-DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(const std::pair<size_t, size_t> & version_range) const
+DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(
+    const DeltaLake::TableChangesVersionRange & version_range,
+    const Block & header,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context) const
 {
-    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper);
-}
-
-DeltaLake::TableChangesPtr DeltaLakeMetadataDeltaKernel::getTableChanges(size_t from_version) const
-{
-    return std::make_shared<DeltaLake::TableChanges>(from_version, kernel_helper);
+    return std::make_shared<DeltaLake::TableChanges>(version_range, kernel_helper, header, format_settings, format_name, context);
 }
 
 ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
@@ -127,9 +129,26 @@ ObjectIterator DeltaLakeMetadataDeltaKernel::iterate(
     return table_snapshot->iterate(filter_dag, callback, list_batch_size);
 }
 
-NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr /*local_context*/) const
+NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_context) const
 {
     std::lock_guard lock(table_snapshot_mutex);
+    const auto & settings = local_context->getSettingsRef();
+    if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+        start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+    {
+        auto version_range = DeltaLake::TableChanges::getVersionRange(
+            start_version,
+            settings[Setting::delta_lake_snapshot_end_version].value);
+
+        /// TODO: Once we support passing metadata state via metadata snapshot
+        /// (already done in iceberg),
+        /// then need to put table changes there as well to reuse.
+        return getTableChanges(
+            std::move(version_range),
+            /* source_header */{},
+            /* format_settings */{},
+            local_context)->getSchema();
+    }
     return table_snapshot->getTableSchema();
 }
 

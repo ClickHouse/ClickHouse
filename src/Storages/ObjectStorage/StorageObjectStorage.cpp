@@ -32,6 +32,8 @@
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -130,8 +132,19 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
-    LOG_DEBUG(log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
-        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function, is_datalake_query, columns_in_table_or_function_definition.toString(true));
+    LOG_DEBUG(
+        log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
+        "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
+        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function,
+        is_datalake_query, columns_in_table_or_function_definition.toString(true));
+
+    bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1;
+
+    if (!is_table_function && is_delta_lake_cdf)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
+    }
 
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
@@ -376,28 +389,25 @@ void StorageObjectStorage::read(
 #if USE_DELTA_KERNEL_RS
     if (configuration->isDataLakeConfiguration())
     {
-        static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
-        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value; start_version != LATEST_SNAPSHOT_VERSION)
+        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
-            if (start_version < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Snapshot start version cannot be a negative value ({})", start_version);
-
-            const auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
-            if (end_version != LATEST_SNAPSHOT_VERSION && end_version < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Snapshot end version cannot be a negative value ({})", end_version);
-
-            const auto * delta_lake_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
-            if (delta_lake_metadata)
+            if (auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+                delta_kernel_metadata != nullptr)
             {
-                DeltaLake::TableChangesPtr table_changes;
-                if (end_version == LATEST_SNAPSHOT_VERSION)
-                    table_changes = delta_lake_metadata->getTableChanges(start_version);
-                else
-                    table_changes = delta_lake_metadata->getTableChanges({start_version, end_version});
+                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+                auto version_range = DeltaLake::TableChanges::getVersionRange(
+                    start_version,
+                    settings[Setting::delta_lake_snapshot_end_version].value);
+                auto table_changes = delta_kernel_metadata->getTableChanges(
+                    version_range,
+                    source_header,
+                    format_settings,
+                    local_context);
 
                 auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
                     std::move(table_changes),
-                    Block{},
+                    source_header,
                     column_names,
                     query_info,
                     storage_snapshot,
@@ -407,7 +417,8 @@ void StorageObjectStorage::read(
                 return;
             }
         }
-        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value; end_version != LATEST_SNAPSHOT_VERSION)
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_start_version].value;
+                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS,
@@ -415,7 +426,6 @@ void StorageObjectStorage::read(
         }
     }
 #endif
-
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
@@ -424,6 +434,7 @@ void StorageObjectStorage::read(
         supports_tuple_elements,
         local_context,
         PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
