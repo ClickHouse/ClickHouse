@@ -14,6 +14,11 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
