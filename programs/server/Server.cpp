@@ -128,7 +128,6 @@
 
 #include <Common/Jemalloc.h>
 
-#include <Coordination/KeeperAsynchronousMetrics.h>
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -155,6 +154,7 @@
 
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
+#    include <Coordination/KeeperAsynchronousMetrics.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
@@ -1392,6 +1392,7 @@ try
     const bool async_metrics_update_jemalloc_epoch = memory_worker.getSource() != MemoryWorker::MemoryUsageSource::Jemalloc;
     const bool async_metrics_update_rss = memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None;
 
+#if USE_NURAFT
     if (async_metrics_keeper_metrics_only)
     {
         async_metrics = std::make_unique<KeeperAsynchronousMetrics>(
@@ -1403,6 +1404,7 @@ try
         );
     }
     else
+#endif
     {
         async_metrics = std::make_unique<ServerAsynchronousMetrics>(
             global_context,
