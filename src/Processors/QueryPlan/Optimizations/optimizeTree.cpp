@@ -319,21 +319,32 @@ void considerEnablingParallelReplicas(
         }
 
         if (!reading_step->step->supportsDataflowStatisticsCollection())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Reading step ({}) doesn't support dataflow statistics collection",
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Reading step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
                 reading_step->step->getName());
+            return;
+        }
 
         if (!corresponding_node_in_single_replica_plan->step->supportsDataflowStatisticsCollection())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Step ({}) doesn't support dataflow statistics collection",
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
                 corresponding_node_in_single_replica_plan->step->getName());
+            return;
+        }
 
         auto * source_reading_step = dynamic_cast<SourceStepWithFilter *>(reading_step->step.get());
         if (!source_reading_step)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected SourceStepWithFilter at reading step, got {}", reading_step->step->getName());
+        {
+            LOG_DEBUG(
+                getLogger("optimizeTree"),
+                "Expected SourceStepWithFilter as reading step, got {}. Skipping statistics collection",
+                reading_step->step->getName());
+            return;
+        }
 
         auto updater = source_reading_step->getContext()->getRuntimeDataflowStatisticsCacheUpdater();
         updater->setCacheKey(single_replica_plan_node_hash);

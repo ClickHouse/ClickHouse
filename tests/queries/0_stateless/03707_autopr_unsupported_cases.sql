@@ -7,9 +7,7 @@ SELECT AVG(transfer) FROM (SELECT number, SUM(number) AS transfer FROM t GROUP B
 
 CREATE TABLE crd
 (
-    `polygon` Array(Tuple(
-        Float64,
-        Float64))
+    polygon Array(Tuple(Float64, Float64))
 )
 ENGINE = MergeTree
 ORDER BY tuple()
@@ -20,3 +18,18 @@ SELECT count() FROM t WHERE pointInPolygon((number, number), (SELECT * from crd)
 SELECT * FROM t UNION ALL SELECT * FROM t FORMAT Null;
 
 SELECT * FROM t lhs INNER JOIN t rhs ON lhs.number = rhs.number LIMIT 1 FORMAT Null;
+
+CREATE TABLE tt
+(
+    a UInt64,
+    b UInt64
+)
+ENGINE = MergeTree
+ORDER BY a
+AS SELECT
+    number,
+    number * 2
+FROM numbers_mt(1e5);
+
+SELECT min(a) FROM tt SETTINGS optimize_aggregation_in_order=0;
+
