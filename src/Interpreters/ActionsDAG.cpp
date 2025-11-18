@@ -238,7 +238,8 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
 }
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-namespace {
+namespace
+{
 void checkNodeIsValid(const ActionsDAG::Node & node)
 {
     /// TODO(antaljanosbenjamin): Deal with placeholders
@@ -490,7 +491,7 @@ const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePt
     node.type = ActionType::PLACEHOLDER;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
-    node.column = node.result_type->createColumn();
+    node.column = node.result_type->createColumnConst(1, node.result_type->getDefault());
 
     return addNode(std::move(node));
 }
