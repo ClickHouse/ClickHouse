@@ -478,7 +478,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             log->flushBufferToLog(std::chrono::system_clock::now());
 
             auto last_log_index = log->getLastLogIndex();
-            logs_to_wait.push_back({log, log->getLastLogIndex()});
+            logs_to_wait.push_back({log, last_log_index});
             log->notifyFlush(last_log_index, should_prepare_tables_anyway);
         }
     }
