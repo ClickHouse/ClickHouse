@@ -1,0 +1,22 @@
+SET enable_analyzer = 1;
+
+{% for reorder_limit in [0, 1, 16] %}
+
+SET query_plan_optimize_join_order_limit = {{ reorder_limit }};
+
+SELECT 1 FROM (SELECT 0 c0) tx
+JOIN (SELECT 0 c0) ty ON TRUE
+JOIN (SELECT 0 c0) tz ON ty.c0 = tz.c0
+JOIN (SELECT 0 c0) tw ON abs(tx.c0)
+SETTINGS query_plan_convert_join_to_in = 1
+;
+
+SELECT 1 FROM (SELECT 0 c0) tx
+JOIN (SELECT 0 c0) ty ON TRUE
+JOIN (SELECT 0 c0) tz ON ty.c0 = tz.c0
+JOIN (SELECT 0 c0) tw ON abs(tx.c0)
+SETTINGS query_plan_convert_join_to_in = 0
+;
+
+
+{% endfor %}
