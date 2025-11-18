@@ -317,6 +317,13 @@ function fuzz
         task_exit_code=0
         echo "OK" > status.txt
         echo "OK" > description.txt
+    elif [ "$fuzzer_exit_code" == "227" ]
+    then
+        # BuzzHouse exception, it means a query oracle failed, or
+        # an unwanted exception was found
+        task_exit_code=$fuzzer_exit_code
+        echo "FAIL" > status.txt
+        echo "BuzzHouse fuzzer exception" > description.txt
     elif [ "$fuzzer_exit_code" == "137" ]
     then
         # Killed.

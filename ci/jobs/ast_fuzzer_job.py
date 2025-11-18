@@ -120,6 +120,7 @@ def run_fuzz_job(check_name: str):
             "Let op!",
             "Killed",
             "Unknown error",
+            "BuzzHouse fuzzer exception",
         ]:
             info += "---\n\nFuzzer log (last 30 lines):\n"
             info += Shell.get_output(f"tail -n30 {fuzzer_log}", verbose=False) + "\n"
