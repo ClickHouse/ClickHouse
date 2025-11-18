@@ -168,8 +168,7 @@ private:
         ColumnPtr values_column = castColumnAccurate(argument_values_column, attribute_column_type);
 
         chassert(values_column != nullptr);
-        chassert(values_column->size() == argument_values_column.column->size());
-        chassert(values_column->size() >= 1);
+        chassert(!values_column->empty());
 
         /// Step 1
         const UInt128 values_column_value_hash = sipHash128AtRow(*values_column, 0);
