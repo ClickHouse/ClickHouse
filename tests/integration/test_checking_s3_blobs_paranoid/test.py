@@ -587,7 +587,7 @@ def test_when_s3_timeout_at_listing(
         LIMIT 2000
         SETTINGS
             s3_check_objects_after_upload=0,
-            s3_truncate_on_insert=1,
+            s3_truncate_on_insert=1
         """,
         query_id=insert_query_id,
     )
