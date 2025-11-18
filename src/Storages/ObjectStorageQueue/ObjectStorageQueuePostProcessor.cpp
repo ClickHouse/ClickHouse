@@ -1,4 +1,5 @@
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadPoolTaskTracker.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
@@ -133,6 +134,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
 
 static constexpr size_t post_process_initial_backoff_ms = 100;
 static constexpr size_t post_process_max_backoff_ms = 5000;
+static constexpr size_t post_process_max_inflight_object_moves = 20;
 
 void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action) const
 {
@@ -157,6 +159,7 @@ void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action
             );
             if (try_no >= retries)
             {
+                // Letting the caller to catch the exception and log it with a meaningful message
                 throw;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
@@ -199,33 +202,60 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
     auto read_settings = getReadSettings();
     auto write_settings = getWriteSettings();
 
-    size_t moved_objects = 0;
-    for (const auto & object_from : objects)
+    auto schedule = threadPoolCallbackRunnerUnsafe<void>(
+        IObjectStorage::getThreadPoolWriter(),
+        "ObjStorQueue_move_objs");
+
+    LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
+    TaskTracker task_tracker(schedule, post_process_max_inflight_object_moves, limited_log);
+
+    std::atomic<size_t> moved_objects = 0;
+
+    try
     {
-        try
+        for (const auto & object_from : objects)
         {
-            doWithRetries([&]{
-                auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
-                LOG_TRACE(log, "copying object {} to {}", object_from.remote_path, object_to.remote_path);
-                object_storage->copyObject(
-                    object_from,
-                    object_to,
-                    read_settings,
-                    write_settings);
-                LOG_INFO(log, "removing object {}", object_from.remote_path);
-                object_storage->removeObjectIfExists(object_from);
+            task_tracker.add([&]{
+                try
+                {
+                    doWithRetries([&]{
+                        auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
+                        LOG_TRACE(log, "copying object {} to {}", object_from.remote_path, object_to.remote_path);
+                        object_storage->copyObject(
+                            object_from,
+                            object_to,
+                            read_settings,
+                            write_settings);
+                        LOG_INFO(log, "removing object {}", object_from.remote_path);
+                        object_storage->removeObjectIfExists(object_from);
+                    });
+                    ++moved_objects;
+                }
+                catch (...)
+                {
+                    LOG_WARNING(
+                        log,
+                        "Failed to move S3 object {} within bucket with exception: {}",
+                        object_from.remote_path,
+                        getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+                    );
+                }
             });
-            moved_objects += 1;
         }
-        catch (...)
-        {
-            LOG_WARNING(
-                log,
-                "Failed to move S3 object {} within bucket with exception: {}",
-                object_from.remote_path,
-                getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
-            );
-        }
+        task_tracker.waitAll();
+    }
+    catch (...)
+    {
+        LOG_WARNING(
+            log,
+            "Exception while moving objects to prefix {}: {}",
+            move_prefix,
+            getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
+        );
+
+        task_tracker.safeWaitAll();
+
+        throw;
     }
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueMovedObjects, moved_objects);
 }
