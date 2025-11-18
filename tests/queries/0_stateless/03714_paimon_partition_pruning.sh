@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
 
-# CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# # shellcheck source=../shell_config.sh
-# . "$CURDIR"/../shell_config.sh
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
 
 # test null
 $CLICKHOUSE_CLIENT --query_id="test_03714_1_$CLICKHOUSE_TEST_UNIQUE_NAME" --enable_time_time64_type=1 --session_timezone="UTC" --query "
