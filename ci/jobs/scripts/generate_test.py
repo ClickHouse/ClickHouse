@@ -47,11 +47,12 @@ class FuzzerTestGenerator:
         self.server_log = server_log
         self.fuzzer_log = fuzzer_log
 
-    def get_reproduce_commands(self):
-
-        # get query command
+    def get_failed_query(self):
+        # TODO: Fetch the failed query from fuzzer.log instead of server.log to ensure exact matching.
+        # The server.log may normalize whitespace or format queries differently, making it difficult
+        # to locate the corresponding query and its dependencies in fuzzer.log.
         failure_output = Shell.get_output(
-            f"cat {self.server_log} | grep -A10 'Logical error:'"
+            f"grep -A10 -a 'Logical error:' {self.server_log}", verbose=True
         )
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
@@ -59,10 +60,11 @@ class FuzzerTestGenerator:
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
         assert query_id, "No query id found in server log"
         query_command = Shell.get_output(
-            f"cat {self.server_log} | grep '{query_id}' | head -n1"
+            f"grep -a '{query_id}' {self.server_log} | head -n1"
         )
         assert query_command, "No query command found in server log"
         query_command = query_command.split(" (stage:")[0]
+
         min_pos = len(query_command)
         for keyword in self.SQL_COMMANDS:
             if keyword in query_command:
@@ -71,6 +73,10 @@ class FuzzerTestGenerator:
         if min_pos == len(query_command):
             raise Exception("No SQL keyword found in query command")
         query_command = query_command[min_pos:]
+        return query_command
+
+    def get_reproduce_commands(self, failed_query=""):
+        query_command = failed_query or self.get_failed_query()
 
         all_fuzzer_commands = self._get_all_fuzzer_commands()
         assert all_fuzzer_commands, "No fuzzer commands found"
@@ -103,7 +109,6 @@ class FuzzerTestGenerator:
                     and f" {table} " in command
                 ):
                     commands_to_reproduce.append(command)
-        # assert commands_to_reproduce, "No write commands found for tables"
         commands_to_reproduce.append(query_command)
 
         # add table drop commands
@@ -113,55 +118,50 @@ class FuzzerTestGenerator:
         return commands_to_reproduce
 
     def _get_all_fuzzer_commands(self):
+        error_logs = [
+            "Fuzzing step",
+            "Query succeeded",
+            "Dump of fuzzed AST",
+            "Got boring AST",
+            "Using seed",
+            "Left type:",
+            "Timeout exceeded",
+            "input block structure:",
+            "Code:",
+            "Error",
+        ]
         lines = Shell.get_output(f"cat {self.fuzzer_log}").splitlines()
         result = []
+        in_query = False
         for line in lines:
-            if line.startswith("Error") or line.startswith("[") or not line.strip():
-                continue
-            if re.match(r"^\d+\.", line):
-                continue
-            if any(
-                line.startswith(cmd)
-                for cmd in [
-                    "Fuzzing step",
-                    "Query succeeded",
-                    "Dump of fuzzed AST",
-                    "Got boring AST",
-                    "Using seed",
-                    "Left type:",
-                    "Timeout exceeded",
-                    "input block structure:",
-                    "Code:",
-                ]
-            ):
-                continue
-            result.append(line)
-
-        result_with_joined_multiline_commands = []
-        for line in result:
-            if any(line.startswith(cmd) for cmd in self.SQL_COMMANDS):
-                result_with_joined_multiline_commands.append(line)
-            elif line.startswith("("):
-                result_with_joined_multiline_commands[-1] += " " + line
+            if in_query:
+                if (
+                    any(line.startswith(err_cmd) for err_cmd in error_logs)
+                    or not line.strip()
+                ):
+                    in_query = False
+                else:
+                    result[-1] += line
             else:
-                assert (
-                    False
-                ), f"Unknown line: '{line}' | '{result_with_joined_multiline_commands[-1]}'"
-
-        # sanity check
-        for command in result_with_joined_multiline_commands:
-            assert any(
-                command.startswith(sql_cmd) for sql_cmd in self.SQL_COMMANDS
-            ), f"No SQL command found in command: {command}"
-        return result_with_joined_multiline_commands
-
-    def generate_test(self):
-        pass
+                if any(line.startswith(cmd) for cmd in self.SQL_COMMANDS):
+                    in_query = True
+                    result.append(line)
+                else:
+                    if line.startswith(" ") or not line.strip():
+                        continue
+                    assert line, f"line: [{line}]"
+        # Normalize whitespace in commands: server.log collapses consecutive spaces while fuzzer.log may preserve them.
+        # This normalization ensures commands from both logs can be matched correctly.
+        result = [re.sub(r"\s+", " ", line.strip()) for line in result]
+        return result
 
 
 if __name__ == "__main__":
     fuzzer_log = "fuzzer.log"
     server_log = "server.log"
-    print(
-        "\n".join(FuzzerTestGenerator(server_log, fuzzer_log).get_reproduce_commands())
-    )
+    FTG = FuzzerTestGenerator(server_log, fuzzer_log)
+    failed_query = FTG.get_failed_query()
+    print("Failed query:")
+    print(failed_query)
+    print("\nCommands to reproduce:")
+    print("\n".join(FTG.get_reproduce_commands(failed_query)))

@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -218,8 +219,7 @@ std::optional<AggregateFunctionMatches> matchAggregateFunctions(
 static void appendAggregateFunctions(
     ActionsDAG & proj_dag,
     const AggregateDescriptions & aggregates,
-    const AggregateFunctionMatches & matched_aggregates,
-    const ContextPtr & context)
+    const AggregateFunctionMatches & matched_aggregates)
 {
     std::unordered_map<const AggregateDescription *, const ActionsDAG::Node *> inputs;
 
@@ -242,7 +242,7 @@ static void appendAggregateFunctions(
             /// Cast to aggregate types specified in query if it's not
             /// strictly the same as the one specified in projection. This
             /// is required to generate correct results during finalization.
-            node = &proj_dag.addCast(*node, type, aggregate.column_name, context);
+            node = &proj_dag.addCast(*node, type, aggregate.column_name, nullptr);
         else if (node->result_name != aggregate.column_name)
             node = &proj_dag.addAlias(*node, aggregate.column_name);
 
@@ -255,8 +255,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
     const QueryDAG & query,
     const DAGIndex & query_index,
     const Names & keys,
-    const AggregateDescriptions & aggregates,
-    const ContextPtr & context)
+    const AggregateDescriptions & aggregates)
 {
     auto proj_index = buildDAGIndex(*info.before_aggregation);
 
@@ -307,7 +306,7 @@ std::optional<ActionsDAG> analyzeAggregateProjection(
         return {};
 
     auto proj_dag = ActionsDAG::foldActionsByProjection(*new_inputs, query_key_nodes);
-    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates, context);
+    appendAggregateFunctions(proj_dag, aggregates, *matched_aggregates);
     return proj_dag;
 }
 
@@ -384,7 +383,7 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, context))
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
         {
             AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
 
@@ -435,12 +434,72 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         for (const auto * projection : agg_projections)
         {
             auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
-            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, context))
+            if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
             {
                 AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
                 candidate.projection = projection;
                 candidates.real.emplace_back(std::move(candidate));
             }
+        }
+    }
+
+    return candidates;
+}
+
+AggregateProjectionCandidates getAggregateProjectionCandidates(QueryPlan::Node & node, DistinctStep & distinct, ReadFromMergeTree & reading)
+{
+    const auto metadata = reading.getStorageMetadata();
+    Block key_virtual_columns = reading.getMergeTreeData().getHeaderWithVirtualsForFilter(metadata);
+
+    ContextPtr context = reading.getContext();
+
+    const auto & projections = metadata->projections;
+    std::vector<const ProjectionDescription *> agg_projections;
+
+    for (const auto & projection : projections)
+        if (projection.type == ProjectionDescription::Type::Aggregate)
+            agg_projections.push_back(&projection);
+
+    AggregateProjectionCandidates candidates;
+
+    if (agg_projections.empty())
+        return candidates;
+
+    QueryDAG dag;
+    if (!dag.build(*node.children.front()))
+        return candidates;
+
+    auto query_index = buildDAGIndex(*dag.dag);
+    candidates.has_filter = dag.filter_node;
+
+    const auto & keys = distinct.getColumnNames();
+
+    /// Prefer the user specified projection if any.
+    auto it = std::find_if(
+        agg_projections.begin(),
+        agg_projections.end(),
+        [&](const auto * projection)
+        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
+
+    if (it != agg_projections.end())
+    {
+        const ProjectionDescription * preferred_projection = *it;
+        agg_projections.clear();
+        agg_projections.push_back(preferred_projection);
+    }
+
+    AggregateDescriptions aggregates; // Empty for DISTINCT
+    candidates.real.reserve(agg_projections.size());
+
+    /// Only select the projection where distinct columns are a subset of projection columns.
+    for (const auto * projection : agg_projections)
+    {
+        auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
+        if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates))
+        {
+            AggregateProjectionCandidate candidate{.info = std::move(info), .dag = std::move(*proj_dag)};
+            candidate.projection = projection;
+            candidates.real.emplace_back(std::move(candidate));
         }
     }
 
@@ -476,10 +535,14 @@ std::optional<String> optimizeUseAggregateProjections(
         return {};
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-    if (!aggregating)
+
+    auto * distinct = typeid_cast<DistinctStep *>(node.step.get());
+
+    /// In the event there is DISTINCT but no GROUP BY, we still want to use aggregate projections.
+    if (!aggregating && !distinct)
         return {};
 
-    if (!aggregating->canUseProjection())
+    if (aggregating && !aggregating->canUseProjection())
         return {};
 
     QueryPlan::Node * reading_node = findReadingStep(*node.children.front());
@@ -495,7 +558,9 @@ std::optional<String> optimizeUseAggregateProjections(
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
 
-    auto candidates = getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections);
+    auto candidates
+        = (distinct ? getAggregateProjectionCandidates(node, *distinct, *reading)
+                    : getAggregateProjectionCandidates(node, *aggregating, *reading, max_added_blocks, allow_implicit_projections));
 
     auto logger = getLogger("optimizeUseAggregateProjections");
     const auto & query_info = reading->getQueryInfo();
@@ -863,15 +928,31 @@ std::optional<String> optimizeUseAggregateProjections(
         aggregate_projection_node = &projection_reading_node;
     }
 
+    const auto & projection_header = aggregate_projection_node->step->getOutputHeader();
+
     if (has_parent_parts)
     {
-        node.step = aggregating->convertToAggregatingProjection(aggregate_projection_node->step->getOutputHeader());
+        if (aggregating)
+        {
+            node.step = aggregating->convertToAggregatingProjection(projection_header);
+        }
+        else
+        {
+            node.step->updateInputHeader(projection_header);
+        }
         node.children.push_back(aggregate_projection_node);
     }
     else
     {
         /// All parts are taken from projection
-        aggregating->requestOnlyMergeForAggregateProjection(aggregate_projection_node->step->getOutputHeader());
+        if (aggregating)
+        {
+            aggregating->requestOnlyMergeForAggregateProjection(projection_header);
+        }
+        else
+        {
+            node.step->updateInputHeader(projection_header);
+        }
         node.children.front() = aggregate_projection_node;
     }
 
