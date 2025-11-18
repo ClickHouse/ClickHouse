@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree
+# Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database
+# Tag no-parallel: Fails due to failpoint intersection
+# no-replicated-database: Fails due to additional replicas or shards
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,6 +11,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/mergetree_mutations.lib
 
 set -e
+
+# disable fault injection; part ids are non-deterministic in case of insert retries
+$CLICKHOUSE_CLIENT --query "SET insert_keeper_fault_injection_probability = 0;"
 
 $CLICKHOUSE_CLIENT --query "
     CREATE TABLE rmt (id UInt64, num UInt64)

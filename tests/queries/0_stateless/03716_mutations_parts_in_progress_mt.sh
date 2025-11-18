@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-shared-merge-tree
+# Tags: no-parallel
+# Tag no-parallel: Fails due to failpoint intersection
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
