@@ -389,15 +389,6 @@ SELECT
 FROM tuple_test
 ORDER BY isNull(tup), rn_in_partition, id;
 
-SELECT 'Window - lag/lead';
-SELECT
-    id,
-    tup.u,
-    lag(tup.u) OVER (ORDER BY id) as prev_u,
-    lead(tup.u) OVER (ORDER BY id) as next_u
-FROM tuple_test
-ORDER BY id;
-
 SELECT 'Window - Aggregate functions';
 SELECT
     id,

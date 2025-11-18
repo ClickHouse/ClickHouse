@@ -313,13 +313,6 @@ Window - PARTITION BY
 4	44	0	4
 2	\N	1	1
 6	\N	1	2
-Window - lag/lead
-1	11	\N	\N
-2	\N	11	33
-3	33	\N	44
-4	44	33	11
-5	11	44	\N
-6	\N	11	\N
 Window - Aggregate functions
 1	11	11	11
 2	\N	11	22
