@@ -56,7 +56,7 @@ def run_fuzz_job(check_name: str):
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    run_command = get_run_command(workspace_path, docker_image, check_name)
+    run_command = get_run_command(workspace_path, docker_image, buzzhouse)
     logging.info("Going to run %s", run_command)
 
     info = Info()
