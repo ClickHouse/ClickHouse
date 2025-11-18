@@ -923,7 +923,7 @@ def test_mv_settings(started_cluster, mode, limit):
         return int(node.query(f"SELECT count() FROM {dst_table_name}"))
 
     expected_rows = num_rows
-    for _ in range(20):
+    for _ in range(100):
         if expected_rows == get_count():
             break
         time.sleep(1)
