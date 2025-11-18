@@ -1372,7 +1372,6 @@ try
 
     /// This object will periodically calculate some metrics.
     std::unique_ptr<AsynchronousMetrics> async_metrics;
-    const bool async_metrics_keeper_metrics_only = server_settings[ServerSetting::asynchronous_metrics_keeper_metrics_only];
 
     DB::AsynchronousMetrics::ProtocolServerMetricsFunc asynchronous_metrics_protocol_server_metrics_func = [&]() -> std::vector<ProtocolServerMetrics>
     {
@@ -1393,6 +1392,7 @@ try
     const bool async_metrics_update_rss = memory_worker.getSource() == MemoryWorker::MemoryUsageSource::None;
 
 #if USE_NURAFT
+    const bool async_metrics_keeper_metrics_only = server_settings[ServerSetting::asynchronous_metrics_keeper_metrics_only];
     if (async_metrics_keeper_metrics_only)
     {
         async_metrics = std::make_unique<KeeperAsynchronousMetrics>(
