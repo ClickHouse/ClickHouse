@@ -24,7 +24,7 @@ def get_run_command(
     buzzhouse: bool,
 ) -> str:
     envs = [
-        f"-e FUZZER_TO_RUN='{"BuzzHouse" if buzzhouse else "AST Fuzzer"}'",
+        f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
     ]
 
     env_str = " ".join(envs)
