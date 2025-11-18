@@ -121,22 +121,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
         return res;
     }
 
-    /// If lhs is Nullable(Tuple) and we have NULL in our rhs collection and we have `transform_null_in` set to true,
-    /// then we must insert NULLs of rhs into final result set. However, `MutableColumns` only holds the unpacked tuple elements,
-    /// which cannot be used to describe NULLs of the whole Nullable(Tuple). So, to be able to insert NULLs, we repack the elements
-    /// of the unpacked columns into Nullable(Tuple) column later, and insert NULLs there.
-    bool construct_nullable_tuple_column_later = false;
-    if (lhs_is_nullable && params.transform_null_in)
-    {
-        for (const auto & rhs_element : rhs_collection)
-        {
-            if (rhs_element.isNull())
-            {
-                construct_nullable_tuple_column_later = true;
-                break;
-            }
-        }
-    }
+    /// If lhs is Nullable(Tuple), then since we cast RHS elements to lhs types, we must wrap the final Tuple column into Nullable.
+    const bool construct_nullable_tuple_column_later = lhs_is_nullable;
 
     /// Skip: if conversion failed between lhs_tuple and rhs_element and does not raise
     ///       exception (like unknown enum value and `validate_enum_literals_in_operators = 0`)
