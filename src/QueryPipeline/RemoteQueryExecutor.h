@@ -187,7 +187,7 @@ public:
     /// It should be cancelled after read returned empty block.
     ///
     /// If async_cancel is set, it will not receive all remain packets. The remaining packets
-    /// shoule be received in the readAsync
+    /// should be received in the readAsync
     ///
     /// Returns true iff the remaining packets should be received in the readAsync
     bool finish();

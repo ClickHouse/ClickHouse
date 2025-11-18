@@ -101,7 +101,8 @@ ISource::Status RemoteSource::prepare()
     /// RemoteQueryExecutor it should be finished explicitly.
     if (status == Status::Finished)
     {
-        switch (drain_status) {
+        switch (drain_status)
+        {
             case DrainStatus::NoDrain:
                 is_async_state = false;
                 drain_status = DrainStatus::NeedDrain;
