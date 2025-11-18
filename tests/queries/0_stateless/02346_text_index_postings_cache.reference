@@ -1,0 +1,22 @@
+--- cache miss on the first token.
+64
+cache_hits = 0, cache_misses = 1
+--- cache miss on the second token.
+64
+cache_hits = 0, cache_misses = 1
+--- cache hit on the first token.
+64
+cache_hits = 1, cache_misses = 0
+--- cache hit on the second token.
+64
+cache_hits = 1, cache_misses = 0
+--- no profile events when cache is disabled.
+64
+cache_hits = 0, cache_misses = 0
+Clear text index postings cache
+--- cache miss on the first token.
+64
+cache_hits = 0, cache_misses = 1
+--- cache hit on the first token.
+64
+cache_hits = 1, cache_misses = 0

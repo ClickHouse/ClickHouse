@@ -4,14 +4,14 @@ description: '`MergeTree`-family table engines are designed for high data ingest
 sidebar_label: 'MergeTree'
 sidebar_position: 11
 slug: /engines/table-engines/mergetree-family/mergetree
-title: 'MergeTree'
+title: 'MergeTree table engine'
 doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MergeTree
+# MergeTree table engine
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
 
@@ -74,7 +74,7 @@ A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID 
 If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
-Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY tuple()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
+Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
 
 #### PARTITION BY {#partition-by}
 
@@ -478,13 +478,13 @@ The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences
 tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
+### Text index {#text}
+
+Supports full-text search, see [here](invertedindexes.md) for details.
+
 #### Vector similarity {#vector-similarity}
 
 Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
-
-### Text (experimental) {#text}
-
-Support full-text search, see [here](invertedindexes.md) for details.
 
 ### Functions support {#functions-support}
 

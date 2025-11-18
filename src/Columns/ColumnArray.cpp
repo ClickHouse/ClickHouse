@@ -1,4 +1,3 @@
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
@@ -1416,14 +1415,14 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 
-    data->takeDynamicStructureFromSourceColumns(nested_source_columns);
+    data->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
