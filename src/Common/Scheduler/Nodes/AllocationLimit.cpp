@@ -39,6 +39,11 @@ void AllocationLimit::updateLimit(UInt64 new_max_allocated)
     UNUSED(new_max_allocated);
 }
 
+ResourceCost AllocationLimit::getLimit() const
+{
+    return max_allocated;
+}
+
 const String & AllocationLimit::getTypeName() const
 {
     static String type_name("allocation_limit");
@@ -82,7 +87,9 @@ ResourceAllocation * AllocationLimit::selectAllocationToKill()
 void AllocationLimit::approveIncrease()
 {
     LOG_EVENT("{} -- approveIncrease()", getPath());
-    applyIncrease();
+    chassert(increase);
+    allocated += increase->size;
+    increase = nullptr;
     child->approveIncrease();
     setIncrease(child->increase, false);
 }
@@ -90,7 +97,16 @@ void AllocationLimit::approveIncrease()
 void AllocationLimit::approveDecrease()
 {
     LOG_EVENT("{} -- approveDecrease()", getPath());
-    applyDecrease();
+
+    chassert(decrease);
+    allocated -= decrease->size;
+
+    // Check if allocation being killed released all its resources
+    if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
+        allocation_to_kill = nullptr;
+
+    decrease = nullptr;
+
     IncreaseRequest * old_increase = increase;
     child->approveDecrease();
     setDecrease(child->decrease);
@@ -98,11 +114,6 @@ void AllocationLimit::approveDecrease()
     // NOTE: if increase was changed, it is already propagated in approveDecrease()
     if (old_increase == increase && setIncrease(child->increase, true))
         propagate(Update().setIncrease(increase));
-}
-
-ResourceCost AllocationLimit::getLimit() const
-{
-    return max_allocated;
 }
 
 void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
@@ -185,25 +196,6 @@ bool AllocationLimit::setDecrease(DecreaseRequest * new_decrease)
         return false;
     decrease = new_decrease;
     return true;
-}
-
-void AllocationLimit::applyIncrease()
-{
-    chassert(increase);
-    allocated += increase->size;
-    increase = nullptr;
-}
-
-void AllocationLimit::applyDecrease()
-{
-    chassert(decrease);
-    allocated -= decrease->size;
-
-    // Check if allocation being killed released all its resources
-    if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
-        allocation_to_kill = nullptr;
-
-    decrease = nullptr;
 }
 
 }

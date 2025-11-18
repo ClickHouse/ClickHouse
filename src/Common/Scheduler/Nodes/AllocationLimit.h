@@ -14,21 +14,23 @@ public:
     AllocationLimit(EventQueue & event_queue_, const SchedulerNodeInfo & info_, ResourceCost max_allocated_);
     ~AllocationLimit() override;
     void updateLimit(UInt64 new_max_allocated);
+    ResourceCost getLimit() const;
+
+    // ISchedulerNode
     const String & getTypeName() const override;
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override;
     void removeChild(ISchedulerNode * child_) override;
     ISchedulerNode * getChild(const String & child_name) override;
+
+    // ISpaceSharedNode
     ResourceAllocation * selectAllocationToKill() override;
     void approveIncrease() override;
     void approveDecrease() override;
-    ResourceCost getLimit() const;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
 
 private:
     bool setIncrease(IncreaseRequest * new_increase, bool reapply_constraint);
     bool setDecrease(DecreaseRequest * new_decrease);
-    void applyIncrease();
-    void applyDecrease();
 
     ResourceCost max_allocated = default_max_allocated;
 

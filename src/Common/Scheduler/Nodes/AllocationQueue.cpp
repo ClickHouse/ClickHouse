@@ -147,14 +147,66 @@ void AllocationQueue::propagateUpdate(ISpaceSharedNode &, Update &&)
 void AllocationQueue::approveIncrease()
 {
     std::lock_guard lock(mutex);
-    applyIncrease();
+    chassert(increase);
+    ResourceAllocation & allocation = increase->allocation;
+    if (allocation.allocated == 0)
+    {
+        pending_allocations.erase(pending_allocations.iterator_to(allocation));
+        pending_allocations_size -= allocation.increase.size;
+        allocation.fair_key = increase->size;
+        running_allocations.insert(allocation);
+    }
+    else
+        increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+    allocated += increase->size;
+    allocation.allocated += increase->size;
+
+    // Notify allocation
+    skip_activation = true;
+    increase->allocation.increaseApproved(*increase); // NOTE: this may re-enter increaseAllocation()
+    skip_activation = false;
+    increase = nullptr;
+
     setIncrease();
 }
 
 void AllocationQueue::approveDecrease()
 {
     std::lock_guard lock(mutex);
-    applyDecrease();
+
+    chassert(decrease);
+    ResourceAllocation & allocation = decrease->allocation;
+    decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
+
+    // We need to remove from running/increasing allocations to update the key
+    running_allocations.erase(running_allocations.iterator_to(allocation));
+    bool is_increasing = allocation.increasing_hook.is_linked();
+    if (is_increasing)
+        increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
+
+    // Update the key and other fields
+    allocated -= decrease->size;
+    allocation.allocated -= decrease->size;
+    allocation.fair_key -= decrease->size;
+
+    // Reinsert into the appropriate data structures
+    if (allocation.allocated > 0)
+    {
+        running_allocations.insert(allocation);
+        if (is_increasing)
+            increasing_allocations.insert(allocation);
+    }
+
+    // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
+    if (is_increasing && setIncrease())
+        propagate(Update().setIncrease(increase));
+
+    // Notify allocation
+    skip_activation = true;
+    decrease->allocation.decreaseApproved(*decrease); // NOTE: this may re-enter decreaseAllocation()
+    skip_activation = false;
+    decrease = nullptr;
+
     setDecrease();
 }
 
@@ -226,65 +278,6 @@ void AllocationQueue::updateQueueLimit(Int64 value)
 {
     // TODO(serxa): implement
     UNUSED(value);
-}
-
-void AllocationQueue::applyIncrease() // TSA_REQUIRES(mutex)
-{
-    chassert(increase);
-    ResourceAllocation & allocation = increase->allocation;
-    if (allocation.allocated == 0)
-    {
-        pending_allocations.erase(pending_allocations.iterator_to(allocation));
-        pending_allocations_size -= allocation.increase.size;
-        allocation.fair_key = increase->size;
-        running_allocations.insert(allocation);
-    }
-    else
-        increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-    allocated += increase->size;
-    allocation.allocated += increase->size;
-
-    // Notify allocation
-    skip_activation = true;
-    increase->allocation.increaseApproved(*increase); // NOTE: this may re-enter increaseAllocation()
-    skip_activation = false;
-    increase = nullptr;
-}
-
-void AllocationQueue::applyDecrease() // TSA_REQUIRES(mutex)
-{
-    chassert(decrease);
-    ResourceAllocation & allocation = decrease->allocation;
-    decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
-
-    // We need to remove from running/increasing allocations to update the key
-    running_allocations.erase(running_allocations.iterator_to(allocation));
-    bool is_increasing = allocation.increasing_hook.is_linked();
-    if (is_increasing)
-        increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-
-    // Update the key and other fields
-    allocated -= decrease->size;
-    allocation.allocated -= decrease->size;
-    allocation.fair_key -= decrease->size;
-
-    // Reinsert into the appropriate data structures
-    if (allocation.allocated > 0)
-    {
-        running_allocations.insert(allocation);
-        if (is_increasing)
-            increasing_allocations.insert(allocation);
-    }
-
-    // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-    if (is_increasing && setIncrease())
-        propagate(Update().setIncrease(increase));
-
-    // Notify allocation
-    skip_activation = true;
-    decrease->allocation.decreaseApproved(*decrease); // NOTE: this may re-enter decreaseAllocation()
-    skip_activation = false;
-    decrease = nullptr;
 }
 
 bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)

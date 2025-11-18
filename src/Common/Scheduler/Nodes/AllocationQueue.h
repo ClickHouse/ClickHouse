@@ -42,8 +42,6 @@ public:
     void updateQueueLimit(Int64 value);
 
 private:
-    void applyIncrease();
-    void applyDecrease();
     bool setIncrease();
     bool setDecrease();
     void ensureUsable() const;

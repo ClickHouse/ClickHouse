@@ -11,8 +11,6 @@ namespace DB
 {
 
 /// Base class for all scheduler nodes that manage space-shared resource.
-/// Space-shared resources process requests to increase and decrease allocations.
-/// Each node presents its pending requests through `increase` and `decrease` fields.
 class ISpaceSharedNode : public ISchedulerNode
 {
 public:
@@ -24,9 +22,13 @@ public:
         : ISchedulerNode(event_queue_, info_)
     {}
 
-    /// Currently allocated amount of resource.
-    /// Can only be accessed from the scheduler thread.
-    ResourceCost allocated = 0;
+    /// NOTE: All fields and methods can only be accessed from the scheduler thread.
+
+    ResourceCost allocated = 0; /// Currently allocated amount of resource.
+    std::pair<double, size_t> parent_key{0, 0}; /// Key for ordering among sibling nodes. Depends on parent's policy.
+    boost::intrusive::set_member_hook<> running_hook; /// for parent: set of children with running allocations
+    boost::intrusive::set_member_hook<> increasing_hook; /// for parent: set of children with pending increase request
+    boost::intrusive::list_member_hook<> decreasing_hook; /// for parent: list of children with pending decrease request
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic

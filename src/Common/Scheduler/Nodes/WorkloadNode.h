@@ -1,21 +1,22 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/Priority.h>
 #include <Common/Scheduler/CostUnit.h>
-#include <Common/Scheduler/ITimeSharedNode.h>
-#include <Common/Scheduler/ISpaceSharedNode.h>
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/FairPolicy.h>
-#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
-#include <Common/Scheduler/Nodes/AllocationLimit.h>
-#include <Common/Scheduler/ISchedulerQueue.h>
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/AllocationQueue.h>
 #include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ISchedulerQueue.h>
+#include <Common/Scheduler/ISpaceSharedNode.h>
+#include <Common/Scheduler/ITimeSharedNode.h>
 #include <Common/Scheduler/IWorkloadNode.h>
+#include <Common/Scheduler/Nodes/AllocationLimit.h>
+#include <Common/Scheduler/Nodes/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/FairAllocation.h>
+#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/FifoQueue.h>
+#include <Common/Scheduler/Nodes/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
 #include <Common/Scheduler/WorkloadSettings.h>
-#include <Common/Exception.h>
 
 #include <memory>
 #include <unordered_map>
@@ -163,12 +164,10 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
 
     static NodePtr makeFairPolicy(EventQueue & event_queue_, Priority priority)
     {
-        // TODO(serxa): FairAllocation
-        // NodePtr result = std::make_shared<FairAllocation>(event_queue_, SchedulerNodeInfo{});
-        // result->info.setPriority(priority);
-        // result->basename = fmt::format("p{}_fair", priority.value);
-        // return result;
-        UNUSED(event_queue_, priority); return nullptr;
+        NodePtr result = std::make_shared<FairAllocation>(event_queue_, SchedulerNodeInfo{});
+        result->info.setPriority(priority);
+        result->basename = fmt::format("p{}_fair", priority.value);
+        return result;
     }
 
     static NodePtr makePriorityPolicy(EventQueue & event_queue_)
