@@ -184,6 +184,7 @@ public:
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
 
+    std::unique_ptr<ReadFromMergeTree> cloneWithRequredColumns(const NameSet & required_columns) const;
     QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -291,6 +292,9 @@ public:
 
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
+
+    std::unique_ptr<ReadFromMergeTree>  removeUnusedColumns(const NameSet & required_outputs);
+    int addStartingPartOffsetAndPartOffset();
 
 private:
     MergeTreeReaderSettings reader_settings;

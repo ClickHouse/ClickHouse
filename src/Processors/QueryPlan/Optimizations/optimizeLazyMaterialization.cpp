@@ -8,6 +8,11 @@
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
+#include <Functions/FunctionFactory.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -29,6 +34,226 @@ static bool canUseLazyMaterializationForReadingStep(ReadFromMergeTree * reading)
         return false;
 
     return true;
+}
+
+std::pair<std::vector<size_t>, std::vector<size_t>> mapInputsToHeaderPositions(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
+{
+    std::unordered_map<std::string, std::list<size_t>> name_to_position;
+    for (size_t i = 0; i < header.columns(); ++i)
+        name_to_position[header.getByPosition(i).name].push_back(i);
+
+    std::vector<size_t> positions;
+    positions.reserve(inputs.size());
+    for (const auto * input : inputs)
+    {
+        auto & lst = name_to_position[input->result_name];
+        if (lst.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", input->result_name);
+
+        positions.push_back(lst.front());
+        lst.pop_front();
+
+    }
+
+    std::vector<size_t> non_mapped;
+    for (size_t i = 0; i < header.columns(); ++i)
+        for (auto idx : name_to_position[header.getByPosition(i).name])
+            non_mapped.push_back(idx);
+
+    return {std::move(positions), std::move(non_mapped)};
+}
+
+std::vector<bool> getRequiredInputPositions(const ActionsDAG & dag, const Block & header, std::vector<bool> required_output_positions)
+{
+    std::unordered_set<const ActionsDAG::Node *> required_nodes;
+    std::stack<const ActionsDAG::Node *> stack;
+
+    for (size_t i = 0; i < dag.getOutputs().size(); ++i)
+    {
+        if (required_output_positions[i])
+            stack.push(dag.getOutputs()[i]);
+    }
+
+    std::vector<bool> required_input_positions = required_output_positions;
+    required_input_positions.assign(header.columns(), false);
+
+    while (!stack.empty())
+    {
+        const auto * current_node = stack.top();
+        stack.pop();
+
+        bool inserted = required_nodes.insert(current_node).second;
+        if (!inserted)
+            continue;
+
+        for (const auto * child : current_node->children)
+            stack.push(child);
+    }
+
+    const auto & inputs = dag.getInputs();
+    const auto [header_positions, non_mapped] = mapInputsToHeaderPositions(inputs, header);
+    for (size_t i = 0; i < inputs.size(); ++i)
+        if (required_nodes.contains(inputs[i]))
+            required_input_positions[header_positions[i]] = true;
+
+    for (size_t i = 0; dag.getOutputs().size() + i < header.columns(); ++i)
+        if (required_output_positions[i + dag.getOutputs().size()])
+            required_input_positions[non_mapped[i]] = true;
+
+    return required_input_positions;
+}
+
+std::vector<bool> getRequiredInputPositions(const ExpressionStep & expression_step, std::vector<bool> required_output_positions)
+{
+    return getRequiredInputPositions(expression_step.getExpression(), *expression_step.getInputHeaders().front(), std::move(required_output_positions));
+}
+
+std::vector<bool> getRequiredInputPositions(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+{
+    const auto & expression = filter_step.getExpression();
+    const auto & name = filter_step.getFilterColumnName();
+    const auto & outputs = expression.getOutputs();
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        if (outputs[i]->result_name == name)
+        {
+            required_output_positions[i] = true;
+            break;
+        }
+    }
+
+    return getRequiredInputPositions(expression, *filter_step.getInputHeaders().front(), std::move(required_output_positions));
+}
+
+struct SplitExpressionStepResult
+{
+    std::vector<bool> required_input_positions;
+    ActionsDAG main_expression_step;
+    ActionsDAG lazy_expression_step;
+};
+
+void removeDanglingNodes(ActionsDAG & dag)
+{
+    std::unordered_set<const ActionsDAG::Node *> used_nodes;
+    for (const auto & node : dag.getNodes())
+        for (const auto * child : node.children)
+            used_nodes.insert(child);
+
+    std::unordered_set<const ActionsDAG::Node *> inputs;
+    for (const auto & input : dag.getInputs())
+        inputs.insert(input);
+
+    auto & outputs = dag.getOutputs();
+    size_t next_pos = 0;
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        bool is_dangling = inputs.contains(outputs[i]) && !used_nodes.contains(outputs[i]);
+        if (!is_dangling)
+            outputs[next_pos++] = outputs[i];
+    }
+    outputs.resize(next_pos);
+    dag.removeUnusedActions();
+}
+
+SplitExpressionStepResult splitExpressionStep(const ExpressionStep & expression_step, std::vector<bool> required_output_positions)
+{
+    const auto & expression = expression_step.getExpression();
+    const auto & outputs = expression.getOutputs();
+
+    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        if (required_output_positions[i])
+            split_nodes.insert(outputs[i]);
+    }
+    auto split_result = expression.split(split_nodes, true, true);
+
+    auto required_input_positions = getRequiredInputPositions(expression_step, std::move(required_output_positions));
+    return { std::move(required_input_positions), std::move(split_result.first), std::move(split_result.second) };
+}
+
+struct SplitFilterResult
+{
+    std::vector<bool> required_input_positions;
+    FilterDAGInfo main_filter_step;
+    ActionsDAG lazy_expression_step;
+};
+
+SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+{
+    const auto & expression = filter_step.getExpression();
+    const auto & name = filter_step.getFilterColumnName();
+
+    const auto & outputs = expression.getOutputs();
+    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+    const ActionsDAG::Node * filter_node = nullptr;
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        if (required_output_positions[i])
+            split_nodes.insert(outputs[i]);
+
+        if (!filter_node && outputs[i]->result_name == name)
+            filter_node = outputs[i];
+    }
+
+    auto split_result = expression.split(split_nodes, true, true);
+
+
+    auto required_input_positions = getRequiredInputPositions(filter_step, std::move(required_output_positions));
+
+    FilterDAGInfo filter_dag_info;
+    filter_dag_info.actions = std::move(split_result.first);
+    filter_dag_info.column_name = name;
+
+    /// TODO: check if filter column is needed for split_result.second
+    filter_dag_info.do_remove_column = filter_step.removesFilterColumn();
+
+    return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
+}
+
+std::unique_ptr<ReadFromMergeTree> removeUnuzedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
+{
+    const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
+    chassert(cols.size() == required_output_positions.size());
+
+    NameSet required_names;
+    for (size_t i = 0; i < cols.size(); ++i)
+        if (required_output_positions[i])
+            required_names.insert(cols[i].name);
+
+    return reading_step.removeUnusedColumns(required_names);
+
+    // auto lazy_columns = reading_step.removeUnusedColumns(required_names);
+    // std::cerr << "Lazy columns\n";
+    // for (const auto & col : lazy_columns)
+    //     std::cerr << col << '\n';
+
+    // if (lazy_columns.empty())
+    //     return nullptr;
+
+    // auto new_reading = reading_step.cloneWithRequredColumns(lazy_columns);
+    // return new_reading;
+}
+
+ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step, const char * suffix)
+{
+    int res = reading_step.addStartingPartOffsetAndPartOffset();
+    ActionsDAG dag;
+    DataTypePtr uint64_type = std::make_shared<DataTypeUInt64>();
+    dag.addInput("_part_starting_offset", uint64_type);
+    dag.addInput("_part_offset", uint64_type);
+
+    auto plus = FunctionFactory::instance().get("plus", nullptr);
+    const auto * global_offset_node = &dag.addFunction(plus, dag.getInputs(), {});
+    global_offset_node = &dag.addAlias(*global_offset_node, std::string("__global_offset_") + suffix);
+
+    dag.getOutputs().push_back(global_offset_node);
+    if (res & 1)
+        dag.getOutputs().push_back(dag.getInputs()[0]);
+    if (res & 2)
+        dag.getOutputs().push_back(dag.getInputs()[1]);
+
+    return dag;
 }
 
 static void removeUsedColumnNames(
@@ -335,6 +560,231 @@ bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPla
     }
 
     updateStepsDataStreams(steps_to_update);
+
+    return true;
+}
+
+bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization)
+{
+    if (root.children.size() != 1)
+        return false;
+
+    auto * limit_step = typeid_cast<LimitStep *>(root.step.get());
+    if (!limit_step)
+        return false;
+
+    /// it's not clear how many values will be read for LIMIT WITH TIES, so disable it
+    if (limit_step->withTies())
+        return false;
+
+    auto * sorting_step = typeid_cast<SortingStep *>(root.children.front()->step.get());
+    if (!sorting_step)
+        return false;
+
+    if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
+        return false;
+
+    const auto limit = limit_step->getLimit();
+    if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
+        return false;
+
+    StepStack steps_to_update;
+
+    auto * sorting_node = root.children.front();
+    auto * reading_step = findReadingStep(*sorting_node->children.front(), steps_to_update);
+    if (!reading_step)
+        return false;
+
+    if (!canUseLazyMaterializationForReadingStep(reading_step))
+        return false;
+
+    const auto & sorting_header = *sorting_step->getOutputHeader();
+    std::vector<bool> required_columns(sorting_header.columns(), false);
+
+    for (const auto & descr : sorting_step->getSortDescription())
+        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+
+    auto * node = sorting_node->children.front();
+    while (!node->children.empty())
+    {
+        IQueryPlanStep * step = node->step.get();
+
+        // for (size_t i = 0; i < required_columns.size(); ++i)
+        //     std::cerr << i << ": " << required_columns[i] << " ";
+        // std::cerr << std::endl;
+
+        if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
+            required_columns = getRequiredInputPositions(*expr_step, std::move(required_columns));
+        else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
+            required_columns = getRequiredInputPositions(*filter_step, std::move(required_columns));
+        else
+            return false;
+
+        // for (size_t i = 0; i < required_columns.size(); ++i)
+        //     std::cerr << i << ": " << required_columns[i] << " ";
+        // std::cerr << std::endl;
+
+        node = node->children.front();
+    }
+
+    auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
+    if (!read_from_merge_tree)
+        return false;
+
+    auto lazy_reading = removeUnuzedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
+    if (!lazy_reading)
+        return false;
+
+    std::list<std::variant<ActionsDAG, FilterDAGInfo>> main_steps;
+    std::list<ActionsDAG> lazy_steps;
+
+    required_columns.assign(sorting_header.columns(), false);
+
+    for (const auto & descr : sorting_step->getSortDescription())
+        required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
+
+    node = sorting_node->children.front();
+    while (!node->children.empty())
+    {
+        IQueryPlanStep * step = node->step.get();
+
+        if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
+        {
+            // std::cerr << "split_s: " << expr_step->getExpression().dumpDAG() << std::endl;
+            auto split_result = splitExpressionStep(*expr_step, std::move(required_columns));
+            // std::cerr << "split_result l: " << split_result.main_expression_step.dumpDAG() << std::endl;
+            // std::cerr << "split_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
+            main_steps.push_front(std::move(split_result.main_expression_step));
+            lazy_steps.push_front(std::move(split_result.lazy_expression_step));
+            required_columns = std::move(split_result.required_input_positions);
+        }
+        else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
+        {
+            auto split_result = splitFilterStep(*filter_step, std::move(required_columns));
+            main_steps.push_front(std::move(split_result.main_filter_step));
+            lazy_steps.push_front(std::move(split_result.lazy_expression_step));
+            required_columns = std::move(split_result.required_input_positions);
+        }
+        else
+            return false;
+
+        node = node->children.front();
+    }
+
+    QueryPlan main_plan;
+    QueryPlan lazy_plan;
+
+    auto main_global_offset_dag = calculateGlobalOffset(*read_from_merge_tree, "l");
+
+    // std::cerr << "main step : " << node->step->getName() << std::endl;
+
+    main_plan.addStep(std::move(node->step));
+    auto main_global_offset_step = std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(main_global_offset_dag));
+    main_plan.addStep(std::move(main_global_offset_step));
+
+    for (auto & step : main_steps)
+    {
+        if (std::holds_alternative<ActionsDAG>(step))
+        {
+            auto dag = std::move(std::get<ActionsDAG>(step));
+            main_plan.addStep(std::make_unique<ExpressionStep>(main_plan.getCurrentHeader(), std::move(dag)));
+        }
+        else
+        {
+            auto filter_dag_info = std::move(std::get<FilterDAGInfo>(step));
+            main_plan.addStep(std::make_unique<FilterStep>(
+                main_plan.getCurrentHeader(),
+                std::move(filter_dag_info.actions), filter_dag_info.column_name, filter_dag_info.do_remove_column));
+        }
+    }
+
+    auto new_sorting_step = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
+    main_plan.addStep(std::move(new_sorting_step));
+
+    limit_step->updateInputHeader(main_plan.getCurrentHeader());
+    main_plan.addStep(std::move(root.step));
+
+    auto lazy_global_offset_dag = calculateGlobalOffset(*lazy_reading, "r");
+    lazy_plan.addStep(std::move(lazy_reading));
+    auto lazy_global_offset_step = std::make_unique<ExpressionStep>(lazy_plan.getCurrentHeader(), std::move(lazy_global_offset_dag));
+    lazy_plan.addStep(std::move(lazy_global_offset_step));
+
+    const auto & lhs_plan_header = main_plan.getCurrentHeader();
+    const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
+
+    JoinExpressionActions join_expression_actions(
+        lhs_plan_header->getColumnsWithTypeAndName(),
+        rhs_plan_header->getColumnsWithTypeAndName());
+
+    std::vector<JoinActionRef> predicates;
+    {
+        std::vector<JoinActionRef> eq_arguments;
+        eq_arguments.push_back(join_expression_actions.findNode("__global_offset_l", /* is_input= */ true));
+        eq_arguments.push_back(join_expression_actions.findNode("__global_offset_r", /* is_input= */ true));
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        predicates.push_back(std::move(eq_node));
+    }
+
+    NameSet output_columns;
+    for (const auto & col : main_plan.getCurrentHeader()->getColumnsWithTypeAndName())
+        if (col.name != "__global_offset_l")
+            output_columns.insert(col.name);
+
+    for (const auto & col : lazy_plan.getCurrentHeader()->getColumnsWithTypeAndName())
+        if (col.name != "__global_offset_r")
+            output_columns.insert(col.name);
+
+    /// Add ANY OUTER JOIN
+    auto result_join = std::make_unique<JoinStepLogical>(
+        lhs_plan_header,
+        rhs_plan_header,
+        JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
+        std::move(join_expression_actions),
+        output_columns,
+        std::unordered_map<String, const ActionsDAG::Node *>{},
+        /*join_use_nulls=*/false,
+        JoinSettings(QueryPlanSerializationSettings()),
+        SortingStep::Settings(QueryPlanSerializationSettings()));
+    result_join->setStepDescription("JOIN to generate result stream");
+
+    QueryPlan result_plan;
+
+    std::vector<QueryPlanPtr> plans;
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
+
+    result_plan.unitePlans(std::move(result_join), {std::move(plans)});
+
+    // {
+    //     WriteBufferFromOwnString out;
+    //     result_plan.explainPlan(out, {.header=true, .actions=true});
+    //     std::cerr << out.str() << std::endl;
+    // }
+
+    convertLogicalJoinToPhysical(*result_plan.getRootNode(), nodes, settings);
+
+    // {
+    //     WriteBufferFromOwnString out;
+    //     result_plan.explainPlan(out, {.header=true, .actions=true});
+    //     std::cerr << out.str() << std::endl;
+    // }
+
+    // {
+    //     WriteBufferFromOwnString out;
+    //     result_plan.explainPlan(out, {.header=true, .actions=true});
+    //     std::cerr << out.str() << std::endl;
+    // }
+
+    while (!lazy_steps.empty())
+    {
+        auto dag = std::move(lazy_steps.front());
+        lazy_steps.pop_front();
+        if (!lazy_steps.empty())
+            removeDanglingNodes(dag);
+        result_plan.addStep(std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag)));
+    }
+
+    query_plan.replaceNodeWithPlan(&root, std::move(result_plan));
 
     return true;
 }

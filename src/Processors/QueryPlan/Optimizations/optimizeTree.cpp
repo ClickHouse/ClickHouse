@@ -353,7 +353,7 @@ void optimizeTreeSecondPass(
             local_plan->optimize(optimization_settings);
 
             auto * local_plan_node = frame.node;
-            query_plan.replaceNodeWithPlan(local_plan_node, std::move(local_plan));
+            query_plan.replaceNodeWithPlan(local_plan_node, std::move(*local_plan));
 
             // after applying optimize() we still can have several expression in a row,
             // so merge them to make plan more concise
@@ -410,7 +410,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeLazyMaterialization(root, stack, nodes, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                     break;
             }
 
