@@ -152,8 +152,11 @@ void StorageSystemUserDefinedFunctions::fillData(
         }
         else
         {
-            // Failed to load - configuration unavailable, insert defaults for 16 fields
-            for (size_t j = 0; j < 16; ++j)
+            // Failed to load - configuration unavailable, insert defaults for all config fields
+            // Calculate: total columns - current position - statistics fields (3)
+            constexpr size_t stats_fields_count = 3; // last_successful_update_time, loading_duration, error_count
+            size_t config_fields_count = res_columns.size() - i - stats_fields_count;
+            for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }
 
