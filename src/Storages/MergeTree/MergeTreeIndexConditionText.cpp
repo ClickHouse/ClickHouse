@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/misc.h>
 #include <Functions/hasAnyAllTokens.h>
@@ -24,6 +25,7 @@ namespace Setting
     extern const SettingsBool text_index_use_bloom_filter;
     extern const SettingsBool use_text_index_dictionary_cache;
     extern const SettingsBool use_text_index_header_cache;
+    extern const SettingsBool use_text_index_postings_cache;
 }
 
 SipHash TextSearchQuery::getHash() const
@@ -51,9 +53,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , use_bloom_filter(context_->getSettingsRef()[Setting::text_index_use_bloom_filter])
     , preprocessor(preprocessor_)
     , use_dictionary_block_cache(context_->getSettingsRef()[Setting::use_text_index_dictionary_cache])
-    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache().get())
+    , dictionary_block_cache(context_->getTextIndexDictionaryBlockCache())
     , use_header_cache(context_->getSettingsRef()[Setting::use_text_index_header_cache])
-    , header_cache(context_->getTextIndexHeaderCache().get())
+    , header_cache(context_->getTextIndexHeaderCache())
+    , use_postings_cache(context_->getSettingsRef()[Setting::use_text_index_postings_cache])
+    , postings_cache(context_->getTextIndexPostingsCache())
 {
     if (!predicate)
     {

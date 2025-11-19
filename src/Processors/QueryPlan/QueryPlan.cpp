@@ -217,7 +217,7 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
 
     last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
     last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
-    last_pipeline->addResources(std::move(resources));
+    last_pipeline->addResources(resources);
     last_pipeline->setConcurrencyControl(getConcurrencyControl());
 
     return last_pipeline;
@@ -836,7 +836,10 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlanPtr plan)
     if (!blocksHaveEqualStructure(*header, *plan_header))
     {
         auto converting_dag = ActionsDAG::makeConvertingActions(
-            plan_header->getColumnsWithTypeAndName(), header->getColumnsWithTypeAndName(), ActionsDAG::MatchColumnsMode::Name);
+            plan_header->getColumnsWithTypeAndName(),
+            header->getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
 
         auto expression = std::make_unique<ExpressionStep>(plan_header, std::move(converting_dag));
         plan->addStep(std::move(expression));

@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_AzureBlobStorage.h>
+#include <Common/setThreadName.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <Common/threadPoolCallbackRunner.h>
@@ -68,7 +69,7 @@ bool BackupReaderAzureBlobStorage::fileExists(const String & file_name)
 UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
     return object_metadata.size_bytes;
 }
 
@@ -109,7 +110,7 @@ void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup,
                 settings,
                 read_settings,
                 std::optional<ObjectAttributes>(),
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupRDAzure"));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_READER));
 
             return file_size;
         };
@@ -188,7 +189,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                 settings,
                 read_settings,
                 std::optional<ObjectAttributes>(),
-                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+                threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
             return; /// copied!
         }
     }
@@ -212,7 +213,7 @@ void BackupWriterAzureBlobStorage::copyFile(const String & destination, const St
        settings,
        read_settings,
        std::optional<ObjectAttributes>(),
-       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+       threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
 }
 
 void BackupWriterAzureBlobStorage::copyDataToFile(
@@ -230,7 +231,7 @@ void BackupWriterAzureBlobStorage::copyDataToFile(
         fs::path(blob_path) / path_in_backup,
         settings,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(),
-        "BackupWRAzure"));
+        ThreadName::AZURE_BACKUP_WRITER));
 }
 
 BackupWriterAzureBlobStorage::~BackupWriterAzureBlobStorage() = default;
@@ -244,7 +245,7 @@ bool BackupWriterAzureBlobStorage::fileExists(const String & file_name)
 UInt64 BackupWriterAzureBlobStorage::getFileSize(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
-    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key);
+    ObjectMetadata object_metadata = object_storage->getObjectMetadata(key, /*with_tags=*/ false);
     return object_metadata.size_bytes;
 }
 
@@ -265,7 +266,7 @@ std::unique_ptr<WriteBuffer> BackupWriterAzureBlobStorage::writeFile(const Strin
         DBMS_DEFAULT_BUFFER_SIZE,
         write_settings,
         settings,
-        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), "BackupWRAzure"));
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::AZURE_BACKUP_WRITER));
 }
 
 void BackupWriterAzureBlobStorage::removeFile(const String & file_name)
