@@ -99,8 +99,8 @@ public:
     void popBack(size_t) override { throwMustBeDecompressed(); }
     StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwMustBeDecompressed(); }
     char * serializeValueIntoMemory(size_t, char *) const override { throwMustBeDecompressed(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwMustBeDecompressed(); }
-    const char * skipSerializedInArena(const char *) const override { throwMustBeDecompressed(); }
+    void deserializeAndInsertFromArena(ReadBuffer &) override { throwMustBeDecompressed(); }
+    void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
     WeakHash32 getWeakHash32() const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }

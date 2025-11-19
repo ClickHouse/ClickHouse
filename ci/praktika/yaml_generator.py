@@ -152,6 +152,9 @@ jobs:
           cat > {ENV_SETUP_SCRIPT} << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:{PYTHONPATH_EXTRA}
 {SETUP_ENVS}
+          cat > {WORKFLOW_JOB_FILE} << 'EOF'
+          ${{{{ toJson(job) }}}}
+          EOF
           cat > {WORKFLOW_STATUS_FILE} << 'EOF'
           ${{{{ toJson(needs) }}}}
           EOF
@@ -350,6 +353,7 @@ class PullRequestPushYamlGen:
                 UPLOADS_GITHUB="\n".join(uploads_github),
                 RUN_LOG=Settings.RUN_LOG,
                 PYTHON=Settings.PYTHON_INTERPRETER,
+                WORKFLOW_JOB_FILE=Settings.WORKFLOW_JOB_FILE,
                 WORKFLOW_STATUS_FILE=Settings.WORKFLOW_STATUS_FILE,
                 TEMP_DIR=Settings.TEMP_DIR,
                 UNIQUE_WORK_DIRS=" ".join(

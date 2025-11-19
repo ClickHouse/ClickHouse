@@ -1757,6 +1757,12 @@ public:
 
         if (state == 2)
         {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+                return mergeElement();
+            }
+
             if (ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
             {
                 if (!mergeElement())
