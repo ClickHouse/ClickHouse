@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
@@ -44,12 +45,14 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     if (!data_type->isValueRepresentedByNumber())
         return {};
 
-    Field value_converted = convertFieldToType(value, DataTypeFloat64());
+    auto column = data_type->createColumn();
+    column->insert(value);
+    ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
 
-    if (value_converted.isNull())
-        return {};
-
-    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
+    auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
+    auto cast_function = cast_resolver->build(arguments);
+    ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
+    return result->getFloat64(0);
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)
