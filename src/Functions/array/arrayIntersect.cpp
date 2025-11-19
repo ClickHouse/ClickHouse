@@ -873,7 +873,10 @@ arraySymmetricDifference([1, 2], [1, 2], [1, 3]) AS non_empty_symmetric_differen
     FunctionDocumentation symdiff_documentation = {symdiff_description, symdiff_syntax, symdiff_argument, symdiff_returned_value, symdiff_example, symdiff_introduced_in, symdiff_category};
 
     factory.registerFunction<ArraySymmetricDifference>(symdiff_documentation);
+}
 
+REGISTER_FUNCTION(ArrayExcept)
+{
     FunctionDocumentation::Description except_description = "Takes multiple arrays and returns an array with elements that are present in the first array but not in any subsequent arrays. The result contains only unique values.";
     FunctionDocumentation::Syntax except_syntax = "arrayExcept(arr1, arr2, ..., arrN)";
     FunctionDocumentation::Arguments except_argument = {{"arrN", "N arrays. Returns elements from first array not in others. [`Array(T)`](/sql-reference/data-types/array)."}};
