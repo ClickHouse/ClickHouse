@@ -3,8 +3,10 @@
 #include <Core/Field.h>
 #include <Common/SharedMutex.h>
 
-/// TODO : Field is "heavy", just use atomic<size_t> for Int32/Int64/UInt32/UInt64/Date/DateTime/Float/etc.
-/// Anything better than Field + shared_mutex. Also there is a shared_ptr<> for the get / set.
+/// Field + mutex looks a little heavy, but profiling has not showed anything concerning.
+/// It should be possible to use std::atomic<size_t> for the threshold because we only
+/// support numeric equivalent types. But that will require type specific comparision
+/// operators (e.g for Int32, for Date / DateTime etc).
 namespace DB
 {
 
@@ -26,7 +28,6 @@ struct TopNThresholdTracker
             if (value < threshold)
             {
                 threshold = value;
-                is_set = true;
             }
         }
         else if (direction == -1) /// DESC
@@ -34,7 +35,6 @@ struct TopNThresholdTracker
             if (value > threshold)
             {
                 threshold = value;
-                is_set = true;
             }
         }
     }

@@ -74,7 +74,7 @@ public:
             compare_results.resize(input_rows_count);
 
             auto filter = ColumnVector<UInt8>::create();
-            auto  & filter_data = filter->getData();
+            auto & filter_data = filter->getData();
             filter_data.resize(input_rows_count);
 
             /// The next lines are the key! Will the (compareColumn() + for loop
@@ -96,7 +96,6 @@ public:
     }
 private:
     TopNThresholdTrackerPtr threshold_tracker;
-    FunctionOverloadResolverPtr compare_function;
     int direction;
 };
 

@@ -118,7 +118,7 @@ struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranul
 
 private:
     SerializationPtr serialization;
-    [[ maybe_unused]] const String & index_name;
+    [[maybe_unused]] const String & index_name;
     const Block & index_sample_block;
     FormatSettings format_settings;
     int direction;

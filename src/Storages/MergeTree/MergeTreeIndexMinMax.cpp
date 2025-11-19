@@ -241,6 +241,9 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
     Field value;
     Field scratch;
 
+    /// The order in which values are read depends on 'direction':
+    /// If direction == ASC, we need only min value, discard max value
+    /// If direction == DESC, we need only max value, discard min value
     if (direction == 1)
     {
         serialization->deserializeBinary(value, istr, format_settings);
@@ -277,7 +280,6 @@ void MergeTreeIndexBulkGranulesMinMax::getTopNMarks(size_t n, std::vector<MinMax
         {
             queue.pop();
             queue.push({direction, 0, granule.granule_num, granule.min_or_max_value});
-            
         }
     }
 

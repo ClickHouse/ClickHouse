@@ -71,7 +71,7 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     /// ORDER BY EventDate, Priority, Status LIMIT 100. If the first column has a minmax
     /// index, it will be good to use.
     if (sort_description.size() > 1)
-       return 0;
+        return 0;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
     if (!sort_column.type->isValueRepresentedByNumber())
@@ -79,7 +79,32 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
 
-    auto sort_column_name = sort_description.front().column_name.substr(sort_description.front().column_name.find('.') + 1);
+    auto sort_column_name = sort_description.front().column_name;
+    ///remove alias
+    if (sort_column_name.find('.') != std::string::npos)
+    {
+        if (!expression_step && !filter_step)
+            return 0;
+
+        const ActionsDAG::Node * column_node = nullptr;
+        if (filter_step)
+            column_node = filter_step->getExpression().tryFindInOutputs(sort_column_name);
+        else
+            column_node = expression_step->getExpression().tryFindInOutputs(sort_column_name);
+
+        if (unlikely(!column_node))
+            return 0;
+
+        if (column_node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            sort_column_name = column_node->children.at(0)->result_name;
+        }
+        else
+        {
+            LOG_TRACE(getLogger("optimizeTopN"), "Could not resolve column alias {}", sort_column_name);
+            return 0;
+        }
+    }
 
     TopNThresholdTrackerPtr threshold_tracker = nullptr;
 
@@ -110,14 +135,14 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
         new_prewhere_info->remove_prewhere_column = true;
         new_prewhere_info->need_filter = true;
 
-        LOG_TRACE(getLogger("optimzeTopN"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
+        LOG_TRACE(getLogger("optimizeTopN"), "New Prewhere {}", new_prewhere_info->prewhere_actions.dumpDAG());
         read_from_mergetree_step->updatePrewhereInfo(new_prewhere_info);
     }
 
     ///TopNThresholdTracker acts as a link between 3 components
     ///                                MergeTreeReaderIndex::canSkipMark() (skip whole granule using minmax index)
     ///                                  /
-    ///         PartialSortingTransform --> ("publish" threshold value as sorting progresses)
+    ///         PartialSortingTransform/MergeSortingTransform --> ("publish" threshold value as sorting progresses)
     ///                                  \
     ///                                __topNFilter() (Prewhere filtering)
 
