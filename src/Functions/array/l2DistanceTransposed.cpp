@@ -150,7 +150,7 @@ public:
                 "The third argument (precision) of function {} must be in range [1, {}] for {} QBit, got {}",
                 getName(),
                 element_size,
-                element_size == 16 ? "BFloat16" : (element_size == 32 ? "Float32" : "Float64"),
+                zeroth_arg_type->getElementType()->getName(),
                 precision);
 
         return std::make_shared<DataTypeFloat64>();
