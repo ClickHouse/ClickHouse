@@ -1031,7 +1031,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         if (in.available() < path_size)
             throw Exception(
                 ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF,
-                "Attempt to read {} bytes from for the path size, but only {} bytes are available",
+                "Attempt to read {} bytes for the path size, but only {} bytes are available",
                 path_size,
                 in.available());
         std::string_view path(in.position(), path_size);
@@ -1058,7 +1058,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
             if (in.available() < value_size)
                 throw Exception(
                     ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF,
-                    "Attempt to read {} bytes from for the value size, but only {} bytes are available",
+                    "Attempt to read {} bytes for the value size, but only {} bytes are available",
                     value_size,
                     in.available());
             std::string_view value(in.position(), value_size);
