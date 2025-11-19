@@ -119,17 +119,16 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
     memset(chars.data() + old_size + length, 0, n - length);
 }
 
-const char * ColumnFixedString::deserializeAndInsertFromArena(const char * pos)
+void ColumnFixedString::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     size_t old_size = chars.size();
     chars.resize(old_size + n);
-    memcpy(chars.data() + old_size, pos, n);
-    return pos + n;
+    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), n);
 }
 
-const char * ColumnFixedString::skipSerializedInArena(const char * pos) const
+void ColumnFixedString::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + n;
+    in.ignore(n);
 }
 
 void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const

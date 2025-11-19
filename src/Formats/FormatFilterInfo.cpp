@@ -15,11 +15,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
 {
+    chassert(storage_encoding.empty());
     storage_encoding = std::move(storage_encoding_);
+    for (const auto & [column_name, field_id] : storage_encoding)
+        if (!field_id_to_clickhouse_name.emplace(field_id, column_name).second)
+            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Duplicate field id {}", field_id);
 }
 
 std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> ColumnMapper::makeMapping(
@@ -43,19 +48,21 @@ std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>
     return {clickhouse_to_parquet_names, parquet_names_to_clickhouse};
 }
 
-    FormatFilterInfo::FormatFilterInfo(std::shared_ptr<const ActionsDAG> filter_actions_dag_, const ContextPtr & context_, ColumnMapperPtr column_mapper_)
-        : filter_actions_dag(filter_actions_dag_)
-        , context(context_)
-        , column_mapper(column_mapper_)
-    {
-    }
+FormatFilterInfo::FormatFilterInfo(
+    std::shared_ptr<const ActionsDAG> filter_actions_dag_,
+    const ContextPtr & context_,
+    ColumnMapperPtr column_mapper_,
+    FilterDAGInfoPtr row_level_filter_,
+    PrewhereInfoPtr prewhere_info_)
+    : filter_actions_dag(filter_actions_dag_)
+    , context(context_)
+    , row_level_filter(std::move(row_level_filter_))
+    , prewhere_info(std::move(prewhere_info_))
+    , column_mapper(column_mapper_)
+{
+}
 
-    FormatFilterInfo::FormatFilterInfo()
-        : filter_actions_dag(nullptr)
-        , context(static_cast<const ContextPtr &>(nullptr))
-        , column_mapper(nullptr)
-    {
-    }
+FormatFilterInfo::FormatFilterInfo() = default;
 
 
 bool FormatFilterInfo::hasFilter() const
@@ -73,7 +80,7 @@ void FormatFilterInfo::initKeyCondition(const Block & keys)
     if (!ctx)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Context has expired");
 
-    if (prewhere_info)
+    if (prewhere_info || row_level_filter)
     {
         auto add_columns = [&](const ActionsDAG & dag)
         {
@@ -83,9 +90,11 @@ void FormatFilterInfo::initKeyCondition(const Block & keys)
                     additional_columns.insert({col.type->createColumn(), col.type, col.name});
             }
         };
-        if (prewhere_info->row_level_filter.has_value())
-            add_columns(prewhere_info->row_level_filter.value());
-        add_columns(prewhere_info->prewhere_actions);
+
+        if (row_level_filter)
+            add_columns(row_level_filter->actions);
+        if (prewhere_info)
+            add_columns(prewhere_info->prewhere_actions);
     }
 
     ColumnsWithTypeAndName columns = keys.getColumnsWithTypeAndName();

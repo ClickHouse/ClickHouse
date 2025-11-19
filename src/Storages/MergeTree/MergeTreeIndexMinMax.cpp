@@ -204,7 +204,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexMinMax::createIndexGranule() const
 }
 
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorMinMax>(index.name, index.sample_block);
 }
@@ -216,13 +216,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
 {
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx2"))
-        return {2, ".idx2"};
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /* unknown */, ""};
+    if (checksums.files.contains(relative_path_prefix + ".idx2"))
+        return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+    return {0 /* unknown */, {}};
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

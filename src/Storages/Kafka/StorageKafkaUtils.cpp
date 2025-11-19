@@ -79,6 +79,7 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
@@ -219,6 +220,14 @@ void registerStorageKafka(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
         }
+
+        constexpr size_t MAX_SKIP_BYTES = 255;
+        if ((*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value > MAX_SKIP_BYTES)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}",
+                           (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value, MAX_SKIP_BYTES);
+        }
         NamesAndTypesList supported_columns;
         for (const auto & column : args.columns)
         {
@@ -251,7 +260,8 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (!has_keeper_path || !has_replica_name)
             throw Exception(
-        ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
+                ErrorCodes::BAD_ARGUMENTS,
+                "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
 
         const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY

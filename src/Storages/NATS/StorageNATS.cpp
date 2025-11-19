@@ -398,7 +398,8 @@ void StorageNATS::read(
         auto converting_dag = ActionsDAG::makeConvertingActions(
             nats_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
         auto converting_transform = std::make_shared<ExpressionTransform>(nats_source->getPort().getSharedHeader(), std::move(converting));
@@ -708,10 +709,16 @@ bool StorageNATS::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
+    auto new_context = Context::createCopy(nats_context);
+
+    /// Create a fresh query context from nats_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
+
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
-        nats_context,
+        new_context,
         /* allow_materialized */ false,
         /* no_squash */ true,
         /* no_destination */ true,
@@ -732,7 +739,7 @@ bool StorageNATS::streamToViews()
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, nats_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
+        auto source = std::make_shared<NATSSource>(*this, storage_snapshot, new_context, column_names, block_size, (*nats_settings)[NATSSetting::nats_handle_error_mode]);
         sources.emplace_back(source);
         pipes.emplace_back(source);
 

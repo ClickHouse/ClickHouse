@@ -41,7 +41,7 @@ void MergeTreeSinkPatch::finishDelayedChunk()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part {} was deduplicated. It's a bug", part->name);
 
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
+        PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), {partition.block_dedup_token});
         StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.

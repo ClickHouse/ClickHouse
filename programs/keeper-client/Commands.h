@@ -281,6 +281,20 @@ class CPCommand : public IKeeperClientCommand
     }
 };
 
+class CPRCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "cpr"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} <src> <dest> -- Copies 'src' node subtree to 'dest' path.";
+    }
+};
+
 class MVCommand : public IKeeperClientCommand
 {
     String getName() const override { return "mv"; }
@@ -292,6 +306,20 @@ class MVCommand : public IKeeperClientCommand
     String getHelpMessage() const override
     {
         return "{} <src> <dest> -- Moves 'src' node to the 'dest' path.";
+    }
+};
+
+class MVRCommand : public IKeeperClientCommand
+{
+    String getName() const override { return "mvr"; }
+
+    bool parse(IParser::Pos & pos, std::shared_ptr<ASTKeeperQuery> & node, Expected & expected) const override;
+
+    void execute(const ASTKeeperQuery * query, KeeperClient * client) const override;
+
+    String getHelpMessage() const override
+    {
+        return "{} <src> <dest> -- Moves 'src' node subtree to 'dest' path.";
     }
 };
 

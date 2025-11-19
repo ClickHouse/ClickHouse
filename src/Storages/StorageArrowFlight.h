@@ -3,31 +3,40 @@
 #include "config.h"
 
 #if USE_ARROWFLIGHT
-#include <Core/Names.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageConfiguration.h>
-#include <Storages/StorageFactory.h>
-#include <arrow/flight/client.h>
+
 
 namespace DB
 {
+class ArrowFlightConnection;
+class NamedCollection;
+class StorageFactory;
 
 class StorageArrowFlight : public IStorage, protected WithContext
 {
 public:
-    struct Configuration : public StatelessTableEngineConfiguration
+    struct Configuration
     {
         String host;
         int port;
         String dataset_name;
+        /// Whether the client should authenticate to the server with HTTP basic authentication.
+        bool use_basic_authentication = false;
+        String username;
+        String password;
+        bool enable_ssl = false;
+        /// Path to the file containing root certificates to use for validating server certificates.
+        String ssl_ca;
+        /// Override the hostname checked by TLS. Use with caution.
+        String ssl_override_hostname;
     };
 
-    using FlightClientPtr = std::shared_ptr<arrow::flight::FlightClient>;
+    static Configuration getConfiguration(ASTs & engine_args, ContextPtr context);
+    static Configuration processNamedCollectionResult(const NamedCollection & named_collection);
 
     StorageArrowFlight(
         const StorageID & table_id_,
-        const String & host_,
-        int port_,
+        std::shared_ptr<ArrowFlightConnection> connection_,
         const String & dataset_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -47,13 +56,11 @@ public:
     SinkToStoragePtr
     write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, bool async_write) override;
 
-    Names getColumnNames();
+    static ColumnsDescription getTableStructureFromData(std::shared_ptr<ArrowFlightConnection> connection_, const String & dataset_name_, ContextPtr context_);
 
 private:
-    StorageArrowFlight::Configuration config;
-
-    FlightClientPtr client;
-
+    std::shared_ptr<ArrowFlightConnection> connection;
+    String dataset_name;
     Poco::Logger * log;
 };
 

@@ -105,9 +105,11 @@ std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     const ContextPtr & context)
 try
 {
+    FormatFactory & format_factory = FormatFactory::instance();
+
     NamesAndTypesList names_and_types;
     SchemaInferenceMode mode = context->getSettingsRef()[Setting::schema_inference_mode];
-    if (format_name && mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
+    if (format_name && mode == SchemaInferenceMode::UNION && !format_factory.checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
     {
         String additional_message;
         /// Better exception message for WithNames(AndTypes) formats.
@@ -117,9 +119,9 @@ try
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", *format_name, additional_message);
     }
 
-    if (format_name && FormatFactory::instance().checkIfFormatHasExternalSchemaReader(*format_name))
+    if (format_name && format_factory.checkIfFormatHasExternalSchemaReader(*format_name))
     {
-        auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(*format_name, context, format_settings);
+        auto external_schema_reader = format_factory.getExternalSchemaReader(*format_name, context, format_settings);
         try
         {
             return {ColumnsDescription(external_schema_reader->readSchema()), *format_name};
@@ -132,7 +134,7 @@ try
         }
     }
 
-    if (!format_name || FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
+    if (!format_name || format_factory.checkIfFormatHasSchemaReader(*format_name))
     {
         IReadBufferIterator::Data iterator_data;
         std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
@@ -240,7 +242,7 @@ try
 
             if (format_name)
             {
-                if (!FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
+                if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -251,7 +253,7 @@ try
 
                 try
                 {
-                    schema_reader = FormatFactory::instance().getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
+                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
                     schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                     names_and_types = schema_reader->readSchema();
                     auto num_rows = schema_reader->readNumberOrRows();
@@ -328,7 +330,7 @@ try
                 {
                     try
                     {
-                        SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                        SchemaReaderPtr schema_reader = format_factory.getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                         schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                         names_and_types = schema_reader->readSchema();
                         if (names_and_types.empty())
@@ -373,7 +375,7 @@ try
                     {
                         try
                         {
-                            SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(
+                            SchemaReaderPtr schema_reader = format_factory.getSchemaReader(
                                 formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                             schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                             auto tmp_names_and_types = schema_reader->readSchema();
@@ -440,7 +442,7 @@ try
         /// could not even create a schema reader (for example when we got schema from cache).
         /// Let's create stateless schema reader from empty read buffer.
         EmptyReadBuffer empty;
-        SchemaReaderPtr stateless_schema_reader = FormatFactory::instance().getSchemaReader(*format_name, empty, context, format_settings);
+        SchemaReaderPtr stateless_schema_reader = format_factory.getSchemaReader(*format_name, empty, context, format_settings);
 
         if (mode == SchemaInferenceMode::UNION)
         {

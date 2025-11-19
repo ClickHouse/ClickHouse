@@ -20,8 +20,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool float_return> using FuncQuantileTDigest = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigest, false, std::conditional_t<float_return, Float32, void>, false, false>;
-template <typename Value, bool float_return> using FuncQuantilesTDigest = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigest, false, std::conditional_t<float_return, Float32, void>, true, false>;
+template <typename Value, bool float_return> using FuncQuantileTDigest = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantileTDigest, void, std::conditional_t<float_return, Float32, void>, false, false>;
+template <typename Value, bool float_return> using FuncQuantilesTDigest = AggregateFunctionQuantile<Value, QuantileTDigest<Value>, NameQuantilesTDigest, void, std::conditional_t<float_return, Float32, void>, true, false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(

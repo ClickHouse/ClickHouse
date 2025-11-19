@@ -44,7 +44,6 @@ public:
         /// ----------------------------------------------------
         /// The actual key (data which gets hashed):
 
-
         /// The hash of the query AST.
         /// Unlike the query string, the AST is agnostic to lower/upper case (SELECT vs. select).
         IASTHash ast_hash;
@@ -75,6 +74,7 @@ public:
         const bool is_shared;
 
         /// When does the entry expire?
+        const std::chrono::time_point<std::chrono::system_clock> created_at;
         const std::chrono::time_point<std::chrono::system_clock> expires_at;
 
         /// Are the chunks in the entry compressed?
@@ -102,6 +102,7 @@ public:
             const String & query_id_,
             std::optional<UUID> user_id_, const std::vector<UUID> & current_user_roles_,
             bool is_shared_,
+            std::chrono::time_point<std::chrono::system_clock> created_at_,
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
@@ -243,16 +244,21 @@ private:
 class QueryResultCacheReader
 {
 public:
+    using Cache = QueryResultCache::Cache;
+
     bool hasCacheEntryForKey() const;
+
     /// getSource*() moves source processors out of the Reader. Call each of these method just once.
     std::unique_ptr<SourceFromChunks> getSource();
     std::unique_ptr<SourceFromChunks> getSourceTotals();
     std::unique_ptr<SourceFromChunks> getSourceExtremes();
-private:
-    using Cache = QueryResultCache::Cache;
+    const std::optional<Cache::Key> & getKey() const;
 
+private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+
+    std::optional<Cache::Key> entry_key;
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;

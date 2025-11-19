@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/Chunk.h>
 
 #include <Core/Settings.h>
 #include <Columns/ColumnNullable.h>
@@ -48,6 +49,7 @@ namespace Setting
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool enable_scalar_subquery_optimization;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace
@@ -130,6 +132,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
         subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
+        subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
         subquery_context->setSettings(subquery_settings);
 
         auto query_tree = node->clone();
@@ -226,7 +229,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
-            Block block;
+            Chunk chunk;
 
             if (!skip_execution_for_exists)
             {
@@ -235,12 +238,12 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                while (block.rows() == 0 && executor->pull(block))
+                while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
             }
 
-            if (block.rows() == 0)
+            if (chunk.getNumRows() == 0)
             {
                 DataTypePtr type;
                 if (execute_for_exists)
@@ -273,15 +276,15 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
             else
             {
-                if (block.rows() != 1)
+                if (chunk.getNumRows() != 1)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
-                Block tmp_block;
-                while (tmp_block.rows() == 0 && executor->pull(tmp_block))
+                Chunk tmp_chunk;
+                while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))
                 {
                 }
 
-                if (tmp_block.rows() != 0)
+                if (tmp_chunk.getNumRows() != 0)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
 
                 if (execute_for_exists)
@@ -293,6 +296,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 }
                 else
                 {
+                    auto block = executor->getHeader().cloneWithColumns(chunk.getColumns());
                     wrap_with_nullable_or_tuple(block);
                     scalar_block = std::move(block);
                 }

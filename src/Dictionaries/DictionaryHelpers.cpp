@@ -18,10 +18,10 @@ MutableColumns deserializeColumnsFromKeys(
     for (size_t index = start; index < end; ++index)
     {
         const auto & key = keys[index];
-        const auto * ptr = key.data;
+        ReadBufferFromString in({key.data, key.size});
 
         for (auto & result_column : result_columns)
-            ptr = result_column->deserializeAndInsertFromArena(ptr);
+            result_column->deserializeAndInsertFromArena(in);
     }
 
     return result_columns;

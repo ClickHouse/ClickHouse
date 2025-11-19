@@ -21,7 +21,7 @@ REGISTER_FUNCTION(ReplaceOne)
 {
     FunctionDocumentation::Description description = R"(
 Replaces the first occurrence of the substring `pattern` in `haystack` by the `replacement` string.
-)";
+    )";
     FunctionDocumentation::Syntax syntax = "replaceOne(haystack, pattern, replacement)";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "The input string to search in.", {"String"}},
@@ -41,7 +41,7 @@ Replaces the first occurrence of the substring `pattern` in `haystack` by the `r
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringReplacement;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionReplaceOne>(documentation);

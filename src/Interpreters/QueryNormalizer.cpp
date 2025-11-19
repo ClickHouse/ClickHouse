@@ -92,7 +92,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
 
     if (data.settings.prefer_column_name_to_alias)
     {
-        if (data.source_columns_set.find(node.name()) != data.source_columns_set.end())
+        if (data.source_columns_set.contains(node.name()))
             return;
     }
 

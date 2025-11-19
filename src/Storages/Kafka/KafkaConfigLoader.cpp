@@ -32,6 +32,8 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
+    extern const KafkaSettingsString kafka_compression_codec;
+    extern const KafkaSettingsInt64 kafka_compression_level;
 }
 
 namespace ErrorCodes
@@ -66,13 +68,13 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     switch (thread_type)
     {
         case RD_KAFKA_THREAD_MAIN:
-            setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_MAIN);
             break;
         case RD_KAFKA_THREAD_BACKGROUND:
-            setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BACKGROUND);
             break;
         case RD_KAFKA_THREAD_BROKER:
-            setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BROKER);
             break;
     }
 
@@ -342,13 +344,21 @@ void loadProducerConfig(cppkafka::Configuration & kafka_config, const KafkaConfi
 }
 
 template <typename TKafkaStorage>
-void updateGlobalConfiguration(
+using SpecificConfigUpdaterFunc = void (*)(
+    cppkafka::Configuration & kafka_config,
+    const KafkaConfigLoader::LoadConfigParams & params);
+
+template <typename TKafkaStorage>
+void updateConfigurationFromConfig(
+    SpecificConfigUpdaterFunc<TKafkaStorage> specific_config_updater,
     cppkafka::Configuration & kafka_config,
     TKafkaStorage & storage,
     const KafkaConfigLoader::LoadConfigParams & params,
     IKafkaExceptionInfoSinkWeakPtr exception_info_sink_ptr = IKafkaExceptionInfoSinkWeakPtr())
 {
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
+
+    specific_config_updater(kafka_config, params);
 
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
@@ -359,6 +369,11 @@ void updateGlobalConfiguration(
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
+    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
+        kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
+
+    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
+        kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
@@ -468,8 +483,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
     conf.set(
         "queued.min.messages", std::min(std::max(params.max_block_size, default_queued_min_messages), max_allowed_queued_min_messages));
 
-    updateGlobalConfiguration(conf, storage, params, exception_info_sink_ptr);
-    loadConsumerConfig(conf, params);
+    updateConfigurationFromConfig(loadConsumerConfig, conf, storage, params, exception_info_sink_ptr);
 
     // those settings should not be changed by users.
     conf.set("enable.auto.commit", "false"); // We manually commit offsets after a stream successfully finished
@@ -478,6 +492,8 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     for (auto & property : conf.get_all())
     {
+        if (property.first.find("password") != std::string::npos)
+            continue;
         LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
     }
 
@@ -498,13 +514,17 @@ cppkafka::Configuration KafkaConfigLoader::getProducerConfiguration(TKafkaStorag
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
 
-    updateGlobalConfiguration(conf, storage, params);
-    loadProducerConfig(conf, params);
+    updateConfigurationFromConfig(loadProducerConfig, conf, storage, params);
 
     for (auto & property : conf.get_all())
-    {
         LOG_TRACE(params.log, "Producer set property {}:{}", property.first, property.second);
-    }
+
+    /// compression.codec is a global and topic level property, however compression.level is only a topic level property.
+    /// cppkafka::Configuration::get_all returns the global properties only, so we need to check compression.level separately.
+    /// It is not clear why compression.level is like this, but let's work around it.
+    const std::string compression_level_key = "compression.level";
+    if (conf.has_property(compression_level_key))
+        LOG_TRACE(params.log, "Producer set property {}:{}", compression_level_key, conf.get(compression_level_key));
 
     return conf;
 }

@@ -13,8 +13,8 @@ class Block;
 class MergedData
 {
 public:
-    explicit MergedData(bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_)
-        : max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_)
+        : max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_), max_dynamic_subcolumns(max_dynamic_subcolumns_)
     {
     }
 
@@ -55,6 +55,7 @@ protected:
     const UInt64 max_block_size = 0;
     const UInt64 max_block_size_bytes = 0;
     const bool use_average_block_size = false;
+    const std::optional<size_t> max_dynamic_subcolumns;
 
     bool need_flush = false;
 };

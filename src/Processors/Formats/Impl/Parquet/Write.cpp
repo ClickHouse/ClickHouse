@@ -4,6 +4,7 @@
 #include <parquet/encoding.h>
 #include <parquet/schema.h>
 #include <arrow/util/rle_encoding.h>
+#include <arrow/util/crc32.h>
 #include <lz4.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -815,8 +816,12 @@ void writeColumnImpl(
         d.__set_encoding(use_dictionary ? parq::Encoding::RLE_DICTIONARY : encoding);
         d.__set_definition_level_encoding(parq::Encoding::RLE);
         d.__set_repetition_level_encoding(parq::Encoding::RLE);
-        /// We could also put checksum in `header.crc`, but apparently no one uses it:
-        /// https://issues.apache.org/jira/browse/PARQUET-594
+
+        if (options.write_checksums)
+        {
+            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            header.__set_crc(crc);
+        }
 
         parq::Statistics page_stats = page_statistics.get(options);
         bool has_null_count = s.max_def == 1 && s.max_rep == 0;
@@ -877,6 +882,12 @@ void writeColumnImpl(
         header.__isset.dictionary_page_header = true;
         header.dictionary_page_header.__set_num_values(dict_encoder->num_entries());
         header.dictionary_page_header.__set_encoding(parq::Encoding::PLAIN);
+
+        if (options.write_checksums)
+        {
+            uint32_t crc = arrow::internal::crc32(0, compressed.data(), compressed.size());
+            header.__set_crc(crc);
+        }
 
         writePage(header, compressed, s, /*add_to_offset_index*/ false, /*first_row_index*/ 0, out);
 
@@ -1154,6 +1165,7 @@ void writeColumnChunkBody(
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
         case TypeIndex::IPv6:    F(IPv6); break;
+        case TypeIndex::UUID:    F(UUID); break;
         #undef F
 
         #define D(source_type) \
@@ -1311,7 +1323,12 @@ void writeFileFooter(FileWriteState & file,
         meta.num_rows += rg.row_group.num_rows;
         meta.row_groups.push_back(std::move(rg.row_group));
     }
-    meta.__set_created_by(std::string(VERSION_NAME) + " " + VERSION_DESCRIBE);
+
+    /// parquet.thrift sayeth:
+    ///  >  This should be in the format
+    ///  >  <Application> version <App Version> (build <App Build Hash>).
+    ///  >  e.g. impala version 1.0 (build 6cf94d29b2b7115df4de2c06e2ab4326d721eb55)
+    meta.__set_created_by(fmt::format("ClickHouse version {}.{}.{} (build {})", VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, VERSION_GITHASH));
 
     if (options.write_page_statistics || options.write_column_chunk_statistics)
     {

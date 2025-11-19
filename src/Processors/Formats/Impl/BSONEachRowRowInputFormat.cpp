@@ -433,14 +433,20 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
     assertChar(BSON_DOCUMENT_END, *in);
 
-    if (read_nested_columns != data_type_tuple->getElements().size())
+    const auto elements_size = data_type_tuple->getElements().size();
+    if (read_nested_columns != elements_size)
         throw Exception(
                         ErrorCodes::INCORRECT_DATA,
                         "Cannot parse tuple column with type {} from BSON array/embedded document field, "
                         "the number of fields in tuple and BSON document doesn't match: {} != {}",
                         data_type->getName(),
-                        data_type_tuple->getElements().size(),
+                        elements_size,
                         read_nested_columns);
+
+    /// There are no nested columns to grow, so we must explicitly increment the column size.
+    /// Otherwise, `column.size()` will return 0 for empty tuples columns.
+    if (elements_size == 0)
+        tuple_column.addSize(1);
 }
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)

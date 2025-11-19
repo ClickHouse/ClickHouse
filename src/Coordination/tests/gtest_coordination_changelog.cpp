@@ -6,6 +6,9 @@
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
+#include <thread>
+
+
 template<typename TestType>
 class CoordinationChangelogTest : public ::testing::Test
 {
@@ -1149,7 +1152,6 @@ TYPED_TEST(CoordinationChangelogTest, TestRotateIntervalChanges)
 
 TYPED_TEST(CoordinationChangelogTest, ChangelogTestMaxLogSize)
 {
-
     ChangelogDirTest test("./logs");
     this->setLogDirectory("./logs");
 
@@ -1522,6 +1524,61 @@ TYPED_TEST(CoordinationChangelogTest, ChangelogTestBrokenWriteAt)
 
         EXPECT_EQ(changelog.size(), 24);
     }
+}
+
+TYPED_TEST(CoordinationChangelogTest, ChangelogLoadingFromInvalidName)
+{
+    if (this->enable_compression)
+        return;
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    {
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{
+                .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100'000, .max_size = 500},
+            DB::FlushSettings(),
+            this->keeper_context);
+        changelog.init(1, 0);
+
+        EXPECT_TRUE(fs::exists("./logs/changelog_1_100000.bin"));
+        for (size_t i = 0; i < 500; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", 1);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+
+        waitDurableLogs(changelog);
+    }
+
+    // Find file starting with "changelog_1_" (renamed because of file size limit)
+    fs::path new_changelog_path;
+    for (const auto & entry : fs::directory_iterator("./logs"))
+    {
+        if (entry.is_regular_file())
+        {
+            const auto filename = entry.path().filename().string();
+            if (filename.starts_with("changelog_1_"))
+                new_changelog_path = entry.path();
+        }
+    }
+
+    ASSERT_NE(new_changelog_path, fs::path{});
+
+    fs::rename(new_changelog_path, "./logs/changelog_1_100000.bin");
+
+    std::cout << new_changelog_path << std::endl;
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100'000, .max_size = 500},
+        DB::FlushSettings(),
+        this->keeper_context);
+    changelog.init(15, 0);
+
+    ASSERT_EQ(changelog.next_slot(), 501);
 }
 
 #endif

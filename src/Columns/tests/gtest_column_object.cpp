@@ -1,7 +1,8 @@
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <Common/Arena.h>
 #include <Core/Field.h>
@@ -318,9 +319,11 @@ TEST(ColumnObject, SerializeDeserializerFromArena)
 
     auto col2 = type->createColumn();
     auto & col_object2 = assert_cast<ColumnObject &>(*col);
-    pos = col_object2.deserializeAndInsertFromArena(ref1.data);
-    pos = col_object2.deserializeAndInsertFromArena(pos);
-    col_object2.deserializeAndInsertFromArena(pos);
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    col_object2.deserializeAndInsertFromArena(in);
+    col_object2.deserializeAndInsertFromArena(in);
+    col_object2.deserializeAndInsertFromArena(in);
+    ASSERT_TRUE(in.eof());
 
     ASSERT_EQ(col_object2[0], (Object{{"b.d", Field(42u)}, {"a.b", Array{"Str1", "Str2"}}, {"a.a", Tuple{"Str3", 441u}}, {"a.c", Field("Str4")}, {"a.d", Array{Field(45), Field(46)}}, {"a.e", Field(47)}}));
     ASSERT_EQ(col_object2[1], (Object{{"b.d", Field{0u}}, {"a.b", Array{}}, {"b.a", Field(48)}, {"b.b", Array{Field(49), Field(50)}}}));
@@ -340,14 +343,14 @@ TEST(ColumnObject, SkipSerializedInArena)
     const char * pos = nullptr;
     auto ref1 = col_object.serializeValueIntoArena(0, arena, pos);
     col_object.serializeValueIntoArena(1, arena, pos);
-    auto ref3 = col_object.serializeValueIntoArena(2, arena, pos);
+    col_object.serializeValueIntoArena(2, arena, pos);
 
-    const char * end = ref3.data + ref3.size;
     auto col2 = type->createColumn();
-    pos = col2->skipSerializedInArena(ref1.data);
-    pos = col2->skipSerializedInArena(pos);
-    pos = col2->skipSerializedInArena(pos);
-    ASSERT_EQ(pos, end);
+    ReadBufferFromString in({ref1.data, arena.usedBytes()});
+    col2->skipSerializedInArena(in);
+    col2->skipSerializedInArena(in);
+    col2->skipSerializedInArena(in);
+    ASSERT_TRUE(in.eof());
 }
 
 TEST(ColumnObject, rollback)

@@ -4,6 +4,7 @@ description: 'System table containing information about storage policies and vol
 keywords: ['system table', 'storage_policies']
 slug: /operations/system-tables/storage_policies
 title: 'system.storage_policies'
+doc_type: 'reference'
 ---
 
 # system.storage_policies

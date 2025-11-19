@@ -437,7 +437,7 @@ void StoragePolicy::buildVolumeIndices()
     {
         const VolumePtr & volume = volumes[index];
 
-        if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
+        if (volume_index_by_volume_name.contains(volume->getName()))
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                             "Volume names must be unique in storage policy {} ({} "
                             "is duplicated)" , backQuote(name), backQuote(volume->getName()));
@@ -448,7 +448,7 @@ void StoragePolicy::buildVolumeIndices()
         {
             const String & disk_name = disk->getName();
 
-            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+            if (volume_index_by_disk_name.contains(disk_name))
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
@@ -497,7 +497,7 @@ StoragePolicySelector::StoragePolicySelector(
     }
 
     /// Add default policy if it isn't explicitly specified.
-    if (policies.find(DEFAULT_STORAGE_POLICY_NAME) == policies.end())
+    if (!policies.contains(DEFAULT_STORAGE_POLICY_NAME))
     {
         auto default_policy = std::make_shared<StoragePolicy>(DEFAULT_STORAGE_POLICY_NAME, config, config_prefix + "." + DEFAULT_STORAGE_POLICY_NAME, disks);
         policies.emplace(DEFAULT_STORAGE_POLICY_NAME, std::move(default_policy));

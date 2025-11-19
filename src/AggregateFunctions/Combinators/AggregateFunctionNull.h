@@ -361,6 +361,18 @@ public:
     {
     }
 
+    using IAggregateFunction::argument_types;
+    using IAggregateFunction::parameters;
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
+        /// Create new aggregate function for merging final states if the nested function has a different implementation
+        if (nested_function_for_merging_final.get() != this->nested_function.get())
+            return std::make_shared<AggregateFunctionNullUnary<result_is_nullable, serialize_flag>>(
+                nested_function_for_merging_final, argument_types, parameters);
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
+    }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
@@ -454,6 +466,18 @@ public:
 
         for (size_t i = 0; i < number_of_arguments; ++i)
             is_nullable[i] = arguments[i]->isNullable();
+    }
+
+    using IAggregateFunction::argument_types;
+    using IAggregateFunction::parameters;
+    AggregateFunctionPtr getAggregateFunctionForMergingFinal() const override
+    {
+        auto nested_function_for_merging_final = this->nested_function->getAggregateFunctionForMergingFinal();
+        /// Create new aggregate function for merging final states if the nested function has a different implementation
+        if (nested_function_for_merging_final.get() != this->nested_function.get())
+            return std::make_shared<AggregateFunctionNullVariadic<result_is_nullable, serialize_flag>>(
+                nested_function_for_merging_final, argument_types, parameters);
+        return IAggregateFunction::getAggregateFunctionForMergingFinal();
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override

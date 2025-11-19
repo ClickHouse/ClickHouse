@@ -194,7 +194,7 @@ private:
 
         if (isWidePart(part))
         {
-            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, part->checksums))
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(column_name, ".bin", part->checksums))
             {
                 col_idx = 0;
                 has_marks_in_part = true;
@@ -349,7 +349,7 @@ void ReadFromMergeTreeIndex::applyFilters(ActionDAGNodes added_filter_nodes)
             { {}, std::make_shared<DataTypeString>(), StorageMergeTreeIndex::part_name_column.name },
         };
 
-        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter);
+        auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &block_to_filter, context);
         if (dag)
             virtual_columns_filter = VirtualColumnUtils::buildFilterExpression(std::move(*dag), context);
     }

@@ -1,0 +1,13 @@
+<clickhouse>
+    <named_collections>
+        <flight1>
+            <host>localhost</host>
+            <port>8888</port>
+            <username>default</username>
+            <password></password>
+            <enable_ssl>1</enable_ssl>
+            <ssl_ca>/etc/clickhouse-server/config.d/ca-cert.pem</ssl_ca>
+            <ssl_override_hostname>integration-tests.clickhouse.com</ssl_override_hostname>
+        </flight1>
+      </named_collections>
+</clickhouse>

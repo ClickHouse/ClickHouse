@@ -1,16 +1,15 @@
 #include <Columns/ColumnString.h>
+
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
-
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationString.h>
-
-#include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
 namespace DB
 {
-
 
 namespace ErrorCodes
 {
@@ -39,22 +38,32 @@ SerializationPtr DataTypeString::doGetDefaultSerialization() const
     return std::make_shared<SerializationString>();
 }
 
+SerializationPtr DataTypeString::getSerialization(const SerializationInfo & info) const
+{
+    return IDataType::getSerialization(info.getKindStack(), std::make_shared<SerializationString>(info.getSettings().string_serialization_version));
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (arguments && !arguments->children.empty())
     {
         if (arguments->children.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "String data type family mustn't have more than one argument - size in characters");
+        {
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "String data type family mustn't have more than one argument - size in characters");
+        }
 
         const auto * argument = arguments->children[0]->as<ASTLiteral>();
         if (!argument || argument->value.getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "String data type family may have only a number (positive integer) as its argument");
+        {
+            throw Exception(
+                ErrorCodes::UNEXPECTED_AST_STRUCTURE, "String data type family may have only a number (positive integer) as its argument");
+        }
     }
 
     return std::make_shared<DataTypeString>();
 }
-
 
 void registerDataTypeString(DataTypeFactory & factory)
 {
@@ -93,7 +102,7 @@ void registerDataTypeString(DataTypeFactory & factory)
     factory.registerAlias("BINARY LARGE OBJECT", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("BINARY VARYING", "String", DataTypeFactory::Case::Insensitive);
     factory.registerAlias("VARBINARY", "String", DataTypeFactory::Case::Insensitive);
-    factory.registerAlias("GEOMETRY", "String", DataTypeFactory::Case::Insensitive); //mysql
 
 }
+
 }

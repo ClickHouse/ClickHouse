@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, use-rocksdb
 
 DROP TABLE IF EXISTS 03578_rocksdb;
 

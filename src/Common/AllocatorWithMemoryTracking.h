@@ -28,10 +28,10 @@ struct AllocatorWithMemoryTracking
 
     [[nodiscard]] T * allocate(size_t n)
     {
-        if (n > std::numeric_limits<size_t>::max() / sizeof(T)) /// NOLINT(bugprone-sizeof-expression)
+        if (n > std::numeric_limits<size_t>::max() / sizeof(T))
             throw std::bad_alloc();
 
-        size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
+        size_t bytes = n * sizeof(T);
         auto trace = CurrentMemoryTracker::alloc(bytes);
 
         T * p = static_cast<T *>(__real_malloc(bytes));
@@ -45,7 +45,7 @@ struct AllocatorWithMemoryTracking
 
     void deallocate(T * p, size_t n) noexcept
     {
-        size_t bytes = n * sizeof(T); /// NOLINT(bugprone-sizeof-expression)
+        size_t bytes = n * sizeof(T);
 
         __real_free(p);
         auto trace = CurrentMemoryTracker::free(bytes);

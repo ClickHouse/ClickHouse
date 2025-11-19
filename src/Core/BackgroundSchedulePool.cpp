@@ -13,8 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 
-#include <chrono>
-
 #include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
 
@@ -133,7 +131,7 @@ void BackgroundSchedulePoolTaskInfo::execute(BackgroundSchedulePool & pool)
     }
 
     /// Using this tmp query_id storage to prevent bad_alloc thrown under the try/catch.
-    std::string task_query_id = fmt::format("{}::{}", pool.thread_name, UUIDHelpers::generateV4());
+    std::string task_query_id = fmt::format("{}::{}", toString(pool.thread_name), UUIDHelpers::generateV4());
 
     try
     {
@@ -191,12 +189,17 @@ bool BackgroundSchedulePoolTaskInfo::scheduleImpl(std::lock_guard<std::mutex> & 
     return true;
 }
 
-Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
+Coordination::WatchCallbackPtr BackgroundSchedulePoolTaskInfo::getWatchCallback()
 {
-     return [task = shared_from_this()](const Coordination::WatchResponse &)
-     {
-        task->schedule();
-     };
+    /// We cannot initialize it inside ctor, since weak_from_this() will return empty ptr, that will never become valid (shared_from_this() will throw)
+    callOnce(watch_callback_initialized, [&] {
+        watch_callback = std::make_shared<Coordination::WatchCallback>([task_weak = weak_from_this()](const Coordination::WatchResponse &)
+        {
+            if (auto task = task_weak.lock())
+                task->schedule();
+        });
+    });
+    return watch_callback;
 }
 
 
@@ -204,18 +207,19 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 /// BackgroundSchedulePool
 ///
 
-BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, const char * thread_name)
+BackgroundSchedulePoolPtr BackgroundSchedulePool::create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name)
 {
     return std::shared_ptr<BackgroundSchedulePool>(new BackgroundSchedulePool(size, max_parallel_tasks_per_type, tasks_metric, size_metric, thread_name));
 }
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char * thread_name_)
-    : tasks_metric(tasks_metric_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_)
+    : logger(getLogger(fmt::format("BackgroundSchedulePool/{}", toString(thread_name_))))
+    , tasks_metric(tasks_metric_)
     , size_metric(size_metric_, size_)
     , thread_name(thread_name_)
     , max_parallel_tasks_per_type(max_parallel_tasks_per_type_ ? max_parallel_tasks_per_type_ : size_)
 {
-    LOG_INFO(getLogger("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with {} threads", size_);
+    LOG_INFO(logger, "Create BackgroundSchedulePool with {} threads", size_);
 
     threads.resize(size_);
 
@@ -229,7 +233,7 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t max_parallel
     catch (...)
     {
         LOG_FATAL(
-            getLogger("BackgroundSchedulePool/" + thread_name),
+            logger,
             "Couldn't get {} threads from global thread pool: {}",
             size_,
             getCurrentExceptionCode() == ErrorCodes::CANNOT_SCHEDULE_TASK
@@ -250,7 +254,7 @@ void BackgroundSchedulePool::increaseThreadsCount(size_t new_threads_count)
 
     if (new_threads_count < old_threads_count)
     {
-        LOG_WARNING(getLogger("BackgroundSchedulePool/" + thread_name),
+        LOG_WARNING(logger,
             "Tried to increase the number of threads but the new threads count ({}) is not greater than old one ({})", new_threads_count, old_threads_count);
         return;
     }
@@ -276,13 +280,13 @@ void BackgroundSchedulePool::join()
         /// Join all worker threads to avoid any recursive calls to schedule()/scheduleAfter() from the task callbacks
         {
             Stopwatch watch;
-            LOG_TRACE(getLogger("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
+            LOG_TRACE(logger, "Waiting for threads to finish.");
             delayed_thread->join();
             delayed_thread.reset();
             for (auto & thread : threads)
                 thread.join();
             threads.clear();
-            LOG_TRACE(getLogger("BackgroundSchedulePool/" + thread_name), "Threads finished in {}ms.", watch.elapsedMilliseconds());
+            LOG_TRACE(logger, "Threads finished in {}ms.", watch.elapsedMilliseconds());
         }
     }
     catch (...)
@@ -371,7 +375,7 @@ void BackgroundSchedulePool::cancelDelayedTask(TaskInfo & task, std::lock_guard<
 
 void BackgroundSchedulePool::threadFunction()
 {
-    setThreadName(thread_name.c_str());
+    DB::setThreadName(thread_name);
 
     while (!shutdown)
     {
@@ -413,7 +417,7 @@ void BackgroundSchedulePool::threadFunction()
                 other_group.runnable_list_pos = group.runnable_list_pos;
                 group.runnable_list_pos.reset();
                 if (group.num_running == max_parallel_tasks_per_type)
-                    LOG_WARNING(getLogger("BackgroundSchedulePool/" + thread_name), "Temporarily pause scheduling of tasks with id {}, example log_name={}", task_type_to_run, task->log_name);
+                    LOG_WARNING(logger, "Temporarily pause scheduling of tasks with id {}, example log_name={}", task_type_to_run, task->log_name);
             }
         }
 
@@ -441,7 +445,7 @@ void BackgroundSchedulePool::threadFunction()
 
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
-    setThreadName((thread_name + "/D").c_str());
+    DB::setThreadName(ThreadName::POOL_DELAYED_EXECUTION);
 
     while (!shutdown)
     {

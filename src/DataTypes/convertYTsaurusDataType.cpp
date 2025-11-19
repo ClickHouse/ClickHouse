@@ -191,7 +191,7 @@ DataTypePtr convertYTOptional(const Poco::JSON::Object::Ptr & json)
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Couldn't parse 'optional' type from YT(incorrect nested type)");
     }
-    /// ClickHouse/docs/en/engines/table-engines/integrations/ytsaurus.md *See Also*
+    /// ClickHouse/docs/engines/table-engines/integrations/ytsaurus.md *See Also*
     if (!nested_type->canBeInsideNullable())
     {
         switch (nested_type->getTypeId())

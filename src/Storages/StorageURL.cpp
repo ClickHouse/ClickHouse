@@ -251,7 +251,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
 
         if (filter_dag)
         {
@@ -515,7 +515,7 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        pipeline->reset();
+        (*pipeline).reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
@@ -1096,7 +1096,7 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
@@ -1182,9 +1182,8 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
-    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -1207,10 +1206,10 @@ void IStorageURLBase::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1323,8 +1322,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
-    format_filter_info->prewhere_info = prewhere_info;
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1388,10 +1386,10 @@ void StorageURLWithFailover::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
@@ -1529,7 +1527,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkHeaders(headers);
+    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 }
 
 

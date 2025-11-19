@@ -31,6 +31,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
@@ -49,7 +50,12 @@ ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
 void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res_columns, [[maybe_unused]] ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
 #if USE_AVRO
-    const auto access = context->getAccess();
+    ContextMutablePtr context_copy = Context::createCopy(context);
+    Settings settings_copy = context_copy->getSettingsCopy();
+    settings_copy[Setting::use_iceberg_metadata_files_cache] = false;
+    context_copy->setSettings(settings_copy);
+
+    const auto access = context_copy->getAccess();
 
     auto add_history_record = [&](const DatabaseTablesIteratorPtr & it, StorageObjectStorage * object_storage)
     {
@@ -60,9 +66,9 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
-            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context)); iceberg_metadata)
+            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy)); iceberg_metadata)
             {
-                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context);
+                IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context_copy);
 
                 for (auto & iceberg_history_item : iceberg_history_items)
                 {
@@ -87,15 +93,15 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
 
     if (show_tables_granted)
     {
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true});
         for (const auto & db: databases)
         {
             /// with last flag we are filtering out all non iceberg table
-            for (auto iterator = db.second->getLightweightTablesIterator(context, {}, true); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getLightweightTablesIterator(context_copy, {}, true); iterator->isValid(); iterator->next())
             {
                 StoragePtr storage = iterator->table();
 
-                TableLockHolder lock = storage->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
+                TableLockHolder lock = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
                 if (!lock)
                     // Table was dropped while acquiring the lock, skipping table
                     continue;

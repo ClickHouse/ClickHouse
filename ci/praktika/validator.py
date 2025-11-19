@@ -66,6 +66,11 @@ class Validator:
                     f"Invalid Job.Config.runs_on [{job.runs_on}] for [{job.name}]",
                     workflow.name,
                 )
+                cls.evaluate_check(
+                    "PARAMETER" not in job.command,
+                    f"Job parametrization config issue: job name [{job.name}], job command: [{job.command}]",
+                    workflow.name,
+                )
 
             cls.validate_file_paths_in_run_command(workflow)
             cls.validate_file_paths_in_digest_configs(workflow)
@@ -79,25 +84,47 @@ class Validator:
                     f".crone_schedules str must be non-empty list of cron strings .event===SCHEDULE, provided value [{workflow.cron_schedules}]",
                     workflow.name,
                 )
+
+                def is_valid_cron_field(field: str) -> bool:
+                    """Check if a cron field is valid (supports *, digits, ranges, steps, and lists)"""
+                    if field == "*":
+                        return True
+                    # Check for step values like */5 or 1-10/2
+                    if "/" in field:
+                        base, step = field.split("/", 1)
+                        if not step.isdigit():
+                            return False
+                        if base != "*":
+                            field = base  # Continue validating the base part
+                        else:
+                            return True  # */N is valid
+                    # Check for lists like 1,3,5 or ranges like 1-5
+                    for part in field.split(","):
+                        if "-" in part:
+                            # Range like 1-5
+                            parts = part.split("-")
+                            if len(parts) != 2 or not all(p.isdigit() for p in parts):
+                                return False
+                        elif not part.isdigit():
+                            return False
+                    return True
+
                 for cron_schedule in workflow.cron_schedules:
                     cls.evaluate_check(
                         len(cron_schedule.split(" ")) == 5,
                         f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * *', provided value [{cron_schedule}]",
                         workflow.name,
                     )
-                    for cron_token in cron_schedule.split(" ")[:-1]:
+                    tokens = cron_schedule.split(" ")
+                    for i, cron_token in enumerate(tokens):
+                        field_name = ["minute", "hour", "day", "month", "day_of_week"][
+                            i
+                        ]
                         cls.evaluate_check(
-                            cron_token == "*" or str.isdigit(cron_token),
-                            f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{cron_token}]",
+                            is_valid_cron_field(cron_token),
+                            f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1-5', provided value [{cron_schedule}], invalid {field_name} field [{cron_token}]",
                             workflow.name,
                         )
-                    days_of_weak = cron_schedule.split(" ")[-1]
-                    cls.evaluate_check(
-                        days_of_weak == "*"
-                        or any([str.isdigit(v) for v in days_of_weak.split(",")]),
-                        f".crone_schedules must be posix compliant cron str, e.g. '30 15 * * 1,3', provided value [{cron_schedule}], invalid part [{days_of_weak}]",
-                        workflow.name,
-                    )
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
@@ -183,6 +210,13 @@ class Validator:
                 assert workflow.get_secret(
                     Settings.DOCKERHUB_SECRET
                 ), f"Secret [{Settings.DOCKERHUB_SECRET}] must have configuration in workflow.secrets, workflow [{workflow.name}]"
+
+            if workflow.enable_flaky_tests_catalog:
+                cls.evaluate_check(
+                    workflow.enable_merge_ready_status,
+                    f".enable_flaky_tests_catalog workflow setting is applicable with .enable_merge_ready_status=True",
+                    workflow_name=workflow.name,
+                )
 
             if (
                 workflow.enable_cache

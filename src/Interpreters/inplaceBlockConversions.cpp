@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -202,7 +201,10 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
-    ColumnsDescription fake_column_descriptions(header.getNamesAndTypesList());
+    ColumnsDescription fake_column_descriptions{};
+    // Add columns from index to ensure names are unique in case of duplicated columns.
+    for (const auto & column : header.getIndexByName())
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type));
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
@@ -302,7 +304,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -421,7 +423,7 @@ void fillMissingColumns(
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
-            num_dimensions = getNumberOfDimensions(*array_type);
+            num_dimensions = array_type->getNumberOfDimensions();
             current_offsets.resize(num_dimensions);
 
             auto serialization = IDataType::getSerialization(*requested_column);
@@ -435,7 +437,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;

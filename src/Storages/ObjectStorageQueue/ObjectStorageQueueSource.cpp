@@ -5,8 +5,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
-#include <Common/getRandomASCIIString.h>
 #include <Common/parseGlobs.h>
+#include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/Settings.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
@@ -39,6 +39,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
+    extern const SettingsUInt64 keeper_max_retries;
 }
 
 namespace ObjectStorageQueueSetting
@@ -68,9 +69,8 @@ namespace ErrorCodes
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
-        const ObjectInfo & object_info,
-        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(object_info.relative_path, object_info.metadata)
+    const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
+    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
     , file_metadata(file_metadata_)
 {
 }
@@ -114,7 +114,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_);
+    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_, /*with_tags=*/ false);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -126,7 +126,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     recursive = globbed_key == "/**";
-    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
+    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -165,11 +165,12 @@ ObjectStorageQueueSource::FileIterator::next()
         return {};
     }
 
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     if (current_batch_processed)
     {
         file_metadatas.clear();
         Stopwatch get_object_watch;
-        Source::ObjectInfos new_batch;
+        ObjectInfos new_batch;
 
         while (new_batch.empty())
         {
@@ -182,7 +183,11 @@ ObjectStorageQueueSource::FileIterator::next()
 
             LOG_TEST(log, "Received batch of size: {}", result->size());
 
-            new_batch = std::move(result.value());
+            std::transform(
+                result->begin(),
+                result->end(),
+                std::back_inserter(new_batch),
+                [&](const std::shared_ptr<RelativePathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
@@ -226,17 +231,28 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 Coordination::Requests requests;
                 size_t num_successful_objects = 0;
+                Strings processing_paths;
+                String processor_info;
+                const auto processing_id = ObjectStorageQueueIFileMetadata::generateProcessingID();
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
-                        new_batch[i]->relative_path,
-                        /* bucket_info */{}); /// No buckets for Unordered mode.
+                        new_batch[i]->getPath(),
+                        /* bucket_info */ {}); /// No buckets for Unordered mode.
 
-                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
+                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
                     {
                         result_indexes[i] = set_processing_result.value();
                         ++num_successful_objects;
+                        processing_paths.push_back(file_metadatas[i]->getProcessingPath());
+
+                        const auto & current_processor_info = file_metadatas[i]->getProcessorInfo();
+                        if (processor_info.empty())
+                            processor_info = current_processor_info;
+
+                        chassert(processor_info == current_processor_info,
+                                 fmt::format("{} != {}", processor_info, current_processor_info));
                     }
                     else
                     {
@@ -246,8 +262,62 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-                auto code = zk_client->tryMulti(requests, responses);
+                Coordination::Error code;
+                zk_retry.retryLoop([&]
+                {
+                    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
+                    if (zk_retry.isRetry())
+                    {
+                        LOG_TEST(log, "Retrying set processing requests batch ({})", processing_paths.size());
+
+                        bool failed = false;
+                        bool is_multi_read_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ);
+                        if (is_multi_read_enabled)
+                        {
+                            auto processing_paths_responses = ObjectStorageQueueMetadata::getZooKeeper(log)->tryGet(processing_paths);
+                            for (size_t i = 0; i < processing_paths_responses.size(); ++i)
+                            {
+                                LOG_TEST(log, "Path {} has processor: {}, current processor: {}",
+                                         processing_paths[i], processing_paths_responses[i].data, processor_info);
+
+                                if (processing_paths_responses[i].data != processor_info)
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            String data;
+                            for (const auto & path : processing_paths)
+                            {
+                                if (!zk_client->tryGet(path, data))
+                                {
+                                    LOG_TEST(log, "Path {} does not exist", path);
+                                    failed = true;
+                                    break;
+                                }
+
+                                LOG_TEST(log, "Having {}, current processor: {}", data, processor_info);
+                                if (data != processor_info)
+                                {
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!failed)
+                        {
+                            LOG_TEST(log, "Operation succeeded");
+                            code = Coordination::Error::ZOK;
+                            return;
+                        }
+                    }
+                    code = zk_client->tryMulti(requests, responses);
+                });
+
                 if (code == Coordination::Error::ZOK)
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);
@@ -259,11 +329,7 @@ ObjectStorageQueueSource::FileIterator::next()
                         if (!new_batch[i])
                             continue;
 
-                        const auto & response_indexes = result_indexes[i];
-                        const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
-                            *responses[response_indexes.set_processing_id_node_idx].get());
-
-                        file_metadatas[i]->finalizeProcessing(set_response.stat.version);
+                        file_metadatas[i]->afterSetProcessing(/* success */true, std::nullopt);
                     }
                 }
                 else
@@ -341,7 +407,7 @@ ObjectStorageQueueSource::FileIterator::next()
     return result;
 }
 
-void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
@@ -359,7 +425,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::Obje
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
 
-    Source::ObjectInfos result;
+    ObjectInfos result;
     result.reserve(paths_set.size());
     for (auto & object : objects)
     {
@@ -415,13 +481,12 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
+            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
             if (!file_metadata->trySetProcessing())
                 continue;
         }
 
-        if (file_deletion_on_processed_enabled
-            && !object_storage->exists(StoredObject(object_info->relative_path)))
+        if (file_deletion_on_processed_enabled && !object_storage->exists(StoredObject(object_info->getPath())))
         {
             /// Imagine the following case:
             /// Replica A processed fileA and deletes it afterwards.
@@ -460,7 +525,7 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     chassert(object_info);
     if (metadata->useBucketsForProcessing())
     {
-        const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+        const auto bucket = metadata->getBucketForPath(object_info->getPath());
         std::lock_guard lock(mutex);
         listed_keys_cache[bucket].keys.emplace_front(object_info, file_metadata);
     }
@@ -541,20 +606,12 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 }
                 else if (bucket_processor.value() != current_processor)
                 {
-                    if (current_bucket_holder->isZooKeeperSessionExpired())
-                    {
-                        LOG_TRACE(log, "ZooKeeper session expired, bucket no longer held");
-                        current_bucket_holder = {};
-                    }
-                    else
-                    {
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Expected current processor {} to be equal to {} for bucket {}",
-                            current_processor,
-                            bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
-                            bucket);
-                    }
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Expected current processor {} to be equal to {} for bucket {}",
+                        current_processor,
+                        bucket_processor.has_value() ? toString(bucket_processor.value()) : "None",
+                        bucket);
                 }
 
                 if (current_bucket_holder)
@@ -588,24 +645,6 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 /// - once we write and commit files via commit() method.
                 current_bucket_holder->setFinished();
             }
-        }
-
-        if (current_bucket_holder && current_bucket_holder->isZooKeeperSessionExpired())
-        {
-            LOG_TRACE(log, "ZooKeeper session expired, bucket {} not longer hold", current_bucket_holder->getBucket());
-
-            for (auto & [bucket, bucket_info] : listed_keys_cache)
-            {
-                /// Reset current processor for the keys
-                /// to avoid the above error "Expected current processor {} to be equal to {} for bucket {}".
-                if (bucket_info.processor.has_value() && bucket_info.processor.value() == current_processor)
-                {
-                    LOG_DEBUG(log, "Resetting processor ({}) for bucket {}", current_processor, bucket);
-                    bucket_info.processor.reset();
-                }
-            }
-
-            current_bucket_holder = {};
         }
 
         /// If processing thread has already acquired some bucket
@@ -642,7 +681,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                     continue;
                 }
 
-                auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+                auto acquired_bucket = metadata->tryAcquireBucket(bucket);
                 if (!acquired_bucket)
                 {
                     LOG_TEST(log, "Bucket {} is already locked for processing (keys: {})",
@@ -677,7 +716,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         chassert(!file_metadata);
         if (object_info)
         {
-            const auto bucket = metadata->getBucketForPath(object_info->relative_path);
+            const auto bucket = metadata->getBucketForPath(object_info->getPath());
             auto & bucket_cache = listed_keys_cache[bucket];
 
             LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}, cached_keys: {}",
@@ -698,7 +737,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 return {object_info, nullptr, current_bucket_holder->getBucketInfo()};
             }
 
-            auto acquired_bucket = metadata->tryAcquireBucket(bucket, current_processor);
+            auto acquired_bucket = metadata->tryAcquireBucket(bucket);
             if (acquired_bucket)
             {
                 bucket_holder_it->second.push_back(acquired_bucket);
@@ -1006,15 +1045,13 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->metadata;
+            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk, read_from_format_info.requested_virtual_columns,
-                {
-                    .path = path,
-                    .size = object_metadata->size_bytes,
-                    .last_modified = object_metadata->last_modified
-                }, getContext());
+                chunk,
+                read_from_format_info.requested_virtual_columns,
+                {.path = path, .size = object_metadata->size_bytes, .last_modified = object_metadata->last_modified},
+                getContext());
 
             return chunk;
         }
@@ -1027,7 +1064,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
-        file_status.reset();
+        file_status = nullptr;
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit
@@ -1101,6 +1138,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             const auto & file_metadata = processed_files[i].metadata;
             const auto & file_path = file_metadata->getPath();
             const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
+
+            if (processed_files[i].state != FileState::Processed)
+                continue;
 
             auto [it, inserted] = last_processed_file_idx_per_bucket.emplace(bucket, i);
             if (!inserted
@@ -1271,9 +1311,25 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         object_storage->removeObjectsIfExist(successful_objects);
     }
 
-    auto zk_client = getContext()->getZooKeeper();
+    auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
     Coordination::Responses responses;
-    auto code = zk_client->tryMulti(requests, responses);
+
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
+    const auto & settings = getContext()->getSettingsRef();
+    Coordination::Error code;
+    size_t try_num = 0;
+    zk_retry.retryLoop([&]
+    {
+        if (zk_retry.isRetry())
+        {
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
+        }
+        ++try_num;
+        code = zk_client->tryMulti(requests, responses);
+    });
+
     if (code != Coordination::Error::ZOK)
         throw zkutil::KeeperMultiException(code, requests, responses);
 

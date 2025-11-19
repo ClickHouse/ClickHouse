@@ -4,6 +4,7 @@ sidebar_label: 'Build on Linux for AARCH64'
 sidebar_position: 25
 slug: /development/build-cross-arm
 title: 'How to Build ClickHouse on Linux for AARCH64'
+doc_type: 'guide'
 ---
 
 # How to Build ClickHouse on Linux for AARCH64

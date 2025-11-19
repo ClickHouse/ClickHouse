@@ -1303,6 +1303,7 @@ ReturnType readJSONArrayInto(Vector & s, ReadBuffer & buf)
 
 template void readJSONArrayInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONArrayInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
+template void readJSONArrayInto<String>(String & s, ReadBuffer & buf);
 
 std::string_view readJSONObjectAsViewPossiblyInvalid(ReadBuffer & buf, String & object_buffer)
 {
@@ -1455,7 +1456,6 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf, const char *
 
 template void readDateTextFallback<void>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
 template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &, const char * allowed_delimiters);
-
 
 template <typename ReturnType, bool t64_mode>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters, const char * allowed_time_delimiters)

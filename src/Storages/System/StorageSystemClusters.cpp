@@ -7,6 +7,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Databases/DatabaseReplicated.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 #include <optional>
 
@@ -34,6 +37,7 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>(), "Seconds remaining until the replica error count is zeroed and it is considered to be back to normal."},
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
+        {"is_shared_catalog_cluster", std::make_shared<DataTypeUInt8>(), "Bool indicating if the cluster belongs to shared catalog."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
            {"unsynced_after_recovery", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Indicates if a Replicated database replica has replication lag more than max_replication_lag_to_enqueue after creating or recovering the replica."},
         {"replication_lag", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt32>()), "The replication lag of the `Replicated` database replica (for clusters that belong to a Replicated database)."},
@@ -50,37 +54,60 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicated= */ nullptr);
+        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {});
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
         {
 
             if (auto database_cluster = replicated->tryGetCluster())
-                writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster}, replicated);
+                writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster},
+                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); });
 
             if (auto database_cluster = replicated->tryGetAllGroupsCluster())
-                writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster}, replicated);
+                writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster},
+                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); });
         }
     }
+
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::initialized())
+    {
+        auto cluster_name = SharedDatabaseCatalog::instance().getClusterName();
+        if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(cluster_name))
+            writeCluster(res_columns, columns_mask, {cluster_name, catalog_cluster},
+                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); });
+
+        auto all_groups_cluster_name = SharedDatabaseCatalog::ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
+        if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(all_groups_cluster_name))
+            writeCluster(res_columns, columns_mask, {all_groups_cluster_name, catalog_cluster},
+                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); });
+    }
+#endif
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, const DatabaseReplicated * replicated)
+void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, std::function<ReplicasInfo()> && replicas_info_getter)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
-    size_t recovery_time_column_idx = columns_mask.size() - 1;
-    size_t replication_lag_column_idx = columns_mask.size() - 2;
-    size_t is_unsynced_column_idx = columns_mask.size() - 3;
-    size_t is_active_column_idx = columns_mask.size() - 4;
-    ReplicasInfo replicas_info;
-    if (replicated && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx]))
-        replicas_info = replicated->tryGetReplicasInfo(name_and_cluster.second);
+    const size_t recovery_time_column_idx = columns_mask.size() - 1;
+    const size_t replication_lag_column_idx = columns_mask.size() - 2;
+    const size_t is_unsynced_column_idx = columns_mask.size() - 3;
+    const size_t is_active_column_idx = columns_mask.size() - 4;
+    const size_t is_shared_catalog_cluster_idx = columns_mask.size() - 5;
+    std::vector<ReplicaInfo> replicas;
+    bool replicas_belong_to_shared_catalog = false;
+    if (replicas_info_getter && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx] || columns_mask[is_shared_catalog_cluster_idx]))
+    {
+        const ReplicasInfo info = replicas_info_getter();
+        replicas = info.replicas;
+        replicas_belong_to_shared_catalog = info.replicas_belong_to_shared_catalog;
+    }
 
     size_t replica_idx = 0;
     for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
@@ -133,34 +160,38 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
 
-            /// make sure these four columns remain the last ones, see is_active_column_idx, etc
+            /// make sure these five columns remain the last ones, see is_active_column_idx, etc
             if (columns_mask[src_index++])
             {
-                if (replicas_info.empty())
+                res_columns[res_index++]->insert(replicas_belong_to_shared_catalog);
+            }
+            if (columns_mask[src_index++])
+            {
+                if (replicas.empty())
                     res_columns[res_index++]->insertDefault();
                 else
                 {
-                    const auto & replica_info = replicas_info[replica_idx];
+                    const auto & replica_info = replicas[replica_idx];
                     res_columns[res_index++]->insert(replica_info.is_active);
                 }
             }
             if (columns_mask[src_index++])
             {
-                if (replicas_info.empty())
+                if (replicas.empty())
                     res_columns[res_index++]->insertDefault();
                 else
                 {
-                    const auto & replica_info = replicas_info[replica_idx];
+                    const auto & replica_info = replicas[replica_idx];
                     res_columns[res_index++]->insert(replica_info.unsynced_after_recovery);
                 }
             }
             if (columns_mask[src_index++])
             {
-                if (replicas_info.empty())
+                if (replicas.empty())
                     res_columns[res_index++]->insertDefault();
                 else
                 {
-                    const auto & replica_info = replicas_info[replica_idx];
+                    const auto & replica_info = replicas[replica_idx];
                     if (replica_info.replication_lag != std::nullopt)
                         res_columns[res_index++]->insert(*replica_info.replication_lag);
                     else
@@ -169,11 +200,11 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
             }
             if (columns_mask[src_index++])
             {
-                if (replicas_info.empty())
+                if (replicas.empty())
                     res_columns[res_index++]->insertDefault();
                 else
                 {
-                    const auto & replica_info = replicas_info[replica_idx];
+                    const auto & replica_info = replicas[replica_idx];
                     if (replica_info.recovery_time != 0)
                         res_columns[res_index++]->insert(replica_info.recovery_time);
                     else

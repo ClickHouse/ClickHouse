@@ -4,6 +4,7 @@ sidebar_label: 'UPDATE'
 sidebar_position: 40
 slug: /sql-reference/statements/alter/update
 title: 'ALTER TABLE ... UPDATE Statements'
+doc_type: 'reference'
 ---
 
 # ALTER TABLE ... UPDATE Statements

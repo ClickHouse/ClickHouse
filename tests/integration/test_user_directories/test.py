@@ -39,15 +39,15 @@ def test_old_style():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users_xml",
-                "users_xml",
-                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users2.xml"}',
-                1,
-            ],
-            [
                 "local_directory",
                 "local_directory",
                 '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access2\\\\/"}',
+                1,
+            ],
+            [
+                "users_xml",
+                "users_xml",
+                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users2.xml"}',
                 2,
             ],
         ]
@@ -130,15 +130,15 @@ def test_mixed_style():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users_xml",
-                "users_xml",
-                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users6.xml"}',
-                1,
-            ],
-            [
                 "local_directory",
                 "local_directory",
                 '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access6\\\\/"}',
+                1,
+            ],
+            [
+                "users_xml",
+                "users_xml",
+                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users6.xml"}',
                 2,
             ],
             [
@@ -161,15 +161,15 @@ def test_duplicates():
     assert node.query("SELECT * FROM system.user_directories") == TSV(
         [
             [
-                "users_xml",
-                "users_xml",
-                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users7.xml"}',
-                1,
-            ],
-            [
                 "local_directory",
                 "local_directory",
                 '{"path":"\\\\/var\\\\/lib\\\\/clickhouse\\\\/access7\\\\/"}',
+                1,
+            ],
+            [
+                "users_xml",
+                "users_xml",
+                '{"path":"\\\\/etc\\\\/clickhouse-server\\\\/users7.xml"}',
                 2,
             ],
         ]

@@ -20,8 +20,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename Value, bool float_return> using FuncQuantileBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantileBFloat16, false, std::conditional_t<float_return, Float64, void>, false, false>;
-template <typename Value, bool float_return> using FuncQuantilesBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16, false, std::conditional_t<float_return, Float64, void>, true, false>;
+template <typename Value, bool float_return> using FuncQuantileBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantileBFloat16, void, std::conditional_t<float_return, Float64, void>, false, false>;
+template <typename Value, bool float_return> using FuncQuantilesBFloat16 = AggregateFunctionQuantile<Value, QuantileBFloat16Histogram<Value>, NameQuantilesBFloat16, void, std::conditional_t<float_return, Float64, void>, true, false>;
 
 template <template <typename, bool> class Function>
 AggregateFunctionPtr createAggregateFunctionQuantile(

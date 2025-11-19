@@ -102,7 +102,7 @@ void ReadFromSystemOneBlock::applyFilters(ActionDAGNodes added_filter_nodes)
     if (sample.columns() == 0)
         return;
 
-    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample);
+    filter = VirtualColumnUtils::splitFilterDagForAllowedInputs(filter_actions_dag->getOutputs().at(0), &sample, context);
 
     /// Must prepare sets here, initializePipeline() would be too late, see comment on FutureSetFromSubquery.
     if (filter)

@@ -709,7 +709,7 @@ void StorageRabbitMQ::bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_chann
 
             if (integer_settings.contains(key))
                 queue_settings[key] = parse<uint64_t>(value);
-            else if (string_settings.find(key) != string_settings.end())
+            else if (string_settings.contains(key))
                 queue_settings[key] = value;
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported queue setting: {}", value);
@@ -835,7 +835,8 @@ void StorageRabbitMQ::read(
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
             sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            local_context);
 
         auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
         auto converting_transform = std::make_shared<ExpressionTransform>(rabbit_source->getPort().getSharedHeader(), std::move(converting));
@@ -1161,10 +1162,16 @@ bool StorageRabbitMQ::tryStreamToViews()
         ? (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_flush_interval_ms]
         : static_cast<UInt64>(getContext()->getSettingsRef()[Setting::stream_flush_interval_ms].totalMilliseconds());
 
+    auto new_context = Context::createCopy(rabbitmq_context);
+
+    /// Create a fresh query context from rabbitmq_context, discarding any caches attached to the previous context to
+    /// ensure no stale state is reused.
+    new_context->makeQueryContext();
+
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto source = std::make_shared<RabbitMQSource>(
-            *this, storage_snapshot, rabbitmq_context, Names{}, block_size,
+            *this, storage_snapshot, new_context, Names{}, block_size,
             max_execution_time_ms, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_handle_error_mode],
             reject_unhandled_messages, /* ack_in_suffix */false, log);
 
@@ -1187,7 +1194,7 @@ bool StorageRabbitMQ::tryStreamToViews()
     // Only insert into dependent views and expect that input blocks contain virtual columns
     InterpreterInsertQuery interpreter(
         insert,
-        rabbitmq_context,
+        new_context,
         /* allow_materialized */ false,
         /* no_squash */ true,
         /* no_destination */ true,
