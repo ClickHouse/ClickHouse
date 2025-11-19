@@ -460,8 +460,6 @@ class GH:
                     )
                     links = []
                     for item in hlabels:
-                        text = None
-                        href = None
                         if isinstance(item, (list, tuple)) and len(item) >= 2:
                             text, href = item[0], item[1]
                         if text and href:
@@ -481,34 +479,49 @@ class GH:
                 info=extract_hlabels_info(result),
                 comment="",
             )
-            for sub_result in result.results:
-                if sub_result.is_completed() and not sub_result.is_ok():
-                    failed_result = cls(
-                        name=sub_result.name,
-                        status=sub_result.status,
-                        info=extract_hlabels_info(sub_result),
+
+            # Filter and sort failed/error subresults by priority
+            # Priority: FAILED (0) > ERROR (1) > others (2)
+            def get_status_priority(r):
+                if r.status == Result.Status.FAILED:
+                    return 0
+                elif r.status == Result.Status.ERROR:
+                    return 1
+                else:
+                    return 2
+
+            subresults = [
+                r for r in result.results if (r.is_completed() and not r.is_ok())
+            ]
+            subresults = sorted(subresults, key=get_status_priority)
+
+            for sub_result in subresults:
+                failed_result = cls(
+                    name=sub_result.name,
+                    status=sub_result.status,
+                    info=extract_hlabels_info(sub_result),
+                    comment="",
+                )
+                failed_result.failed_results = [
+                    cls(
+                        name=r.name,
+                        status=r.status,
+                        info=extract_hlabels_info(r),
                         comment="",
                     )
-                    failed_result.failed_results = [
-                        cls(
-                            name=r.name,
-                            status=r.status,
-                            info=extract_hlabels_info(r),
-                            comment="",
-                        )
-                        for r in flatten_results(sub_result.results)
-                        if r.is_completed() and not r.is_ok()
+                    for r in flatten_results(sub_result.results)
+                    if r.is_completed() and not r.is_ok()
+                ]
+                if len(failed_result.failed_results) > MAX_TEST_CASES_PER_JOB:
+                    remaining = (
+                        len(failed_result.failed_results) - MAX_TEST_CASES_PER_JOB
+                    )
+                    note = f"{remaining} more test cases not shown"
+                    failed_result.failed_results = failed_result.failed_results[
+                        :MAX_TEST_CASES_PER_JOB
                     ]
-                    if len(failed_result.failed_results) > MAX_TEST_CASES_PER_JOB:
-                        remaining = (
-                            len(failed_result.failed_results) - MAX_TEST_CASES_PER_JOB
-                        )
-                        note = f"{remaining} more test cases not shown"
-                        failed_result.failed_results = failed_result.failed_results[
-                            :MAX_TEST_CASES_PER_JOB
-                        ]
-                        failed_result.failed_results.append(cls(name=note, status=""))
-                    summary.failed_results.append(failed_result)
+                    failed_result.failed_results.append(cls(name=note, status=""))
+                summary.failed_results.append(failed_result)
             if len(summary.failed_results) > MAX_JOBS_PER_SUMMARY:
                 remaining = len(summary.failed_results) - MAX_JOBS_PER_SUMMARY
                 summary.failed_results = summary.failed_results[:MAX_JOBS_PER_SUMMARY]

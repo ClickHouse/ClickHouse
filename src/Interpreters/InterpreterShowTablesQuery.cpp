@@ -234,16 +234,18 @@ BlockIO InterpreterShowTablesQuery::execute()
     String database = getContext()->resolveDatabase(query.getFrom());
     if (query.databases || DatabaseCatalog::instance().isDatalakeCatalog(database))
     {
-        auto context_copy = Context::createCopy(getContext());
-        /// HACK To always show them in explicit "SHOW TABLES" and "SHOW DATABASES" queries
-        context_copy->setSetting("show_data_lake_catalogs_in_system_tables", true);
-        return executeQuery(rewritten_query, context_copy, QueryFlags{ .internal = true }).second;
-    }
-    else
-    {
-        return executeQuery(rewritten_query, getContext(), QueryFlags{ .internal = true }).second;
+        auto query_context = Context::createCopy(getContext());
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId("");
+        /// HACK To always show them in explicit "SHOW TABLES" queries
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
     }
 
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
