@@ -96,7 +96,7 @@ StorageURLCluster::StorageURLCluster(
         context);
 
     auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.columns, context, /* format_settings */std::nullopt, sample_path);
+        storage_metadata.columns, context, /* format_settings */std::nullopt, PartitionStrategyFactory::StrategyType::NONE, sample_path);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(

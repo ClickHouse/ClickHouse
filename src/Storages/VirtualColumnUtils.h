@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/VirtualColumnsDescription.h>
+#include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
 
 namespace DB
@@ -81,6 +82,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings = std::nullopt,
+    std::optional<PartitionStrategyFactory::StrategyType> partition_strategy = std::nullopt,
     const std::string & path = "");
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(

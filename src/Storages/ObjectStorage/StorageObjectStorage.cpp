@@ -250,8 +250,8 @@ StorageObjectStorage::StorageObjectStorage(
         metadata.columns,
         context,
         format_settings,
-        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
-        configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE ? sample_path : ""));
+        configuration->partition_strategy_type,
+        sample_path));
 
     setInMemoryMetadata(metadata);
 

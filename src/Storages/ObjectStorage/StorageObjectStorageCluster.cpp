@@ -85,7 +85,10 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning] && !configuration->isDataLakeConfiguration() && !configuration->partition_strategy)
+    if (sample_path.empty()
+        && context_->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->isDataLakeConfiguration()
+        && !configuration->partition_strategy)
         sample_path = getPathSample(context_);
 
     /// Not grabbing the file_columns because it is not necessary to do it here.
@@ -105,8 +108,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         metadata.columns,
         context_,
         /* format_settings */std::nullopt,
-        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
-        configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE ? sample_path : ""));
+        configuration->partition_strategy_type,
+        sample_path));
 
     setInMemoryMetadata(metadata);
 

@@ -168,6 +168,7 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings,
+    std::optional<PartitionStrategyFactory::StrategyType> partition_strategy,
     const std::string & path)
 {
     VirtualColumnsDescription desc;
@@ -185,11 +186,19 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     for (const auto & item : getCommonVirtualsForFileLikeStorage())
         add_virtual(item);
 
-    if (!path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (!path.empty())
     {
-        auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
-        for (const auto & column : hive_columns)
-            add_virtual(column);
+        if (!partition_strategy.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition strategy to be specified");
+
+        /// If partition_stategy == none, we add hive columns, if present, to virtual columns.
+        if (context->getSettingsRef()[Setting::use_hive_partitioning]
+            && partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
+        {
+            auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
+            for (const auto & column : hive_columns)
+                add_virtual(column);
+        }
     }
 
     return desc;
