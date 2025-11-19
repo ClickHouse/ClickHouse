@@ -1,25 +1,40 @@
-DROP TABLE IF EXISTS t;
+CREATE TABLE test
+(
+    `key` UInt64,
+    `value` Int64
+)
+ENGINE = MergeTree
+ORDER BY key;
 
-CREATE TABLE t (
-    id UInt64,
-    value UInt64,
-    PROJECTION count_by_id
+INSERT INTO test SELECT cityHash64(number) AS key, number AS value FROM numbers(100);
+
+EXPLAIN PLAN
+WITH
+    view_1 AS
     (
         SELECT
-            id,
-            count() AS cnt
-        GROUP BY id
+            key,
+            ROW_NUMBER() OVER (PARTITION BY key) AS rn
+        FROM test
+    ),
+    view_2 AS
+    (
+        SELECT
+            key,
+            count() > 0 AS has_any
+        FROM test
+        GROUP BY
+            key
+    ),
+    events AS
+    (
+        SELECT
+            *
+        FROM view_1 AS v1
+        INNER JOIN view_2 AS v2_1 USING (key)
+        LEFT JOIN view_2 AS v2_2 USING (key)
+        WHERE v1.rn = 1
     )
-) ENGINE = MergeTree()
-ORDER BY tuple()
-SETTINGS index_granularity = 8192;
-
-INSERT INTO t SELECT 1, number * 10 FROM numbers(30);
-
-SET optimize_use_projections = 1;
-
-SELECT
-    id,
-    count() as cnt
-FROM t
-GROUP BY id;
+SELECT count()
+FROM events
+WHERE v2_1.has_any;
