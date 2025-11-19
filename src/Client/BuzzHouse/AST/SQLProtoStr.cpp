@@ -5077,6 +5077,10 @@ CONV_FN(SystemCommand, cmd)
             ret += "DROP TEXT INDEX POSTINGS CACHE";
             can_set_cluster = true;
             break;
+        case CmdType::kDropTextIndexCaches:
+            ret += "DROP TEXT INDEX CACHES";
+            can_set_cluster = true;
+            break;
         default:
             ret += "FLUSH LOGS";
     }

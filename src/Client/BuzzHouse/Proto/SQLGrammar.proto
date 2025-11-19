@@ -4097,8 +4097,9 @@ message SystemCommand {
         bool drop_text_index_dictionary_cache = 72;
         bool drop_text_index_header_cache = 73;
         bool drop_text_index_postings_cache = 74;
+        bool drop_text_index_caches = 75;
     }
-    optional Cluster cluster = 75;
+    optional Cluster cluster = 76;
 }
 
 message BackupRestoreObject {
