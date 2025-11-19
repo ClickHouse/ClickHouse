@@ -2,10 +2,10 @@
 
 #include "config.h"
 
-#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <filesystem>
+#include <shared_mutex>
 
 namespace Poco
 {
@@ -50,8 +50,9 @@ public:
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -128,7 +129,7 @@ protected:
     };
 
     mutable Files files;
-    mutable SharedMutex metadata_mutex;
+    mutable std::shared_mutex metadata_mutex;
 
     FileDataPtr tryGetFileInfo(const String & path) const;
     std::vector<std::filesystem::path> listDirectory(const String & path) const;
@@ -136,7 +137,7 @@ protected:
 
 private:
     std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
-    loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const;
+    loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
 
     const String url;
     LoggerPtr log;

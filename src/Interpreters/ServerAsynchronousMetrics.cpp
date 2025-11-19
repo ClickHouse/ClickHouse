@@ -13,7 +13,6 @@
 
 #include <IO/UncompressedCache.h>
 #include <IO/MMappedFileCache.h>
-#include <Common/PageCache.h>
 #include <Common/quoteString.h>
 
 #include "config.h"
@@ -91,12 +90,6 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             "Total capacity in the `cache` virtual filesystem. This cache is hold on disk." };
         new_values["FilesystemCacheFiles"] = { total_files,
             "Total number of cached file segments in the `cache` virtual filesystem. This cache is hold on disk." };
-    }
-
-    if (auto page_cache = getContext()->getPageCache())
-    {
-        new_values["PageCacheMaxBytes"] = { page_cache->maxSizeInBytes(),
-            "Current limit on the size of userspace page cache, in bytes." };
     }
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
@@ -203,7 +196,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -243,7 +236,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         for (const auto & db : databases)
         {
             /// Check if database can contain MergeTree tables
-            if (db.second->isExternal())
+            if (!db.second->canContainMergeTreeTables())
                 continue;
 
             bool is_system = db.first == DatabaseCatalog::SYSTEM_DATABASE;
@@ -391,9 +384,9 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
-        if (db.second->isExternal())
+        if (!db.second->canContainMergeTreeTables())
             continue;
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())

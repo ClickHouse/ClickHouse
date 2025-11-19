@@ -376,8 +376,4 @@ T current_exception_cast()
     }
 }
 
-/// Return copy of a current exception if it is a Poco::Exception (DB::Exception), since this exception is mutable, and returning reference is unsafe.
-/// And a reference otherwise.
-std::exception_ptr copyMutableException(std::exception_ptr ptr);
-
 }

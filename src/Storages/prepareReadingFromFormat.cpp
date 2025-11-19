@@ -101,12 +101,7 @@ ReadFromFormatInfo prepareReadingFromFormat(
     }
 
     /// Create header for InputFormat with columns that will be read from the data.
-    for (const auto & column : info.columns_description)
-    {
-        /// Never read hive partition columns from the data file. This fixes https://github.com/ClickHouse/ClickHouse/issues/87515
-        if (!hive_parameters.hive_partition_columns_to_read_from_file_path_map.contains(column.name))
-            info.format_header.insert(ColumnWithTypeAndName{column.type, column.name});
-    }
+    info.format_header = storage_snapshot->getSampleBlockForColumns(info.columns_description.getNamesOfPhysical());
 
     info.serialization_hints = getSerializationHintsForFileLikeStorage(storage_snapshot->metadata, context);
 
@@ -294,20 +289,20 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
 SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
     if (!context->getSettingsRef()[Setting::enable_parsing_to_custom_serialization])
-        return SerializationInfoByName{{}};
+        return {};
 
     auto insertion_table = context->getInsertionTable();
     if (!insertion_table)
-        return SerializationInfoByName{{}};
+        return {};
 
     auto storage_ptr = DatabaseCatalog::instance().tryGetTable(insertion_table, context);
     if (!storage_ptr)
-        return SerializationInfoByName{{}};
+        return {};
 
     const auto & our_columns = metadata_snapshot->getColumns();
     const auto & storage_columns = storage_ptr->getInMemoryMetadataPtr()->getColumns();
     auto storage_hints = storage_ptr->getSerializationHints();
-    SerializationInfoByName res({});
+    SerializationInfoByName res;
 
     for (const auto & hint : storage_hints)
     {
@@ -322,7 +317,7 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
     format_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
-    writeStringBinary(columns_description.toString(false), ctx.out);
+    writeStringBinary(columns_description.toString(), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
     serialization_hints.writeJSON(ctx.out);
@@ -364,7 +359,7 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
     readString(json, ctx.in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), SerializationInfoSettings{}, json);
 
     ctx.in >> "\n";
 

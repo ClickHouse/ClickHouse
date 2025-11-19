@@ -197,14 +197,9 @@ void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWit
     object_storage->listObjects(path, children, max_keys);
 }
 
-ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
+ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
 {
-    return object_storage->getObjectMetadata(path, with_tags);
-}
-
-std::optional<ObjectMetadata> CachedObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
-{
-    return object_storage->tryGetObjectMetadata(path, with_tags);
+    return object_storage->getObjectMetadata(path);
 }
 
 void CachedObjectStorage::shutdown()

@@ -150,6 +150,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             tmp_requested_column_names);
 
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
             .withSubcolumns(storage.supportsSubcolumns());
 
         NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);
@@ -158,7 +159,6 @@ void MergeTreeLazilyReader::readLazyColumns(
             data_part_info,
             columns_for_reader,
             storage_snapshot,
-            storage.getSettings(),
             mark_ranges,
             /*virtual_fields=*/ {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
@@ -198,7 +198,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             reader->performRequiredConversions(columns_to_read);
 
             for (auto & col : columns_to_read)
-                col = removeSpecialRepresentations(col->convertToFullColumnIfConst());
+                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < columns_size; ++i)
                 lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);
@@ -263,10 +263,11 @@ void MergeTreeLazilyReader::transformLazyColumns(
     const size_t rows_size = row_num_column->size();
 
     ReadSettings read_settings;
+    read_settings.direct_io_threshold = 1;
     MergeTreeReaderSettings reader_settings =
     {
         .read_settings = read_settings,
-        .save_marks_in_cache = true,
+        .save_marks_in_cache = false,
     };
 
     MutableColumns lazily_read_columns;

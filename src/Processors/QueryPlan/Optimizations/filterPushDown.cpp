@@ -6,26 +6,23 @@
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
-#include <Processors/QueryPlan/CommonSubplanStep.h>
-#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
-
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/CustomMetricLogViewStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -237,13 +234,6 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
-std::optional<ActionsDAG> tryToExtractPartialPredicate(
-    const ActionsDAG & original_dag,
-    const std::string & filter_name,
-    const Names & available_columns);
-
-void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
-
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
 {
     auto & parent = parent_node->step;
@@ -290,12 +280,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
         return 0;
     if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Full)
-        return 0;
-
-    /// PASTE JOIN aligns rows from both sides by position, and pushing filters
-    /// to either side may change relative alignment
-    if ((table_join_ptr && table_join_ptr->kind() == JoinKind::Paste)
-        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
@@ -498,58 +482,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
             parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
-            filter = nullptr;
         }
         else
         {
             filter->updateInputHeader(child->getOutputHeader());
         }
-    }
-
-    const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
-    if (filter && disj_pushdown_enabled)
-    {
-        if ((join && join->isDisjunctionsOptimizationApplied()) ||
-            (logical_join && logical_join->isDisjunctionsOptimizationApplied()) ||
-            (filled_join && filled_join->isDisjunctionsOptimizationApplied()))
-        {
-            return updated_steps;
-        }
-
-        {
-            auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_available_columns_to_push_down);
-            if (left_partial_filter_dag.has_value())
-            {
-                const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
-                addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
-                ++updated_steps;
-                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
-                    "Pushed down partial filter {} to the {} side of join",
-                    partial_predicate_column_name,
-                    JoinKind::Left);
-            }
-        }
-
-        {
-            auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_available_columns_to_push_down);
-            if (right_partial_filter_dag.has_value())
-            {
-                const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
-                addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
-                ++updated_steps;
-                LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
-                    "Pushed down partial filter {} to the {} side of join",
-                    partial_predicate_column_name,
-                    JoinKind::Right);
-            }
-        }
-
-        if (join)
-            join->setDisjunctionsOptimizationApplied(true);
-        if (logical_join)
-            logical_join->setDisjunctionsOptimizationApplied(true);
-        if (filled_join)
-            filled_join->setDisjunctionsOptimizationApplied(true);
     }
 
     return updated_steps;
@@ -693,9 +630,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<DistinctStep>(parent_node, true, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = simplePushDownOverStep<BuildRuntimeFilterStep>(parent_node, true, nodes, child))
-        return updated_steps;
-
     if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
         return updated_steps;
 
@@ -784,9 +718,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         std::swap(*parent_node, *child_node);
         return 1;
     }
-
-    if (auto updated_steps = simplePushDownOverStep<CommonSubplanStep>(parent_node, false, nodes, child))
-        return updated_steps;
 
     return 0;
 }
