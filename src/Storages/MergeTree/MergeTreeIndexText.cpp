@@ -15,6 +15,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
@@ -318,7 +319,7 @@ TextIndexHeaderPtr deserializeHeader(
 
     if (condition_text.useHeaderCache())
         return condition_text.headerCache()->getOrSet(
-            TextIndexHeaderCache::hash(state.path_to_data_part, state.index_name, state.index_mark), load_header);
+            TextIndexHeaderCache::hash(state.part->getDataPartStorage().getFullPath(), state.index->getFileName(), state.index_mark), load_header);
 
     return load_header();
 }
@@ -466,7 +467,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
         if (condition_text.useDictionaryBlockCache())
             return condition_text.dictionaryBlockCache()->getOrSet(
-                TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id),
+                TextIndexDictionaryBlockCache::hash(state.part->getDataPartStorage().getFullPath(), state.index->getFileName(), state.index_mark, block_id),
                 load_dictionary_block);
 
         return load_dictionary_block();
