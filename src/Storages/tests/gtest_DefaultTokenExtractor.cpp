@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
+#include <Interpreters/ITokenExtractor.h>
 
 #include <Common/PODArray.h>
 
@@ -61,12 +61,12 @@ TEST_P(DefaultTokenExtractorTest, next)
     for (const auto & expected_token : param.tokens)
     {
         SCOPED_TRACE(++i);
-        ASSERT_TRUE(token_extractor.nextInStringPadded(data->data(), data->size(), &pos, &token_start, &token_len));
+        ASSERT_TRUE(token_extractor.nextInString(data->data(), data->size(), &pos, &token_start, &token_len));
 
         EXPECT_EQ(expected_token, std::string_view(data->data() + token_start, token_len))
                 << " token_start:" << token_start << " token_len: " << token_len;
     }
-    ASSERT_FALSE(token_extractor.nextInStringPadded(data->data(), data->size(), &pos, &token_start, &token_len))
+    ASSERT_FALSE(token_extractor.nextInString(data->data(), data->size(), &pos, &token_start, &token_len))
             << "\n\t=> \"" << param.source.substr(token_start, token_len) << "\""
             << "\n\t" << token_start << ", " << token_len << ", " << pos << ", " << data->size();
 }

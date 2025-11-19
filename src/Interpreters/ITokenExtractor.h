@@ -457,10 +457,7 @@ void forEachToken(const ITokenExtractor & extractor, const char * __restrict dat
             const auto & ngram_extractor = assert_cast<const NgramTokenExtractor &>(extractor);
 
             if (length < ngram_extractor.getN())
-            {
-                callback(data, length);
                 return;
-            }
 
             detail::forEachTokenImpl(ngram_extractor, data, length, callback);
             return;
