@@ -2,9 +2,11 @@
 name: Build and Publish
 
 on:
-  push
+#  push:
 #    tags:
 #      - "v*"
+  pull_request:
+    branches: ['master']
 
 jobs:
   build:
