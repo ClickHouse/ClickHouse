@@ -1941,7 +1941,7 @@ def test_mv_false_cyclic_dependency(started_cluster):
         CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
         CREATE TABLE {db_name}.table_1 (id Int32) ENGINE = MergeTree ORDER BY id;
         CREATE MATERIALIZED VIEW {db_name}.table_2 (id Int32) ENGINE = MergeTree ORDER BY id AS WITH table_3 AS (SELECT id AS id FROM {db_name}.table_1) SELECT * FROM {db_name}.table_3;
-        CREATE MATERIALIZED VIEW {db_name}.table_3 (id Int32) ENGINE = MergeTree ORDER BY id AS SELECT id AS id FROM table_2;
+        CREATE MATERIALIZED VIEW {db_name}.table_3 (id Int32) ENGINE = MergeTree ORDER BY id AS SELECT id AS id FROM {db_name}.table_2;
         """
     )
     dummy_node.query(
