@@ -302,7 +302,6 @@ SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 #### `has` {#functions-example-has}
 
 Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
-This function also takes advantage of the [Direct Read](#direct-read) optimization.
 
 Example:
 
