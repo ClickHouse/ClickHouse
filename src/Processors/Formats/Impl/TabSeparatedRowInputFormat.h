@@ -19,7 +19,7 @@ public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    TabSeparatedRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                                bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
@@ -28,7 +28,7 @@ public:
     void resetReadBuffer() override;
 
 private:
-    TabSeparatedRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
+    TabSeparatedRowInputFormat(SharedHeader header_, std::unique_ptr<PeekableReadBuffer> in_, const Params & params_,
                                bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
 
     bool allowSyncAfterError() const override { return true; }

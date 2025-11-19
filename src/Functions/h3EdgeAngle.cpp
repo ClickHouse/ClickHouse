@@ -101,7 +101,32 @@ public:
 
 REGISTER_FUNCTION(H3EdgeAngle)
 {
-    factory.registerFunction<FunctionH3EdgeAngle>();
+    FunctionDocumentation::Description description = R"(
+Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3Indexing/) hexagon edge in grades.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3EdgeAngle(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution. Range: `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average length of an [H3](#h3-index) hexagon edge in grades.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get edge angle for resolution 10",
+            "SELECT h3EdgeAngle(10) AS edgeAngle",
+            R"(
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
+└───────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3EdgeAngle>(documentation);
 }
 
 }

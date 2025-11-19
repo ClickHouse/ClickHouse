@@ -509,7 +509,7 @@ def test_replicated_without_arguments(test_cluster):
         "CREATE DATABASE IF NOT EXISTS test_atomic ON CLUSTER cluster ENGINE=Atomic",
     )
     assert (
-        "are supported only for ON CLUSTER queries with Atomic database engine"
+        "only supported when the UUID is explicitly specified"
         in instance.query_and_get_error(
             "CREATE TABLE test_atomic.rmt (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n"
         )
@@ -575,13 +575,13 @@ def test_replicated_without_arguments(test_cluster):
         settings={"allow_deprecated_database_ordinary": 1},
     )
     assert (
-        "are supported only for ON CLUSTER queries with Atomic database engine"
+        "only supported when the UUID is explicitly specified"
         in instance.query_and_get_error(
             "CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree ORDER BY n"
         )
     )
     assert (
-        "are supported only for ON CLUSTER queries with Atomic database engine"
+        "only supported when the UUID is explicitly specified"
         in instance.query_and_get_error(
             "CREATE TABLE test_ordinary.rmt ON CLUSTER cluster (n UInt64, s String) ENGINE=ReplicatedMergeTree('/{shard}/{uuid}/', '{replica}') ORDER BY n"
         )

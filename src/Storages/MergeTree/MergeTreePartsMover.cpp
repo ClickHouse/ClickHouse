@@ -198,7 +198,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         auto min_volume_index = policy->getVolumeIndexByDiskName(move.first->getName()) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
-            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index);
+            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index).value_or(nullptr);
             if (!reservation)
             {
                 /// Next parts to move from this disk has greater size and same min volume index.

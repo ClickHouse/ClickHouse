@@ -3,14 +3,14 @@ services:
     image: zookeeper:3.4.9
     hostname: kafka_zookeeper
     ports:
-      - 2181:2181
+      - 2181
     environment:
       ZOO_MY_ID: 1
       ZOO_PORT: 2181
       ZOO_SERVERS: server.1=kafka_zookeeper:2888:3888
     security_opt:
       - label:disable
-
+    stop_grace_period: 5s
   kafka1:
     image: confluentinc/cp-kafka:5.2.0
     hostname: kafka1
@@ -31,7 +31,7 @@ services:
       - label:disable
     sysctls:
       net.ipv4.ip_local_port_range: '55000 65535'
-
+    stop_grace_period: 5s
   schema-registry:
     image: confluentinc/cp-schema-registry:5.2.0
     hostname: schema-registry
@@ -48,7 +48,7 @@ services:
     restart: always
     security_opt:
       - label:disable
-
+    stop_grace_period: 5s
   schema-registry-auth:
     image: confluentinc/cp-schema-registry:5.2.0
     hostname: schema-registry-auth
@@ -71,3 +71,4 @@ services:
     restart: always
     security_opt:
       - label:disable
+    stop_grace_period: 5s

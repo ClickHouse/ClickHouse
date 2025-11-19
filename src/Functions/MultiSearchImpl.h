@@ -58,7 +58,7 @@ struct MultiSearchImpl
             for (size_t j = 0; j < input_rows_count; ++j)
             {
                 const auto * haystack = &haystack_data[prev_haystack_offset];
-                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset - 1;
+                const auto * haystack_end = haystack + haystack_offsets[j] - prev_haystack_offset;
                 if (iteration == 0 || !res[j])
                     res[j] = searcher.searchOne(haystack, haystack_end);
                 prev_haystack_offset = haystack_offsets[j];
@@ -99,7 +99,7 @@ struct MultiSearchImpl
                 needles.emplace_back(needles_data_string.getDataAt(j).toView());
 
             const auto * const haystack = &haystack_data[prev_haystack_offset];
-            const size_t haystack_length = haystack_offsets[i] - prev_haystack_offset - 1;
+            const size_t haystack_length = haystack_offsets[i] - prev_haystack_offset;
 
             size_t iteration = 0;
             for (const auto & needle : needles)

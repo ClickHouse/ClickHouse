@@ -60,6 +60,8 @@ struct SelectQueryOptions
     bool build_logical_plan = false;
     bool ignore_rename_columns = false;
 
+    size_t max_step_description_length = 0;
+
     /** During read from MergeTree parts will be removed from snapshot after they are not needed.
       * This optimization will break subsequent execution of the same query tree, because table node
       * will no more have valid snapshot.

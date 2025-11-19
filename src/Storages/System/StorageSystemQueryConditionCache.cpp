@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
+#include <shared_mutex>
+
 
 namespace DB
 {
@@ -51,7 +53,7 @@ void StorageSystemQueryConditionCache::fillData(MutableColumns & res_columns, Co
         res_columns[1]->insert(key.part_name);
         res_columns[2]->insert(key.condition);
         res_columns[3]->insert(key.condition_hash);
-        res_columns[4]->insert(QueryConditionCache::QueryConditionCacheEntryWeight()(*entry));
+        res_columns[4]->insert(QueryConditionCache::EntryWeight()(*entry));
 
         std::shared_lock lock(entry->mutex);
         res_columns[5]->insert(to_string(entry->matching_marks));

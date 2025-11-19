@@ -7,6 +7,7 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {

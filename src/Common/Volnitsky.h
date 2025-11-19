@@ -162,7 +162,7 @@ namespace VolnitskyTraits
                 const auto * seq_pos = pos;
                 UTF8::syncBackward(seq_pos, begin);
 
-                auto u32 = UTF8::convertUTF8ToCodePoint(seq_pos, end - seq_pos);
+                auto u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(seq_pos), end - seq_pos);
                 /// Invalid UTF-8
                 if (!u32)
                 {
@@ -184,10 +184,10 @@ namespace VolnitskyTraits
                         size_t seq_ngram_offset = pos - seq_pos;
 
                         Seq seq_l;
-                        size_t length_l = UTF8::convertCodePointToUTF8(l_u32, seq_l, sizeof(seq_l));
+                        size_t length_l = UTF8::convertCodePointToUTF8(l_u32, reinterpret_cast<char *>(seq_l), sizeof(seq_l));
 
                         Seq seq_r;
-                        size_t length_r = UTF8::convertCodePointToUTF8(u_u32, seq_r, sizeof(seq_r));
+                        size_t length_r = UTF8::convertCodePointToUTF8(u_u32, reinterpret_cast<char *>(seq_r), sizeof(seq_r));
 
                         if (length_l != length_r)
                             return false;
@@ -215,7 +215,7 @@ namespace VolnitskyTraits
                 /// where is the given ngram in respect to the start of first UTF-8 sequence?
                 size_t seq_ngram_offset = pos - first_seq_pos;
 
-                auto first_u32 = UTF8::convertUTF8ToCodePoint(first_seq_pos, end - first_seq_pos);
+                auto first_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(first_seq_pos), end - first_seq_pos);
                 int first_l_u32 = 0;
                 int first_u_u32 = 0;
 
@@ -228,7 +228,7 @@ namespace VolnitskyTraits
                 /// second sequence always start immediately after u_pos
                 const auto * second_seq_pos = pos + 1;
 
-                auto second_u32 = UTF8::convertUTF8ToCodePoint(second_seq_pos, end - second_seq_pos);
+                auto second_u32 = UTF8::convertUTF8ToCodePoint(reinterpret_cast<const char *>(second_seq_pos), end - second_seq_pos);
                 int second_l_u32 = 0;
                 int second_u_u32 = 0;
 
@@ -247,10 +247,10 @@ namespace VolnitskyTraits
                 {
                     /// first symbol is case-independent
                     Seq seq_l;
-                    size_t size_l = UTF8::convertCodePointToUTF8(second_l_u32, seq_l, sizeof(seq_l));
+                    size_t size_l = UTF8::convertCodePointToUTF8(second_l_u32, reinterpret_cast<char *>(seq_l), sizeof(seq_l));
 
                     Seq seq_u;
-                    size_t size_u = UTF8::convertCodePointToUTF8(second_u_u32, seq_u, sizeof(seq_u));
+                    size_t size_u = UTF8::convertCodePointToUTF8(second_u_u32, reinterpret_cast<char *>(seq_u), sizeof(seq_u));
 
                     if (size_l != size_u)
                         return false;
@@ -273,9 +273,9 @@ namespace VolnitskyTraits
                     /// second symbol is case-independent
 
                     Seq seq_l;
-                    size_t size_l = UTF8::convertCodePointToUTF8(first_l_u32, seq_l, sizeof(seq_l));
+                    size_t size_l = UTF8::convertCodePointToUTF8(first_l_u32, reinterpret_cast<char *>(seq_l), sizeof(seq_l));
                     Seq seq_u;
-                    size_t size_u = UTF8::convertCodePointToUTF8(first_u_u32, seq_u, sizeof(seq_u));
+                    size_t size_u = UTF8::convertCodePointToUTF8(first_u_u32, reinterpret_cast<char *>(seq_u), sizeof(seq_u));
 
                     if (size_l != size_u)
                         return false;
@@ -300,10 +300,10 @@ namespace VolnitskyTraits
                     Seq second_l_seq;
                     Seq second_u_seq;
 
-                    size_t size_first_l = UTF8::convertCodePointToUTF8(first_l_u32, first_l_seq, sizeof(first_l_seq));
-                    size_t size_first_u = UTF8::convertCodePointToUTF8(first_u_u32, first_u_seq, sizeof(first_u_seq));
-                    size_t size_second_l = UTF8::convertCodePointToUTF8(second_l_u32, second_l_seq, sizeof(second_l_seq));
-                    size_t size_second_u = UTF8::convertCodePointToUTF8(second_u_u32, second_u_seq, sizeof(second_u_seq));
+                    size_t size_first_l = UTF8::convertCodePointToUTF8(first_l_u32, reinterpret_cast<char *>(first_l_seq), sizeof(first_l_seq));
+                    size_t size_first_u = UTF8::convertCodePointToUTF8(first_u_u32, reinterpret_cast<char *>(first_u_seq), sizeof(first_u_seq));
+                    size_t size_second_l = UTF8::convertCodePointToUTF8(second_l_u32, reinterpret_cast<char *>(second_l_seq), sizeof(second_l_seq));
+                    size_t size_second_u = UTF8::convertCodePointToUTF8(second_u_u32, reinterpret_cast<char *>(second_u_seq), sizeof(second_u_seq));
                     if (size_first_l != size_first_u || size_second_l != size_second_u)
                         return false;
 
@@ -398,9 +398,9 @@ public:
         : needle{reinterpret_cast<const UInt8 *>(needle_)}
         , needle_size{needle_size_}
         , fallback{VolnitskyTraits::isFallbackNeedle(needle_size, haystack_size_hint)}
-        , fallback_searcher{needle_, needle_size}
+        , fallback_searcher{needle, needle_size}
     {
-        if (fallback || fallback_searcher.force_fallback)
+        if (fallback || fallback_searcher.getForceFallback())
             return;
 
         hash = std::make_unique<VolnitskyTraits::Offset[]>(VolnitskyTraits::hash_size);
@@ -418,7 +418,7 @@ public:
               */
             if (!ok)
             {
-                fallback_searcher.force_fallback = true;
+                fallback_searcher.setForceFallback(true);
                 hash = nullptr;
                 return;
             }
@@ -438,7 +438,7 @@ public:
         return fallback_searcher.search(haystack, haystack_end);
 #endif
 
-        if (fallback || haystack_size <= needle_size || fallback_searcher.force_fallback)
+        if (fallback || haystack_size <= needle_size || fallback_searcher.getForceFallback())
             return fallback_searcher.search(haystack, haystack_end);
 
         /// Let's "apply" the needle to the haystack and compare the n-gram from the end of the needle.
@@ -463,7 +463,7 @@ public:
 
     const char * search(const char * haystack, size_t haystack_size) const
     {
-        return reinterpret_cast<const char *>(search(reinterpret_cast<const UInt8 *>(haystack), haystack_size));
+        return reinterpret_cast<const char *>(search(haystack, haystack + haystack_size));
     }
 
 protected:
@@ -577,7 +577,7 @@ public:
                         callback);
                 }
             }
-            fallback_searchers.emplace_back(cur_needle_data, cur_needle_size);
+            fallback_searchers.emplace_back(reinterpret_cast<const UInt8 *>(cur_needle_data), cur_needle_size);
         }
         return true;
     }

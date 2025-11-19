@@ -329,7 +329,16 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    auto expanded_cluster_name = macros_->expand(cluster_name);
+    std::string expanded_cluster_name;
+    try
+    {
+        expanded_cluster_name = macros_->expand(cluster_name);
+    }
+    catch (Exception & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to expand macros in cluster name: {}", e.message());
+    }
+
     auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }
@@ -582,6 +591,9 @@ Cluster::Cluster(
 
     for (const auto & shard : names)
     {
+        if (shard.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shard contains zero number of replicas");
+
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(

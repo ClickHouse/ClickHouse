@@ -22,8 +22,9 @@
 
 namespace DB::ErrorCodes
 {
-extern const int CANNOT_UNPACK_ARCHIVE;
-extern const int LOGICAL_ERROR;
+    extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace fs = std::filesystem;

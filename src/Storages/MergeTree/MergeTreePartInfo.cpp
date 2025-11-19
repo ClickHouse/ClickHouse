@@ -5,6 +5,7 @@
 #include <Common/DateLUTImpl.h>
 #include <Core/ProtocolDefines.h>
 #include <Parsers/ASTLiteral.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 namespace DB
 {
@@ -49,7 +50,11 @@ void MergeTreePartInfo::validatePartitionID(const ASTPtr & partition_id_ast, Mer
         if (!std::all_of(partition_id.begin(), partition_id.end(), is_valid_char))
             throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Invalid partition format: {}", partition_id);
     }
+}
 
+String MergeTreePartInfo::getOriginalPartitionId() const
+{
+    return isPatch() ? getOriginalPartitionIdOfPatch(partition_id) : partition_id;
 }
 
 std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(

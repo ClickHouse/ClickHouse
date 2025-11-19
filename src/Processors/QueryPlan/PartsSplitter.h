@@ -1,12 +1,9 @@
 #pragma once
 
-#include <functional>
-
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-
 
 namespace DB
 {

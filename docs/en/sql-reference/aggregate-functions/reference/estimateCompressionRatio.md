@@ -4,6 +4,7 @@ description: 'Estimates the compression ratio of a given column without compress
 sidebar_position: 132
 slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
 title: 'estimateCompressionRatio'
+doc_type: 'reference'
 ---
 
 ## estimateCompressionRatio {#estimatecompressionration}
@@ -83,4 +84,3 @@ SELECT estimateCompressionRatio('T64, ZSTD')(number) AS estimate FROM compressio
 │ 143.60078980434392 │
 └────────────────────┘
 ```
-

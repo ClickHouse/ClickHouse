@@ -5,6 +5,7 @@ S3CreateMultipartUpload	1
 S3HeadObject	2
 S3ReadRequestsCount	2
 S3UploadPart	1
+S3WriteRequestAttempts	3
 Successful write requests	3
 CHECK WITH query_log
 QueryFinish	S3CreateMultipartUpload	1	S3UploadPart	1	S3CompleteMultipartUpload	1	S3PutObject	0

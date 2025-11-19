@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-flaky-check, no-msan
 # Tag no-flaky-check -- not compatible with ThreadFuzzer
+# Tag no-msan -- too long for MSAN
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

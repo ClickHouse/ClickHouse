@@ -3,7 +3,7 @@
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include "ICommand.h"
+#include <ICommand.h>
 #include <Common/logger_useful.h>
 
 namespace DB

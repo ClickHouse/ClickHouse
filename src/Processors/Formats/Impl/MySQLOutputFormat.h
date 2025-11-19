@@ -18,7 +18,7 @@ struct FormatSettings;
 class MySQLOutputFormat final : public IOutputFormat, WithContext
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    MySQLOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 

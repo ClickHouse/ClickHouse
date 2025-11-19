@@ -15,7 +15,6 @@ namespace DB
 
 struct Settings;
 class Cluster;
-class Throttler;
 struct SelectQueryInfo;
 
 class Pipe;
@@ -62,9 +61,7 @@ public:
 
         /// Used to check the table existence on remote node
         StorageID main_table;
-        Block header;
-
-        bool has_missing_objects = false;
+        SharedHeader header;
 
         Cluster::ShardInfo shard_info;
 
@@ -77,8 +74,7 @@ public:
     using Shards = std::vector<Shard>;
 
     SelectStreamFactory(
-        const Block & header_,
-        const ColumnsDescriptionByShardNum & objects_by_shard_,
+        SharedHeader header_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
 
@@ -106,8 +102,7 @@ public:
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator);
 
-    const Block header;
-    const ColumnsDescriptionByShardNum objects_by_shard;
+    SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
 
@@ -123,8 +118,7 @@ private:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false);
+        AdditionalShardFilterGenerator shard_filter_generator) const;
 };
 
 }

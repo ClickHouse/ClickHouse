@@ -11,7 +11,7 @@ namespace DB
 {
 
 
-ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
+ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
 }
@@ -47,9 +47,10 @@ void registerOutputFormatValues(FormatFactory & factory)
     factory.registerOutputFormat("Values", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<ValuesRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<ValuesRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Values");

@@ -11,7 +11,7 @@ namespace DB
 class MySQLDumpRowInputFormat final : public IRowInputFormat
 {
 public:
-    MySQLDumpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+    MySQLDumpRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "MySQLDumpRowInputFormat"; }
     void readPrefix() override;

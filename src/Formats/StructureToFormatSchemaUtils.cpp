@@ -110,7 +110,7 @@ NamesAndTypesList getCollectedTupleElements(const DataTypeTuple & tuple_type, bo
 {
     const auto & nested_types = tuple_type.getElements();
     Names nested_names;
-    if (tuple_type.haveExplicitNames())
+    if (tuple_type.hasExplicitNames())
     {
         nested_names = tuple_type.getElementNames();
     }

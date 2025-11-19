@@ -16,7 +16,7 @@ class ReadBuffer;
 class LineAsStringRowInputFormat final : public IRowInputFormat
 {
 public:
-    LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    LineAsStringRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_);
 
     String getName() const override { return "LineAsStringRowInputFormat"; }
     void resetParser() override;

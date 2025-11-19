@@ -220,12 +220,71 @@ public:
 
 REGISTER_FUNCTION(Substring)
 {
-    factory.registerFunction<FunctionSubstring<false>>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns the substring of a string `s` which starts at the specified byte index `offset`.
+Byte counting starts from 1 with the following logic:
+- If `offset` is `0`, an empty string is returned.
+- If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning.
+
+An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+)";
+    FunctionDocumentation::Syntax syntax = "substring(s, offset[, length])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The string to calculate a substring from.", {"String", "FixedString", "Enum"}},
+        {"offset", "The starting position of the substring in `s`.", {"(U)Int*"}},
+        {"length", "Optional. The maximum length of the substring.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a substring of `s` with `length` many bytes, starting at index `offset`.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Basic usage",
+        "SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)",
+        R"(
+┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
+│ database │ base                     │ b                           │
+└──────────┴──────────────────────────┴─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    FunctionDocumentation::Description description_utf8 = R"(
+Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points.
+Byte counting starts from `1` with the following logic:
+- If `offset` is `0`, an empty string is returned.
+- If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning.
+
+An optional argument `length` specifies the maximum number of bytes the returned substring may have.
+
+:::note
+This function assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
+:::
+)";
+    FunctionDocumentation::Syntax syntax_utf8 = "substringUTF8(s, offset[, length])";
+    FunctionDocumentation::Arguments arguments_utf8 = {
+        {"s", "The string to calculate a substring from.", {"String", "FixedString", "Enum"}},
+        {"offset", "The starting position of the substring in `s`.", {"Int", "UInt"}},
+        {"length", "The maximum length of the substring. Optional.", {"Int", "UInt"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_utf8 = {"Returns a substring of `s` with `length` many bytes, starting at index `offset`.", {"String"}};
+    FunctionDocumentation::Examples examples_utf8 = {
+    {
+        "Usage example",
+        "SELECT 'Täglich grüßt das Murmeltier.' AS str, substringUTF8(str, 9), substringUTF8(str, 9, 5)",
+        "Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt"
+    }
+    };
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, returned_value_utf8, examples_utf8, introduced_in, category};
+
+    factory.registerFunction<FunctionSubstring<false>>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerAlias("substr", "substring", FunctionFactory::Case::Insensitive); // MySQL alias
     factory.registerAlias("mid", "substring", FunctionFactory::Case::Insensitive); /// MySQL alias
     factory.registerAlias("byteSlice", "substring", FunctionFactory::Case::Insensitive); /// resembles PostgreSQL's get_byte function, similar to ClickHouse's bitSlice
 
-    factory.registerFunction<FunctionSubstring<true>>();
+    factory.registerFunction<FunctionSubstring<true>>(documentation_utf8);
 }
 
 }

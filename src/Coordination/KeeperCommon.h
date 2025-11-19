@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/StringRef.h>
 #include <Common/Logger.h>
 
 #include <functional>
@@ -62,10 +61,6 @@ struct KeeperRequestForSession
     bool use_xid_64{false};
 };
 using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
-
-StringRef parentNodePath(StringRef path);
-
-StringRef getBaseNodeName(StringRef path);
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 

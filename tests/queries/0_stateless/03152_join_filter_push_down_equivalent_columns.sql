@@ -1,4 +1,5 @@
 SET enable_analyzer = 1;
+SET query_plan_join_swap_table = false;
 
 DROP TABLE IF EXISTS users;
 CREATE TABLE users (uid Int16, name String, age Int16) ENGINE=MergeTree order by (uid, name);

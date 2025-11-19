@@ -1,12 +1,14 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/re2.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -16,6 +18,31 @@ namespace DB
 
 namespace
 {
+    bool parseParameterRegExp(IParser::Pos & pos, Expected & expected, String & parameter_regexp)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+                return true;
+
+            if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
+                return false;
+
+            re2::RE2::Options options;
+            options.set_log_errors(false);
+            if (const re2::RE2 re(parameter_regexp, options); !re.ok())
+            {
+                expected.add(pos, "valid regexp");
+                return false;
+            }
+
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+                return false;
+
+            return true;
+        });
+    }
+
     bool parseColumnNames(IParser::Pos & pos, Expected & expected, Strings & columns)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -120,6 +147,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             String database_name;
             String table_name;
             String parameter;
+            String filter;
 
             size_t is_global_with_parameter = 0;
             for (const auto & elem : access_and_columns)
@@ -150,8 +178,23 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                         return false;
                 }
 
+                auto add_to_expected = [&](const char * name) { expected.add(pos, name); };
+                for (const auto & elem : access_and_columns)
+                {
+                    if (!elem.first.validateParameter(parameter, add_to_expected))
+                        return false;
+                }
+
                 if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     wildcard = true;
+
+                /// GRANT READ ON S3('s3://foo/*')
+                if (!parseParameterRegExp(pos, expected, filter))
+                    return false;
+
+                /// GRANT READ ON *(foo) is prohibited.
+                if ((wildcard || parameter.empty()) && !filter.empty())
+                    return false;
             }
             else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                 return false;
@@ -167,6 +210,8 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                 element.database = database_name;
                 element.table = table_name;
                 element.parameter = parameter;
+                element.filter = filter;
+
                 element.wildcard = wildcard;
                 element.default_database = default_database;
                 res_elements.emplace_back(std::move(element));
@@ -178,6 +223,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
         if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
             return false;
 
+        res_elements.replaceDeprecated();
         elements = std::move(res_elements);
         return true;
     });

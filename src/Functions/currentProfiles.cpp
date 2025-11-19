@@ -107,9 +107,78 @@ namespace
 
 REGISTER_FUNCTION(Profiles)
 {
-    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); });
-    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); });
-    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); });
+    FunctionDocumentation::Description description_currentProfiles = R"(
+Returns an array of the setting profiles for the current user.
+)";
+    FunctionDocumentation::Syntax syntax_currentProfiles = "currentProfiles()";
+    FunctionDocumentation::Arguments arguments_currentProfiles = {};
+    FunctionDocumentation::ReturnedValue returned_value_currentProfiles = {"Returns an array of setting profiles for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_currentProfiles = {
+    {
+        "Usage example",
+        R"(
+SELECT currentProfiles();
+        )",
+        R"(
+┌─currentProfiles()─────────────────────────────┐
+│ ['default', 'readonly_user', 'web_analytics'] │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_currentProfiles = {21, 9};
+    FunctionDocumentation::Category category_currentProfiles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_currentProfiles = {description_currentProfiles, syntax_currentProfiles, arguments_currentProfiles, returned_value_currentProfiles, examples_currentProfiles, introduced_in_currentProfiles, category_currentProfiles};
+
+    FunctionDocumentation::Description description_enabledProfiles = R"(
+Returns an array of setting profile names which are enabled for the current user.
+)";
+    FunctionDocumentation::Syntax syntax_enabledProfiles = "enabledProfiles()";
+    FunctionDocumentation::Arguments arguments_enabledProfiles = {};
+    FunctionDocumentation::ReturnedValue returned_value_enabledProfiles = {"Returns an array of setting profile names which are enabled for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_enabledProfiles = {
+    {
+        "Usage example",
+        R"(
+SELECT enabledProfiles();
+        )",
+        R"(
+┌─enabledProfiles()─────────────────────────────────────────────────┐
+│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
+└───────────────────────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_enabledProfiles = {21, 9};
+    FunctionDocumentation::Category category_enabledProfiles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_enabledProfiles = {description_enabledProfiles, syntax_enabledProfiles, arguments_enabledProfiles, returned_value_enabledProfiles, examples_enabledProfiles, introduced_in_enabledProfiles, category_enabledProfiles};
+
+    FunctionDocumentation::Description description_defaultProfiles = R"(
+Returns an array of default setting profile names for the current user.
+)";
+    FunctionDocumentation::Syntax syntax_defaultProfiles = "defaultProfiles()";
+    FunctionDocumentation::Arguments arguments_defaultProfiles = {};
+    FunctionDocumentation::ReturnedValue returned_value_defaultProfiles = {"Returns an array of default setting profile names for the current user.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples_defaultProfiles = {
+    {
+        "Usage example",
+        R"(
+SELECT defaultProfiles();
+        )",
+        R"(
+┌─defaultProfiles()─┐
+│ ['default']       │
+└───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_defaultProfiles = {21, 9};
+    FunctionDocumentation::Category category_defaultProfiles = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_defaultProfiles = {description_defaultProfiles, syntax_defaultProfiles, arguments_defaultProfiles, returned_value_defaultProfiles, examples_defaultProfiles, introduced_in_defaultProfiles, category_defaultProfiles};
+
+    factory.registerFunction("currentProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::currentProfiles); }, documentation_currentProfiles);
+    factory.registerFunction("enabledProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::enabledProfiles); }, documentation_enabledProfiles);
+    factory.registerFunction("defaultProfiles", [](ContextPtr context){ return std::make_shared<FunctionProfiles>(context, Kind::defaultProfiles); }, documentation_defaultProfiles);
 }
 
 }

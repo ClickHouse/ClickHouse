@@ -19,18 +19,12 @@ static void inline hexStringDecode(const char * pos, const char * end, char *& o
         pos += word_size;
         ++out;
     }
-    *out = '\0';
-    ++out;
 }
 
 static void inline binStringDecode(const char * pos, const char * end, char *& out, size_t word_size)
 {
     if (pos == end)
-    {
-        *out = '\0';
-        ++out;
         return;
-    }
 
     UInt8 left = 0;
 
@@ -68,9 +62,6 @@ static void inline binStringDecode(const char * pos, const char * end, char *& o
         *out = c;
         ++out;
     }
-
-    *out = '\0';
-    ++out;
 }
 
 }

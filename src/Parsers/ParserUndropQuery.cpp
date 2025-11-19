@@ -2,7 +2,7 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
-#include "Parsers/ASTLiteral.h"
+#include <Parsers/ASTLiteral.h>
 
 
 namespace DB

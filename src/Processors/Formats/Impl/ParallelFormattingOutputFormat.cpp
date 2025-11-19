@@ -9,7 +9,6 @@ namespace DB
 {
     void ParallelFormattingOutputFormat::finalizeImpl()
     {
-        need_flush = true;
         /// Don't throw any background_exception here, because we want to finalize the execution.
         /// Exception will be checked after main thread is finished.
         addChunk(Chunk{}, ProcessingUnitType::FINALIZE, /*can_throw_exception*/ false);
@@ -130,7 +129,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::collectorThreadFunction(const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, "Collector");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER_COLLECTOR);
 
         try
         {
@@ -156,7 +155,7 @@ namespace DB
                 /// Do main work here.
                 out.write(unit.segment.data(), unit.actual_memory_size);
 
-                if (need_flush.exchange(false) || auto_flush)
+                if (auto_flush || need_flush.exchange(false) || unit.type == ProcessingUnitType::FINALIZE)
                     out.next();
 
                 ++collector_unit_number;
@@ -195,7 +194,7 @@ namespace DB
 
     void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupPtr & thread_group)
     {
-        ThreadGroupSwitcher switcher(thread_group, "Formatter");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PARALLEL_FORMATER);
 
         try
         {

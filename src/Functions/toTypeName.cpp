@@ -77,7 +77,33 @@ private:
 
 REGISTER_FUNCTION(ToTypeName)
 {
-    factory.registerFunction<FunctionToTypeName>();
+    FunctionDocumentation::Description description = R"(
+Returns the type name of the passed argument.
+If `NULL` is passed, the function returns type `Nullable(Nothing)`, which corresponds to ClickHouse's internal `NULL` representation.
+    )";
+    FunctionDocumentation::Syntax syntax = "toTypeName(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "A value of arbitrary type.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the data type name of the input value.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT toTypeName(123)
+        )",
+        R"(
+┌─toTypeName(123)─┐
+│ UInt8           │
+└─────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionToTypeName>(documentation);
 }
 
 }

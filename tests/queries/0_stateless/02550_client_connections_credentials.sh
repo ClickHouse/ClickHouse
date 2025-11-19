@@ -125,6 +125,7 @@ $CLICKHOUSE_CLIENT --progress off --interactive --config $CONFIG --connection te
 # Just in case
 unset CLICKHOUSE_USER
 unset CLICKHOUSE_PASSWORD
+unset CLICKHOUSE_HOST
 echo 'root overrides'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth --user "default" --password "" -q 'select currentUser()'

@@ -1,6 +1,6 @@
-#include "Generator.h"
-#include "Common/Exception.h"
-#include "Common/ZooKeeper/ZooKeeperCommon.h"
+#include <Generator.h>
+#include <Common/Exception.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <random>
 #include <filesystem>

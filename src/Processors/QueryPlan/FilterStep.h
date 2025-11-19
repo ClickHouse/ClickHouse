@@ -10,7 +10,7 @@ class FilterStep : public ITransformingStep
 {
 public:
     FilterStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         ActionsDAG actions_dag_,
         String filter_column_name_,
         bool remove_filter_column_);
@@ -34,7 +34,7 @@ public:
     const String & getFilterColumnName() const { return filter_column_name; }
     bool removesFilterColumn() const { return remove_filter_column; }
 
-    void setConditionForQueryConditionCache(size_t condition_hash_, const String & condition_);
+    void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     static bool canUseType(const DataTypePtr & type);
 
@@ -55,7 +55,7 @@ private:
     String filter_column_name;
     bool remove_filter_column;
 
-    std::optional<std::pair<size_t, String>> condition; /// for query condition cache
+    std::optional<std::pair<UInt64, String>> condition; /// for query condition cache
 };
 
 }

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-async-insert
+# no-async-insert because correct values for read_rows, read_bytes, written_rows, written_bytes
+# are correct in a "secondary" query with query_kind: AsyncInsertFlush
+
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

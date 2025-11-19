@@ -35,7 +35,9 @@ public:
 
     std::string getName() const override { return RabbitMQ::TABLE_ENGINE_NAME; }
 
-    bool noPushingToViews() const override { return true; }
+    bool isMessageQueue() const override { return true; }
+
+    bool noPushingToViewsOnInserts() const override { return true; }
 
     void startup() override;
     void shutdown(bool is_drop) override;

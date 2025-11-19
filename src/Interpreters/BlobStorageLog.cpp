@@ -66,7 +66,7 @@ void BlobStorageLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(static_cast<Int8>(event_type));
     columns[i++]->insert(query_id);
     columns[i++]->insert(thread_id);
-    columns[i++]->insert(thread_name);
+    columns[i++]->insert(toString(thread_name));
     columns[i++]->insert(disk_name);
     columns[i++]->insert(bucket);
     columns[i++]->insert(remote_path);

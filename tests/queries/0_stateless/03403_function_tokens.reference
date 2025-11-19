@@ -1,0 +1,46 @@
+Constants: tokens should be constant
+Negative tests
+Default tokenizer
+[]	Array(String)	1
+['abc','def','foo','bar','baz','code','hello','world','xäöüx']	Array(String)	1
+['abc','def','foo','bar','baz','code','hello','world','xäöüx']	Array(String)	1
+Ngram tokenizer
+[]	Array(String)	1
+['abc','bc ','c d',' de','def']	Array(String)	1
+['abc','bc ','c d',' de','def']	Array(String)	1
+['abc def']	Array(String)	1
+Split tokenizer
+[]	Array(String)	1
+['  a  bc d']	Array(String)	1
+['a','bc','d']	Array(String)	1
+['a','bc','d']	Array(String)	1
+['a','bc','d']	Array(String)	1
+['a','bc','d']	Array(String)	1
+No-op tokenizer
+[]	Array(String)	1
+['abc def']	Array(String)	1
+Special cases (not systematically tested)
+-- FixedString inputs
+['abc','def','foo','bar','baz','code','hello','world']	Array(String)	1
+-- non-const inputs
+['abc','def','foo','bar','baz','code','hello','world']	Array(String)	0
+Column values: tokens should be non-constant
+Default tokenizer
+['abc','def']	Array(String)	0
+['hello','world']	Array(String)	0
+['xäöüx','code']	Array(String)	0
+Ngram tokenizer
+['abc','bc ','c d',' de','def']	Array(String)	0
+['Cli','lic','ick','ckH','kHo','Hou','ous','use']	Array(String)	0
+Split tokenizer
+['a','bc','d']	Array(String)	0
+['a','bc','d']	Array(String)	0
+No-op tokenizer
+[]	Array(String)	0
+['abc def']	Array(String)	0
+['abc','def','foo','bar','baz','code','hello','world']
+Sparse tokenizer
+[]
+['abc','bc ','c d',' de','c de','bc de','def','bc def','ef ','f c',' cb','f cb','ef cb','cba']
+['abc ','bc d','c de',' def','c def','def ','c def ','bc def ','ef c','f cb','ef cb',' cba']
+['bc def ']

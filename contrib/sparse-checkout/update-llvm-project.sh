@@ -19,8 +19,11 @@ echo '!/libcxx/test/*' >> $FILES_TO_CHECKOUT
 echo '/libunwind/*' >> $FILES_TO_CHECKOUT
 echo '!/libunwind/test/*' >> $FILES_TO_CHECKOUT
 echo '/compiler-rt/*' >> $FILES_TO_CHECKOUT
+echo '/libc/*' >> $FILES_TO_CHECKOUT
+echo '!/libc/test/*' >> $FILES_TO_CHECKOUT
 echo '!/compiler-rt/test/*' >> $FILES_TO_CHECKOUT
 echo '/cmake/*' >> $FILES_TO_CHECKOUT
+echo '/third-party/siphash/*' >> $FILES_TO_CHECKOUT
 
 git config core.sparsecheckout true
 git checkout $1

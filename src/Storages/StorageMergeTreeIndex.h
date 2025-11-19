@@ -19,7 +19,8 @@ public:
         const StorageID & table_id_,
         const StoragePtr & source_table_,
         const ColumnsDescription & columns,
-        bool with_marks_);
+        bool with_marks_,
+        bool with_minmax_);
 
     void read(
         QueryPlan & query_plan,
@@ -40,9 +41,11 @@ private:
 
     StoragePtr source_table;
     bool with_marks;
+    bool with_minmax;
 
     MergeTreeData::DataPartsVector data_parts;
-    Block key_sample_block;
+    SharedHeader key_sample_block;
+    SharedHeader minmax_sample_block;
 };
 
 }

@@ -46,10 +46,12 @@ struct PartLogElement
         NOT_A_MERGE = 1,
         /// Just regular merge
         REGULAR_MERGE = 2,
-        /// Merge assigned to delete some data from parts (with TTLMergeSelector)
+        /// Merge assigned to delete rows from parts
         TTL_DELETE_MERGE = 3,
         /// Merge with recompression
         TTL_RECOMPRESS_MERGE = 4,
+        /// Merge assigned to delete parts completely
+        TTL_DROP_MERGE = 5,
     };
 
     String query_id;
@@ -70,6 +72,7 @@ struct PartLogElement
     String partition;
     String disk_name;
     String path_on_disk;
+    Strings deduplication_block_ids;
 
     MergeTreeDataPartType part_type;
 
@@ -141,10 +144,16 @@ public:
 
     /// Add a record about creation of a new part.
     static bool addNewPart(ContextPtr context, const PartLogEntry & part,
-                           const ExecutionStatus & execution_status = {});
+                            Strings deduplication_block_ids,
+                            const ExecutionStatus & execution_status = {});
 
     static bool addNewParts(ContextPtr context, const PartLogEntries & parts,
                             const ExecutionStatus & execution_status = {});
+
+private:
+    static bool addNewPartsImpl(ContextPtr context, const PartLogEntries & parts,
+                                std::vector<Strings> deduplication_block_ids,
+                                const ExecutionStatus & execution_status);
 };
 
 }

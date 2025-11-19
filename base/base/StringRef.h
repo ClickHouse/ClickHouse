@@ -247,6 +247,11 @@ inline bool operator> (StringRef lhs, StringRef rhs)
 
 struct StringRefHash64
 {
+    size_t operator() (std::string_view x) const
+    {
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
+    }
+
     size_t operator() (StringRef x) const
     {
         return CityHash_v1_0_2::CityHash64(x.data, x.size);
@@ -310,7 +315,8 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef x) const
+    size_t operator()(std::string_view x) const { return (*this)(StringRef{x}); }
+    size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -326,7 +332,7 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        unsigned res = -1U;
+        size_t res = -1U;
 
         do
         {
@@ -339,7 +345,11 @@ struct CRC32Hash
         UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
         res = static_cast<unsigned>(CRC_INT(res, word));
 
-        return res;
+        // abseil-cpp and std require hash functions to return 64-bit values,
+        // though we intentionally use crc32 for the sake of speed.
+        //
+        // Fill upper bits with the same value as the lower ones.
+        return (res << 32) | res;
     }
 };
 
@@ -359,6 +369,7 @@ struct StringRefHash : StringRefHash64 {};
 
 #endif
 
+using StringViewHash = StringRefHash;
 
 namespace std
 {

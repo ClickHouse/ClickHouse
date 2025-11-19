@@ -7,7 +7,7 @@ namespace DB
 
 void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "");
+    ostr << "OPTIMIZE TABLE ";
 
     if (database)
     {
@@ -22,22 +22,22 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
 
     if (partition)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
+        ostr << " PARTITION ";
         partition->format(ostr, settings, state, frame);
     }
 
     if (final)
-        ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
+        ostr << " FINAL";
 
     if (deduplicate)
-        ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
+        ostr << " DEDUPLICATE";
 
     if (cleanup)
-        ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
+        ostr << " CLEANUP";
 
     if (deduplicate_by_columns)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
+        ostr << " BY ";
         deduplicate_by_columns->format(ostr, settings, state, frame);
     }
 }

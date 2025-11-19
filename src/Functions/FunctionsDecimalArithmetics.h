@@ -10,9 +10,6 @@
 #include <Functions/castTypeToEither.h>
 #include <IO/WriteHelpers.h>
 
-#include <Poco/Logger.h>
-#include <Loggers/Loggers.h>
-
 
 namespace DB
 {

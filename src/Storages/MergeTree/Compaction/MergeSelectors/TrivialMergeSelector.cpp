@@ -16,11 +16,14 @@ void registerTrivialMergeSelector(MergeSelectorFactory & factory)
     });
 }
 
-PartsRange TrivialMergeSelector::select(
+PartsRanges TrivialMergeSelector::select(
     const PartsRanges & parts_ranges,
-    size_t max_total_size_to_merge,
-    RangeFilter range_filter) const
+    const MergeSizes & max_merge_sizes,
+    const RangeFilter & range_filter) const
 {
+    chassert(max_merge_sizes.size() == 1, "Multi Select is not supported for TrivialMergeSelector");
+    const size_t max_total_size_to_merge = max_merge_sizes[0];
+
     size_t num_partitions = parts_ranges.size();
     if (num_partitions == 0)
         return {};
@@ -88,9 +91,9 @@ PartsRange TrivialMergeSelector::select(
         return {};
 
     if (candidates.size() == 1)
-        return candidates[0];
+        return {candidates[0]};
 
-    return candidates[thread_local_rng() % candidates.size()];
+    return {candidates[thread_local_rng() % candidates.size()]};
 }
 
 }

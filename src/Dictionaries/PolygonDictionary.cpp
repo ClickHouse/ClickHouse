@@ -1,10 +1,11 @@
-#include "PolygonDictionary.h"
+#include <Dictionaries/PolygonDictionary.h>
 
 #include <cmath>
 
 #include <base/sort.h>
 
 #include <Common/iota.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -238,7 +239,7 @@ Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
         result_columns.emplace_back(column_with_type);
     }
 
-    auto source = std::make_shared<SourceFromSingleChunk>(Block(result_columns));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block(result_columns)));
     return Pipe(std::move(source));
 }
 
@@ -288,13 +289,16 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    BlockIO io = source_ptr->loadAll();
 
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-    Block block;
-    while (executor.pull(block))
-        blockToAttributes(block);
+    DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+    io.pipeline.setConcurrencyControl(false);
+    io.executeWithCallbacks([&]()
+    {
+        Block block;
+        while (executor.pull(block))
+            blockToAttributes(block);
+    });
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;

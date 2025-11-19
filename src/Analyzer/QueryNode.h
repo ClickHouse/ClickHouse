@@ -167,6 +167,16 @@ public:
         is_distinct = is_distinct_value;
     }
 
+    bool isLimitByAll() const
+    {
+        return is_limit_by_all;
+    }
+
+    void setIsLimitByAll(bool is_limit_by_all_value)
+    {
+        is_limit_by_all = is_limit_by_all_value;
+    }
+
     /// Returns true if query node has LIMIT WITH TIES, false otherwise
     bool isLimitWithTies() const
     {
@@ -645,7 +655,11 @@ public:
 
     ColumnNodePtrWithHashSet getCorrelatedColumnsSet() const;
 
-    void addCorrelatedColumn(ColumnNodePtr correlated_column);
+    void addCorrelatedColumn(const QueryTreeNodePtr & correlated_column);
+
+    /// Returns result type of projection expression if query is correlated
+    /// or throws an exception otherwise.
+    DataTypePtr getResultType() const override;
 
     QueryTreeNodeType getNodeType() const override
     {
@@ -660,9 +674,9 @@ public:
     }
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) const override;
 
-    void updateTreeHashImpl(HashState &, CompareOptions) const override;
+    void updateTreeHashImpl(HashState &, CompareOptions options) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -680,6 +694,7 @@ private:
     bool is_group_by_with_grouping_sets = false;
     bool is_group_by_all = false;
     bool is_order_by_all = false;
+    bool is_limit_by_all = false;
 
     std::string cte_name;
     NamesAndTypes projection_columns;

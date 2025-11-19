@@ -244,12 +244,13 @@ struct Client : DB::S3::Client
             "some-region",
             remote_host_filter,
             /* s3_max_redirects = */ 100,
-            /* s3_retry_attempts = */ 0,
+            DB::S3::PocoHTTPClientConfiguration::RetryStrategy{.max_retries = 0},
+            /* s3_slow_all_threads_after_network_error = */ true,
+            /* s3_slow_all_threads_after_retryable_error = */ true,
             /* enable_s3_requests_logging = */ true,
             /* for_disk_s3 = */ false,
-            /* get_request_throttler = */ {},
-            /* put_request_throttler = */ {}
-        );
+            /* opt_disk_name = */ {},
+            /* request_throttler = */ {});
     }
 
     void setInjectionModel(std::shared_ptr<MockS3::InjectionModel> injections_)

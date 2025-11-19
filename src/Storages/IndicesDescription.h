@@ -9,6 +9,7 @@
 #include <Common/NamePrompter.h>
 
 constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
+constexpr auto TEXT_INDEX_NAME = "text";
 
 namespace DB
 {
@@ -64,6 +65,11 @@ struct IndexDescription
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context);
 
     bool isImplicitlyCreated() const { return name.starts_with(IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX); }
+
+    void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
+
+private:
+    static FieldVector parsePositionalArgumentsFromAST(const ASTPtr & arguments);
 };
 
 /// All secondary indices in storage
@@ -83,5 +89,8 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
 
     Names getAllRegisteredNames() const override;
 };
+
+ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
+IndexDescription createImplicitMinMaxIndexDescription(const String & column_name, const ColumnsDescription & columns, ContextPtr context);
 
 }

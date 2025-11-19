@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ITransformingStep::ITransformingStep(Block input_header, Block output_header_, Traits traits, bool collect_processors_)
+ITransformingStep::ITransformingStep(SharedHeader input_header, SharedHeader output_header_, Traits traits, bool collect_processors_)
     : transform_traits(std::move(traits.transform_traits))
     , collect_processors(collect_processors_)
     , data_stream_traits(std::move(traits.data_stream_traits))

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/LockGuardWithStopWatch.h>
 #include <Common/randomSeed.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>

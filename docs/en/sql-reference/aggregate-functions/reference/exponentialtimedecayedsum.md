@@ -4,6 +4,7 @@ description: 'Returns the sum of exponentially smoothed moving average values of
 sidebar_position: 136
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
 title: 'exponentialTimeDecayedSum'
+doc_type: 'reference'
 ---
 
 ## exponentialTimeDecayedSum {#exponentialtimedecayedsum}
@@ -23,7 +24,7 @@ exponentialTimeDecayedSum(x)(v, t)
 
 **Parameters**
 
-- `x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
+- `x` — Time difference required for a value's weight to decay to 1/e. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned values**
 

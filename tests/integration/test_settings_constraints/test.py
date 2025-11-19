@@ -155,6 +155,76 @@ def test_max_constraint(started_cluster):
     )
 
 
+def test_disallowed_constraint(started_cluster):
+    # Default value
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        {},
+        result="10000000000",
+    )
+
+    # Valid value
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 6000000002},
+        result="6000000002",
+    )
+
+    # Invalid values
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 6000000000},
+        result=None,
+        exception=" Setting max_memory_usage shouldn't be 6000000000",
+    )
+
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 6000000001},
+        result=None,
+        exception=" Setting max_memory_usage shouldn't be 6000000001",
+    )
+
+    # Check that the disallowed values returned are as expected
+    assert_query_settings(
+        instance,
+        "SELECT disallowed_values FROM system.settings WHERE name='max_memory_usage'",
+        settings={"max_memory_usage": 10000000000},
+        result="['6000000000','6000000001']"
+    )
+
+
+def test_disallowed_constraint_merge_tree(started_cluster):
+    # Default value
+    assert_query_settings(
+        instance,
+        "SELECT value FROM system.merge_tree_settings WHERE name='max_parts_in_total'",
+        {},
+        result="100000",
+    )
+
+    assert_query_settings(
+        instance,
+        "SELECT disallowed_values FROM system.merge_tree_settings WHERE name='max_parts_in_total'",
+        {},
+        result="['5000']",
+    )
+
+    # Test by creating a merge tree table with valid setting, followed by alters with both valid and invalid (disallowed) settings
+    # Valid values
+    instance.query("CREATE TABLE test (x Int) ENGINE=MergeTree ORDER BY x SETTINGS max_parts_in_total=2000")
+    instance.query("ALTER TABLE test MODIFY SETTING max_parts_in_total=3000")
+    # Invalid value
+    assert " Setting max_parts_in_total shouldn't be 5000." in instance.query_and_get_error(
+        "ALTER TABLE test MODIFY SETTING max_parts_in_total=5000")
+    # Clean up
+    instance.query("DROP TABLE IF EXISTS test")
+
+
 def assert_query_settings(
     instance, query, settings, result=None, exception=None, user=None
 ):

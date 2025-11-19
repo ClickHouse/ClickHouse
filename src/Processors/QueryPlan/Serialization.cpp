@@ -114,7 +114,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
-            serializeHeader(node->step->getOutputHeader(), out);
+            serializeHeader(*node->step->getOutputHeader(), out);
         else
             serializeHeader({}, out);
 
@@ -185,28 +185,28 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         readStringBinary(step_name, in);
         readStringBinary(step_description, in);
 
-        Header output_header  = deserializeHeader(in);
+        auto output_header  = std::make_shared<const Block>(deserializeHeader(in));
 
         QueryPlanSerializationSettings settings;
         settings.readBinary(in);
 
-        Headers input_headers;
+        SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());
         for (const auto & child : frame.children)
             input_headers.push_back(child->step->getOutputHeader());
 
-        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, &output_header, settings};
+        IQueryPlanStep::Deserialization ctx{in, sets_registry, context, input_headers, output_header, settings};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())
         {
-            assertCompatibleHeader(step->getOutputHeader(), output_header,
-                 fmt::format("deserialization of query plan {} step", step_name));
+            assertCompatibleHeader(
+                *step->getOutputHeader(), *output_header, fmt::format("deserialization of query plan {} step", step_name));
         }
-        else if (output_header.columns())
+        else if (output_header->columns())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Deserialized step {} has no output stream, but deserialized header is not empty : {}",
-                step_name, output_header.dumpStructure());
+                step_name, output_header->dumpStructure());
 
         auto & node = plan.nodes.emplace_back(std::move(step), std::move(frame.children));
         frame.to_fill = &node;

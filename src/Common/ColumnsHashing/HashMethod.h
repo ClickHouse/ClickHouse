@@ -136,7 +136,7 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
 
     auto getKeyHolder(ssize_t row, [[maybe_unused]] Arena & pool) const
     {
-        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1] - 1);
+        StringRef key(chars + offsets[row - 1], offsets[row] - offsets[row - 1]);
 
         if constexpr (place_string_to_arena)
         {

@@ -3,8 +3,8 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include "Common/NamedCollections/NamedCollections.h"
-
+#include <Common/NamedCollections/NamedCollections.h>
+#include <Storages/ObjectStorage/Utils.h>
 
 namespace DB
 {
@@ -30,6 +30,22 @@ void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & coll
     paths = {path};
 }
 
+void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
+{
+    auto disk = context->getDisk(disk_name);
+    ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
+
+    fs::path root = disk->getPath();
+    fs::path suffix = parsing_result.path_suffix;
+    setPathForRead(String(root / suffix));
+    setPaths({String(root / suffix)});
+    if (parsing_result.format.has_value())
+        format = *parsing_result.format;
+    if (parsing_result.compression_method.has_value())
+        compression_method = *parsing_result.compression_method;
+    if (parsing_result.structure.has_value())
+        structure = *parsing_result.structure;
+}
 
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
@@ -67,10 +83,10 @@ void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool wi
     paths = {path};
 }
 
-StorageObjectStorage::QuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const
+StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
-    return StorageObjectStorage::QuerySettings{
+    return StorageObjectStorageQuerySettings{
         .truncate_on_insert = settings[Setting::engine_file_truncate_on_insert],
         .create_new_file_on_insert = false,
         .schema_inference_use_cache = settings[Setting::schema_inference_use_cache_for_file],

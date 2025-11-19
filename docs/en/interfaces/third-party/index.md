@@ -5,9 +5,10 @@ sidebar_position: 24
 slug: /interfaces/third-party/
 toc_folder_title: 'Third-Party'
 title: 'Third-Party Interfaces'
+doc_type: 'landing-page'
 ---
 
-# Third-Party Interfaces
+# Third-party interfaces
 
 This is a collection of links to third-party tools that provide some sort of interface to ClickHouse. It can be either visual interface, command-line interface or an API:
 

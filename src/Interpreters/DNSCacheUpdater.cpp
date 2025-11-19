@@ -1,4 +1,4 @@
-#include "DNSCacheUpdater.h"
+#include <Interpreters/DNSCacheUpdater.h>
 
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>

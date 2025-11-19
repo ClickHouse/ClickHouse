@@ -2,7 +2,7 @@
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_skip_index_insert)
         Indexes:
           Skip
@@ -15,11 +15,12 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 2/2
             Granules: 50/50
+          Ranges: 2
 20
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_skip_index_insert)
         Indexes:
           Skip
@@ -32,11 +33,12 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 6/6
+          Ranges: 1
 20
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression
+      Expression ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.t_skip_index_insert)
         Indexes:
           Skip
@@ -49,4 +51,5 @@ Expression ((Project names + Projection))
             Description: set GRANULARITY 1
             Parts: 1/1
             Granules: 6/6
+          Ranges: 1
 4	0

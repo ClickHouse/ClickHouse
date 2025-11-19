@@ -156,19 +156,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (!allow_experimental_codecs && result_codec->isExperimental())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is experimental and not meant to be used in production."
-                        " You can enable it with the 'allow_experimental_codecs' setting.",
+                        " You can enable it with the 'allow_experimental_codecs' setting",
                         codec_family_name);
 
                 if (!enable_deflate_qpl_codec && result_codec->isDeflateQpl())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_deflate_qpl_codec' setting.",
+                        " You can enable it with the 'enable_deflate_qpl_codec' setting",
                         codec_family_name);
 
                 if (!enable_zstd_qat_codec && result_codec->isZstdQat())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Codec {} is disabled by default."
-                        " You can enable it with the 'enable_zstd_qat_codec' setting.",
+                        " You can enable it with the 'enable_zstd_qat_codec' setting",
                         codec_family_name);
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDesc());

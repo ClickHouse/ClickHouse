@@ -176,8 +176,92 @@ public:
 
 REGISTER_FUNCTION(Sleep)
 {
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>();
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>();
+    FunctionDocumentation::Description description_sleep = R"(
+Pauses the execution of a query by the specified number of seconds.
+The function is primarily used for testing and debugging purposes.
+
+The `sleep()` function should generally not be used in production environments, as it can negatively impact query performance and system responsiveness.
+However, it can be useful in the following scenarios:
+
+1. **Testing**: When testing or benchmarking ClickHouse, you may want to simulate delays or introduce pauses to observe how the system behaves under certain conditions.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
+
+:::warning
+It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
+:::
+
+For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
+)";
+    FunctionDocumentation::Syntax syntax_sleep = "sleep(seconds)";
+    FunctionDocumentation::Arguments arguments_sleep = {
+        {"seconds", "The number of seconds to pause the query execution to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.", {"const UInt*", "const Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sleep = {"Returns `0`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_sleep = {
+        {
+            "Usage example",
+            R"(
+-- This query will pause for 2 seconds before completing.
+-- During this time, no results will be returned, and the query will appear to be hanging or unresponsive.
+SELECT sleep(2);
+            )",
+            R"(
+┌─sleep(2)─┐
+│        0 │
+└──────────┘
+1 row in set. Elapsed: 2.012 sec.
+            )"
+        },
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sleep = {1, 1};
+    FunctionDocumentation::Category category_sleep = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
+
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation_sleep);
+
+    FunctionDocumentation::Description description_sleepEachRow = R"(
+Pauses the execution of a query for a specified number of seconds for each row in the result set.
+
+The `sleepEachRow()` function is primarily used for testing and debugging purposes, similar to the [`sleep()`](#sleep) function.
+It allows you to simulate delays or introduce pauses in the processing of each row, which can be useful in scenarios such as:
+
+1. **Testing**: When testing or benchmarking ClickHouse's performance under specific conditions, you can use `sleepEachRow()` to simulate delays or introduce pauses for each row processed.
+2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
+3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
+
+:::warning
+Like the `sleep()` function, it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
+:::
+)";
+    FunctionDocumentation::Syntax syntax_sleepEachRow = "sleepEachRow(seconds)";
+    FunctionDocumentation::Arguments arguments_sleepEachRow = {
+        {"seconds", "The number of seconds to pause the query execution for each row in the result set to a maximum of 3 seconds. It can be a floating-point value to specify fractional seconds.", {"const UInt*", "const Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_sleepEachRow = {"Returns `0` for each row.", {"UInt8"}};
+    FunctionDocumentation::Examples examples_sleepEachRow = {
+        {
+            "Usage example",
+            R"(
+-- The output will be delayed, with a 0.5-second pause between each row.
+SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
+            )",
+            R"(
+┌─number─┬─sleepEachRow(0.5)─┐
+│      0 │                 0 │
+│      1 │                 0 │
+│      2 │                 0 │
+│      3 │                 0 │
+│      4 │                 0 │
+└────────┴───────────────────┘
+            )"
+        },
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_sleepEachRow = {1, 1};
+    FunctionDocumentation::Category category_sleepEachRow = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
+
+    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>(documentation_sleepEachRow);
 }
 
 }

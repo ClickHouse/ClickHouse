@@ -6,7 +6,7 @@
 #include <snappy.h>
 
 #include <Common/ErrorCodes.h>
-#include "SnappyWriteBuffer.h"
+#include <IO/SnappyWriteBuffer.h>
 
 namespace DB
 {

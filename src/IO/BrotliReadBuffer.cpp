@@ -2,7 +2,7 @@
 
 #if USE_BROTLI
 #    include <brotli/decode.h>
-#    include "BrotliReadBuffer.h"
+#    include <IO/BrotliReadBuffer.h>
 #    include <IO/WithFileName.h>
 
 namespace DB

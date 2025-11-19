@@ -1,0 +1,2 @@
+jemalloc_flush_profile_interval_bytes: 1073741824
+jemalloc_flush_profile_on_memory_exceeded: 1

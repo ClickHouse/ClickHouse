@@ -1,12 +1,12 @@
 #include "config.h"
 
 #if USE_YAML_CPP
-#include "gtest_helper_functions.h"
+#include <Common/tests/gtest_helper_functions.h>
 #include <base/scope_guard.h>
 #include <Common/Config/YAMLParser.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Poco/AutoPtr.h>
-#include "Poco/DOM/Document.h"
+#include <Poco/DOM/Document.h>
 
 #include <gtest/gtest.h>
 

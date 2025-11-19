@@ -1,7 +1,9 @@
-#include "DiskS3Utils.h"
+#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
 
 #if USE_AWS_S3
+#include <Common/Macros.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Interpreters/Context.h>
 #include <IO/S3/URI.h>
 
 namespace DB
@@ -16,17 +18,16 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
-    bool send_metadata = config.getBool(config_prefix + ".send_metadata", false);
-
-    if (send_metadata && storage_metadata_write_full_object_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "s3 does not supports feature 'send_metadata' with feature 'storage_metadata_write_full_object_key'.",
-                        config_prefix);
-
     String object_key_compatibility_prefix = config.getString(config_prefix + ".key_compatibility_prefix", String());
     String object_key_template = config.getString(config_prefix + ".key_template", String());
+
+    Macros::MacroExpansionInfo info;
+    info.ignore_unknown = true;
+    info.expand_special_macros_only = true;
+    info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
+    object_key_compatibility_prefix = Context::getGlobalContextInstance()->getMacros()->expand(object_key_compatibility_prefix, info);
+    info.level = 0;
+    object_key_template = Context::getGlobalContextInstance()->getMacros()->expand(object_key_template, info);
 
     if (object_key_template.empty())
     {
@@ -38,18 +39,6 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
 
         return createObjectStorageKeysGeneratorByPrefix(uri.key);
     }
-
-    if (send_metadata)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "s3 does not supports send_metadata with setting 'key_template'.",
-                        config_prefix);
-
-    if (!storage_metadata_write_full_object_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "Feature 'storage_metadata_write_full_object_key' has to be enabled in order to use setting 'key_template'.",
-                        config_prefix);
 
     if (!uri.key.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

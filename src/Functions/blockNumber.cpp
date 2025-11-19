@@ -70,7 +70,54 @@ public:
 
 REGISTER_FUNCTION(BlockNumber)
 {
-    factory.registerFunction<FunctionBlockNumber>();
+    FunctionDocumentation::Description description = R"(
+Returns a monotonically increasing sequence number of the [block](../../development/architecture.md#block) containing the row.
+The returned block number is updated on a best-effort basis, i.e. it may not be fully accurate.
+    )";
+    FunctionDocumentation::Syntax syntax = "blockNumber()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Sequence number of the data block where the row is located.", {"UInt64"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            R"(
+SELECT blockNumber()
+FROM
+(
+    SELECT *
+    FROM system.numbers
+    LIMIT 10
+) SETTINGS max_block_size = 2
+            )",
+            R"(
+┌─blockNumber()─┐
+│             7 │
+│             7 │
+└───────────────┘
+┌─blockNumber()─┐
+│             8 │
+│             8 │
+└───────────────┘
+┌─blockNumber()─┐
+│             9 │
+│             9 │
+└───────────────┘
+┌─blockNumber()─┐
+│            10 │
+│            10 │
+└───────────────┘
+┌─blockNumber()─┐
+│            11 │
+│            11 │
+└───────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBlockNumber>(documentation);
 }
 
 }
