@@ -53,6 +53,7 @@ CREATE TABLE system.clusters
     `estimated_recovery_time` UInt32,
     `database_shard_name` String,
     `database_replica_name` String,
+    `is_shared_catalog_cluster` UInt8,
     `is_active` Nullable(UInt8),
     `unsynced_after_recovery` Nullable(UInt8),
     `replication_lag` Nullable(UInt32),
@@ -92,6 +93,7 @@ CREATE TABLE system.columns
     `numeric_scale` Nullable(UInt64),
     `datetime_precision` Nullable(UInt64),
     `serialization_hint` Nullable(String),
+    `statistics` String,
     `column` String ALIAS name
 )
 ENGINE = SystemColumns
@@ -599,6 +601,10 @@ CREATE TABLE system.parts_columns
     `column_modification_time` Nullable(DateTime),
     `column_ttl_min` Nullable(DateTime),
     `column_ttl_max` Nullable(DateTime),
+    `statistics` Array(String),
+    `estimates.min` Nullable(Float64),
+    `estimates.max` Nullable(Float64),
+    `estimates.cardinality` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -609,7 +615,6 @@ CREATE TABLE system.parts_columns
     `subcolumns.data_compressed_bytes` Array(UInt64),
     `subcolumns.data_uncompressed_bytes` Array(UInt64),
     `subcolumns.marks_bytes` Array(UInt64),
-    `statistics` String,
     `bytes` UInt64 ALIAS bytes_on_disk,
     `marks_size` UInt64 ALIAS marks_bytes,
     `part_name` String ALIAS name
@@ -890,6 +895,7 @@ CREATE TABLE system.replicas
 (
     `database` String,
     `table` String,
+    `uuid` UUID,
     `engine` String,
     `is_leader` UInt8,
     `can_become_leader` UInt8,

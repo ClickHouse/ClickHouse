@@ -51,7 +51,7 @@ struct StorageInMemoryMetadata
     TTLTableDescription table_ttl;
     /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
     ASTPtr settings_changes;
-    /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
+    /// SELECT QUERY. Supported for MaterializedView and View.
     SelectQueryDescription select;
     /// Materialized view REFRESH parameters.
     ASTPtr refresh;
@@ -268,6 +268,7 @@ struct StorageInMemoryMetadata
 
     /// Storage settings
     ASTPtr getSettingsChanges() const;
+    Field getSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
@@ -295,7 +296,7 @@ struct StorageInMemoryMetadata
     std::unordered_map<std::string, ColumnSize> getFakeColumnSizes() const;
 
     /// Elements of `columns` that have `default_desc.expression == nullptr`.
-    NameSet getColumnsWithoutDefaultExpressions() const;
+    NameSet getColumnsWithoutDefaultExpressions(const NamesAndTypesList & exclude) const;
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

@@ -1,0 +1,86 @@
+=== Test 1: ORDER BY a (sorting key) ===
+LazilyRead (Lazily Read)
+Lazily read columns: e, d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC
+ReadType: InOrder
+0	0
+1	2
+2	4
+3	6
+4	8
+=== Test 2: ORDER BY a with WHERE ===
+LazilyRead (Lazily Read)
+Lazily read columns: d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC
+ReadType: InOrder
+51	102
+52	104
+53	106
+54	108
+55	110
+=== Test 3: ORDER BY a with PREWHERE ===
+LazilyRead (Lazily Read)
+Lazily read columns: d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC
+ReadType: InOrder
+51	102
+52	104
+53	106
+54	108
+55	110
+=== Test 4: ORDER BY a, e (e should not be lazy) ===
+LazilyRead (Lazily Read)
+Lazily read columns: d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC, __table1.e ASC
+ReadType: InOrder
+0	0
+1	2
+2	4
+3	6
+4	8
+=== Test 5: ORDER BY a, a+1 ===
+LazilyRead (Lazily Read)
+Lazily read columns: e, d, b, c
+Prefix sort description: __table1.a ASC
+Result sort description: __table1.a ASC, plus(__table1.a, 1_UInt8) ASC
+ReadType: InOrder
+0	0
+1	2
+2	4
+3	6
+4	8
+=== Test 6: Verify ORDER BY ASC correctness ===
+1	one	10
+2	two	20
+3	three	30
+4	four	40
+5	five	50
+=== Test 7: Verify ORDER BY DESC correctness ===
+10	ten	100
+9	nine	90
+8	eight	80
+7	seven	70
+6	six	60
+=== Test 8: Verify filtering with ORDER BY ===
+5	five	50
+6	six	60
+7	seven	70
+8	eight	80
+9	nine	90
+10	ten	100
+=== Test 9: Compare with optimization disabled ===
+1	one	10
+2	two	20
+3	three	30
+4	four	40
+5	five	50
+=== Test 10: Verify EXPLAIN shows both optimizations ===
+LazilyRead (Lazily Read)
+Lazily read columns: data, score, value
+Prefix sort description: __table1.id ASC
+Result sort description: __table1.id ASC
+ReadType: InOrder

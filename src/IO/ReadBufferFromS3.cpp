@@ -112,7 +112,10 @@ bool ReadBufferFromS3::nextImpl()
                     log, "Impl was released, but expected read range is not finished. "
                     "Current offset: {}, end offset: {}", offset.load(), read_until_position.load());
             }
-            stop_reason = fmt::format("Connection was released (read offset: {}/{})", offset.load(), read_until_position.load());
+            stop_reason = fmt::format(
+                "Connection was released (read offset: {}/{}, release reason: {})",
+                offset.load(), read_until_position.load(), release_reason);
+
             return false;
         }
 
@@ -136,8 +139,8 @@ bool ReadBufferFromS3::nextImpl()
             * sure there is no pending data which was not read.
             */
             impl->position() = position();
-            assert(!impl->hasPendingData());
         }
+        chassert(!impl->hasPendingData());
     }
 
     bool next_result = false;
@@ -189,9 +192,10 @@ bool ReadBufferFromS3::nextImpl()
     if (!next_result)
     {
         read_all_range_successfully = true;
+        stop_reason = fmt::format("EOF (read offset: {}/{})", offset.load(), read_until_position.load());
+        release_reason = stop_reason;
         // release result to free pooled HTTP session for reuse
         impl->releaseResult();
-        stop_reason = fmt::format("EOF (read offset: {}/{})", offset.load(), read_until_position.load());
         return false;
     }
 
@@ -202,8 +206,15 @@ bool ReadBufferFromS3::nextImpl()
 
     // release result if possible to free pooled HTTP session for better reuse
     bool is_read_until_position = read_until_position && read_until_position == offset;
-    if (impl->isStreamEof() || is_read_until_position)
+    const bool stream_eof = impl->isStreamEof();
+    if (stream_eof || is_read_until_position)
+    {
+        release_reason = fmt::format(
+            "{} ({}/{})", stream_eof ? "stream EOF" : "read until position reached",
+            offset.load(), read_until_position.load());
+
         impl->releaseResult();
+    }
 
     stop_reason = "";
     return true;
@@ -311,6 +322,10 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (offset_ < 0)
         throw Exception(ErrorCodes::SEEK_POSITION_OUT_OF_BOUND, "Seek position is out of bounds. Offset: {}", offset_);
 
+    LOG_TEST(
+        log, "Seek to {} (restricted seek: {}, impl: {}, working_buffer size: {})",
+        offset_, restricted_seek, bool(impl), working_buffer.size());
+
     if (!restricted_seek)
     {
         if (!working_buffer.empty()
@@ -414,6 +429,7 @@ bool ReadBufferFromS3::atEndOfRequestedRangeGuess()
 std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(size_t attempt)
 {
     stop_reason = "";
+    release_reason = "";
     read_all_range_successfully = false;
 
     /**
@@ -423,7 +439,8 @@ std::unique_ptr<S3::ReadBufferFromGetObjectResult> ReadBufferFromS3::initialize(
     if (read_until_position && offset >= read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
 
-    auto read_result = sendRequest(attempt, offset, read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt);
+    const auto right_offset = read_until_position ? std::make_optional(read_until_position - 1) : std::nullopt;
+    auto read_result = sendRequest(attempt, offset, right_offset);
 
     size_t buffer_size = use_external_buffer ? 0 : read_settings.remote_fs_buffer_size;
     return std::make_unique<S3::ReadBufferFromGetObjectResult>(std::move(read_result), buffer_size);

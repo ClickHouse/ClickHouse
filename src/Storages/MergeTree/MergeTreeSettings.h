@@ -48,7 +48,9 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, NonZeroUInt64) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
+    M(CLASS_NAME, UInt32) \
     M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, UInt64Auto) \
     M(CLASS_NAME, MergeTreeSerializationInfoVersion) \
     M(CLASS_NAME, MergeTreeStringSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \

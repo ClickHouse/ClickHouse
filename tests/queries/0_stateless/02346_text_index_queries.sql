@@ -163,3 +163,59 @@ SELECT read_rows==2 from system.query_log
         AND type='QueryFinish'
         AND result_rows==1
     LIMIT 1;
+
+----------------------------------------------------
+SELECT 'Test text(tokenizer = sparseGrams(3, 100)) on UTF-8 data';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(3, 100)) GRANULARITY 1)
+    ENGINE = MergeTree()
+    ORDER BY k
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Click 你'), (104, 'Dlick 你a好'), (105, 'Elick 好好你你'), (106, 'Alick 好a好a你a你');
+
+-- check text index was created
+SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
+
+-- search text index
+SELECT * FROM tab WHERE s LIKE '%house你好%' ORDER BY k;
+
+-- check the query only read 1 granule (2 rows total; each granule has 2 rows)
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows==2 from system.query_log
+    WHERE query_kind ='Select'
+        AND current_database = currentDatabase()
+        AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE s LIKE \'%你好%\' ORDER BY k;')
+        AND type='QueryFinish'
+        AND result_rows==1
+    LIMIT 1;
+
+----------------------------------------------------
+SELECT 'Test text(tokenizer = sparseGrams(3, 100, 4)) on UTF-8 data';
+
+DROP TABLE IF EXISTS tab;
+
+CREATE TABLE tab(k UInt64, s String, INDEX af(s) TYPE text(tokenizer = sparseGrams(3, 100, 4)) GRANULARITY 1)
+    ENGINE = MergeTree()
+    ORDER BY k
+    SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab VALUES (101, 'Alick 好'), (102, 'clickhouse你好'), (103, 'Click 你'), (104, 'Dlick 你a好'), (105, 'Elick 好好你你'), (106, 'Alick 好a好a你a你');
+
+-- check text index was created
+SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND database = currentDatabase() LIMIT 1;
+
+-- search text index
+SELECT * FROM tab WHERE s LIKE '%house你好%' ORDER BY k;
+
+-- check the query only read 1 granule (2 rows total; each granule has 2 rows)
+SYSTEM FLUSH LOGS query_log;
+SELECT read_rows==2 from system.query_log
+    WHERE query_kind ='Select'
+        AND current_database = currentDatabase()
+        AND endsWith(trimRight(query), 'SELECT * FROM tab WHERE s LIKE \'%你好%\' ORDER BY k;')
+        AND type='QueryFinish'
+        AND result_rows==1
+    LIMIT 1;

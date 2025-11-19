@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/quoteString.h>
+#include <Interpreters/ITokenExtractor.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -790,6 +791,39 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
+    if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
+    {
+        if (index.arguments.size() == 5)
+        {
+            size_t min_ngram_length = index.arguments[0].safeGet<size_t>();
+            size_t max_ngram_length = index.arguments[1].safeGet<size_t>();
+
+            BloomFilterParameters params(
+                index.arguments[2].safeGet<size_t>(),
+                index.arguments[3].safeGet<size_t>(),
+                index.arguments[4].safeGet<size_t>());
+
+            auto tokenizer = std::make_unique<SparseGramTokenExtractor>(min_ngram_length, max_ngram_length);
+
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+        }
+        else
+        {
+            size_t min_ngram_length = index.arguments[0].safeGet<size_t>();
+            size_t max_ngram_length = index.arguments[1].safeGet<size_t>();
+            size_t min_cutoff_length = index.arguments[2].safeGet<size_t>();
+
+            BloomFilterParameters params(
+                index.arguments[3].safeGet<size_t>(),
+                index.arguments[4].safeGet<size_t>(),
+                index.arguments[5].safeGet<size_t>());
+
+            auto tokenizer = std::make_unique<SparseGramTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
+
+            return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
+
+        }
+    }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index type: {}", backQuote(index.name));
 }
@@ -825,6 +859,11 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
     {
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
+    }
+    else if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
+    {
+        if (index.arguments.size() != 5 && index.arguments.size() != 6)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparseGrams` index must have exactly 5 or 6 arguments.");
     }
     else
     {

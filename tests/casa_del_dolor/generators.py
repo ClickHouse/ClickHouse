@@ -55,9 +55,6 @@ class BuzzHouseGenerator(Generator):
 
         buzz_config["seed"] = random.randint(1, 18446744073709551615)
 
-        # Connect back to peer ClickHouse server running in the host machine
-        if "clickhouse" in buzz_config:
-            buzz_config["clickhouse"]["server_hostname"] = "host.docker.internal"
         # Set paths
         buzz_config["client_file_path"] = (
             f"{Path(cluster.instances_dir) / "node0" / "database" / "user_files"}"

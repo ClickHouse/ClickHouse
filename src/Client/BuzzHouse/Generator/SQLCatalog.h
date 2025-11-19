@@ -146,7 +146,7 @@ struct SQLDatabase
 {
 public:
     bool random_engine = false;
-    uint32_t dname = 0;
+    uint32_t dname = 0, nparams = 0;
     DatabaseEngineValues deng;
     std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
@@ -190,7 +190,7 @@ public:
 
     void setDatabasePath(RandomGenerator & rg, const FuzzConfig & fc);
 
-    void finishDatabaseSpecification(DatabaseEngine * de) const;
+    void finishDatabaseSpecification(DatabaseEngine * de, bool add_params);
 };
 
 struct SQLBase
@@ -241,6 +241,8 @@ public:
     }
 
     bool isReplicatedOrSharedMergeTree() const { return isReplicatedMergeTree() || isSharedMergeTree(); }
+
+    bool isShared() const { return toption.has_value() && toption.value() == TableEngineOption::TShared; }
 
     bool isFileEngine() const { return teng == TableEngineValues::File; }
 

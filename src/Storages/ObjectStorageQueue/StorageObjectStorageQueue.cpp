@@ -258,7 +258,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         std::move(table_metadata),
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_min_ms],
         (*queue_settings_)[ObjectStorageQueueSetting::cleanup_interval_max_ms],
-        (*queue_settings_)[ObjectStorageQueueSetting::use_persistent_processing_nodes],
+        /* use_persistent_processing_nodes */true,
         (*queue_settings_)[ObjectStorageQueueSetting::persistent_processing_node_ttl_seconds],
         getContext()->getServerSettings()[ServerSetting::keeper_multiread_batch_size]);
 
@@ -349,6 +349,15 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
         LOG_DEBUG(
             log, "Finished {} streaming tasks (took: {} ms)",
             streaming_tasks.size(), watch.elapsedMilliseconds());
+    }
+
+    try
+    {
+        streaming_file_iterator.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 
     if (files_metadata)
@@ -836,22 +845,20 @@ void StorageObjectStorageQueue::commit(
 
     auto context = getContext();
     const auto & settings = context->getSettingsRef();
-    ZooKeeperRetriesControl zk_retry{
-        getName(),
-        log,
-        ZooKeeperRetriesInfo{
-            settings[Setting::keeper_max_retries],
-            settings[Setting::keeper_retry_initial_backoff_ms],
-            settings[Setting::keeper_retry_max_backoff_ms],
-            context->getProcessListElement()}};
+    auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
 
     std::optional<Coordination::Error> code;
     Coordination::Responses responses;
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {
+        if (zk_retry.isRetry())
+        {
+            LOG_TRACE(
+                log, "Failed to commit processed files at try {}/{}, will retry",
+                try_num, toString(settings[Setting::keeper_max_retries].value));
+        }
         ++try_num;
-        auto zk_client = getZooKeeper();
         fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
             throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
         });
@@ -859,13 +866,8 @@ void StorageObjectStorageQueue::commit(
             throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
         });
 
+        auto zk_client = getZooKeeper();
         code = zk_client->tryMulti(requests, responses);
-    },
-    [&]
-    {
-        LOG_TRACE(
-            log, "Failed to commit processed files at try {}/{}",
-            try_num, toString(settings[Setting::keeper_max_retries].value));
     });
 
     if (!code.has_value())

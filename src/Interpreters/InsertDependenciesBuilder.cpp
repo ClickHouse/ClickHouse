@@ -6,9 +6,9 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
+#include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
@@ -256,35 +256,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return ptr;
     }
 }
-
-
-class PushingToLiveViewSink final : public SinkToStorage
-{
-public:
-    PushingToLiveViewSink(SharedHeader header, StorageLiveView & live_view_, ContextPtr context_)
-        : SinkToStorage(header)
-        , live_view(live_view_)
-        , context(std::move(context_))
-    {
-    }
-
-    String getName() const override { return "PushingToLiveViewSink"; }
-    void consume(Chunk & chunk) override
-    {
-        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-        live_view.writeBlock(live_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
-
-        if (auto process = context->getProcessListElement())
-            process->updateProgressIn(local_progress);
-
-        ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
-        ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
-    }
-
-private:
-    StorageLiveView & live_view;
-    ContextPtr context;
-};
 
 
 class PushingToWindowViewSink final : public SinkToStorage
@@ -698,7 +669,8 @@ private:
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
@@ -1165,38 +1137,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         return true;
     }
-    else if (auto * live_view = dynamic_cast<StorageLiveView *>(init_storage.get()))
-    {
-        if (current == init_table_id)
-        {
-            set_defaults_for_root_view(init_table_id, init_table_id);
-            view_types[init_table_id] = QueryViewsLogElement::ViewType::LIVE;
-            return true;
-        }
-
-        inner_tables[current] = current;
-        select_queries[current] = live_view->getInnerQuery();
-        input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
-        view_types[current] = QueryViewsLogElement::ViewType::LIVE;
-        views_error_registry->init(current);
-
-        auto parent_select_context = select_contexts.at(path.parent(2));
-        auto view_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
-        view_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
-        select_contexts[current] = view_context;
-        insert_contexts[current] = view_context;
-
-        if (init_context->hasQueryContext())
-        {
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
-        }
-
-        dependent_views[path.parent(2)].push_back(current);
-
-        return true;
-    }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(init_storage.get()))
     {
         if (current == init_table_id)
@@ -1474,6 +1414,9 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
 
+    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
+    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header));
+
     if (!inner_storage->supportsSparseSerialization())
         result.addSink(std::make_shared<RemovingSparseTransform>(header));
 
@@ -1481,13 +1424,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
-    if (auto * live_view = dynamic_cast<StorageLiveView *>(inner_storage.get()))
-    {
-        auto sink = std::make_shared<PushingToLiveViewSink>(input_headers.at(view_id), *live_view, insert_context);
-        sink->setRuntimeData(thread_groups.at(view_id));
-        result.addSink(std::move(sink));
-    }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
+    if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
@@ -1662,7 +1599,7 @@ void InsertDependenciesBuilder::DependencyPath::pushBack(StorageIDPrivate id)
 {
     if (visited.contains(id))
         throw Exception(
-            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} ara pointing to the {}.", path.front(), debugInfo(), id);
+            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Dependencies {} are pointing to {}.", path.front(), debugInfo(), id);
 
     path.push_back(id);
     visited.insert(id);

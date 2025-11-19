@@ -132,7 +132,7 @@ namespace
 
         auto type_string = std::make_shared<DataTypeString>();
         DataTypeMap type_map(type_string, type_string);
-        auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+        auto serialization = type_map.getSerialization({ISerialization::Kind::DEFAULT});
         auto column = type_map.createColumn();
 
         ReadBufferFromString buf(str);
@@ -429,7 +429,7 @@ String SettingFieldMap::toString() const
 {
     auto type_string = std::make_shared<DataTypeString>();
     DataTypeMap type_map(type_string, type_string);
-    auto serialization = type_map.getSerialization(ISerialization::Kind::DEFAULT);
+    auto serialization = type_map.getSerialization({ISerialization::Kind::DEFAULT});
     auto column = type_map.createColumn();
     column->insert(value);
 

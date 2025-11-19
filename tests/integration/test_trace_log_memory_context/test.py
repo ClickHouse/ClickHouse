@@ -29,13 +29,14 @@ def test_memory_context_in_trace_log(started_cluster):
     if node.is_built_with_sanitizer():
         pytest.skip("sanitizers built without jemalloc")
 
+    # Clean start (note, event_time >= now()-uptime(), can be flaky)
+    node.query("TRUNCATE TABLE IF EXISTS system.trace_log")
+
     def get_trace_events(memory_context, memory_blocked_context, trace_type, query_id=None):
         res = int(node.query(f"""
         SELECT count() FROM system.trace_log
         WHERE
-            /* Do not take into account data from other test runs */
-            event_time >= now()-uptime()
-            AND memory_context = '{memory_context}'
+            memory_context = '{memory_context}'
             AND memory_blocked_context = '{memory_blocked_context}'
             AND trace_type = '{trace_type}'
             AND {'empty(query_id)' if query_id is None else f"query_id = '{query_id}'"}

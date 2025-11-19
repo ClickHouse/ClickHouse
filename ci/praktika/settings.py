@@ -104,6 +104,7 @@ class _Settings:
 
     # to post links for reading statistics in html report (with read-only user)
     CI_DB_READ_USER: str = ""
+    CI_DB_READ_URL: str = ""
 
 
 _USER_DEFINED_SETTINGS = [
@@ -149,6 +150,7 @@ _USER_DEFINED_SETTINGS = [
     "DEFAULT_LOCAL_TEST_WORKFLOW",
     "COMPRESS_THRESHOLD_MB",
     "CI_DB_READ_USER",
+    "CI_DB_READ_URL",
 ]
 
 

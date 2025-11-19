@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
 from collections import defaultdict
 from pathlib import Path
 
@@ -165,7 +166,6 @@ class ClickHouseProc:
     @staticmethod
     def enable_thread_fuzzer_config():
         # For flaky check we also enable thread fuzzer
-        os.environ["IS_FLAKY_CHECK"] = "1"
         os.environ["THREAD_FUZZER_CPU_TIME_PERIOD_US"] = "1000"
         os.environ["THREAD_FUZZER_SLEEP_PROBABILITY"] = "0.1"
         os.environ["THREAD_FUZZER_SLEEP_TIME_US_MAX"] = "100000"
@@ -228,6 +228,8 @@ class ClickHouseProc:
         Start ClickHouse server with config installed with _install_config()
         """
         print(f"Starting ClickHouse server")
+        # check binary available and do decompression in the meantime
+        assert Shell.check("clickhouse --version", verbose=True)
         self.pid_file = f"{temp_dir}/clickhouse-server.pid"
         self.start_cmd = f"{temp_dir}/clickhouse-server --config-file={temp_dir}/config.xml --pid-file {self.pid_file}"
         print("Command: ", self.start_cmd)
@@ -248,6 +250,9 @@ class ClickHouseProc:
             print(f"ClickHouse server ready")
         else:
             print(f"ClickHouse server NOT ready")
+
+        self._flush_system_logs()
+        self.save_system_metadata_files_from_remote_database_disk()
         return res
 
     def install_clickbench_config(self):
@@ -270,10 +275,8 @@ profiles:
         res = self._install_light()
         if not res:
             return False
-        # TODO figure out which ones are needed
         commands = [
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {self.ch_config_dir}/users.d",
-            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/allow-nullable-key.xml {self.ch_config_dir}/config.d",
+            f"cp -av --dereference ./ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml {temp_dir}/users.d",
         ]
 
         c1 = """
@@ -293,13 +296,11 @@ profiles:
     <core_path>$PWD</core_path>
 </clickhouse>
 """
-        file_path = (
-            f"{self.ch_config_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        )
+        file_path = f"{temp_dir}/config.d/max_server_memory_usage_to_ram_ratio.xml"
         with open(file_path, "w") as file:
             file.write(c1)
 
-        file_path = f"{self.ch_config_dir}/config.d/core.xml"
+        file_path = f"{temp_dir}/config.d/core.xml"
         with open(file_path, "w") as file:
             file.write(c2)
         res = True
@@ -481,6 +482,9 @@ profiles:
         res = True
         if self.is_db_replicated and replica_num == 0:
             res = self.start(replica_num=1) and self.start(replica_num=2)
+
+        self._flush_system_logs()
+        self.save_system_metadata_files_from_remote_database_disk()
 
         return res
 
@@ -692,27 +696,35 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
-    def prepare_logs(self, all=False):
-        res = self._get_logs_archives_server()
-        res += self._get_jemalloc_profiles()
-        if Path(self.GDB_LOG).exists():
-            res.append(self.GDB_LOG)
-        if all:
-            res += self.debug_artifacts
-            res += self.dump_system_tables()
-            res += self._collect_core_dumps()
-            res += self._get_logs_archive_coordination()
-            if Path(self.MINIO_LOG).exists():
-                res.append(self.MINIO_LOG)
-            if Path(self.AZURITE_LOG).exists():
-                res.append(self.AZURITE_LOG)
-            if Path(self.DMESG_LOG).exists():
-                res.append(self.DMESG_LOG)
-            if Path(self.CH_LOCAL_ERR_LOG).exists():
-                res.append(self.CH_LOCAL_ERR_LOG)
-            if Path(self.CH_LOCAL_LOG).exists():
-                res.append(self.CH_LOCAL_LOG)
-        self.logs = res
+    def prepare_logs(self, info, all=False):
+        res = []
+        try:
+            res = self._get_logs_archives_server()
+            res += self._get_jemalloc_profiles()
+            if Path(self.GDB_LOG).exists():
+                res.append(self.GDB_LOG)
+            if all:
+                res += self.debug_artifacts
+                res += self.dump_system_tables()
+                res += self._collect_core_dumps()
+                res += self._get_logs_archive_coordination()
+                if Path(self.MINIO_LOG).exists():
+                    res.append(self.MINIO_LOG)
+                if Path(self.AZURITE_LOG).exists():
+                    res.append(self.AZURITE_LOG)
+                if Path(self.DMESG_LOG).exists():
+                    res.append(self.DMESG_LOG)
+                if Path(self.CH_LOCAL_ERR_LOG).exists():
+                    res.append(self.CH_LOCAL_ERR_LOG)
+                if Path(self.CH_LOCAL_LOG).exists():
+                    res.append(self.CH_LOCAL_LOG)
+            self.logs = res
+        except Exception as e:
+            print(f"WARNING: Failed to collect logs: {e}")
+            traceback.print_exc()
+            info.add_workflow_report_message(
+                f"Failed to collect all logs in job [{info.job_name}], ex [{e}], see job.log"
+            )
         return res
 
     def _collect_core_dumps(self):
@@ -795,6 +807,15 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         ).exists(), f"Log directory {self.log_dir} does not exist"
         return [f for f in glob.glob(f"{self.log_dir}/*.log")]
 
+    def check_ch_is_oom_killed(self):
+        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
+            return Result.from_commands_run(
+                name="OOM in dmesg",
+                command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
+            )
+        else:
+            return None
+
     def check_fatal_messages_in_logs(self):
         results = []
 
@@ -853,15 +874,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 command=f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' clickhouse-server*.log | grep -v -e 'a.myext' -e 'ReadBuffer is canceled by the exception'  -e 'DistributedCacheTCPHandler' -e 'ReadBufferFromDistributedCache' -e 'ReadBufferFromS3' -e 'ReadBufferFromAzureBlobStorage' -e 'AsynchronousBoundedReadBuffer' -e 'caller id: None:DistribCache' | head -n100 | tee /dev/stderr | grep -q .",
             )
         )
-        if Shell.check(f"dmesg > {self.DMESG_LOG}"):
-            results.append(
-                Result.from_commands_run(
-                    name="OOM in dmesg",
-                    command=f"! cat {self.DMESG_LOG} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                )
-            )
-        else:
+        oom_check = self.check_ch_is_oom_killed()
+        if oom_check is None:
             print("WARNING: dmesg not enabled")
+        else:
+            results.append(oom_check)
         if Path(self.GDB_LOG).is_file():
             results.append(
                 Result.from_commands_run(
@@ -1052,6 +1069,14 @@ quit
                     res = False
         return [f for f in glob.glob(f"{temp_dir}/system_tables/*.tsv")]
 
+    @staticmethod
+    def is_valid_uuid(val):
+        try:
+            uuid_obj = uuid.UUID(val)
+            return str(uuid_obj) == val.lower()
+        except ValueError:
+            return False
+
     def save_system_metadata_files_from_remote_database_disk(self):
         if not os.path.exists(
             "/etc/clickhouse-server/config.d/remote_database_disk.xml"
@@ -1059,16 +1084,26 @@ quit
             return
 
         # Store system database and table metadata files
-        self.system_db_uuid = Shell.get_output(
+        system_db_uuid = Shell.get_output(
             "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql' | grep -F UUID | awk -F\"'\" '{print $2}'",
             verbose=True,
         )
+        if not self.is_valid_uuid(system_db_uuid):
+            print(f"invalid system_db_uuid: '{system_db_uuid}'")
+            return
+
+        if self.system_db_uuid != None and self.system_db_uuid != system_db_uuid:
+            print(
+                f"system_db_uuid changed: '{self.system_db_uuid}' -> '{system_db_uuid}'"
+            )
+
+        self.system_db_uuid = system_db_uuid
         self.system_db_sql = Shell.get_output(
             "clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read metadata/system.sql'",
             verbose=True,
         )
-        print(f"system_db_uuid = {self.system_db_uuid}")
-        print(f"system_db_sql = {self.system_db_sql}")
+        print(f"system_db_uuid = '{self.system_db_uuid}'")
+        print(f"system_db_sql = '{self.system_db_sql}'")
 
         system_table_sql_files = (
             Shell.get_output(
@@ -1080,6 +1115,7 @@ quit
         )
         self.system_table_sql_map = {}
         for system_table_sql_file in system_table_sql_files:
+            print(f"system_table_sql_file = '{system_table_sql_file}'")
             sql_content = Shell.get_output(
                 f"clickhouse disks -C /etc/clickhouse-server/config.xml --disk disk_db_remote -q 'read store/{self.system_db_uuid[:3]}/{self.system_db_uuid}/{system_table_sql_file}'",
                 verbose=True,
@@ -1097,7 +1133,7 @@ quit
         # Restore system database and table metadata files for `clickhouse local`
         with open(f"{self.run_path0}/metadata/system.sql", "w") as file:
             file.write(self.system_db_sql)
-        res = Shell.check(
+        Shell.check(
             f"mkdir -p {self.run_path0}/store/{self.system_db_uuid[:3]}/{self.system_db_uuid}",
             verbose=True,
         )
