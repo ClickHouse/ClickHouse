@@ -892,7 +892,7 @@ arrayExcept([1, 2, NULL], [2, NULL]) AS with_null
     FunctionDocumentation::Category except_category = FunctionDocumentation::Category::Array;
     FunctionDocumentation except_documentation = {except_description, except_syntax, except_argument, except_returned_value, except_example, except_introduced_in, except_category};
 
-    factory.registerFunction(ArrayExcept::name, &ArrayExcept::create, except_documentation);
+    factory.registerFunction<ArrayExcept>(except_documentation);
 }
 
 }
