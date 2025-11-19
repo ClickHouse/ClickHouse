@@ -235,8 +235,9 @@ def main():
             for file in changed_files:
                 if (
                     file.startswith("tests/integration/test")
+                    and Path(file).name.startswith("test_")
                     and file.endswith(".py")
-                    and not file.endswith("__init__.py")
+                    and Path(file).is_file()
                 ):
                     changed_test_modules.append(file.removeprefix("tests/integration/"))
 
