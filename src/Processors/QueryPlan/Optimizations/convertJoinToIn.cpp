@@ -40,7 +40,6 @@ using NamePairs = std::vector<NamePair>;
 
 InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
-    const SharedHeader & expected_output_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
     bool transform_null_in,
@@ -48,23 +47,9 @@ InConversion buildInConversion(
     size_t max_size_for_index)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_inputs;
-    for (const auto & output : lhs_dag.getInputs())
-        lhs_inputs.emplace(output->result_name, output);
-
-    if (!blocksHaveEqualStructure(*lhs_input_header, *expected_output_header))
-    {
-        ActionsDAG::NodeRawConstPtrs new_outputs;
-        for (const auto & column : expected_output_header->getColumnsWithTypeAndName())
-        {
-            const auto * maybe_output = lhs_dag.tryFindInOutputs(column.name);
-            if (!maybe_output)
-                new_outputs.push_back(&lhs_dag.addInput(column.name, column.type));
-            else
-                new_outputs.push_back(maybe_output);
-        }
-        lhs_dag.getOutputs() = std::move(new_outputs);
-    }
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    for (const auto & output : lhs_dag.getOutputs())
+        lhs_outputs.emplace(output->result_name, output);
 
     ActionsDAG rhs_dag(in_source->getCurrentHeader()->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
@@ -76,8 +61,8 @@ InConversion buildInConversion(
     std::vector<const ActionsDAG::Node *> left_columns;
     for (const auto & name_pair : name_pairs)
     {
-        auto it = lhs_inputs.find(name_pair.lhs_name);
-        if (it == lhs_inputs.end())
+        auto it = lhs_outputs.find(name_pair.lhs_name);
+        if (it == lhs_outputs.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
         left_columns.push_back(it->second);
 
@@ -234,7 +219,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
-        join->getOutputHeader(),
         name_pairs,
         std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
         transform_null_in,
