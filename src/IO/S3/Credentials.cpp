@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <base/EnumReflection.h>
 #include <boost/algorithm/string/join.hpp>
+#include <Server/CloudPlacementInfo.h>
 
 namespace DB
 {
@@ -16,11 +17,11 @@ namespace ErrorCodes
 
 namespace S3
 {
-    std::string tryGetRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
+    std::string tryGetRunningAvailabilityZone(AZFacilities az_facility)
     {
         try
         {
-            return getRunningAvailabilityZone(is_zone_id, az_facility);
+            return getRunningAvailabilityZone(az_facility);
         }
         catch (...)
         {
@@ -29,6 +30,7 @@ namespace S3
         }
     }
 }
+
 }
 
 #if USE_AWS_S3
@@ -322,7 +324,7 @@ String AWSEC2MetadataClient::getAvailabilityZoneOrException(bool is_zone_id)
     return response_data;
 }
 
-String getGCPAvailabilityZoneOrException([[maybe_unused]] bool is_zone_id = false)
+String getGCPAvailabilityZoneOrException()
 {
     Poco::URI uri(String(GCP_METADATA_SERVICE_ENDPOINT) + "/computeMetadata/v1/instance/zone");
     Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
@@ -347,17 +349,19 @@ String getGCPAvailabilityZoneOrException([[maybe_unused]] bool is_zone_id = fals
 }
 
 
-String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
+String getRunningAvailabilityZone(AZFacilities az_facility)
 {
     LOG_INFO(getLogger("Application"), "Trying to detect the availability zone.");
 
-    using AZGetter = std::function<String(bool)>;
+    using AZGetter = std::function<String()>;
 
-    std::vector<AZGetter> az_getters =
+    std::vector<std::pair<bool /* used if ALL */, AZGetter>> az_getters =
     {
         /// order of getters reflects DB::S3::AZFacilities, except ALL, which is skipped
-        AWSEC2MetadataClient::getAvailabilityZoneOrException,
-        getGCPAvailabilityZoneOrException
+        {false, [](){return AWSEC2MetadataClient::getAvailabilityZoneOrException(true);}},    /// MSK
+        {true,  [](){return AWSEC2MetadataClient::getAvailabilityZoneOrException(false);}},   /// CONFLUENT
+        {true,  getGCPAvailabilityZoneOrException},                                           /// GCP
+        {false, [](){return PlacementInfo::PlacementInfo::instance().getAvailabilityZone();}} /// CLICKHOUSE
     };
 
     if (az_facility == AZFacilities::ALL)
@@ -368,7 +372,8 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
         {
             try
             {
-                return getter(is_zone_id);
+                if (getter.first)
+                    return getter.second();
             }
             catch (...)
             {
@@ -386,7 +391,7 @@ String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility)
         try
         {
             auto getter_index = magic_enum::enum_integer(az_facility) - 1;
-            return az_getters[getter_index](is_zone_id);
+            return az_getters[getter_index].second();
         }
         catch (...)
         {

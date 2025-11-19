@@ -27,11 +27,6 @@ extern const Event KafkaConsumerErrors;
 namespace DB
 {
 
-namespace S3
-{
-std::string tryGetRunningAvailabilityZone(bool is_zone_id);
-}
-
 namespace KafkaSetting
 {
     extern const KafkaSettingsString kafka_security_protocol;
@@ -380,10 +375,26 @@ void updateConfigurationFromConfig(
     auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
     if (!autodetect_rack.empty())
     {
+        const static std::unordered_map<decltype(autodetect_rack), decltype(autodetect_rack)> alias_to_facility =
+        {
+            {
+                "AWS/IMDSv2/availability-zone-id", "MSK"
+            },
+            {
+                "AWS/IMDSv2/availability-zone", "CONFLUENT"
+            },
+            {
+                "GCP/MDS/zone", "GCP"
+            },
+        };
+
+        if (auto it = alias_to_facility.find(autodetect_rack); it != alias_to_facility.end())
+            autodetect_rack = it->second;
+
         if (magic_enum::enum_contains<S3::AZFacilities>(autodetect_rack))
         {
             std::string rack
-                = S3::tryGetRunningAvailabilityZone(true /*zone-id */, magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
+                = S3::tryGetRunningAvailabilityZone(magic_enum::enum_cast<S3::AZFacilities>(autodetect_rack).value());
             if (!rack.empty())
             {
                 kafka_config.set("client.rack", rack);

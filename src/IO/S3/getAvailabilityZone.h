@@ -1,15 +1,19 @@
 #pragma once
 
+#include <string>
+
 namespace DB::S3
 {
 enum class AZFacilities
 {
     ALL,
     MSK,
-    GCP
+    CONFLUENT,
+    GCP,
+    CLICKHOUSE
 };
 
 /// getRunningAvailabilityZone returns the availability zone of the underlying compute resources where the current process runs.
-std::string getRunningAvailabilityZone(bool is_zone_id = false, AZFacilities az_facility = AZFacilities::ALL);
-std::string tryGetRunningAvailabilityZone(bool is_zone_id = false, AZFacilities az_facility = AZFacilities::ALL);
+std::string getRunningAvailabilityZone(AZFacilities az_facility = AZFacilities::ALL);
+std::string tryGetRunningAvailabilityZone(AZFacilities az_facility = AZFacilities::ALL);
 }

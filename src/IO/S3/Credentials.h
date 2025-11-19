@@ -65,7 +65,7 @@ public:
 
     virtual Aws::String getCurrentRegion() const;
 
-    friend String getRunningAvailabilityZone(bool is_zone_id, AZFacilities az_facility);
+    friend String getRunningAvailabilityZone(AZFacilities az_facility);
 
 private:
     std::pair<Aws::String, Aws::Http::HttpResponseCode> getEC2MetadataToken(const std::string & user_agent_string) const;
