@@ -437,7 +437,8 @@ void addConvertingExpression(QueryPlan & plan, const SharedHeader & expected_hea
         auto actions_dag = ActionsDAG::makeConvertingActions(
                 plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 expected_header->getColumnsWithTypeAndName(),
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                nullptr);
         auto converting_step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(actions_dag));
         converting_step->setStepDescription("Convert column list");
         plan.addStep(std::move(converting_step));

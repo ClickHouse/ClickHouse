@@ -28,6 +28,7 @@ public:
     UUID getUUID() const override { return db_uuid; }
 
     bool shouldBeEmptyOnDetach() const override { return false; }
+    bool isDatalakeCatalog() const override { return true; }
 
     bool empty() const override;
 
@@ -44,13 +45,10 @@ public:
     DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded,
-        bool skip_data_lake_catalog) const override;
+        bool skip_not_loaded) const override;
 
 
     void shutdown() override {}
-
-    ASTPtr getCreateDatabaseQuery() const override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
@@ -66,6 +64,7 @@ public:
         bool /*sync*/) override;
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:

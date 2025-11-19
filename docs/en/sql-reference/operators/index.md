@@ -22,17 +22,17 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `-a` – The `negate (a)` function.
 
-For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
+For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tupleNegate).
 
 ## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tupleMultiplyByNumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arrayDotProduct).
 
 `a / b` – The `divide(a, b)` function.
 
-For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
+For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupleDivideByNumber).
 
 `a % b` – The `modulo(a, b)` function.
 
@@ -40,11 +40,11 @@ For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/function
 
 `a + b` – The `plus(a, b)` function.
 
-For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
+For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tuplePlus).
 
 `a - b` – The `minus(a, b)` function.
 
-For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
+For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleMinus).
 
 ## Comparison Operators {#comparison-operators}
 

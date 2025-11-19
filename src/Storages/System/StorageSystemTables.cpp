@@ -55,7 +55,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (columns_without_table.find(column.name) == columns_without_table.end())
+        if (!columns_without_table.contains(column.name))
             return true;
     }
     return false;
@@ -70,7 +70,8 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto & settings = context->getSettingsRef();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -96,7 +97,7 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (dag)
     {
         bool filter_by_engine = false;
@@ -136,8 +137,7 @@ ColumnPtr getFilteredTables(
         {
             auto table_it = database->getLightweightTablesIterator(context,
                                                                    /* filter_by_table_name */ {},
-                                                                   /* skip_not_loaded */ false,
-                                                                   !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
+                                                                   /* skip_not_loaded */ false);
             for (; table_it->isValid(); table_it->next())
             {
                 table_column->insert(table_it->name());
@@ -459,8 +459,7 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getLightweightTablesIterator(context,
                         /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false,
-                        !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
+                        /* skip_not_loaded */ false);
 
             const bool need_table = needTable(database, getPort().getHeader());
 

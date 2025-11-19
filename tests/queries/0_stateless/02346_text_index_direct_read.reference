@@ -7,11 +7,11 @@ Test select text + hasAnyTokens:	Alick a01
 Test hasToken and hasToken:	0
 Test hasAnyTokens or hasToken:	2
 Test NOT hasAllTokens:	1
-Added: [__text_index_idx_hasToken_0], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_0], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_0], Removed: [text]
-Added: [__text_index_idx_hasToken_0]
-Added: [__text_index_idx_hasAnyTokens_0]
-Added: [__text_index_idx_hasToken_0, __text_index_idx_hasToken_1], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_0, __text_index_idx_hasToken_0], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_0], Removed: [text]
+Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_e7a7ab2df53846f18ae5a86c4ce452e9], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f], Removed: [text]
+Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8]
+Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f]
+Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8, __text_index_idx_hasToken_c59a18d8fad9a55578502d88319e8999], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_d6702e45d9f4e5e38c13ef8e3a93dd13, __text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_c9d410e7a461849da4abf4ffd733029b], Removed: [text]

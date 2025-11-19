@@ -84,10 +84,13 @@ public:
 
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
+    JoinSettings & getJoinSettings() { return join_settings; }
     const JoinOperator & getJoinOperator() const { return join_operator; }
     JoinOperator & getJoinOperator() { return join_operator; }
 
     const ActionsDAG & getActionsDAG() const { return *expression_actions.getActionsDAG(); }
+
+    std::vector<JoinActionRef> getOutputActions() const;
 
     std::pair<JoinExpressionActions, JoinOperator> detachExpressions()
     {

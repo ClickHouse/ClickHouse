@@ -259,14 +259,14 @@ def test_list_tables(started_cluster):
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
         ).strip()
     )
     node.restart_clickhouse()
     assert (
         tables_list
         == node.query(
-            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name"
+            f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' and name ILIKE '{root_namespace}%' ORDER BY name SETTINGS show_data_lake_catalogs_in_system_tables = true"
         ).strip()
     )
 
@@ -304,7 +304,7 @@ def test_many_namespaces(started_cluster):
             table_name = f"{namespace}.{table}"
             assert int(
                 node.query(
-                    f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}'"
+                    f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}' SETTINGS show_data_lake_catalogs_in_system_tables = true"
                 )
             )
 
@@ -568,6 +568,7 @@ def test_create(started_cluster):
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
+
 def test_drop_table(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -583,6 +584,30 @@ def test_drop_table(started_cluster):
 
     drop_clickhouse_iceberg_table(node, root_namespace, table_name)
     assert len(catalog.list_tables(root_namespace)) == 0
+
+
+def test_table_with_slash(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    # pyiceberg at current moment (version 0.9.1) has a bug with table names with slashes
+    # see https://github.com/apache/iceberg-python/issues/2462
+    # so we need to encode it manually
+    table_raw_suffix = "table/foo"
+    table_encoded_suffix = "table%2Ffoo"
+
+    test_ref = f"test_list_tables_{uuid.uuid4()}"
+    table_name = f"{test_ref}_{table_raw_suffix}"
+    table_encoded_name = f"{test_ref}_{table_encoded_suffix}"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}` VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'));", settings={"allow_experimental_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_encoded_name}`") == "\\N\tAAPL\t193.24\t193.31\t('bot')\n"
 
 
 def test_cluster_select(started_cluster):
@@ -625,3 +650,22 @@ def test_cluster_select(started_cluster):
         assert len(cluster_secondary_queries) == 1
 
     assert node2.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`", settings={"parallel_replicas_for_cluster_engines":1, 'enable_parallel_replicas': 2, 'cluster_for_parallel_replicas': 'cluster_simple', 'parallel_replicas_for_cluster_engines' : 1}) == 'pablo\n'
+    
+def test_not_specified_catalog_type(started_cluster):
+    node = started_cluster.instances["node1"]
+    settings = {
+        "warehouse": "demo",
+        "storage_endpoint": "http://minio:9000/warehouse-rest",
+    }
+
+    node.query(
+        f"""
+    DROP DATABASE IF EXISTS {CATALOG_NAME};
+    SET allow_database_iceberg=true;
+    SET write_full_path_in_iceberg_metadata=1;
+    CREATE DATABASE {CATALOG_NAME} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
+    SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
+    """
+    )
+    with pytest.raises(Exception):
+        node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
