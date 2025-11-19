@@ -588,6 +588,7 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
         bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
         size_t null_count = 0;
+        bool first_array_has_null = false;
 
         for (size_t arg_num = 0; arg_num < args; ++arg_num)
         {
@@ -638,7 +639,11 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
             if (!current_has_nullable)
                 all_has_nullable = false;
             else
+            {
                 null_count++;
+                if (arg_num == 0)
+                    first_array_has_null = true;
+            }
 
         }
 
@@ -698,8 +703,8 @@ ColumnPtr FunctionArrayIntersect<Mode>::execute(const UnpackedArrays & arrays, M
 
                 if (arg.null_map && (*arg.null_map)[i])
                 {
-                    // Handle NULL: only include if NULL appears only in first array
-                    if (null_count == 1 && !null_added)
+                    // Handle NULL: only include if NULL appears in first array and not in other arrays
+                    if (first_array_has_null && null_count == 1 && !null_added)
                     {
                         ++result_offset;
                         result_data.insertDefault();
