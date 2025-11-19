@@ -2337,3 +2337,66 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         ASSERT_EQ(approve_order, "40 50 20 20 30 15 50 10");
     }
 }
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloadsWithWeights)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS weight = 3");
+
+    ClassifierPtr dev = t.manager->acquire("dev");
+    ClassifierPtr prd = t.manager->acquire("prd");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink dev_link = dev->get("memory");
+        ResourceLink prd_link = prd->get("memory");
+        std::array<std::optional<TestAllocation>, 8> allocations;
+        for (int idx = 0; idx < allocations.size(); ++idx)
+        {
+            ResourceLink link = (idx % 2 == 0) ? dev_link : prd_link;
+            allocations[idx].emplace(link, fmt::format("{}{}", (idx % 2 == 0) ? "D" : "P", idx), 1);
+            allocations[idx]->waitSync();
+        }
+
+        std::mutex mutex;
+        String approve_order;
+
+        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        t.executeFromScheduler("memory", [&]
+        {
+            int idx = 0;
+            for (int mem : { 50, 40, 20, 20, 50, 30, 10, 15 })
+            {
+                allocations[idx++]->setSize(mem, [&, mem]
+                {
+                    std::unique_lock lock(mutex);
+                    if (approve_order.size() > 0)
+                        approve_order += " ";
+                    approve_order += std::to_string(mem);
+                });
+            }
+        });
+
+        for (auto & alloc : allocations)
+            alloc->waitSync();
+
+        std::unique_lock lock(mutex);
+
+        // dev and prd workloads orders its running allocation increases by fair_key - resulting allocation size
+        // (note that all allocations start from size 1 in this test)
+        // while all workload orders its children by parent_key - resulting total size of all allocations in workload
+        // dev: 10 20 50 50             ~ fair_key
+        //      10 30 80 130 <-- (sum)  ~ parent_key
+        // prd: 15 20 30 40             ~ fair_key
+        //      5  12 22 35 <-- (sum/3) ~ parent_key
+        // We also check that parent key is based on target size = `allocated + increase.size`, not current size = `allocated`:
+        // * After: 10 15 20 20, we would have dev demanding 30 -> 80, and prd demanding 35 -> 65
+        // * so prd wins (65 < 80) while based on current size dev would win (30 < 35)
+        // This way of ordering approximates max-min fairness between workloads better.
+        ASSERT_EQ(approve_order, "15 20 10 30 20 40 50 50");
+    }
+}
