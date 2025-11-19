@@ -1,29 +1,33 @@
 -------------------------
 Expression ((Project names + Projection))
-  Aggregating
-    Expression ((Before GROUP BY + ))
-      GatherExchange
-        JoinLogical
-          ScatterExchange (by hash([__table1.src_ip]))
-            Expression ((WHERE + Change column names to column identifiers))
-              GatherExchange
-                ReadFromMergeTree (default.test)
-          ScatterExchange (by hash([__table2.dst_ip]))
-            Filter ((WHERE + Change column names to column identifiers))
-              GatherExchange
-                ReadFromMergeTree (default.test)
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        ScatterExchange (any)
+          Expression (((Before GROUP BY + ) + Discarding unused columns))
+            GatherExchange
+              JoinLogical
+                ScatterExchange (by hash([__table1.src_ip]))
+                  Expression ((WHERE + Change column names to column identifiers))
+                    GatherExchange
+                      ReadFromMergeTree (default.test)
+                ScatterExchange (by hash([__table2.dst_ip]))
+                  Filter ((WHERE + Change column names to column identifiers))
+                    GatherExchange
+                      ReadFromMergeTree (default.test)
 -------------------------
 Expression ((Project names + Projection))
-  Aggregating
+  MergingAggregated (merge)
     GatherExchange
-      Expression ((Before GROUP BY + ))
-        JoinLogical
-          ShuffleExchange (by hash([__table1.src_ip]))
-            Expression ((WHERE + Change column names to column identifiers))
-              ReadFromMergeTree (default.test)
-          ShuffleExchange (by hash([__table2.dst_ip]))
-            Filter ((WHERE + Change column names to column identifiers))
-              ReadFromMergeTree (default.test)
+      Aggregating (partial)
+        Expression (((Before GROUP BY + ) + Discarding unused columns))
+          JoinLogical
+            ShuffleExchange (by hash([__table1.src_ip]))
+              Expression ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.test)
+            ShuffleExchange (by hash([__table2.dst_ip]))
+              Filter ((WHERE + Change column names to column identifiers))
+                ReadFromMergeTree (default.test)
 -------------------------
 1019
 1019
