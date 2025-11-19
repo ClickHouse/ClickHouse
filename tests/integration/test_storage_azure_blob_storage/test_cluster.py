@@ -338,3 +338,59 @@ def test_format_detection(cluster):
     )
 
     assert result == expected_result
+
+
+def test_azure_with_rbac(cluster):
+    node = cluster.instances["node_0"]
+    storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+
+    node.query("DROP USER IF EXISTS azure_user")
+    node.query("CREATE USER azure_user IDENTIFIED WITH NO_PASSWORD")
+    node.query("GRANT CREATE TEMPORARY TABLE ON *.* TO azure_user")
+
+    azure_query(
+        node,
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1', "
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'auto', "
+        f"'auto', 'a UInt64') VALUES (1), (2)",
+        settings={"azure_truncate_on_insert": 1},
+    )
+
+    pure_azure = azure_query(
+        node,
+        f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')",
+        expect_error=True,
+        user="azure_user",
+    )
+
+    assert "Not enough privileges" in pure_azure
+
+    azure_cluster = azure_query(
+        node,
+        f"SELECT * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')",
+        expect_error=True,
+        user="azure_user",
+    )
+
+    assert "Not enough privileges" in azure_cluster
+
+    # Should work after granting access.
+    node.query("GRANT AZURE ON *.* TO azure_user")
+
+    pure_azure = azure_query(
+        node,
+        f"SELECT * from azureBlobStorage('{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')",
+        user="azure_user",
+    )
+
+    azure_cluster = azure_query(
+        node,
+        f"SELECT * from azureBlobStorageCluster('simple_cluster', '{storage_account_url}', 'cont', 'test_cluster_with_named_collection.csv', 'devstoreaccount1',"
+        f"'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==')",
+        user="azure_user",
+    )
+
+    assert TSV(pure_azure) == TSV(azure_cluster)

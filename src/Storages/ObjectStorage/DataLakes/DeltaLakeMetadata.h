@@ -6,6 +6,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Core/Types.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
@@ -31,10 +32,11 @@ class DeltaLakeMetadata final : public IDataLakeMetadata
 {
 public:
     static constexpr auto name = "DeltaLake";
+    const char * getName() const override { return name; }
 
     DeltaLakeMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
 
-    NamesAndTypesList getTableSchema() const override { return schema; }
+    NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return schema; }
 
     DeltaLakePartitionColumns getPartitionColumns() const { return partition_columns; }
 
@@ -44,6 +46,18 @@ public:
         return deltalake_metadata
             && !data_files.empty() && !deltalake_metadata->data_files.empty()
             && data_files == deltalake_metadata->data_files;
+    }
+
+    static void createInitial(
+        const ObjectStoragePtr & /*object_storage*/,
+        const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
+        const ContextPtr & /*local_context*/,
+        const std::optional<ColumnsDescription> & /*columns*/,
+        ASTPtr /*partition_by*/,
+        bool /*if_not_exists*/,
+        std::shared_ptr<DataLake::ICatalog> /*catalog*/,
+        const StorageID & /*table_id_*/)
+    {
     }
 
     static DataLakeMetadataPtr create(
@@ -61,6 +75,7 @@ protected:
         const ActionsDAG * filter_dag,
         FileProgressCallback callback,
         size_t list_batch_size,
+        StorageMetadataPtr storage_metadata_snapshot,
         ContextPtr context) const override;
 
 private:

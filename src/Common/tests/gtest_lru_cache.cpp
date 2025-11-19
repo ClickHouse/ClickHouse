@@ -105,3 +105,18 @@ TEST(LRUCache, getOrSet)
     ASSERT_TRUE(*value == 10);
 }
 
+
+TEST(LRUCache, noOnRemoveEntryCallback)
+{
+    DB::LRUCachePolicy<std::string, size_t> lru_cache = {CurrentMetrics::end(), CurrentMetrics::end(), 10, 1, {}};
+    lru_cache.set("key1", std::make_shared<size_t>(10));
+    auto value = lru_cache.get("key1");
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(*value == 10);
+    lru_cache.set("key2", std::make_shared<size_t>(20));
+    value = lru_cache.get("key1");
+    ASSERT_TRUE(value == nullptr);
+    value = lru_cache.get("key2");
+    ASSERT_TRUE(value != nullptr);
+    ASSERT_TRUE(*value == 20);
+}

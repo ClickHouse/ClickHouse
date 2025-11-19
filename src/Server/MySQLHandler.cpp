@@ -170,6 +170,12 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
+/// Replace "SHOW COLLATIONS" into empty response.
+static String showCollationsReplacementQuery(const String & /*query*/)
+{
+    return "SELECT 1 LIMIT 0";
+}
+
 
 /** MySQL returns this error code, HY000, so should we.
   *
@@ -221,6 +227,7 @@ MySQLHandler::MySQLHandler(
     queries_replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     queries_replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
+    queries_replacements.emplace("SHOW COLLATION", showCollationsReplacementQuery);
     settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
@@ -230,7 +237,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
+    DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -311,6 +318,7 @@ void MySQLHandler::run()
 
             if (!tcp_server.isOpen())
                 return;
+
             try
             {
                 switch (command)
@@ -556,10 +564,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)

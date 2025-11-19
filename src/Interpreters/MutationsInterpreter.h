@@ -29,7 +29,8 @@ IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
@@ -133,6 +134,7 @@ public:
         const MergeTreeData * getMergeTreeData() const;
         AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
         MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        bool isMutatingDataPart() const;
 
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;

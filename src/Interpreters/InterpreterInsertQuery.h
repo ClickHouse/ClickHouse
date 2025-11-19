@@ -59,8 +59,6 @@ public:
 
     bool supportsTransactions() const override { return true; }
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer);
-
     static bool shouldAddSquashingForStorage(const StoragePtr & table, ContextPtr context);
 
 private:
@@ -81,8 +79,6 @@ private:
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
 
-    std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
-
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline addInsertToSelectPipeline(ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
@@ -92,7 +88,8 @@ private:
     buildLocalInsertSelectPipelineForParallelReplicas(ASTInsertQuery & query, const StoragePtr & table);
 
     // if applicable, build pipeline for replicated MergeTree from cluster storage
-    std::optional<QueryPipeline> distributedWriteIntoReplicatedMergeTreeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
+    std::optional<QueryPipeline>
+    distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage(const ASTInsertQuery & query, ContextPtr local_context);
 };
 
 }

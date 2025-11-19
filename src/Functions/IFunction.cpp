@@ -1,11 +1,11 @@
 #include <Functions/FunctionDynamicAdaptor.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
@@ -73,14 +73,14 @@ ColumnPtr replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
     size_t num_rows = input_rows_count;
     ColumnPtr indexes;
 
-    /// Find first LowCardinality column and replace it to nested dictionary.
+    /// Find first LowCardinality column and replace it with nested dictionary.
     for (auto & column : args)
     {
         if (const auto * low_cardinality_column = checkAndGetColumn<ColumnLowCardinality>(column.column.get()))
         {
-            /// Single LowCardinality column is supported now.
+            /// Only a single LowCardinality column is supported now.
             if (indexes)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected single dictionary argument for function.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Default functions implementation for LowCardinality is supported only with a single LowCardinality argument.");
 
             const auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(column.type.get());
 
@@ -364,6 +364,12 @@ static void convertSparseColumnsToFull(ColumnsWithTypeAndName & args)
         column.column = recursiveRemoveSparse(column.column);
 }
 
+static void convertReplicatedColumnsToFull(ColumnsWithTypeAndName & args)
+{
+    for (auto & column : args)
+        column.column = column.column->convertToFullColumnIfReplicated();
+}
+
 IExecutableFunction::IExecutableFunction()
 {
     if (CurrentThread::isInitialized())
@@ -407,9 +413,9 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
             if (indexes && !res_is_constant)
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0));
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes->index(*indexes, 0), /*is_shared=*/false);
             else
-                result = ColumnLowCardinality::create(res_dictionary, res_indexes);
+                result = ColumnLowCardinality::create(res_dictionary, res_indexes, /*is_shared=*/false);
 
             if (res_is_constant)
                 result = ColumnConst::create(std::move(result), input_rows_count);
@@ -431,6 +437,67 @@ ColumnPtr IExecutableFunction::execute(
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
 
+    if (useDefaultImplementationForReplicatedColumns())
+    {
+        /// If we have only constants and replicated columns with the same indexes
+        /// we can execute function on nested columns and create replicated column
+        /// from the result using common indexes.
+        ColumnPtr common_replicated_indexes;
+        bool has_full_columns = false;
+        size_t nested_column_size = 0;
+        for (const auto & argument : arguments)
+        {
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
+            {
+                if (!common_replicated_indexes)
+                {
+                    common_replicated_indexes = column_replicated->getIndexesColumn();
+                    nested_column_size = column_replicated->getNestedColumn()->size();
+                }
+                else if (common_replicated_indexes != column_replicated->getIndexesColumn())
+                {
+                    common_replicated_indexes.reset();
+                    break;
+                }
+            }
+            else if (!isColumnConst(*argument.column))
+            {
+                has_full_columns = true;
+                break;
+            }
+        }
+
+        auto arguments_without_replicated = arguments;
+        if (has_full_columns || !common_replicated_indexes)
+        {
+            convertReplicatedColumnsToFull(arguments_without_replicated);
+            return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
+        }
+
+        for (auto & argument : arguments_without_replicated)
+        {
+            /// Replace replicated columns to their nested columns.
+            if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(argument.column.get()))
+                argument.column = column_replicated->getNestedColumn();
+            /// Change size for constants.
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(argument.column.get()))
+                argument.column = ColumnConst::create(column_const->getDataColumnPtr(), nested_column_size);
+        }
+
+        auto result = executeWithoutReplicatedColumns(arguments_without_replicated, result_type, nested_column_size, dry_run);
+
+        if (isLazyReplicationUseful(result))
+            return ColumnReplicated::create(result, common_replicated_indexes);
+
+        return result->index(*common_replicated_indexes, 0);
+    }
+
+    return executeWithoutReplicatedColumns(arguments, result_type, input_rows_count, dry_run);
+}
+
+ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
+{
     bool use_default_implementation_for_sparse_columns = useDefaultImplementationForSparseColumns();
     /// DataTypeFunction does not support obtaining default (isDefaultAt())
     /// ColumnFunction does not support getting specific values.

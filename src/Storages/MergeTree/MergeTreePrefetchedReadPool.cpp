@@ -13,8 +13,10 @@
 #include <base/getThreadId.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 
 
 namespace ProfileEvents
@@ -31,7 +33,6 @@ namespace Setting
     extern const SettingsBool merge_tree_determine_task_size_by_prewhere_columns;
     extern const SettingsUInt64 filesystem_prefetch_step_bytes;
     extern const SettingsUInt64 filesystem_prefetch_step_marks;
-    extern const SettingsUInt64 filesystem_prefetches_limit;
     extern const SettingsUInt64 prefetch_buffer_size;
 }
 
@@ -70,7 +71,7 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     MergeTreePrefetchedReadPool & read_prefetch)
     : is_valid(true)
     , readers(std::move(readers_))
-    , prefetch_runner(pool, "ReadPrepare")
+    , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
     prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
 
@@ -88,12 +89,16 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
 
 void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
 {
+    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::wait");
+
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
     prefetch_runner.waitForAllToFinish();
 }
 
 MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 {
+    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::get");
+
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
 
@@ -106,7 +111,9 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
+    const IndexReadTasks & index_read_tasks_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
@@ -118,7 +125,9 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
+        index_read_tasks_,
         storage_snapshot_,
+        row_level_filter_,
         prewhere_info_,
         actions_settings_,
         reader_settings_,
@@ -167,6 +176,8 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
 void MergeTreePrefetchedReadPool::startPrefetches()
 {
+    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::startPrefetches");
+
     if (prefetch_queue.empty())
         return;
 
@@ -193,6 +204,8 @@ void MergeTreePrefetchedReadPool::startPrefetches()
 
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
+    OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::getTask");
+
     std::lock_guard lock(mutex);
 
     if (per_thread_tasks.empty())
@@ -423,13 +436,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         sum_marks,
         threads,
         min_marks_per_thread,
-        settings[Setting::filesystem_prefetches_limit].value,
+        reader_settings.filesystem_prefetches_limit,
         total_size_approx);
 
     size_t allowed_memory_usage = settings[Setting::filesystem_prefetch_max_memory_usage];
 
     std::optional<size_t> allowed_prefetches_num
-        = settings[Setting::filesystem_prefetches_limit] ? std::optional<size_t>(settings[Setting::filesystem_prefetches_limit]) : std::nullopt;
+        = reader_settings.filesystem_prefetches_limit ? std::optional<size_t>(reader_settings.filesystem_prefetches_limit) : std::nullopt;
 
     per_thread_tasks.clear();
     size_t total_tasks = 0;

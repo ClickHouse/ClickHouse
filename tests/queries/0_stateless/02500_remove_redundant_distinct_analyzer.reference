@@ -80,17 +80,20 @@ Expression (Project names)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
           Expression (Projection)
-            Join (JOIN FillRightFirst)
-              Expression ((Change column names to column identifiers + Project names))
-                Distinct (DISTINCT)
-                  Distinct (Preliminary DISTINCT)
-                    Expression ((Projection + Change column names to column identifiers))
-                      ReadFromSystemNumbers
-              Expression ((Change column names to column identifiers + Project names))
-                Distinct (DISTINCT)
-                  Distinct (Preliminary DISTINCT)
-                    Expression ((Projection + Change column names to column identifiers))
-                      ReadFromSystemNumbers
+            Expression (Post Join Actions)
+              Join
+                Expression (Left Pre Join Actions)
+                  Expression ((Change column names to column identifiers + Project names))
+                    Distinct (DISTINCT)
+                      Distinct (Preliminary DISTINCT)
+                        Expression ((Projection + Change column names to column identifiers))
+                          ReadFromSystemNumbers
+                Expression (Right Pre Join Actions)
+                  Expression ((Change column names to column identifiers + Project names))
+                    Distinct (DISTINCT)
+                      Distinct (Preliminary DISTINCT)
+                        Expression ((Projection + Change column names to column identifiers))
+                          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -245,11 +248,14 @@ Expression ((Project names + (Projection + (Change column names to column identi
     Expression ((Before ORDER BY + Projection))
       Aggregating
         Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-          Join (JOIN FillRightFirst)
-            Expression (Change column names to column identifiers)
-              ReadFromSystemNumbers
-            Expression (Change column names to column identifiers)
-              ReadFromSystemNumbers
+          Expression (Post Join Actions)
+            Join
+              Expression (Left Pre Join Actions)
+                Expression (Change column names to column identifiers)
+                  ReadFromSystemNumbers
+              Expression (Right Pre Join Actions)
+                Expression (Change column names to column identifiers)
+                  ReadFromSystemNumbers
 -- execute
 0
 1
@@ -281,11 +287,14 @@ Expression (Project names)
           Expression ((Before ORDER BY + Projection))
             Aggregating
               Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-                Join (JOIN FillRightFirst)
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
-                  Expression (Change column names to column identifiers)
-                    ReadFromSystemNumbers
+                Expression (Post Join Actions)
+                  Join
+                    Expression (Left Pre Join Actions)
+                      Expression (Change column names to column identifiers)
+                        ReadFromSystemNumbers
+                    Expression (Right Pre Join Actions)
+                      Expression (Change column names to column identifiers)
+                        ReadFromSystemNumbers
 -- execute
 12
 -- GROUP BY WITH ROLLUP before DISTINCT with on different columns => do _not_ remove DISTINCT
@@ -316,11 +325,14 @@ Expression (Project names)
             Rollup
               Aggregating
                 Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-                  Join (JOIN FillRightFirst)
-                    Expression (Change column names to column identifiers)
-                      ReadFromSystemNumbers
-                    Expression (Change column names to column identifiers)
-                      ReadFromSystemNumbers
+                  Expression (Post Join Actions)
+                    Join
+                      Expression (Left Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
+                      Expression (Right Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
 -- execute
 12
 36
@@ -349,11 +361,14 @@ Expression ((Project names + (Projection + (Change column names to column identi
       Rollup
         Aggregating
           Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-            Join (JOIN FillRightFirst)
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
+            Expression (Post Join Actions)
+              Join
+                Expression (Left Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromSystemNumbers
+                Expression (Right Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromSystemNumbers
 -- execute
 0
 0
@@ -387,11 +402,14 @@ Expression (Project names)
             Cube
               Aggregating
                 Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-                  Join (JOIN FillRightFirst)
-                    Expression (Change column names to column identifiers)
-                      ReadFromSystemNumbers
-                    Expression (Change column names to column identifiers)
-                      ReadFromSystemNumbers
+                  Expression (Post Join Actions)
+                    Join
+                      Expression (Left Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
+                      Expression (Right Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
 -- execute
 12
 36
@@ -420,11 +438,14 @@ Expression ((Project names + (Projection + (Change column names to column identi
       Cube
         Aggregating
           Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-            Join (JOIN FillRightFirst)
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
+            Expression (Post Join Actions)
+              Join
+                Expression (Left Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromSystemNumbers
+                Expression (Right Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromSystemNumbers
 -- execute
 0
 0
@@ -458,11 +479,14 @@ Expression (Project names)
             TotalsHaving
               Aggregating
                 Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-                  Join (JOIN FillRightFirst)
-                    Expression (Change column names to column identifiers)
-                      ReadFromSystemNumbers
-                    Expression (Change column names to column identifiers)
-                      ReadFromSystemNumbers
+                  Expression (Post Join Actions)
+                    Join
+                      Expression (Left Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
+                      Expression (Right Pre Join Actions)
+                        Expression (Change column names to column identifiers)
+                          ReadFromSystemNumbers
 -- execute
 12
 
@@ -492,11 +516,14 @@ Expression ((Project names + (Projection + (Change column names to column identi
       TotalsHaving
         Aggregating
           Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + Projection))))
-            Join (JOIN FillRightFirst)
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
-              Expression (Change column names to column identifiers)
-                ReadFromSystemNumbers
+            Expression (Post Join Actions)
+              Join
+                Expression (Left Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromSystemNumbers
+                Expression (Right Pre Join Actions)
+                  Expression (Change column names to column identifiers)
+                    ReadFromSystemNumbers
 -- execute
 0
 1

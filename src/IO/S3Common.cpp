@@ -21,10 +21,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event S3GetObjectAttributes;
     extern const Event S3GetObjectMetadata;
     extern const Event S3HeadObject;
-    extern const Event DiskS3GetObjectAttributes;
     extern const Event DiskS3GetObjectMetadata;
     extern const Event DiskS3HeadObject;
 }

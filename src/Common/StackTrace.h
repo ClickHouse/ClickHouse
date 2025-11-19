@@ -55,6 +55,8 @@ public:
     /// Creates empty object for deferred initialization
     explicit StackTrace(NoCapture) {}
 
+    StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_ = 0);
+
     constexpr size_t getSize() const { return size; }
     constexpr size_t getOffset() const { return offset; }
     const FramePointers & getFramePointers() const { return frame_pointers; }

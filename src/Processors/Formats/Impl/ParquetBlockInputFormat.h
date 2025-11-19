@@ -5,8 +5,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatParserGroup.h>
-
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/FormatFilterInfo.h>
 #include <queue>
 
 namespace parquet
@@ -51,6 +51,28 @@ class ParquetRecordReader;
 // parallel reading+decoding, instead of using ParallelReadBuffer and ParallelParsingInputFormat.
 // That's what RandomAccessInputCreator in FormatFactory is about.
 
+struct ParquetFileBucketInfo : public FileBucketInfo
+{
+    std::vector<size_t> row_group_ids;
+
+    ParquetFileBucketInfo() = default;
+    explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
+    void serialize(WriteBuffer & buffer) override;
+    void deserialize(ReadBuffer & buffer) override;
+    String getIdentifier() const override;
+    String getFormatName() const override
+    {
+        return "Parquet";
+    }
+};
+using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
+
+struct ParquetBucketSplitter : public IBucketSplitter
+{
+    ParquetBucketSplitter() = default;
+    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+};
+
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
@@ -58,7 +80,8 @@ public:
         ReadBuffer & buf,
         SharedHeader header,
         const FormatSettings & format_settings_,
-        FormatParserGroupPtr parser_group_,
+        FormatParserSharedResourcesPtr parser_shared_resources_,
+        FormatFilterInfoPtr format_filter_info_,
         size_t min_bytes_for_seek_);
 
     ~ParquetBlockInputFormat() override;
@@ -70,6 +93,8 @@ public:
     const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
+
+    void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
 private:
     Chunk read() override;
@@ -211,6 +236,7 @@ private:
         //  (at most max_pending_chunks_per_row_group)
 
         size_t next_chunk_idx = 0;
+        std::vector<size_t> chunk_sizes;
         size_t num_pending_chunks = 0;
 
         size_t total_rows = 0;
@@ -293,8 +319,10 @@ private:
     };
 
     const FormatSettings format_settings;
-    const std::unordered_set<int> & skip_row_groups;
-    FormatParserGroupPtr parser_group;
+    std::unordered_set<int> skip_row_groups;
+    ParquetFileBucketInfoPtr buckets_to_read;
+    FormatParserSharedResourcesPtr parser_shared_resources;
+    FormatFilterInfoPtr format_filter_info;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
@@ -320,13 +348,13 @@ private:
     std::condition_variable condvar;
 
     std::vector<RowGroupBatchState> row_group_batches;
+    std::vector<size_t> row_group_batches_skipped_rows;
     std::priority_queue<PendingChunk, std::vector<PendingChunk>, PendingChunk::Compare> pending_chunks;
     size_t row_group_batches_completed = 0;
 
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
-    bool use_thread_pool = false;
-    std::shared_ptr<ShutdownHelper> shutdown = std::make_shared<ShutdownHelper>();
+    std::unique_ptr<ThreadPool> pool;
     std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;
@@ -336,12 +364,13 @@ private:
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
     std::optional<std::unordered_map<String, String>> parquet_names_to_clickhouse;
+    std::optional<std::unordered_map<String, String>> clickhouse_names_to_parquet;
 };
 
-class ParquetSchemaReader : public ISchemaReader
+class ArrowParquetSchemaReader : public ISchemaReader
 {
 public:
-    ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
     std::optional<size_t> readNumberOrRows() override;

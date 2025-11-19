@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
+    extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
 
 namespace
@@ -54,7 +55,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (columns_without_table.find(column.name) == columns_without_table.end())
+        if (!columns_without_table.contains(column.name))
             return true;
     }
     return false;
@@ -69,7 +70,8 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases();
+    const auto & settings = context->getSettingsRef();
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -88,21 +90,32 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
-    MutableColumnPtr database_column = ColumnString::create();
+    MutableColumnPtr table_column = ColumnString::create();
+    MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
     if (dag)
     {
         bool filter_by_engine = false;
+        bool filter_by_uuid = false;
         for (const auto * input : dag->getInputs())
+        {
             if (input->result_name == "engine")
                 filter_by_engine = true;
 
+            if (input->result_name == "uuid")
+                filter_by_uuid = true;
+        }
+
         if (filter_by_engine)
             engine_column = ColumnString::create();
+
+        if (filter_by_uuid)
+            uuid_column = ColumnUUID::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
@@ -117,23 +130,30 @@ ColumnPtr getFilteredTables(
             auto table_it = database->getDetachedTablesIterator(context, {}, false);
             for (; table_it->isValid(); table_it->next())
             {
-                database_column->insert(table_it->table());
+                table_column->insert(table_it->table());
             }
         }
         else
         {
-            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
+            auto table_it = database->getLightweightTablesIterator(context,
+                                                                   /* filter_by_table_name */ {},
+                                                                   /* skip_not_loaded */ false);
+            for (; table_it->isValid(); table_it->next())
             {
-                database_column->insert(table_it->name());
+                table_column->insert(table_it->name());
                 if (engine_column)
                     engine_column->insert(table_it->table()->getName());
+                if (uuid_column)
+                    uuid_column->insert(table_it->table()->getStorageID().uuid);
             }
         }
     }
 
-    Block block{ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
+    Block block{ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "name")};
     if (engine_column)
         block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
+    if (uuid_column)
+        block.insert(ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid"));
 
     if (dag)
         VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
@@ -213,6 +233,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
+        {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
     };
 
     description.setAliases({
@@ -416,7 +437,7 @@ protected:
                                 {
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index++]->insertDefault();
+                                    res_columns[res_index]->insertDefault();
                                 }
                                 ++res_index;
                             }
@@ -436,7 +457,9 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getLightweightTablesIterator(context);
+                tables_it = database->getLightweightTablesIterator(context,
+                        /* filter_by_table_name */ {},
+                        /* skip_not_loaded */ false);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -811,7 +834,18 @@ protected:
                         res_columns[res_index++]->insert(dependents_databases);
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
+                }
+                else
+                {
+                    src_index += 4;
+                }
 
+                if (columns_mask[src_index++])
+                {
+                    if (table && table->getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+                        res_columns[res_index++]->insert(*table->getInMemoryMetadataPtr()->definer);
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
             }
         }

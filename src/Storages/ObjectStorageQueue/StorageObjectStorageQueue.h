@@ -94,7 +94,6 @@ private:
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -102,6 +101,8 @@ private:
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
+    size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
+    size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
@@ -137,7 +138,7 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
-        FormatParserGroupPtr parser_group,
+        FormatParserSharedResourcesPtr parser_shared_resources,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,

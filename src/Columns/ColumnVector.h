@@ -205,7 +205,7 @@ public:
         res = (*this)[n];
     }
 
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -269,6 +269,7 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
+    std::span<char> insertRawUninitialized(size_t count) override;
 
     std::string_view getRawData() const override
     {

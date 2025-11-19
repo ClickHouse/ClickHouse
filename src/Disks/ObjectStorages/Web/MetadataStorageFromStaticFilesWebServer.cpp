@@ -24,7 +24,7 @@ MetadataStorageFromStaticFilesWebServer::MetadataStorageFromStaticFilesWebServer
 
 MetadataTransactionPtr MetadataStorageFromStaticFilesWebServer::createTransaction()
 {
-    return std::make_shared<MetadataStorageFromStaticFilesWebServerTransaction>(*this);
+    throwNotImplemented();
 }
 
 const std::string & MetadataStorageFromStaticFilesWebServer::getPath() const
@@ -109,11 +109,6 @@ std::optional<StoredObjects> MetadataStorageFromStaticFilesWebServer::getStorage
     return std::nullopt;
 }
 
-bool MetadataStorageFromStaticFilesWebServer::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return false;
-}
-
 std::vector<std::string> MetadataStorageFromStaticFilesWebServer::listDirectory(const std::string & path) const
 {
     std::vector<std::string> result;
@@ -136,21 +131,6 @@ DirectoryIteratorPtr MetadataStorageFromStaticFilesWebServer::iterateDirectory(c
     dir_file_paths = object_storage.listDirectory(path);
     LOG_TRACE(object_storage.log, "Iterate directory {} with {} files", path, dir_file_paths.size());
     return std::make_unique<StaticDirectoryIterator>(std::move(dir_file_paths));
-}
-
-const IMetadataStorage & MetadataStorageFromStaticFilesWebServerTransaction::getStorageForNonTransactionalReads() const
-{
-    return metadata_storage;
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::createDirectory(const std::string &)
-{
-    /// Noop.
-}
-
-void MetadataStorageFromStaticFilesWebServerTransaction::createDirectoryRecursive(const std::string &)
-{
-    /// Noop.
 }
 
 }

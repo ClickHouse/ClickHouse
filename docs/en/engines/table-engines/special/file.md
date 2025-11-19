@@ -4,10 +4,11 @@ description: 'The File table engine keeps the data in a file in one of the suppo
 sidebar_label: 'File'
 sidebar_position: 40
 slug: /engines/table-engines/special/file
-title: 'File Table Engine'
+title: 'File table engine'
+doc_type: 'reference'
 ---
 
-# `File` table engine
+# File table engine
 
 The File table engine keeps the data in a file in one of the supported [file formats](/interfaces/formats#formats-overview) (`TabSeparated`, `Native`, etc.).
 
@@ -89,10 +90,10 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 - Supported creating new file by `INSERT` query.
 - If file exists, `INSERT` would append new values in it.
 - Not supported:
-    - `ALTER`
-    - `SELECT ... SAMPLE`
-    - Indices
-    - Replication
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - Indices
+  - Replication
 
 ## PARTITION BY {#partition-by}
 
