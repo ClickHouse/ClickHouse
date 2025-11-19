@@ -903,7 +903,7 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                     return false;
 
                 /// For usual DateTime check if value is within supported range
-                if (!dt64_mode && (*datetime_maybe < 0 || *datetime_maybe > UINT32_MAX))
+                if (!dt64_mode && (*datetime_maybe > UINT32_MAX))
                     return false;
 
                 datetime = *datetime_maybe;

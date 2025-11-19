@@ -795,7 +795,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 return false;
 
             /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe < 0 || *res_maybe > UINT32_MAX))
+            if (!is_64 && (*res_maybe > UINT32_MAX))
                 return false;
 
             res = *res_maybe;
@@ -808,7 +808,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 return false;
 
             /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe < 0 || *res_maybe > UINT32_MAX))
+            if (!is_64 && (*res_maybe > UINT32_MAX))
                 return false;
 
             res = *res_maybe;
