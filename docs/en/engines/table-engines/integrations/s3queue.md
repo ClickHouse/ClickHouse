@@ -123,6 +123,7 @@ ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-buck
 SETTINGS
     mode = 'unordered',
     after_processing = 'move',
+    after_processing_retries = 20,
     after_processing_move_prefix = 'dst_prefix',
     after_processing_move_uri = 'https://clickhouse-public-datasets.s3.amazonaws.com/dst-bucket',
     after_processing_move_access_key_id = 'test',
@@ -132,6 +133,16 @@ SETTINGS
 Move from an Azure container to another Azure container requires the Blob Storage connection string as `after_processing_move_connection_string` and the container name as `after_processing_move_container`. See [the AzureQueue settings](../../../engines/table-engines/integrations/azure-queue.md#settings).
 
 Tagging requires tag key and value provided as `after_processing_tag_key` and `after_processing_tag_value`.
+
+### `after_processing_retries` {#after_processing_retries}
+
+Number of retries for the requested after-processing action, before giving up.
+
+Possible values:
+
+- Non-negative integer.
+
+Default value: `10`.
 
 ### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
 
