@@ -26,11 +26,12 @@ function run()
     $MY_CLICKHOUSE_CLIENT --query "$query"
 
     $MY_CLICKHOUSE_CLIENT --query "
-        SELECT trim(explain) FROM
+        SELECT trim(explain) AS str FROM
         (
             EXPLAIN actions = 1, indexes = 1 $query SETTINGS use_skip_indexes_on_data_read = 1
         )
         WHERE explain ILIKE '%filter column%' OR explain ILIKE '%name: idx%'
+        ORDER BY str;
     "
 }
 
