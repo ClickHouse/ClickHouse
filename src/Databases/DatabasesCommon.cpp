@@ -336,44 +336,46 @@ void writeMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path, st
     out.reset();
 }
 
-void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
+void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context [[maybe_unused]])
 {
     if (!command.comment)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
-    String old_database_comment = db->getDatabaseComment();
-    db->setDatabaseComment(command.comment.value());
+    std::lock_guard lock{mutex};
+
+    const String old_comment = comment;
+    comment = command.comment.value();
 
     try
     {
 #if CLICKHOUSE_CLOUD
-        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(db->getEngineName());
+        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
+        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
+            return;
+#endif
+        const ASTPtr create_query = getCreateDatabaseQueryImpl();
+        if (!create_query)
+            throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+#if CLICKHOUSE_CLOUD
         if (managed_by_shared_catalog)
         {
-            if (!SharedDatabaseCatalog::isInitialQuery(query_context))
-                return;
 
-            auto ast = db->getCreateDatabaseQuery();
-            if (!ast)
-                throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(db->getDatabaseName()));
-
-            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(db->getUUID(), ast);
+            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
             query_context->setVersionToWaitSharedCatalog(version_to_wait);
             return;
         }
 #endif
-
-        DatabaseCatalog::instance().updateMetadataFile(db);
+        DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
     {
-        db->setDatabaseComment(old_database_comment);
+        comment = old_comment;
         throw;
     }
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
-    : IDatabase(name_)
+    : DatabaseWithAltersOnDiskBase(name_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(logger))
 {

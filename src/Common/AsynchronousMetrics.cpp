@@ -435,7 +435,7 @@ auto get_next_update_time(std::chrono::seconds update_period)
 
 void AsynchronousMetrics::run()
 {
-    setThreadName("AsyncMetrics");
+    DB::setThreadName(ThreadName::ASYNC_METRICS);
 
     while (true)
     {
