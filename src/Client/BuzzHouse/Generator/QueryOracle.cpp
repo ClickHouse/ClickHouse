@@ -34,9 +34,9 @@ const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
        {OutFormat::OUT_Values}};
 
 /// Correctness query oracle
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> [PRE]WHERE <PRED>;
+/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> [PRE]WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
+/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE> HAVING <PRED2>;
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -59,8 +59,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
     if (combination != 1)
     {
-        WhereStatement * wexpr = rg.nextSmallNumber() < 8 ? ssc->mutable_where() : ssc->mutable_pre_where();
-        BinaryExpr * bexpr = wexpr->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+        BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
         bexpr->set_op(BinaryOperator::BINOP_EQ);
         bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
@@ -92,7 +91,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
 
 /// SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
 /// or
-/// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> [PRE]WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
+/// SELECT ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY <GROUP_BY CLAUSE>;
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
@@ -119,8 +118,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     }
     else
     {
-        const WhereStatement & wexpr = ssc1.has_where() ? ssc1.where() : ssc1.pre_where();
-        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(wexpr.expr());
+        ExprComparisonHighProbability & expr = const_cast<ExprComparisonHighProbability &>(ssc1.where().expr());
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
