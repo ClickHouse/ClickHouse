@@ -641,6 +641,8 @@ void IcebergStorageSink::consume(Chunk & chunk)
 
     for (const auto & [partition_key, part_chunk] : partition_result)
     {
+        if (!part_chunk.hasRows())
+            continue;
         if (!writer_per_partition_key.contains(partition_key))
         {
             auto writer = MultipleFileWriter(
