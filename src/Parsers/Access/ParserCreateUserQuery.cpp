@@ -90,6 +90,9 @@ namespace
                 {
                     type = check_type;
 
+                    if (check_type == AuthenticationType::NO_AUTHENTICATION)
+                        return true;
+
                     if (check_type == AuthenticationType::LDAP)
                         expect_ldap_server_name = true;
                     else if (check_type == AuthenticationType::KERBEROS)

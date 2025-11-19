@@ -15,13 +15,16 @@ workflow = Workflow.Config(
             for j in JobConfigs.special_build_jobs
             if "fuzzers" in j.name
         ],
+        JobConfigs.coverage_build_jobs[0],
         JobConfigs.libfuzzer_job,
+        *JobConfigs.functional_tests_jobs_coverage,
     ],
     dockers=DOCKERS,
     secrets=SECRETS,
     artifacts=[
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        *ArtifactConfigs.clickhouse_binaries,
     ],
     enable_cache=True,
     enable_report=True,

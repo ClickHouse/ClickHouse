@@ -26,6 +26,8 @@ class AggregateFunctionCombinatorMerge final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "Merge"; }
 
+    bool transformsArgumentTypes() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.size() != 1)

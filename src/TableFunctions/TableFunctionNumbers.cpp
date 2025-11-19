@@ -45,7 +45,11 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
-    const char * getStorageEngineName() const override { return "SystemNumbers"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's SystemNumbers but it doesn't register itself
+        return "";
+    }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 

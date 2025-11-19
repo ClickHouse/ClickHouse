@@ -1,0 +1,118 @@
+SET allow_experimental_qbit_type = 1;
+
+
+{% for i in range(0, 2) -%}
+
+SET optimize_qbit_distance_function_reads = {{ i }};
+SELECT '========== optimize_qbit_distance_function_reads = {{ i }} ==========';
+
+-- Tests that failed in past
+
+SELECT 'Difficult test: 1';
+
+CREATE TABLE qbit (id UInt32, vec QBit(Float32, 3)) ENGINE = Memory;
+
+INSERT INTO qbit SELECT number + 1 AS id, arrayMap(i -> toFloat32(i + number), range(3)) AS vec FROM numbers(3);
+
+-- Use rounding to avoid minor precision differences between different architectures
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+
+-- This test is not about the output, but rather checks for segfaults 
+
+SELECT 'Difficult test: 2';
+
+CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 3)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0,1,2]);
+INSERT INTO qbit VALUES (2, [1,2,3]);
+INSERT INTO qbit VALUES (3, [2,3,4]);
+
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 16), 5) AS dist FROM qbit ORDER BY id;
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 8), 5) AS dist FROM qbit ORDER BY id;
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 4), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+
+CREATE TABLE qbit (id UInt32, vec QBit(Float32, 3)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0,1,2]);
+INSERT INTO qbit VALUES (2, [1,2,3]);
+INSERT INTO qbit VALUES (3, [2,3,4]);
+
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 3)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0,1,2]);
+INSERT INTO qbit VALUES (2, [1,2,3]);
+INSERT INTO qbit VALUES (3, [2,3,4]);
+
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 16), 5) AS dist FROM qbit ORDER BY id;
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 8), 5) AS dist FROM qbit ORDER BY id;
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 4), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+
+CREATE TABLE qbit (id UInt32, vec QBit(Float32, 3)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0,1,2]);
+INSERT INTO qbit VALUES (2, [1,2,3]);
+INSERT INTO qbit VALUES (3, [2,3,4]);
+
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+CREATE TABLE qbit (id UInt32, vec QBit(BFloat16, 3)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0,1,2]);
+INSERT INTO qbit VALUES (2, [1,2,3]);
+INSERT INTO qbit VALUES (3, [2,3,4]);
+
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 16), 5) AS dist FROM qbit ORDER BY id;
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 8), 5) AS dist FROM qbit ORDER BY id;
+WITH [toBFloat16(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 4), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+
+CREATE TABLE qbit (id UInt32, vec QBit(Float32, 3)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0,1,2]);
+INSERT INTO qbit VALUES (2, [1,2,3]);
+INSERT INTO qbit VALUES (3, [2,3,4]);
+
+WITH [toFloat32(0), 1, 2] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+
+-- Check if small p are handled correctly
+SELECT 'Difficult test: 3';
+
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 15)) ENGINE = Memory;
+
+INSERT INTO qbit VALUES (1, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+INSERT INTO qbit VALUES (2, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+INSERT INTO qbit VALUES (3, [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+
+WITH [toFloat64(0), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 64), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat64(0), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 32), 5) AS dist FROM qbit ORDER BY id;
+WITH [toFloat64(0), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14] AS reference_vec SELECT id, vec, round(L2DistanceTransposed(vec, reference_vec, 16), 5) AS dist FROM qbit ORDER BY id;
+DROP TABLE qbit;
+
+
+-- Check if non-cost reference vector works
+SELECT round(L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), range(rand() % 1 + 3)::Array(Float32), 32), 5);
+SELECT round(L2DistanceTransposed([1.0, 2.0, 3.0]::QBit(Float32, 3), materialize([1, 2, 3])::Array(Float32), 32), 5);
+
+
+-- Others
+SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 2)'), [0.1, 0.2], 64), 5) AS distance;
+SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float32, 2)'), [0.1, 0.2], 32), 5) AS distance; -- { serverError TYPE_MISMATCH }
+SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 4)'), [0.1, 0.2], 32), 5) AS distance; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT round(L2DistanceTransposed(CAST([0.0, 0.1], 'QBit(Float64, 4)'), [0.1, 0.2, 0.1, 0.2], 32), 5) AS distance; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+
+{% endfor -%}

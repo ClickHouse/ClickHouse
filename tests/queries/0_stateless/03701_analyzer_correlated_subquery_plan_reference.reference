@@ -1,0 +1,110 @@
+Expression ((Project names + Projection))
+Actions: INPUT :: 0 -> count() UInt64 : 0
+Positions: 0
+  Aggregating
+  Keys:
+  Aggregates:
+      count()
+        Function: count() → UInt64
+        Arguments: none
+  Skip merging: 0
+    Expression ((Before GROUP BY + WHERE))
+    Actions: INPUT :: 0 -> __table1.y Int32 : 0
+             INPUT :: 1 -> exists(__table2) UInt8 : 1
+             INPUT :: 2 -> __table1.x Int32 : 2
+    Positions:
+      Expression (Post Join Actions)
+      Actions: INPUT :: 0 -> __table1.x Int32 : 0
+               INPUT :: 1 -> __table1.y Int32 : 1
+               INPUT :: 2 -> exists(__table2) UInt8 : 2
+      Positions: 0 1 2
+        Join
+        Type: LEFT
+        Strictness: SEMI
+        Algorithm: ConcurrentHashJoin
+        Clauses: [(__table1.x) = (exists(__table2).__table1.x)]
+          Expression (Left Pre Join Actions)
+          Actions: INPUT :: 0 -> __table1.x Int32 : 0
+                   INPUT :: 1 -> __table1.y Int32 : 1
+          Positions: 0 1
+            Expression (WHERE)
+            Actions: INPUT :: 0 -> __table1.x Int32 : 0
+                     INPUT :: 1 -> __table1.y Int32 : 1
+            Positions: 0 1
+              Expression ((WHERE + Change column names to column identifiers))
+              Actions: INPUT : 0 -> x Int32 : 0
+                       INPUT : 1 -> y Int32 : 1
+                       ALIAS x :: 0 -> __table1.x Int32 : 2
+                       ALIAS y :: 1 -> __table1.y Int32 : 0
+              Positions: 2 0
+                ReadFromMergeTree (default.t)
+                ReadType: Default
+                Parts: 1
+                Granules: 1
+                Prewhere info
+                Need filter: 1
+                  Prewhere filter
+                  Prewhere filter column: equals(__table1.y, 1_UInt8) (removed)
+                  Actions: INPUT : 0 -> y Int32 : 0
+                           COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
+                           FUNCTION equals(y : 0, 1_UInt8 :: 1) -> equals(__table1.y, 1_UInt8) UInt8 : 2
+                  Positions: 0 2
+          Expression (Right Pre Join Actions)
+          Actions: INPUT :: 0 -> exists(__table2).__table1.x Int32 : 0
+                   INPUT :: 1 -> exists(__table2) UInt8 : 1
+          Positions: 0 1
+            Expression (Create result for always true EXISTS expression)
+            Actions: INPUT :: 0 -> __table4.number UInt64 : 0
+                     INPUT : 1 -> __table1.x Int32 : 1
+                     COLUMN Const(UInt8) -> exists(__table2) UInt8 : 2
+                     ALIAS __table1.x :: 1 -> exists(__table2).__table1.x Int32 : 3
+                     FUNCTION materialize(exists(__table2) :: 2) -> materialize(exists(__table2)) UInt8 : 1
+                     ALIAS materialize(exists(__table2)) :: 1 -> exists(__table2) UInt8 : 2
+            Positions: 3 2
+              Filter (WHERE)
+              Filter column: notEquals(__table4.number, __table1.x) (removed)
+              Actions: INPUT : 0 -> __table4.number UInt64 : 0
+                       INPUT : 1 -> __table1.x Int32 : 1
+                       FUNCTION notEquals(__table4.number : 0, __table1.x : 1) -> notEquals(__table4.number, __table1.x) UInt8 : 2
+              Positions: 2 0 1
+                Expression (Post Join Actions)
+                Actions: INPUT :: 0 -> __table1.x Int32 : 0
+                         INPUT :: 1 -> __table4.number UInt64 : 1
+                Positions: 0 1
+                  Join
+                  Type: CROSS
+                  Strictness: ALL
+                  Algorithm: HashJoin
+                    Expression (Left Pre Join Actions)
+                    Actions: INPUT :: 0 -> __table1.x Int32 : 0
+                    Positions: 0
+                      Expression (Project only used columns)
+                      Actions: INPUT :: 0 -> __table1.x Int32 : 0
+                               INPUT :: 1 -> __table1.y Int32 : 1
+                      Positions: 0
+                        Expression ((WHERE + Change column names to column identifiers))
+                        Actions: INPUT : 0 -> x Int32 : 0
+                                 INPUT : 1 -> y Int32 : 1
+                                 ALIAS x :: 0 -> __table1.x Int32 : 2
+                                 ALIAS y :: 1 -> __table1.y Int32 : 0
+                        Positions: 2 0
+                          ReadFromMergeTree (default.t)
+                          ReadType: Default
+                          Parts: 1
+                          Granules: 1
+                          Prewhere info
+                          Need filter: 1
+                            Prewhere filter
+                            Prewhere filter column: equals(__table1.y, 1_UInt8) (removed)
+                            Actions: INPUT : 0 -> y Int32 : 0
+                                     COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
+                                     FUNCTION equals(y : 0, 1_UInt8 :: 1) -> equals(__table1.y, 1_UInt8) UInt8 : 2
+                            Positions: 0 2
+                    Expression (Right Pre Join Actions)
+                    Actions: INPUT :: 0 -> __table4.number UInt64 : 0
+                    Positions: 0
+                      Expression (Change column names to column identifiers)
+                      Actions: INPUT : 0 -> number UInt64 : 0
+                               ALIAS number :: 0 -> __table4.number UInt64 : 1
+                      Positions: 1
+                        ReadFromSystemNumbers

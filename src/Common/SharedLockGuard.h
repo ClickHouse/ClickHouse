@@ -15,7 +15,7 @@ namespace ErrorCodes
 };
 
 /** SharedLockGuard provides RAII-style locking mechanism for acquiring shared ownership of the implementation
-  * of the SharedLockable concept (for example std::shared_mutex or ContextSharedMutex) supplied as the
+  * of the SharedLockable concept (for example SharedMutex or ContextSharedMutex) supplied as the
   * constructor argument. Think of it as std::lock_guard which locks shared.
   *
   * On construction it acquires shared ownership using `lock_shared` method.

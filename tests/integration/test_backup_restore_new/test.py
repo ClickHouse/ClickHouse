@@ -224,6 +224,20 @@ def test_restore_empty_table(engine):
     assert instance.query("SELECT count() FROM test.table") == "0\n"
 
 
+def test_restore_empty_memory_table_failpoint():
+    backup_name = new_backup_name()
+    create_and_fill_table(engine='Memory', n=0)
+
+    instance.query("SYSTEM ENABLE FAILPOINT backup_add_empty_memory_table")
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+    instance.query("SYSTEM DISABLE FAILPOINT backup_add_empty_memory_table")
+
+    instance.query("DROP TABLE test.table")
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
+
 def test_restore_materialized_view_with_definer():
     instance.query("CREATE DATABASE test")
     instance.query(
@@ -1650,6 +1664,7 @@ def test_backup_all(exclude_system_log_tables):
             "backup_log",
             "error_log",
             "blob_storage_log",
+            "aggregated_zookeeper_log",
         ]
         exclude_from_backup += ["system." + table_name for table_name in log_tables]
 
@@ -2061,8 +2076,8 @@ def test_rmv_no_definer():
     instance.query("CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 6 HOUR TO test.tgt (id UInt64) DEFINER = u1 SQL SECURITY DEFINER AS SELECT * FROM test.src")
 
     instance.query(f"BACKUP DATABASE test TO {backup_name}")
-    instance.query("DROP USER u1")
     instance.query("DROP TABLE test.rmv")
+    instance.query("DROP USER u1")
 
     instance.query(f"RESTORE ALL FROM {backup_name}")
 
@@ -2087,3 +2102,41 @@ def test_backupview():
     if instance.is_built_with_sanitizer():
         return  # This test is actually for clickhouse_backupview, not for ClickHouse itself.
     test_backupview_module.test_backupview_1()
+
+
+@pytest.mark.parametrize(
+    "engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"]
+)
+def test_restore_table_with_checksum_data_file_name(engine):
+    backup_name = new_backup_name()
+    create_and_fill_table(engine=engine)
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'")
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_incremental_backup_with_checksum_data_file_name():
+    backup_name = new_backup_name()
+    incremental_backup_name = new_backup_name()
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS data_file_name_generator='checksum'")
+
+    instance.query("INSERT INTO test.table VALUES (65, 'a'), (66, 'b')")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "102\t5081\n"
+    instance.query(
+        f"BACKUP TABLE test.table TO {incremental_backup_name} SETTINGS base_backup = {backup_name}, data_file_name_generator='checksum'"
+    )
+
+    instance.query(
+        f"RESTORE TABLE test.table AS test.table2 FROM {incremental_backup_name}"
+    )
+    assert instance.query("SELECT count(), sum(x) FROM test.table2") == "102\t5081\n"

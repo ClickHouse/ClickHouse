@@ -4,6 +4,7 @@ sidebar_label: 'LowCardinality(T)'
 sidebar_position: 42
 slug: /sql-reference/data-types/lowcardinality
 title: 'LowCardinality(T)'
+doc_type: 'reference'
 ---
 
 # LowCardinality(T)

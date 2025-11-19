@@ -1,4 +1,5 @@
-personal_ws-1.1 en 3452 
+personal_ws-1.1 en 3452
+aarch
 AArch
 ACLs
 ALTERs
@@ -33,6 +34,7 @@ AppleClang
 Approximative
 ArrayJoin
 ArrowCompression
+ArrowFlight
 ArrowStream
 AsyncInsertCacheSize
 AsynchronousHeavyMetricsCalculationTimeSpent
@@ -204,6 +206,24 @@ ConnectionDetails
 Const
 ContextLockWait
 Contrib
+conversio
+convertCharset
+cooldown
+coroutines
+corrmatrix
+corrMatrix
+corrstable
+corrStable
+cors
+CORS
+cosineDistance
+countDigits
+countDistinctIf
+countEqual
+counterintuitively
+countIf
+countMatches
+countMatchesCaseInsensitive
 CountMin
 Covid
 Cramer
@@ -280,6 +300,7 @@ DiskSpaceReservedForMerge
 DiskTotal
 DiskUnreserved
 DiskUsed
+DistanceTransposed
 DistributedCacheLogMode
 DistributedCachePoolBehaviourOnLimit
 DistributedDDLOutputMode
@@ -308,6 +329,7 @@ Eoan
 EphemeralNode
 EscapingRule
 Ethereum
+Eval
 ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
@@ -464,6 +486,38 @@ IntervalQuarter
 IntervalSecond
 IntervalWeek
 IntervalYear
+intExp
+intHash
+IntN
+invalidCertificateHandler
+invariants
+invertedindexes
+INVOKER
+IOPrefetchThreads
+IOPrefetchThreadsActive
+IOThreads
+IOThreadsActive
+IOUringInFlightEvents
+IOUringPendingEvents
+IOWriterThreads
+IOWriterThreadsActive
+IProcessor
+IPTrie
+IPv
+irate
+isAdjustedToUTC
+isConstant
+isDecimalOverflow
+isFinite
+isInfinite
+isIPAddressInRange
+isIPv
+isMergeTreePartCoveredBy
+isNaN
+isNotDistinctFrom
+isNotNull
+isNull
+isNullable
 IsPentagon
 IsResClassIII
 IsValid
@@ -516,6 +570,7 @@ JSONExtractStringCaseInsensitive
 JSONExtractUInt
 JSONExtractUIntCaseInsensitive
 JSONHas
+JSONL
 JSONLength
 JSONLines
 JSONObjectEachRow
@@ -533,6 +588,7 @@ JavaHash
 Jemalloc
 Jepsen
 JetBrains
+JetStream
 Jitter
 Joda
 JoinAlgorithm
@@ -569,6 +625,8 @@ LGPL
 LIMITs
 LINEITEM
 LLDB
+LLM
+LLMs
 LLVM's
 LOCALTIME
 LOCALTIMESTAMP
@@ -806,6 +864,7 @@ Observability
 Octonica
 Ok
 OnTime
+OneLake
 OpenAI
 OpenCelliD
 OpenFileForRead
@@ -831,6 +890,7 @@ PROXYv
 PRQL
 PSUN
 PagerDuty
+Paimon
 ParallelFormattingOutputFormatThreads
 ParallelFormattingOutputFormatThreadsActive
 ParallelParsingInputFormat
@@ -861,6 +921,7 @@ Poess
 PointDistKm
 PointDistM
 PointDistRads
+PolygonToCells
 PostHistory
 PostLink
 PostLinks
@@ -905,6 +966,7 @@ Punycode
 PyArrow
 PyCharm
 QATlib
+QBit
 QEMU
 QTCreator
 Quantile
@@ -940,6 +1002,7 @@ RawBLOB
 RawSum
 RawWithNames
 RawWithNamesAndTypes
+REPL
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -1146,8 +1209,10 @@ ThreadPoolRemoteFSReaderThreads
 ThreadPoolRemoteFSReaderThreadsActive
 ThreadsActive
 ThreadsInOvercommitTracker
+Tiering
 TimeSeries
 TimescaleDB's
+TimestampType
 Timeunit
 TinyLog
 Tkachenko
@@ -1182,6 +1247,7 @@ UDFs
 UInt
 UIntN
 ULID
+ULIDs
 ULIDStringToDateTime
 UMTS
 UNDROP
@@ -1214,6 +1280,7 @@ Uptime
 Uptrace
 UserID
 Util
+VARBINARY
 VARCHAR
 VIEWs
 Vadim
@@ -1252,6 +1319,8 @@ XORs
 Xeon
 YAML
 YAMLRegExpTree
+YTsaurus
+YTsaurus
 YYYY
 YYYYMMDD
 YYYYMMDDToDate
@@ -1328,10 +1397,14 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
+areaCartesian
+areaSpherical
 argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -1406,6 +1479,7 @@ arrayUniq
 arrayWithConstant
 arrayZip
 arrayZipUnaligned
+arrowFlight
 ascii
 asin
 asinh
@@ -1418,6 +1492,7 @@ atanh
 atomicity
 auth
 authType
+authenticatedUser
 authenticator
 authenticators
 autocompletion
@@ -1447,6 +1522,7 @@ backupview
 balancer
 basename
 bcrypt
+bcrypt's
 bech
 benchmarked
 benchmarking
@@ -1627,6 +1703,7 @@ const
 constexpr
 consumptio
 contrib
+conv
 conversio
 convertCharset
 cooldown
@@ -1679,6 +1756,7 @@ csv
 csvwithnames
 csvwithnamesandtypes
 ctukey
+cume
 curdate
 currentDatabase
 currentProfiles
@@ -1915,6 +1993,8 @@ flamegraph
 flatbuffers
 flattenTuple
 flink
+Flink
+flipCoordinates
 fluentd
 fmtlib
 formatDateTime
@@ -2057,6 +2137,7 @@ gtid
 gunzip
 gzip
 gzipped
+hackernews
 hadoop
 halfMD
 halfday
@@ -2065,7 +2146,9 @@ hardlinked
 hardlinking
 hardlinks
 hasAll
+hasAllTokens
 hasAny
+hasAnyTokens
 hasColumnInTable
 hasSubsequence
 hasSubsequenceCaseInsensitive
@@ -2167,6 +2250,7 @@ isNotDistinctFrom
 isNotNull
 isNull
 isNullable
+isValidASCII
 isValidJSON
 isValidUTF
 isZeroOrNull
@@ -2427,6 +2511,8 @@ multiline
 multilinestring
 multiplyDecimal
 multipolygon
+multipolygons
+multiquery
 multiread
 multisearchany
 multisets
@@ -2437,6 +2523,7 @@ multiword
 munmap
 murmurHash
 murmurhash
+musl
 musqldump
 mutex
 mydb
@@ -2446,6 +2533,9 @@ mysql
 mysqldump
 mysqljs
 mytable
+Nagios
+naiveBayesClassifier
+Nambiar
 namedatabases
 namenetworks
 namenode
@@ -2535,6 +2625,7 @@ observability
 odbc
 ok
 omclickhouse
+oneof
 onstraints
 ontime
 onwards
@@ -2555,6 +2646,8 @@ overparallelization
 packetpool
 packetsize
 pageviews
+paimon
+paimonCluster
 parallelization
 parallelize
 parallelized
@@ -2587,6 +2680,8 @@ pclmulqdq
 pcre
 perf
 performant
+perimeterCartesian
+perimeterSpherical
 perkey
 perl
 persistency
@@ -2681,6 +2776,8 @@ profiler
 projectio
 proleptic
 prometheus
+prometheusQuery
+prometheusQueryRange
 proportionsZTest
 proto
 protobuf
@@ -2700,6 +2797,7 @@ punycodeEncode
 pushdown
 pwrite
 py
+qbit
 qryn
 quantile
 quantileBFloat
@@ -2714,6 +2812,7 @@ quantileExactWeighted
 quantileExactWeightedInterpolated
 quantileGK
 quantileInterpolatedWeighted
+quantilePrometheusHistogram
 quantileTDigest
 quantileTDigestWeighted
 quantileTiming
@@ -2772,6 +2871,7 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
+readWkt
 readahead
 readline
 readme
@@ -2886,8 +2986,6 @@ satisfiable
 scala
 sccache
 schemas
-searchAll
-searchAny
 sectio
 seekable
 seektable
@@ -3016,7 +3114,9 @@ structs
 structureToCapnProtoSchema
 structureToProtobufSchema
 studentTTest
+studentTTestOneSample
 studentttest
+studentttestonesample
 subBitmap
 subDate
 subarray
@@ -3044,6 +3144,7 @@ subqueries
 subquery
 subranges
 subreddits
+subsecond
 subseconds
 subsequence
 substream
@@ -3122,6 +3223,7 @@ throwIf
 throwif
 timeDiff
 timeSeries
+timeSeriesChangesToGrid
 timeSeriesData
 timeSeriesDeltaToGrid
 timeSeriesDerivToGrid
@@ -3136,6 +3238,8 @@ timeSeriesPredictLinearToGrid
 timeSeriesRange
 timeSeriesRateToGrid
 timeSeriesResampleToGridWithStaleness
+timeSeriesResetsToGrid
+timeSeriesSelector
 timeSeriesTags
 timeSlot
 timeSlots
@@ -3247,6 +3351,8 @@ tokenization
 tokenize
 tokenized
 tokenizer
+tokenizers
+tokenizes
 tokenizing
 toml
 toolchain
@@ -3268,6 +3374,7 @@ transactionally
 translateUTF
 translocality
 trie
+trigrams
 trimBoth
 trimLeft
 trimRight
@@ -3442,6 +3549,7 @@ xz
 yaml
 yandex
 youtube
+ytsaurus
 zLib
 zLinux
 zabbix

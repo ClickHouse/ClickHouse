@@ -4,12 +4,13 @@ sidebar_label: 'Query condition cache'
 sidebar_position: 64
 slug: /operations/query-condition-cache
 title: 'Query condition cache'
+doc_type: 'guide'
 ---
 
 # Query condition cache
 
 :::note
-The query condition cache only works when [allow_experimental_analyzer](https://clickhouse.com/docs/operations/settings/settings#allow_experimental_analyzer) is set to true, which is the default value.
+The query condition cache only works when [enable_analyzer](https://clickhouse.com/docs/operations/settings/settings#enable_analyzer) is set to true, which is the default value.
 :::
 
 Many real-world workloads involve repeated queries against the same or almost the same data (for instance, previously existing data plus new data).
@@ -53,9 +54,6 @@ SETTINGS use_query_condition_cache = true;
 
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
-
-Setting [query_condition_cache_selectivity_threshold](settings/settings#query_condition_cache_selectivity_threshold) (default: 1.0) allows to write entries to the cache only if the predicate has a smaller selectivity than the configured value.
-We recommend changing this value only if the system has little DRAM.
 
 ## Administration {#administration}
 

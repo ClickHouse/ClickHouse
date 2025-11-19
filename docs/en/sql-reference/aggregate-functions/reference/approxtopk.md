@@ -4,6 +4,7 @@ description: 'Returns an array of the approximately most frequent values and the
 sidebar_position: 107
 slug: /sql-reference/aggregate-functions/reference/approxtopk
 title: 'approx_top_k'
+doc_type: 'reference'
 ---
 
 # approx_top_k

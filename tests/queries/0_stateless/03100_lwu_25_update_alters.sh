@@ -30,7 +30,7 @@ function wait_for_mutation_to_start()
 
 ${CLICKHOUSE_CLIENT} -n --query "
     DROP TABLE IF EXISTS t_lightweight_mut_4 SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
 
     CREATE TABLE t_lightweight_mut_4 (id UInt64, v UInt64)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_lightweight_mut_4', '1')
@@ -46,7 +46,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 wait_for_mutation_to_start "t_lightweight_mut_4" "0000000000"
 
 ${CLICKHOUSE_CLIENT} -n --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lightweight_mut_4 SET v = 'x' WHERE 1;
 
     SELECT id, v, toTypeName(v) FROM t_lightweight_mut_4 ORDER BY id SETTINGS apply_patch_parts = 0;
@@ -58,7 +58,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 wait_for_mutation "t_lightweight_mut_4" "0000000000"
 
 ${CLICKHOUSE_CLIENT} -n --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     SELECT id, v, toTypeName(v) FROM t_lightweight_mut_4 ORDER BY id SETTINGS apply_patch_parts = 0;
     SELECT id, v, toTypeName(v) FROM t_lightweight_mut_4 ORDER BY id SETTINGS apply_patch_parts = 1;
 

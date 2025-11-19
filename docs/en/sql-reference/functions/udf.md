@@ -1,54 +1,65 @@
 ---
-description: 'Documentation for UDFs User Defined Functions'
+description: 'Documentation for User Defined Functions (UDFs)'
 sidebar_label: 'UDF'
 slug: /sql-reference/functions/udf
-title: 'UDFs User Defined Functions'
+title: 'User Defined Functions (UDFs)'
+doc_type: 'reference'
 ---
 
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
 
-# UDFs User Defined Functions
-
-## Executable User Defined Functions {#executable-user-defined-functions}
+# User Defined Function (UDF) {#executable-user-defined-functions}
 
 <PrivatePreviewBadge/>
 
 :::note
-This feature is supported in private preview in ClickHouse Cloud. Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
+This feature is supported in private preview in ClickHouse Cloud.
+Please contact ClickHouse Support at https://clickhouse.cloud/support to access.
 :::
 
 ClickHouse can call any external executable program or script to process data.
 
-The configuration of executable user defined functions can be located in one or more xml-files. The path to the configuration is specified in the [user_defined_executable_functions_config](../../operations/server-configuration-parameters/settings.md#user_defined_executable_functions_config) parameter.
+The configuration of executable user defined functions can be located in one or more xml-files.
+The path to the configuration is specified in the [`user_defined_executable_functions_config`](../../operations/server-configuration-parameters/settings.md#user_defined_executable_functions_config) parameter.
 
 A function configuration contains the following settings:
 
-- `name` - a function name.
-- `command` - script name to execute or command if `execute_direct` is false.
-- `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Default argument name value is `c` + argument_number.
-- `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command. The command output is expected to use the same format too.
-- `return_type` - the type of a returned value.
-- `return_name` - name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Optional. Default value is `result`.
-- `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
-- `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
-- `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. Optional. Default value is `10`.
-- `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
-- `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
-- `pool_size` - the size of a command pool. Optional. Default value is `16`.
-- `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
-- `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
-- `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded. Default value is `0`. Optional parameter.
-- `deterministic` - if the function is deterministic (returns the same result for the same input). Default value is `false`. Optional parameter.
+| Parameter                     | Description                                                                                                                                                                                                                                                                                                                                                                                   | Required  | Default Value         |
+|-------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|-----------------------|
+| `name`                        | A function name                                                                                                                                                                                                                                                                                                                                                                               | Yes       | -                     |
+| `command`                     | Script name to execute or command if `execute_direct` is false                                                                                                                                                                                                                                                                                                                                | Yes       | -                     |
+| `argument`                    | Argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow)                                                             | Yes       | `c` + argument_number |
+| `format`                      | A [format](../../interfaces/formats.md) in which arguments are passed to the command. The command output is expected to use the same format too                                                                                                                                                                                                                                               | Yes       | -                     |
+| `return_type`                 | The type of a returned value                                                                                                                                                                                                                                                                                                                                                                  | Yes       | -                     |
+| `return_name`                 | Name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow)                                                                                                                                                      | Optional  | `result`              |
+| `type`                        | An executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created                                                                                                                                                                                                                                     | Yes       | -                     |
+| `max_command_execution_time`  | Maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only                                                                                                                                                                                                                                                                     | Optional  | `10`                  |
+| `command_termination_timeout` | Time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command                                                                                                                                                                                                                                         | Optional  | `10`                  |
+| `command_read_timeout`        | Timeout for reading data from command stdout in milliseconds                                                                                                                                                                                                                                                                                                                                  | Optional  | `10000`               |
+| `command_write_timeout`       | Timeout for writing data to command stdin in milliseconds                                                                                                                                                                                                                                                                                                                                     | Optional  | `10000`               |
+| `pool_size`                   | The size of a command pool                                                                                                                                                                                                                                                                                                                                                                    | Optional  | `16`                  |
+| `send_chunk_header`           | Controls whether to send row count before sending a chunk of data to process                                                                                                                                                                                                                                                                                                                  | Optional  | `false`               |
+| `execute_direct`              | If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c` | Optional  | `1`                   |
+| `lifetime`                    | The reload interval of a function in seconds. If it is set to `0` then the function is not reloaded                                                                                                                                                                                                                                                                                           | Optional  | `0`                   |
+| `deterministic`               | If the function is deterministic (returns the same result for the same input)                                                                                                                                                                                                                                                                                                                 | Optional  | `false`               |
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
-### Examples {#examples}
+## Executable User Defined Functions {#executable-user-defined-functions}
 
-**Inline script**
+## Examples {#examples}
 
-Creating `test_function_sum` manually specifying `execute_direct` to `0` using XML configuration.
+### UDF from inline script {#udf-inline}
+
+Create `test_function_sum` manually specifying `execute_direct` to `0` using either XML or YAML configuration.
+
+<Tabs>
+  <TabItem value="XML" label="XML" default>
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
-```xml
+
+```xml title="/etc/clickhouse-server/test_function.xml"
 <functions>
     <function>
         <type>executable</type>
@@ -69,28 +80,51 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
     </function>
 </functions>
 ```
+  </TabItem>
+  <TabItem value="YAML" label="YAML">
 
-Query:
+File `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` with default path settings).
 
-```sql
+```yml title="/etc/clickhouse-server/test_function.yaml"
+functions:
+  type: executable
+  name: test_function_sum
+  return_type: UInt64
+  argument:
+    - type: UInt64
+      name: lhs
+    - type: UInt64
+      name: rhs
+  format: TabSeparated
+  command: 'cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure ''x UInt64, y UInt64'' --query "SELECT x + y FROM table"'
+  execute_direct: 0
+  deterministic: true
+```
+  </TabItem>
+</Tabs>
+
+<br/>
+
+```sql title="Query"
 SELECT test_function_sum(2, 2);
 ```
 
-Result:
-
-```text
+```text title="Result"
 ┌─test_function_sum(2, 2)─┐
 │                       4 │
 └─────────────────────────┘
 ```
 
-**Python script**
+### UDF from Python script {#udf-python}
 
-Reads a value from `STDIN` and returns it as a string:
+In this example we create a UDF which reads a value from `STDIN` and returns it as a string.
 
-Creating `test_function` using XML configuration.
+Create `test_function` using either XML OR YAML configuration.
+
+<Tabs>
+  <TabItem value="XML" label="XML" default>
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
-```xml
+```xml title="/etc/clickhouse-server/test_function.xml"
 <functions>
     <function>
         <type>executable</type>
@@ -105,8 +139,26 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
     </function>
 </functions>
 ```
+  </TabItem>
+  <TabItem value="YAML" label="YAML">
+File `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function.yaml"
+functions:
+  type: executable
+  name: test_function_python
+  return_type: String
+  argument:
+    - type: UInt64
+      name: value
+  format: TabSeparated
+  command: test_function.py
+```
+  </TabItem>
+</Tabs>
 
-Script file inside `user_scripts` folder `test_function.py` (`/var/lib/clickhouse/user_scripts/test_function.py` with default path settings).
+<br/>
+
+Create a script file `test_function.py` inside `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_function.py` with default path settings).
 
 ```python
 #!/usr/bin/python3
@@ -119,25 +171,24 @@ if __name__ == '__main__':
         sys.stdout.flush()
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT test_function_python(toUInt64(2));
 ```
 
-Result:
-
-```text
+```text title="Result"
 ┌─test_function_python(2)─┐
 │ Value 2                 │
 └─────────────────────────┘
 ```
 
-Read two values from `STDIN` and returns their sum as a JSON object:
+### Read two values from `STDIN` and return their sum as a JSON object {#udf-stdin}
 
-Creating `test_function_sum_json` with named arguments and format [JSONEachRow](../../interfaces/formats.md#jsoneachrow) using XML configuration.
+Create `test_function_sum_json` with named arguments and format [JSONEachRow](/interfaces/formats/JSONEachRow) using either XML or YAML configuration.
+
+<Tabs>
+  <TabItem value="XML" label="XML" default>
 File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with default path settings).
-```xml
+```xml title="/etc/clickhouse-server/test_function.xml"
 <functions>
     <function>
         <type>executable</type>
@@ -157,8 +208,29 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
     </function>
 </functions>
 ```
+  </TabItem>
+  <TabItem value="YAML" label="YAML">
+File `test_function.yaml` (`/etc/clickhouse-server/test_function.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function.yaml"
+functions:
+  type: executable
+  name: test_function_sum_json
+  return_type: UInt64
+  return_name: result_name
+  argument:
+    - type: UInt64
+      name: argument_1
+    - type: UInt64
+      name: argument_2
+  format: JSONEachRow
+  command: test_function_sum_json.py
+```
+  </TabItem>
+</Tabs>
 
-Script file inside `user_scripts` folder `test_function_sum_json.py` (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` with default path settings).
+<br/>
+
+Create script file `test_function_sum_json.py` inside the `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_function_sum_json.py` with default path settings).
 
 ```python
 #!/usr/bin/python3
@@ -176,25 +248,25 @@ if __name__ == '__main__':
         sys.stdout.flush()
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT test_function_sum_json(2, 2);
 ```
 
-Result:
-
-```text
+```text title="Result"
 ┌─test_function_sum_json(2, 2)─┐
 │                            4 │
 └──────────────────────────────┘
 ```
 
-Use parameters in `command` setting:
+### Use parameters in `command` setting {#udf-parameters-in-command}
 
-Executable user defined functions can take constant parameters configured in `command` setting (works only for user defined functions with `executable` type). It also requires the `execute_direct` option (to ensure no shell argument expansion vulnerability).
+Executable user defined functions can take constant parameters configured in `command` setting (this works only for user defined functions with `executable` type).
+It also requires the `execute_direct` option to ensure no shell argument expansion vulnerability.
+
+<Tabs>
+  <TabItem value="XML" label="XML" default>
 File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function_parameter_python.xml` with default path settings).
-```xml
+```xml title="/etc/clickhouse-server/test_function_parameter_python.xml"
 <functions>
     <function>
         <type>executable</type>
@@ -209,8 +281,26 @@ File `test_function_parameter_python.xml` (`/etc/clickhouse-server/test_function
     </function>
 </functions>
 ```
+  </TabItem>
+  <TabItem value="YAML" label="YAML">
+File `test_function_parameter_python.yaml` (`/etc/clickhouse-server/test_function_parameter_python.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
+functions:
+  type: executable
+  execute_direct: true
+  name: test_function_parameter_python
+  return_type: String
+  argument:
+    - type: UInt64
+  format: TabSeparated
+  command: test_function_parameter_python.py {test_parameter:UInt64}
+```
+  </TabItem>
+</Tabs>
 
-Script file inside `user_scripts` folder `test_function_parameter_python.py` (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` with default path settings).
+<br/>
+
+Create script file `test_function_parameter_python.py` inside the `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_function_parameter_python.py` with default path settings).
 
 ```python
 #!/usr/bin/python3
@@ -223,27 +313,24 @@ if __name__ == "__main__":
         sys.stdout.flush()
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT test_function_parameter_python(1)(2);
 ```
 
-Result:
-
-```text
+```text title="Result"
 ┌─test_function_parameter_python(1)(2)─┐
 │ Parameter 1 value 2                  │
 └──────────────────────────────────────┘
 ```
 
-**Shell script**
+### UDF from shell script {#udf-shell-script}
 
-Shell script that multiplies each value by 2:
+In this example, we create a shell script that multiplies each value by 2.
 
-Executable user defined functions can be used with shell script.
+<Tabs>
+  <TabItem value="XML" label="XML" default>
 File `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml` with default path settings).
-```xml
+```xml title="/etc/clickhouse-server/test_function_shell.xml"
 <functions>
     <function>
         <type>executable</type>
@@ -258,10 +345,28 @@ File `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml`
     </function>
 </functions>
 ```
+  </TabItem>
+  <TabItem value="YAML" label="YAML">
+File `test_function_shell.yaml` (`/etc/clickhouse-server/test_function_shell.yaml` with default path settings).
+```yml title="/etc/clickhouse-server/test_function_shell.yaml"
+functions:
+  type: executable
+  name: test_shell
+  return_type: String
+  argument:
+    - type: UInt8
+      name: value
+  format: TabSeparated
+  command: test_shell.sh
+```
+  </TabItem>
+</Tabs>
 
-Script file inside `user_scripts` folder `test_shell.sh` (`/var/lib/clickhouse/user_scripts/test_shell.sh` with default path settings).
+<br/>
 
-```bash
+Create a script file `test_shell.sh` inside the `user_scripts` folder (`/var/lib/clickhouse/user_scripts/test_shell.sh` with default path settings).
+
+```bash title="/var/lib/clickhouse/user_scripts/test_shell.sh"
 #!/bin/bash
 
 while read read_data;
@@ -269,15 +374,11 @@ while read read_data;
 done
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT test_shell(number) FROM numbers(10);
 ```
 
-Result:
-
-```text
+```text title="Result"
     ┌─test_shell(number)─┐
  1. │ 0                  │
  2. │ 2                  │
@@ -292,16 +393,20 @@ Result:
     └────────────────────┘
 ```
 
-### Error Handling {#error-handling}
+## Error Handling {#error-handling}
 
-Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
+Some functions might throw an exception if the data is invalid.
+In this case, the query is canceled and an error text is returned to the client.
+For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.
 
-### Evaluation of Argument Expressions {#evaluation-of-argument-expressions}
+## Evaluation of Argument Expressions {#evaluation-of-argument-expressions}
 
-In almost all programming languages, one of the arguments might not be evaluated for certain operators. This is usually the operators `&&`, `||`, and `?:`.
-But in ClickHouse, arguments of functions (operators) are always evaluated. This is because entire parts of columns are evaluated at once, instead of calculating each row separately.
+In almost all programming languages, one of the arguments might not be evaluated for certain operators.
+This is usually the operators `&&`, `||`, and `?:`.
+In ClickHouse, arguments of functions (operators) are always evaluated.
+This is because entire parts of columns are evaluated at once, instead of calculating each row separately.
 
-### Performing Functions for Distributed Query Processing {#performing-functions-for-distributed-query-processing}
+## Performing Functions for Distributed Query Processing {#performing-functions-for-distributed-query-processing}
 
 For distributed query processing, as many stages of query processing as possible are performed on remote servers, and the rest of the stages (merging intermediate results and everything after that) are performed on the requestor server.
 
@@ -322,14 +427,4 @@ If a function in a query is performed on the requestor server, but you need to p
 Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
 
 ## Related Content {#related-content}
-
-### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) {#user-defined-functions-in-clickhouse-cloud}
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->
+- [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

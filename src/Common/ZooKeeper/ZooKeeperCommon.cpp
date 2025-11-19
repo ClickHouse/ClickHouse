@@ -10,7 +10,8 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
-
+#include <Common/Exception.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace Coordination
 {
@@ -271,6 +272,17 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
+}
+
+void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path_created, out);
+    Coordination::write(zstat, out);
+}
+
+size_t ZooKeeperCreate2Response::sizeImpl() const
+{
+    return Coordination::size(path_created) + Coordination::size(zstat);
 }
 
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
@@ -605,10 +617,27 @@ void ZooKeeperGetACLResponse::readImpl(ReadBuffer & in)
     Coordination::read(stat, in);
 }
 
+OpNum ZooKeeperCheckRequest::getOpNum() const
+{
+    if (not_exists)
+        return OpNum::CheckNotExists;
+
+    if (stat_to_check.has_value())
+        return OpNum::CheckStat;
+
+    return OpNum::Check;
+}
+
 void ZooKeeperCheckRequest::writeImpl(WriteBuffer & out) const
 {
     Coordination::write(path, out);
     Coordination::write(version, out);
+
+    if (getOpNum() == OpNum::CheckStat)
+    {
+        chassert(stat_to_check.has_value());
+        Coordination::write(stat_to_check.value(), out);
+    }
 }
 
 size_t ZooKeeperCheckRequest::sizeImpl() const
@@ -620,6 +649,9 @@ void ZooKeeperCheckRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
     Coordination::read(version, in);
+
+    if (stat_to_check)
+        Coordination::read(stat_to_check.value(), in);
 }
 
 std::string ZooKeeperCheckRequest::toStringImpl(bool /*short_format*/) const
@@ -960,6 +992,8 @@ ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return s
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
+    if (include_stats)
+        return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
@@ -969,6 +1003,9 @@ ZooKeeperResponsePtr ZooKeeperCheckRequest::makeResponse() const
 {
     if (not_exists)
         return std::make_shared<ZooKeeperCheckNotExistsResponse>();
+
+    if (stat_to_check.has_value())
+        return std::make_shared<ZooKeeperCheckStatResponse>();
 
     return std::make_shared<ZooKeeperCheckResponse>();
 }
@@ -1123,6 +1160,13 @@ void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) c
     elem.path_created = path_created;
 }
 
+void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) const
+{
+    Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
+    auto & elem =  elems[idx];
+    elem.path_created = path_created;
+}
+
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
@@ -1219,6 +1263,10 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
+        else if constexpr (num == OpNum::Create2)
+            res->include_stats = true;
+        else if constexpr (num == OpNum::CheckStat)
+            res->stat_to_check.emplace();
 
         return res;
     });
@@ -1231,6 +1279,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Auth, ZooKeeperAuthRequest>(*this);
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
     registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);
@@ -1238,6 +1287,8 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SimpleList, ZooKeeperSimpleListRequest>(*this);
     registerZooKeeperRequest<OpNum::List, ZooKeeperListRequest>(*this);
     registerZooKeeperRequest<OpNum::Check, ZooKeeperCheckRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckStat, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::Reconfig, ZooKeeperReconfigRequest>(*this);
     registerZooKeeperRequest<OpNum::Multi, ZooKeeperMultiRequest>(*this);
     registerZooKeeperRequest<OpNum::MultiRead, ZooKeeperMultiRequest>(*this);
@@ -1246,7 +1297,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::GetACL, ZooKeeperGetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
-    registerZooKeeperRequest<OpNum::CheckNotExists, ZooKeeperCheckRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
 }
 
@@ -1273,36 +1323,36 @@ PathMatchResult matchPath(std::string_view path, std::string_view match_to)
 
 namespace
 {
-size_t findLastSlash(StringRef path)
+size_t findLastSlash(std::string_view path)
 {
-    if (path.size == 0)
+    if (path.empty())
         return std::string::npos;
 
-    for (size_t i = path.size - 1; i > 0; --i)
+    for (size_t i = path.size() - 1; i > 0; --i)
     {
-        if (path.data[i] == '/')
+        if (path[i] == '/')
             return i;
     }
 
-    if (path.data[0] == '/')
+    if (path[0] == '/')
         return 0;
 
     return std::string::npos;
 }
 }
 
-StringRef parentNodePath(StringRef path)
+std::string_view parentNodePath(std::string_view path)
 {
     auto rslash_pos = findLastSlash(path);
     if (rslash_pos > 0)
-        return StringRef{path.data, rslash_pos};
+        return path.substr(0, rslash_pos);
     return "/";
 }
 
-StringRef getBaseNodeName(StringRef path)
+std::string_view getBaseNodeName(std::string_view path)
 {
     size_t basename_start = findLastSlash(path);
-    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
+    return path.substr(basename_start + 1, path.size() - basename_start - 1);
 }
 
 }

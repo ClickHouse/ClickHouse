@@ -1,0 +1,8 @@
+c1	Int32					
+c2	String					
+c1	Int32					
+c2	String					
+c2	String			existing column comment		
+test_alter_drop_comment	c2	existing column comment
+id	Int32					
+value	String			existing value column		

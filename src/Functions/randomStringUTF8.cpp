@@ -136,9 +136,6 @@ public:
                 }
             }
 
-            *pos = 0;
-            ++pos;
-
             offset = pos - data_to.data();
             offsets_to[row_num] = offset;
         }
