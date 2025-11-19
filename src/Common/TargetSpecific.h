@@ -436,6 +436,12 @@ FUNCTION_BODY \
     name \
     FUNCTION_BODY \
 
+#define MULTITARGET_FUNCTION_AVX512BW_AVX2(FUNCTION_HEADER, name, FUNCTION_BODY) \
+    FUNCTION_HEADER \
+    \
+    name \
+    FUNCTION_BODY \
+
 #endif
 
 }
