@@ -1397,10 +1397,14 @@ appendTrailingCharIfAbsent
 approximative
 approxtopk
 approxtopsum
+areaCartesian
+areaSpherical
 argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll
@@ -2676,6 +2680,8 @@ pclmulqdq
 pcre
 perf
 performant
+perimeterCartesian
+perimeterSpherical
 perkey
 perl
 persistency
@@ -2865,6 +2871,7 @@ readWKTMultiPolygon
 readWKTPoint
 readWKTPolygon
 readWKTRing
+readWkt
 readahead
 readline
 readme

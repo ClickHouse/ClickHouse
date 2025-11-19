@@ -1,6 +1,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
@@ -129,7 +130,7 @@ void KafkaSettings::loadFromNamedCollection(const MutableNamedCollectionPtr & na
     }
 }
 
-void KafkaSettings::sanityCheck() const
+void KafkaSettings::sanityCheck(ContextPtr global_context) const
 {
     if (impl->kafka_consumers_pool_ttl_ms < KAFKA_RESCHEDULE_MS)
         throw Exception(
@@ -144,6 +145,11 @@ void KafkaSettings::sanityCheck() const
             "The value of 'kafka_consumers_pool_ttl_ms' ({}) cannot be too big (greater then {}), since this may cause live memory leaks",
             impl->kafka_consumers_pool_ttl_ms.value,
             KAFKA_CONSUMERS_POOL_TTL_MS_MAX);
+
+    if (impl->kafka_handle_error_mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE
+        && !global_context->getDeadLetterQueue())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The table system.dead_letter_queue is not configured on the server. You cannot create a table with this `kafka_handle_error_mode`.");
 }
 
 SettingsChanges KafkaSettings::getFormatSettings() const
