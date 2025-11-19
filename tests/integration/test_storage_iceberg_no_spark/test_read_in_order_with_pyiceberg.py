@@ -126,7 +126,7 @@ def test_sort_order(started_cluster_iceberg_no_spark):
     assert result == list(sorted(result))
     assert 'PartialSortingTransform' in (
         instance.query(
-            f"SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test` ORDER BY string_col SETTINGS optimize_read_in_order=0"
+            f"EXPLAIN PIPELINE SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test` ORDER BY string_col SETTINGS optimize_read_in_order=0"
         )
     )
 
