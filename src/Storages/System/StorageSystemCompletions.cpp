@@ -89,19 +89,11 @@ void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    StorageMetadataPtr snapshot;
-    auto snapshot_result = table->tryGetInMemoryMetadataPtr();
-    if (snapshot_result.has_value())
-    {
-        snapshot = std::move(*snapshot_result);
-    }
-    else
-    {
-        LOG_DEBUG(getLogger("SystemCompletions"), "Failed to get inmemory metadata for {}: {}", table->getStorageID().getNameForLogs(), snapshot_result.error().message());
+    auto snapshot = table->tryGetInMemoryMetadataPtr();
+    if (!snapshot)
         return;
-    }
 
-    const auto & columns = snapshot->getColumns();
+    const auto & columns = (*snapshot)->getColumns();
     for (const auto & column : columns)
     {
         if (!access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))

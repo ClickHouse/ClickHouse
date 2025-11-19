@@ -29,11 +29,6 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
 }
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
-}
 
 StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -141,55 +136,24 @@ protected:
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
-                TableLockHolder table_lock;
-                StorageMetadataPtr metadata_snapshot;
+                TableLockHolder table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
 
-                /// Can throw UNKNOWN_DATABASE/UNKNOWN_TABLE in case of Alias table
-                try
+                if (table_lock == nullptr)
                 {
-                    table_lock = storage->tryLockForShare(query_id, lock_acquire_timeout);
-
-                    if (table_lock == nullptr)
-                    {
-                        // Table was dropped while acquiring the lock, skipping table
-                        continue;
-                    }
-                }
-                catch (const Exception & e)
-                {
-                    if (storage->getName() != "Alias" || (e.code() != ErrorCodes::UNKNOWN_DATABASE && e.code() != ErrorCodes::UNKNOWN_TABLE))
-                        throw;
-                    tryLogCurrentException(getLogger("SystemColumns"), fmt::format("Cannot find target database/table for {}", storage->getStorageID().getNameForLogs()), LogsLevel::debug);
+                    // Table was dropped while acquiring the lock, skipping table
+                    continue;
                 }
 
-                auto metadata_result = storage->tryGetInMemoryMetadataPtr();
-                if (metadata_result.has_value())
-                {
-                    metadata_snapshot = std::move(*metadata_result);
-                }
-                else
-                {
-                    metadata_snapshot = std::make_shared<StorageInMemoryMetadata>();
-                    LOG_DEBUG(getLogger("SystemColumns"), "Failed to get inmemory metadata for {}: {}", storage->getStorageID().getNameForLogs(), metadata_result.error().message());
-                }
-
-                auto hints_result = storage->tryGetSerializationHints();
-                if (hints_result.has_value())
-                    serialization_hints = std::move(*hints_result);
-                else
-                    LOG_DEBUG(getLogger("SystemColumns"), "Failed to get serialization hints for {}: {}", storage->getStorageID().getNameForLogs(), hints_result.error().message());
-
+                auto metadata_snapshot = storage->tryGetInMemoryMetadataPtr().value_or(std::make_shared<StorageInMemoryMetadata>());
                 columns = metadata_snapshot->getColumns();
+                if (auto hints = storage->tryGetSerializationHints())
+                    serialization_hints = std::move(*hints);
 
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
                 if (columns_mask[7] || columns_mask[8] || columns_mask[9])
                 {
-                    /// Can throw UNKNOWN_DATABASE in case of Merge table
-                    auto column_sizes_result = storage->tryGetColumnSizes();
-                    if (column_sizes_result.has_value())
-                        column_sizes = std::move(*column_sizes_result);
-                    else
-                        LOG_DEBUG(getLogger("SystemColumns"), "Failed to get column sizes for {}: {}", storage->getStorageID().getNameForLogs(), column_sizes_result.error().message());
+                    if (auto sizes = storage->tryGetColumnSizes())
+                        column_sizes = std::move(*sizes);
                 }
 
                 if (columns_mask[11])
