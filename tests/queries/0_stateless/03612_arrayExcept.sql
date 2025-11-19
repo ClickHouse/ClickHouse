@@ -42,9 +42,9 @@ select '-------';
 -- Basic examples
 select arraySort(arrayExcept([1, 2, 3], [2, 3]));
 select '-------';
-select arraySort(arrayExcept([1, 2, 3], [2, 3], [4]));
+select arraySort(arrayExcept([1, 2, 3], [2, 3, 4]));
 select '-------';
-select arraySort(arrayExcept([1, 2, 3, 4, 5], [2], [3, 4]));
+select arraySort(arrayExcept([1, 2, 3, 4, 5], [2, 3, 4]));
 select '-------';
 -- Negative numbers
 select arraySort(arrayExcept([-100, 1], [156]));
@@ -82,15 +82,15 @@ SELECT arraySort(arrayExcept([1], [2]));
 select '-------';
 SELECT arraySort(arrayExcept([1], [1]));
 select '-------';
--- Multiple arrays
-SELECT arraySort(arrayExcept([1, 2, 3, 4, 5], [2], [3], [4]));
+-- Multiple arrays (combined into one exclude array)
+SELECT arraySort(arrayExcept([1, 2, 3, 4, 5], [2, 3, 4]));
 select '-------';
-SELECT arraySort(arrayExcept([1, 2, 3], [1], [2], [3]));
+SELECT arraySort(arrayExcept([1, 2, 3], [1, 2, 3]));
 select '-------';
 -- Example similar to Snowflake docs
 SELECT
     arraySort(arrayExcept([1, 2, 3], [2, 3])) as basic_example,
-    arraySort(arrayExcept([1, 2, 3], [2, 3], [4])) as multiple_arrays,
+    arraySort(arrayExcept([1, 2, 3], [2, 3, 4])) as multiple_arrays,
     arraySort(arrayExcept([1, 2, NULL], [2, NULL])) as with_null;
 select '-------';
 -- Edge cases
@@ -103,8 +103,8 @@ SELECT arraySort(arrayExcept(range(1, 101), range(50, 101)));
 select '-------';
 SELECT length(arrayExcept(range(1, 1000), range(500, 1000)));
 select '-------';
--- Multiple arguments
-SELECT arraySort(arrayExcept([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [2], [4], [6], [8], [10]));
+-- Multiple arguments (combined into one exclude array)
+SELECT arraySort(arrayExcept([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [2, 4, 6, 8, 10]));
 select '-------';
 
 
