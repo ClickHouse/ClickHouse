@@ -937,11 +937,11 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             if (unlikely(year == 0))
                 datetime = 0;
             else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                datetime = makeDateTime(date_lut, year, month, day, 0, 0, 0);
         }
         else
         {
-            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, 0, 0, 0);
             if (!datetime_maybe)
                 return false;
 
