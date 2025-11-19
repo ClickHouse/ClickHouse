@@ -559,6 +559,10 @@ bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id
 {
     for (const auto & file : data_files_without_deleted)
     {
+        // Treat missing sort_order_id as "not sorted by the expected order".
+        // This can happen if:
+        // 1. The field is not present in older Iceberg format versions.
+        // 2. The data file was written without sort order information.
         if (!file.sort_order_id.has_value() || (*file.sort_order_id != sort_order_id))
             return false;
     }
