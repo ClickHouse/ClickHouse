@@ -5,6 +5,8 @@
 #include <Parsers/IASTHash.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ActionsDAGCNF.h>
 
 #include <Analyzer/Passes/CNFAtomicFormula.h>
 #include <Analyzer/HashUtils.h>
@@ -29,15 +31,20 @@ enum class ComparisonGraphCompareResult : uint8_t
     UNKNOWN,
 };
 
+/// Forward declaration for semantic hash function for ActionsDAG nodes
+UInt64 getSemanticHash(const ActionsDAG::Node * node);
+
 template <typename T>
-concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, QueryTreeNodePtr>;
+concept ComparisonGraphNodeType = std::same_as<T, ASTPtr> || std::same_as<T, QueryTreeNodePtr> || std::is_same_v<T, const ActionsDAG::Node *>;
 
 
 template <ComparisonGraphNodeType Node>
 struct GraphComponent
 {
     static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
-    using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
+    static constexpr bool with_actions_dag = std::same_as<Node, const ActionsDAG::Node *>;
+    using NodeContainer = std::conditional_t<with_ast, ASTs,
+                          std::conditional_t<with_actions_dag, std::vector<const ActionsDAG::Node *>, QueryTreeNodes>>;
 
     /// Strongly connected component
     struct EqualComponent
@@ -83,11 +90,14 @@ struct GraphComponent
     {
         if constexpr (with_ast)
             return node->getTreeHash(/*ignore_aliases=*/ true);
+        else if constexpr (with_actions_dag)
+            return getSemanticHash(node);
         else
             return QueryTreeNodePtrWithHash{node};
     }
 
-    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
+    using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>,
+                                         std::conditional_t<with_actions_dag, std::unordered_map<UInt64, size_t>, QueryTreeNodePtrWithHashMap<size_t>>>;
     NodeHashToComponentContainer node_hash_to_component;
     std::vector<EqualComponent> vertices;
     std::vector<std::vector<Edge>> edges;
@@ -97,14 +107,32 @@ struct GraphComponent
 /*
  * Graph of relations between terms in constraints.
  * Allows to compare terms and get equal terms.
+ *
+ * ComparisonGraph analyzes constraint expressions (like a < b, b = c, c <= d) and builds
+ * a graph representing transitive relationships between terms.
+ *
+ * The graph enables efficient reasoning about term relationships, such as determining if
+ * a < d is possible given a < b, b = c, and c <= d (answer: yes, via transitivity).
+ * This is used for index analysis, constraint solving, and query optimization.
+ *
+ * Implementation algorithms:
+ * - Kosaraju's algorithm: Finds strongly connected components (SCCs) to group equal terms
+ *   into equivalence classes using two DFS passes on the graph and its transpose
+ * - Graph condensation: Each SCC becomes a single vertex in the condensed graph; directed
+ *   edges represent comparison relationships (LESS, LESS_OR_EQUAL, GREATER, GREATER_OR_EQUAL)
+ * - Floyd-Warshall algorithm: Computes all-pairs shortest paths to efficiently answer
+ *   reachability queries and determine transitive comparison relationships
  */
 template <ComparisonGraphNodeType Node>
 class ComparisonGraph
 {
 public:
     static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
-    using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
-    using Formula = std::conditional_t<with_ast, CNFQueryAtomicFormula, Analyzer::CNFAtomicFormula>;
+    static constexpr bool with_actions_dag = std::same_as<Node, const ActionsDAG::Node *>;
+    using NodeContainer = std::conditional_t<with_ast, ASTs,
+                          std::conditional_t<with_actions_dag, std::vector<const ActionsDAG::Node *>, QueryTreeNodes>>;
+    using Formula = std::conditional_t<with_ast, CNFQueryAtomicFormula,
+                    std::conditional_t<with_actions_dag, ActionsDAGCNF::AtomicFormula, Analyzer::CNFAtomicFormula>>;
     using Graph = GraphComponent<Node>;
 
     /// atomic_formulas are extracted from constraints.

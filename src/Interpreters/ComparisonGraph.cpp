@@ -10,6 +10,8 @@
 #include <Analyzer/ConstantNode.h>
 
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnConst.h>
 
 #include <algorithm>
 
@@ -21,6 +23,163 @@ namespace ErrorCodes
     extern const int VIOLATED_CONSTRAINT;
     extern const int TYPE_MISMATCH;
     extern const int BAD_TYPE_OF_FIELD;
+}
+
+/// Extract column name from ActionsDAG node result_name, stripping table prefix if present
+/// For example: "__table1.column_name" -> "column_name", "column_name" -> "column_name"
+static std::string_view extractColumnName(std::string_view full_name)
+{
+    auto dot_pos = full_name.find_last_of('.');
+    if (dot_pos != std::string_view::npos)
+        return full_name.substr(dot_pos + 1);
+    return full_name;
+}
+
+/// Semantic hash for ActionsDAG nodes that's consistent across DAG instances
+UInt64 getSemanticHash(const ActionsDAG::Node * node)
+{
+    if (!node)
+        return 0;
+
+    SipHash hash;
+
+    // Hash the type
+    hash.update(node->type);
+
+    // Hash the result type name
+    if (node->result_type)
+        hash.update(node->result_type->getName());
+
+    switch (node->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+            // For input columns, hash by column name only (strip table prefix)
+            // This ensures "__table1.a" and "a" hash to the same value
+            hash.update(extractColumnName(node->result_name));
+            break;
+
+        case ActionsDAG::ActionType::COLUMN:
+            // For constants, hash the actual value
+            if (node->column)
+            {
+                if (const auto * const_column = typeid_cast<const ColumnConst *>(node->column.get()))
+                {
+                    Field value = (*const_column)[0];
+                    // Hash the field value
+                    hash.update(value);
+                }
+            }
+            break;
+
+        case ActionsDAG::ActionType::FUNCTION:
+            // For functions, hash function name and children
+            if (node->function_base)
+                hash.update(node->function_base->getName());
+
+            // Recursively hash children
+            for (const auto * child : node->children)
+                hash.update(getSemanticHash(child));
+            break;
+
+        case ActionsDAG::ActionType::ALIAS:
+            // For aliases, hash the child
+            if (!node->children.empty())
+                hash.update(getSemanticHash(node->children[0]));
+            break;
+
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            // For array join, hash result name and child
+            hash.update(node->result_name);
+            if (!node->children.empty())
+                hash.update(getSemanticHash(node->children[0]));
+            break;
+
+        default:
+            break;
+    }
+
+    return hash.get64();
+}
+
+/// Semantic equality check for ActionsDAG nodes from potentially different DAG instances
+bool areNodesEqual(const ActionsDAG::Node * left, const ActionsDAG::Node * right)
+{
+    if (!left || !right)
+        return left == right;
+
+    // Must have same type
+    if (left->type != right->type)
+        return false;
+
+    // Must have same result type
+    if (left->result_type && right->result_type)
+    {
+        if (!left->result_type->equals(*right->result_type))
+            return false;
+    }
+    else if (left->result_type != right->result_type)
+        return false;
+
+    // Check based on node type
+    switch (left->type)
+    {
+        case ActionsDAG::ActionType::INPUT:
+        {
+            // For input columns, compare by column name only (strip table prefix)
+            // This ensures "__table1.a" and "a" are considered equal
+            auto left_col = extractColumnName(left->result_name);
+            auto right_col = extractColumnName(right->result_name);
+            bool result = left_col == right_col;
+            return result;
+        }
+
+        case ActionsDAG::ActionType::COLUMN:
+            // For constants, compare the actual constant value
+            if (left->column && right->column)
+            {
+                // Both should be ColumnConst for constants
+                if (const auto * left_const = typeid_cast<const ColumnConst *>(left->column.get()))
+                    if (const auto * right_const = typeid_cast<const ColumnConst *>(right->column.get()))
+                        return (*left_const)[0] == (*right_const)[0];
+            }
+            return false;
+
+        case ActionsDAG::ActionType::FUNCTION:
+            // For functions, compare function name and children
+            if (left->function_base && right->function_base)
+            {
+                if (left->function_base->getName() != right->function_base->getName())
+                    return false;
+            }
+            else if (left->function_base != right->function_base)
+                return false;
+
+            // Compare children recursively
+            if (left->children.size() != right->children.size())
+                return false;
+
+            for (size_t i = 0; i < left->children.size(); ++i)
+            {
+                if (!areNodesEqual(left->children[i], right->children[i]))
+                    return false;
+            }
+            return true;
+
+        case ActionsDAG::ActionType::ALIAS:
+            // For aliases, compare the child
+            if (left->children.size() != 1 || right->children.size() != 1)
+                return false;
+            return areNodesEqual(left->children[0], right->children[0]);
+
+        case ActionsDAG::ActionType::ARRAY_JOIN:
+            // For array join, compare child and result name
+            if (left->children.size() != 1 || right->children.size() != 1)
+                return false;
+            return left->result_name == right->result_name && areNodesEqual(left->children[0], right->children[0]);
+
+        default:
+            return false;
+    }
 }
 
 namespace
@@ -75,6 +234,14 @@ QueryTreeNodePtr normalizeAtom(const QueryTreeNodePtr & atom, const ContextPtr &
     return atom;
 }
 
+const ActionsDAG::Node * normalizeAtom(const ActionsDAG::Node * atom, const ContextPtr & /*context*/)
+{
+    /// For ActionsDAG, we can't create new nodes here since we don't have access to a DAG.
+    /// Instead, the graph construction handles both less/greater and lessOrEquals/greaterOrEquals
+    /// without normalization by including them in the relation_to_enum mapping.
+    return atom;
+}
+
 const FunctionNode * tryGetFunctionNode(const QueryTreeNodePtr & node)
 {
     return node->as<FunctionNode>();
@@ -85,6 +252,13 @@ const ASTFunction * tryGetFunctionNode(const ASTPtr & node)
     return node->as<ASTFunction>();
 }
 
+const ActionsDAG::Node * tryGetFunctionNode(const ActionsDAG::Node * node)
+{
+    if (node && node->type == ActionsDAG::ActionType::FUNCTION)
+        return node;
+    return nullptr;
+}
+
 std::string functionName(const QueryTreeNodePtr & node)
 {
     return node->as<FunctionNode &>().getFunctionName();
@@ -93,6 +267,13 @@ std::string functionName(const QueryTreeNodePtr & node)
 std::string functionName(const ASTPtr & node)
 {
     return node->as<ASTFunction &>().name;
+}
+
+std::string functionName(const ActionsDAG::Node * node)
+{
+    if (node && node->function_base)
+        return node->function_base->getName();
+    return "";
 }
 
 std::optional<Field> tryGetConstantValue(const QueryTreeNodePtr & node)
@@ -107,6 +288,17 @@ std::optional<Field> tryGetConstantValue(const ASTPtr & node)
 {
     if (const auto * constant = node->as<ASTLiteral>())
         return constant->value;
+
+    return {};
+}
+
+std::optional<Field> tryGetConstantValue(const ActionsDAG::Node * node)
+{
+    if (!node || node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+        return {};
+
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(node->column.get()))
+        return (*const_column)[0];
 
     return {};
 }
@@ -129,6 +321,11 @@ const auto & getNode(const CNFQueryAtomicFormula & atom)
     return atom.ast;
 }
 
+const auto & getNode(const ActionsDAGCNF::AtomicFormula & atom)
+{
+    return atom.node_with_hash.node;
+}
+
 std::string nodeToString(const ASTPtr & ast)
 {
     return ast->formatWithSecretsOneLine();
@@ -139,6 +336,13 @@ std::string nodeToString(const QueryTreeNodePtr & node)
     return node->toAST()->formatWithSecretsOneLine();
 }
 
+std::string nodeToString(const ActionsDAG::Node * node)
+{
+    if (!node)
+        return "<null>";
+    return node->result_name;
+}
+
 const auto & getArguments(const ASTFunction * function)
 {
     return function->arguments->children;
@@ -147,6 +351,11 @@ const auto & getArguments(const ASTFunction * function)
 const auto & getArguments(const FunctionNode * function)
 {
     return function->getArguments().getNodes();
+}
+
+const auto & getArguments(const ActionsDAG::Node * function)
+{
+    return function->children;
 }
 
 bool less(const Field & lhs, const Field & rhs)
@@ -244,6 +453,13 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
         {"greaterOrEquals", Graph::Edge::GREATER_OR_EQUAL},
     };
 
+    /// For ActionsDAG, we also need to handle the inverse relations since we don't normalize
+    static const std::unordered_map<std::string, typename Graph::Edge::Type> inverse_relation_to_enum =
+    {
+        {"less", Graph::Edge::GREATER},          // a < b means b > a
+        {"lessOrEquals", Graph::Edge::GREATER_OR_EQUAL},  // a <= b means b >= a
+    };
+
     /// Firstly build an intermediate graph,
     /// in which each vertex corresponds to one expression.
     /// That means that if we have edge (A, B) with type GREATER, then always A > B.
@@ -267,6 +483,8 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
                             if constexpr (with_ast)
                                 return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
                                     && constraint_node->getColumnName() == node->getColumnName();
+                            else if constexpr (with_actions_dag)
+                                return areNodesEqual(constraint_node, node);
                             else
                                 return constraint_node->isEqual(*node);
                         }))
@@ -294,11 +512,20 @@ ComparisonGraph<Node>::ComparisonGraph(const NodeContainer & atomic_formulas, Co
 
                 if (index_left && index_right)
                 {
-                    if (const auto it = relation_to_enum.find(functionName(atom)); it != std::end(relation_to_enum))
+                    const auto func_name = functionName(atom);
+                    // Handle normal relations (equals, greater, greaterOrEquals)
+                    if (const auto relation_it = relation_to_enum.find(func_name); relation_it != std::end(relation_to_enum))
                     {
-                        g.edges[*index_left].push_back({it->second, *index_right});
-                        if (it->second == Graph::Edge::EQUAL)
-                            g.edges[*index_right].push_back({it->second, *index_left});
+                        g.edges[*index_left].push_back({relation_it->second, *index_right});
+                        if (relation_it->second == Graph::Edge::EQUAL)
+                            g.edges[*index_right].push_back({relation_it->second, *index_left});
+                    }
+                    // Handle inverse relations (less, lessOrEquals) for ActionsDAG
+                    // For these, we add the edge in the reverse direction
+                    // e.g., "a < b" becomes an edge from b to a with type GREATER
+                    else if (const auto inverse_it = inverse_relation_to_enum.find(func_name); inverse_it != std::end(inverse_relation_to_enum))
+                    {
+                        g.edges[*index_right].push_back({inverse_it->second, *index_left});
                     }
                 }
             }
@@ -508,7 +735,9 @@ typename ComparisonGraph<Node>::NodeContainer ComparisonGraph<Node>::getEqual(co
 template <ComparisonGraphNodeType Node>
 std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) const
 {
-    const auto hash_it = graph.node_hash_to_component.find(Graph::getHash(node));
+    const auto node_hash = Graph::getHash(node);
+    const auto hash_it = graph.node_hash_to_component.find(node_hash);
+
     if (hash_it == std::end(graph.node_hash_to_component))
         return {};
 
@@ -521,6 +750,8 @@ std::optional<size_t> ComparisonGraph<Node>::getComponentId(const Node & node) c
             if constexpr (with_ast)
                 return constraint_node->getTreeHash(/*ignore_aliases=*/ true) == node->getTreeHash(/*ignore_aliases=*/ true)
                     && constraint_node->getColumnName() == node->getColumnName();
+            else if constexpr (with_actions_dag)
+                return areNodesEqual(constraint_node, node);
             else
                 return constraint_node->getTreeHash() == node->getTreeHash();
         }))
@@ -598,6 +829,8 @@ std::optional<Node> ComparisonGraph<Node>::getEqualConst(const Node & node) cons
         return std::nullopt;
 
     if constexpr (with_ast)
+        return graph.vertices[index].getConstant();
+    else if constexpr (with_actions_dag)
         return graph.vertices[index].getConstant();
     else
     {
@@ -841,7 +1074,9 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph<Node>::bui
 
 template struct GraphComponent<ASTPtr>;
 template struct GraphComponent<QueryTreeNodePtr>;
+template struct GraphComponent<const ActionsDAG::Node *>;
 template class ComparisonGraph<ASTPtr>;
 template class ComparisonGraph<QueryTreeNodePtr>;
+template class ComparisonGraph<const ActionsDAG::Node *>;
 
 }

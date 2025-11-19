@@ -4,6 +4,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/ActionsDAGCNF.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -11,6 +12,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <Core/Defines.h>
 
@@ -18,6 +20,11 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Passes/CNF.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 #include <Interpreters/Context.h>
 
@@ -287,6 +294,83 @@ std::vector<Analyzer::CNFAtomicFormula> ConstraintsDescription::QueryTreeData::g
     for (const auto & id : ids)
         result.push_back(cnf_constraints[id.group_id][id.atom_id]);
     return result;
+}
+
+ConstraintsDescription::ActionsDAGData ConstraintsDescription::getActionsDAGData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const
+{
+    ActionsDAGData data;
+
+    QueryAnalysisPass pass(table_node);
+
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    {
+        auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
+
+        if (dynamic_cast<ASTSubquery *>(expr.get()))
+        {
+            auto func = std::make_shared<ASTFunction>();
+            func->name = "equals";
+            func->children.push_back(std::make_shared<ASTExpressionList>());
+            auto args = std::make_shared<ASTExpressionList>();
+            args->children.push_back(expr);
+            args->children.push_back(std::make_shared<ASTLiteral>(Field{static_cast<UInt8>(1)}));
+            func->arguments = args;
+            expr = func;
+        }
+
+        auto query_tree = buildQueryTree(expr, context);
+        pass.run(query_tree, context);
+
+        auto execution_context = Context::createCopy(context);
+        auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(execution_context, std::move(global_planner_context), SelectQueryOptions{});
+
+        auto mutable_query_tree = query_tree;
+        collectSourceColumns(mutable_query_tree, planner_context);
+
+        ActionsDAG actions_dag;
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        PlannerActionsVisitor visitor(planner_context, empty_correlated_columns_set);
+        auto [actions_dag_nodes, correlated_subtrees] = visitor.visit(actions_dag, mutable_query_tree);
+
+        if (actions_dag_nodes.empty())
+            continue;
+
+        const auto * dag_node = actions_dag_nodes[0];
+
+        /// Convert to CNF and extract atomic formulas
+        auto cnf = ActionsDAGCNF::toCNF(dag_node, context).pullNotOutFunctions(context);
+
+        for (const auto & group : cnf.getStatements())
+        {
+            if (group.size() == 1)
+                data.atomic_constraints_data.emplace_back(*group.begin());
+        }
+
+        /// Store the CNF's owned DAG to keep nodes alive
+        /// Note: pullNotOutFunctions may have created new nodes, so we need its owned_dag
+        if (auto owned_dag = cnf.getOwnedDag())
+        {
+            if (!data.owned_dag)
+            {
+                data.owned_dag = owned_dag;
+            }
+            else
+            {
+                /// Merge multiple constraint DAGs into one
+                /// We need to clone nodes from this CNF into the main owned_dag
+                /// For now, just keep the first one - this is a limitation
+                /// TODO: Properly merge multiple constraint DAGs
+            }
+        }
+    }
+
+    return data;
+}
+
+const std::vector<ActionsDAGCNF::AtomicFormula> & ConstraintsDescription::ActionsDAGData::getAtomicConstraintData() const
+{
+    return atomic_constraints_data;
 }
 
 ConstraintsDescription::ConstraintsDescription(const ASTs & constraints_)

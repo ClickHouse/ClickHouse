@@ -424,7 +424,6 @@
 01585_use_index_for_global_in_with_null
 
 00955_test_final_mark_use
-01624_soft_constraints
 03031_minmax_index_for_pointinpolygon
 
     ORDER BY ALL is missing for multiple queries
