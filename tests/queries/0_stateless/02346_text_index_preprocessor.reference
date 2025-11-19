@@ -6,11 +6,13 @@ Positive tests on preprocessor construction and use.
 1
 1
 1
+0
 - Test preprocessor declaration using column more than once.
 1
 0
 1
 1
+0
 0
 0
 - Test preprocessor declaration using udf.
@@ -20,7 +22,15 @@ Positive tests on preprocessor construction and use.
 1
 0
 0
-The preprocessor expression is compatible with array columns
+0
+- The preprocessor expression is compatible with array columns
+1
+1
+1
+1
+1
+1
+0
 Negative tests on preprocessor construction validations.
 - The preprocessor argument must not reference non-indexed columns
 - Index definition may not be and expression when there is preprocessor
