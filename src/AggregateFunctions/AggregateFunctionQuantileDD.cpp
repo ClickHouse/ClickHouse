@@ -13,15 +13,15 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace
 {
 
-template <typename Value, bool float_return> using FuncQuantileDD = AggregateFunctionQuantile<Value, QuantileDD<Value>, NameQuantileDD, false, std::conditional_t<float_return, Float64, void>, false, true>;
-template <typename Value, bool float_return> using FuncQuantilesDD = AggregateFunctionQuantile<Value, QuantileDD<Value>, NameQuantilesDD, false, std::conditional_t<float_return, Float64, void>, true, true>;
+template <typename Value, bool float_return> using FuncQuantileDD = AggregateFunctionQuantile<Value, QuantileDD<Value>, NameQuantileDD, void, std::conditional_t<float_return, Float64, void>, false, true>;
+template <typename Value, bool float_return> using FuncQuantilesDD = AggregateFunctionQuantile<Value, QuantileDD<Value>, NameQuantilesDD, void, std::conditional_t<float_return, Float64, void>, true, true>;
 
 
 template <template <typename, bool> class Function>
@@ -29,7 +29,7 @@ AggregateFunctionPtr createAggregateFunctionQuantile(
     const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
 {
     if (argument_types.empty())
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at least one argument", name);
+        throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires at least one argument", name);
 
     const DataTypePtr & argument_type = argument_types[0];
     WhichDataType which(argument_type);

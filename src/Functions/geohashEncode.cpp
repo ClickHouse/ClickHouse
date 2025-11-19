@@ -8,7 +8,7 @@
 
 #include <string>
 
-#define GEOHASH_MAX_TEXT_LENGTH 16
+constexpr size_t GEOHASH_MAX_TEXT_LENGTH = 16;
 
 
 namespace DB
@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
 namespace
@@ -40,24 +39,26 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateArgumentType(*this, arguments, 0, isFloat, "float");
-        validateArgumentType(*this, arguments, 1, isFloat, "float");
-        if (arguments.size() == 3)
-        {
-            validateArgumentType(*this, arguments, 2, isInteger, "integer");
-        }
-        if (arguments.size() > 3)
-        {
-            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Too many arguments for function {} expected at most 3",
-                            getName());
-        }
+        FunctionArgumentDescriptors mandatory_args{
+            {"longitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"},
+            {"latitude", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isFloat), nullptr, "Float*"}
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isInteger), nullptr, "(U)Int*"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const IColumn * longitude = arguments[0].column.get();
         const IColumn * latitude = arguments[1].column.get();
@@ -69,26 +70,24 @@ public:
             precision = arguments[2].column;
 
         ColumnPtr res_column;
-        vector(longitude, latitude, precision.get(), res_column);
+        vector(longitude, latitude, precision.get(), res_column, input_rows_count);
         return res_column;
     }
 
 private:
-    void vector(const IColumn * lon_column, const IColumn * lat_column, const IColumn * precision_column, ColumnPtr & result) const
+    void vector(const IColumn * lon_column, const IColumn * lat_column, const IColumn * precision_column, ColumnPtr & result, size_t input_rows_count) const
     {
         auto col_str = ColumnString::create();
         ColumnString::Chars & out_vec = col_str->getChars();
         ColumnString::Offsets & out_offsets = col_str->getOffsets();
 
-        const size_t size = lat_column->size();
-
-        out_offsets.resize(size);
-        out_vec.resize(size * (GEOHASH_MAX_TEXT_LENGTH + 1));
+        out_offsets.resize(input_rows_count);
+        out_vec.resize(input_rows_count * GEOHASH_MAX_TEXT_LENGTH);
 
         char * begin = reinterpret_cast<char *>(out_vec.data());
         char * pos = begin;
 
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const Float64 longitude_value = lon_column->getFloat64(i);
             const Float64 latitude_value = lat_column->getFloat64(i);
@@ -97,8 +96,7 @@ private:
             const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
             pos += encoded_size;
-            *pos = '\0';
-            out_offsets[i] = ++pos - begin;
+            out_offsets[i] = pos - begin;
         }
         out_vec.resize(pos - begin);
 
@@ -113,7 +111,40 @@ private:
 
 REGISTER_FUNCTION(GeohashEncode)
 {
-    factory.registerFunction<FunctionGeohashEncode>();
+    FunctionDocumentation::Description description = R"(
+Encodes longitude and latitude as a [geohash](https://en.wikipedia.org/wiki/Geohash)-string.
+
+:::
+All coordinate parameters must be of the same type: either `Float32` or `Float64`.
+
+For the `precision` parameter, any value less than `1` or greater than `12` is silently converted to `12`.
+:::
+    )";
+    FunctionDocumentation::Syntax syntax = "geohashEncode(longitude, latitude, [precision])";
+    FunctionDocumentation::Arguments arguments = {
+        {"longitude", "Longitude part of the coordinate to encode. Range: `[-180°, 180°]`.", {"Float32", "Float64"}},
+        {"latitude", "Latitude part of the coordinate to encode. Range: `[-90°, 90°]`.", {"Float32", "Float64"}},
+        {"precision", "Optional. Length of the resulting encoded string. Default: 12. Range: `[1, 12]`.", {"(U)Int*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an alphanumeric string of the encoded coordinate (modified version of the base32-encoding alphabet is used)",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage with default precision",
+            "SELECT geohashEncode(-5.60302734375, 42.593994140625) AS res",
+            R"(
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeohashEncode>(documentation);
 }
 
 }

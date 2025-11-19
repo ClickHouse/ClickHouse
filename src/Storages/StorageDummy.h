@@ -12,13 +12,22 @@ class StorageDummy final : public IStorage
 {
 public:
     StorageDummy(
-        const StorageID & table_id_, const ColumnsDescription & columns_, const StorageSnapshotPtr & original_storage_snapshot_ = nullptr);
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const StorageSnapshotPtr & original_storage_snapshot_ = nullptr,
+        bool supports_replication_ = false);
 
     std::string getName() const override { return "StorageDummy"; }
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+
+    std::optional<NameSet> supportedPrewhereColumns() const override
+    {
+        return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
+    }
+
     bool supportsSubcolumns() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool canMoveConditionsToPrewhere() const override
@@ -33,7 +42,7 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
     {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, object_columns);
+        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -52,11 +61,12 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-private:
-    const ColumnsDescription object_columns;
+    bool supportsReplication() const override { return supports_replication; }
 
+private:
     /// The original storage snapshot which is replaced during planning. See collectFiltersForAnalysis for example.
     StorageSnapshotPtr original_storage_snapshot;
+    const bool supports_replication;
 };
 
 class ReadFromDummy final : public SourceStepWithFilter

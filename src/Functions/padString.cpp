@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Common/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
@@ -60,10 +61,10 @@ namespace
             {
                 if (num_chars <= step)
                 {
-                    writeSlice(StringSource::Slice{std::bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
+                    writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(num_chars)}, res_sink);
                     break;
                 }
-                writeSlice(StringSource::Slice{std::bit_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
+                writeSlice(StringSource::Slice{reinterpret_cast<const UInt8 *>(pad_string.data()), numCharsToNumBytes(step)}, res_sink);
                 num_chars -= step;
             }
         }
@@ -84,8 +85,7 @@ namespace
                     if (offset == pad_string.length())
                         break;
                     offset += UTF8::seqLength(pad_string[offset]);
-                    if (offset > pad_string.length())
-                        offset = pad_string.length();
+                    offset = std::min(offset, pad_string.length());
                 }
             }
 
@@ -192,6 +192,11 @@ namespace
             return std::make_shared<DataTypeString>();
         }
 
+        DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+        {
+            return std::make_shared<DataTypeString>();
+        }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             auto column_string = arguments[0].column;
@@ -211,19 +216,18 @@ namespace
 
                 pad_string = column_pad_const->getValue<String>();
             }
-            PaddingChars<is_utf8> padding_chars{pad_string};
 
             auto col_res = ColumnString::create();
             StringSink res_sink{*col_res, input_rows_count};
 
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-                executeForSource(StringSource{*col}, column_length, padding_chars, res_sink);
+                executeForSource(StringSource{*col}, column_length, pad_string, res_sink);
             else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
-                executeForSource(FixedStringSource{*col_fixed}, column_length, padding_chars, res_sink);
+                executeForSource(FixedStringSource{*col_fixed}, column_length, pad_string, res_sink);
             else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
-                executeForSource(ConstSource<StringSource>{*col_const}, column_length, padding_chars, res_sink);
+                executeForSource(ConstSource<StringSource>{*col_const}, column_length, pad_string, res_sink);
             else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
-                executeForSource(ConstSource<FixedStringSource>{*col_const_fixed}, column_length, padding_chars, res_sink);
+                executeForSource(ConstSource<FixedStringSource>{*col_const_fixed}, column_length, pad_string, res_sink);
             else
                 throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
@@ -236,23 +240,40 @@ namespace
 
     private:
         template <typename SourceStrings>
-        void executeForSource(
-            SourceStrings && strings,
-            const ColumnPtr & column_length,
-            const PaddingChars<is_utf8> & padding_chars,
-            StringSink & res_sink) const
+        void executeForSource(SourceStrings && strings, const ColumnPtr & column_length, const String & pad_string, StringSink & res_sink) const
         {
-            if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
-                executeForSourceAndLength(std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
+            const auto & chars = strings.getElements();
+            bool all_ascii = isAllASCII(reinterpret_cast<const UInt8 *>(pad_string.data()), pad_string.size())
+                && isAllASCII(chars.data(), chars.size());
+            bool is_actually_utf8 = is_utf8 && !all_ascii;
+
+            if (!is_actually_utf8)
+            {
+                PaddingChars<false> padding_chars{pad_string};
+                if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
+                    executeForSourceAndLength<false>(
+                        std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
+                else
+                    executeForSourceAndLength<false>(
+                        std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
+            }
             else
-                executeForSourceAndLength(std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
+            {
+                PaddingChars<true> padding_chars{pad_string};
+                if (const auto * col_const = checkAndGetColumn<ColumnConst>(column_length.get()))
+                    executeForSourceAndLength<true>(
+                        std::forward<SourceStrings>(strings), ConstSource<GenericValueSource>{*col_const}, padding_chars, res_sink);
+                else
+                    executeForSourceAndLength<true>(
+                        std::forward<SourceStrings>(strings), GenericValueSource{*column_length}, padding_chars, res_sink);
+            }
         }
 
-        template <typename SourceStrings, typename SourceLengths>
+        template <bool is_actually_utf8, typename SourceStrings, typename SourceLengths>
         void executeForSourceAndLength(
             SourceStrings && strings,
             SourceLengths && lengths,
-            const PaddingChars<is_utf8> & padding_chars,
+            const PaddingChars<is_actually_utf8> & padding_chars,
             StringSink & res_sink) const
         {
             bool is_const_new_length = lengths.isConst();
@@ -264,7 +285,7 @@ namespace
             for (; !res_sink.isEnd(); res_sink.next(), strings.next(), lengths.next())
             {
                 auto str = strings.getWhole();
-                ssize_t current_length = getLengthOfSlice<is_utf8>(str);
+                ssize_t current_length = getLengthOfSlice<is_actually_utf8>(str);
 
                 if (!res_sink.rowNum() || !is_const_new_length)
                 {
@@ -284,7 +305,7 @@ namespace
                     if (is_const_new_length)
                     {
                         size_t rows_count = res_sink.offsets.size();
-                        res_sink.reserve((new_length + 1 /* zero terminator */) * rows_count);
+                        res_sink.reserve(new_length * rows_count);
                     }
                 }
 
@@ -294,7 +315,7 @@ namespace
                 }
                 else if (new_length < current_length)
                 {
-                    str = removeSuffixFromSlice<is_utf8>(str, current_length - new_length);
+                    str = removeSuffixFromSlice<is_actually_utf8>(str, current_length - new_length);
                     writeSlice(str, res_sink);
                 }
                 else if (new_length > current_length)
@@ -314,13 +335,92 @@ namespace
 
 REGISTER_FUNCTION(PadString)
 {
-    factory.registerFunction<FunctionPadString<false, false>>(); /// leftPad
-    factory.registerFunction<FunctionPadString<false, true>>();  /// leftPadUTF8
-    factory.registerFunction<FunctionPadString<true, false>>();  /// rightPad
-    factory.registerFunction<FunctionPadString<true, true>>();   /// rightPadUTF8
+    FunctionDocumentation::Description description_left = R"(
+Pads a string from the left with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
+)";
+    FunctionDocumentation::Syntax syntax_left = "leftPad(string, length[, pad_string])";
+    FunctionDocumentation::Arguments arguments_left = {
+        {"string", "Input string that should be padded.", {"String"}},
+        {"length", "The length of the resulting string. If the value is smaller than the input string length, then the input string is shortened to `length` characters.", {"(U)Int*"}},
+        {"pad_string", "Optional. The string to pad the input string with. If not specified, then the input string is padded with spaces.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_left = {"Returns a left-padded string of the given length.", {"String"}};
+    FunctionDocumentation::Examples examples_left = {
+    {
+        "Usage example",
+        "SELECT leftPad('abc', 7, '*'), leftPad('def', 7)",
+        R"(
+┌─leftPad('abc', 7, '*')─┬─leftPad('def', 7)─┐
+│ ****abc                │     def           │
+└────────────────────────┴───────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_left = {description_left, syntax_left, arguments_left, returned_value_left, examples_left, introduced_in, category};
 
-    factory.registerAlias("lpad", "leftPad", FunctionFactory::CaseInsensitive);
-    factory.registerAlias("rpad", "rightPad", FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description_left_utf8 = R"(
+Pads a UTF8 string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Unlike [`leftPad`](#leftPad) which measures the string length in bytes, the string length is measured in code points.
+)";
+    FunctionDocumentation::Syntax syntax_left_utf8 = "leftPadUTF8(string, length[, pad_string])";
+    FunctionDocumentation::Examples examples_left_utf8 = {
+    {
+        "Usage example",
+        "SELECT leftPadUTF8('абвг', 7, '*'), leftPadUTF8('дежз', 7)",
+        R"(
+┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
+│ ***абвг                     │    дежз                │
+└─────────────────────────────┴────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_left_utf8 = {description_left_utf8, syntax_left_utf8, arguments_left, returned_value_left, examples_left_utf8, introduced_in, category};
+
+    FunctionDocumentation::Description description_right = R"(
+Pads a string from the right with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
+)";
+    FunctionDocumentation::Syntax syntax_right = "rightPad(string, length[, pad_string])";
+    FunctionDocumentation::ReturnedValue returned_value_right = {"Returns a right-padded string of the given length.", {"String"}};
+    FunctionDocumentation::Examples examples_right = {
+    {
+        "Usage example",
+        "SELECT rightPad('abc', 7, '*'), rightPad('abc', 7)",
+        R"(
+┌─rightPad('abc', 7, '*')─┬─rightPad('abc', 7)─┐
+│ abc****                 │ abc                │
+└─────────────────────────┴────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_right = {description_right, syntax_right, arguments_left, returned_value_right, examples_right, introduced_in, category};
+
+    FunctionDocumentation::Description description_right_utf8 = R"(
+Pads the string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length.
+Unlike [`rightPad`](#rightPad) which measures the string length in bytes, the string length is measured in code points.
+)";
+    FunctionDocumentation::Syntax syntax_right_utf8 = "rightPadUTF8(string, length[, pad_string])";
+    FunctionDocumentation::ReturnedValue returned_value_right_utf8 = {"Returns a right-padded string of the given length.", {"String"}};
+    FunctionDocumentation::Examples examples_right_utf8 = {
+    {
+        "Usage example",
+        "SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7)",
+        R"(
+┌─rightPadUTF8('абвг', 7, '*')─┬─rightPadUTF8('абвг', 7)─┐
+│ абвг***                      │ абвг                    │
+└──────────────────────────────┴─────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation documentation_right_utf8 = {description_right_utf8, syntax_right_utf8, arguments_left, returned_value_right_utf8, examples_right_utf8, introduced_in, category};
+
+    factory.registerFunction<FunctionPadString<false, false>>(documentation_left);
+    factory.registerFunction<FunctionPadString<false, true>>(documentation_left_utf8);
+    factory.registerFunction<FunctionPadString<true, false>>(documentation_right);
+    factory.registerFunction<FunctionPadString<true, true>>(documentation_right_utf8);
+
+    factory.registerAlias("lpad", "leftPad", FunctionFactory::Case::Insensitive);
+    factory.registerAlias("rpad", "rightPad", FunctionFactory::Case::Insensitive);
 }
 
 }

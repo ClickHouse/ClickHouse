@@ -6,7 +6,8 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
-#include <deque>
+#include <boost/intrusive/list.hpp>
+
 #include <mutex>
 
 
@@ -15,24 +16,41 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INVALID_SCHEDULER_NODE;
+    extern const int SERVER_OVERLOADED;
 }
 
 /*
  * FIFO queue to hold pending resource requests
  */
-class FifoQueue : public ISchedulerQueue
+class FifoQueue final : public ISchedulerQueue
 {
 public:
     FifoQueue(EventQueue * event_queue_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
         : ISchedulerQueue(event_queue_, config, config_prefix)
     {}
 
+    FifoQueue(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerQueue(event_queue_, info_)
+    {}
+
+    ~FifoQueue() override
+    {
+        purgeQueue();
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("fifo");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<FifoQueue *>(other))
+        if (auto * _ = dynamic_cast<FifoQueue *>(other))
             return true;
         return false;
     }
@@ -40,9 +58,14 @@ public:
     void enqueueRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
+        if (is_not_usable)
+            throw Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue is about to be destructed");
+
+        if (requests.size() >= static_cast<size_t>(info.queue_size))
+            throw Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {} of {}", requests.size(), info.queue_size);
         queue_cost += request->cost;
         bool was_empty = requests.empty();
-        requests.push_back(request);
+        requests.push_back(*request);
         if (was_empty)
             scheduleActivation();
     }
@@ -52,34 +75,60 @@ public:
         std::lock_guard lock(mutex);
         if (requests.empty())
             return {nullptr, false};
-        ResourceRequest * result = requests.front();
+        ResourceRequest * result = &requests.front();
         requests.pop_front();
         if (requests.empty())
+        {
             busy_periods++;
+            event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
+        }
         queue_cost -= result->cost;
-        dequeued_requests++;
-        dequeued_cost += result->cost;
+        incrementDequeued(result->cost);
         return {result, !requests.empty()};
     }
 
     bool cancelRequest(ResourceRequest * request) override
     {
         std::lock_guard lock(mutex);
-        // TODO(serxa): reimplement queue as intrusive list of ResourceRequest to make this O(1) instead of O(N)
-        for (auto i = requests.begin(), e = requests.end(); i != e; ++i)
+        if (is_not_usable)
+            return false; // Any request should already be failed or executed
+        if (request->is_linked())
         {
-            if (*i == request)
+            // It's impossible to check that `request` is indeed inserted to this queue and not another queue.
+            // It's up to caller to make sure this is the case. Otherwise, list sizes will be corrupted.
+            // Not tracking list sizes is not an option, because another problem appears: removing from list w/o locking.
+            // Another possible solution - keep track if request `is_cancelable` guarded by `mutex`
+            // Simple check for list size corruption
+            if (requests.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "trying to cancel request (linked into another queue) from empty queue: {}", getPath());
+
+            requests.erase(requests.iterator_to(*request));
+
+            if (requests.empty())
             {
-                requests.erase(i);
-                if (requests.empty())
-                    busy_periods++;
-                queue_cost -= request->cost;
-                canceled_requests++;
-                canceled_cost += request->cost;
-                return true;
+                busy_periods++;
+                event_queue->cancelActivation(this); // It is important to avoid scheduling two activations which leads to crash
             }
+            queue_cost -= request->cost;
+            canceled_requests++;
+            canceled_cost += request->cost;
+            return true;
         }
         return false;
+    }
+
+    void purgeQueue() override
+    {
+        std::lock_guard lock(mutex);
+        is_not_usable = true;
+        while (!requests.empty())
+        {
+            ResourceRequest * request = &requests.front();
+            requests.pop_front();
+            request->failed(std::make_exception_ptr(
+                Exception(ErrorCodes::INVALID_SCHEDULER_NODE, "Scheduler queue with resource request is about to be destructed")));
+        }
+        event_queue->cancelActivation(this);
     }
 
     bool isActive() override
@@ -124,7 +173,8 @@ public:
 private:
     std::mutex mutex;
     Int64 queue_cost = 0;
-    std::deque<ResourceRequest *> requests; // TODO(serxa): reimplement it using intrusive list to avoid allocations/deallocations and O(N) during cancel
+    boost::intrusive::list<ResourceRequest> requests;
+    bool is_not_usable = false;
 };
 
 }

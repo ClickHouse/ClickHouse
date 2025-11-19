@@ -27,7 +27,16 @@ public:
     bool no_ddl_lock{false};
 
     /// For `TRUNCATE ALL TABLES` query
-    bool has_all_tables{false};
+    bool has_all{false};
+
+    /// For `TRUNCATE TABLES` query (basically the same as above)
+    bool has_tables{false};
+
+    /// For specifying table name patterns for `TRUNCATE ALL TABLES` query
+    String like;
+
+    bool not_like = false;
+    bool case_insensitive_like = false;
 
     /// We dropping dictionary, so print correct word
     bool is_dictionary{false};
@@ -37,13 +46,13 @@ public:
 
     bool sync{false};
 
-    // We detach the object permanently, so it will not be reattached back during server restart.
+    /// We detach the object permanently, so it will not be reattached back during server restart.
     bool permanently{false};
 
-    /// Example: Drop TABLE t1, t2, t3...
+    /// Used to drop multiple tables only, example: DROP TABLE t1, t2, t3...
     ASTPtr database_and_tables;
 
-    /** Get the text that identifies this element. */
+    /// Get the text that identifies this element.
     String getID(char) const override;
     ASTPtr clone() const override;
 
@@ -52,12 +61,13 @@ public:
         return removeOnCluster<ASTDropQuery>(clone(), params.default_database);
     }
 
+    /// Convert an AST that deletes multiple tables into multiple ASTs that delete a single table.
     ASTs getRewrittenASTsOfSingleTable();
 
     QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
 
 }

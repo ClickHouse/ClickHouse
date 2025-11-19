@@ -1,20 +1,17 @@
 #pragma once
 
-#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-
-#include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include <Disks/ObjectStorages/MetadataFromDiskTransactionState.h>
+#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
+#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/IDisk.h>
 
 namespace DB
 {
 
-struct UnlinkMetadataFileOperationOutcome;
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
-
-/// Store metadata on a separate disk
+/// Stores metadata on a separate disk
 /// (used for object storages, like S3 and related).
 class MetadataStorageFromDisk final : public IMetadataStorage
 {
@@ -30,15 +27,18 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    bool supportWritingWithAppend() const override;
+
     const std::string & getPath() const override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
 
-    bool exists(const std::string & path) const override;
+    /// Metadata on disk for an empty file can store empty list of blobs and size=0
+    bool supportsEmptyFilesWithoutBlobs() const override { return true; }
 
-    bool isFile(const std::string & path) const override;
-
-    bool isDirectory(const std::string & path) const override;
+    bool existsFile(const std::string & path) const override;
+    bool existsDirectory(const std::string & path) const override;
+    bool existsFileOrDirectory(const std::string & path) const override;
 
     uint64_t getFileSize(const String & path) const override;
 
@@ -72,19 +72,15 @@ public:
 
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::unique_lock<SharedMutex> & lock) const;
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
+
+    bool isReadOnly() const override { return disk->isReadOnly(); }
 };
 
 class MetadataStorageFromDiskTransaction final : public IMetadataTransaction
 {
 private:
     const MetadataStorageFromDisk & metadata_storage;
-
-    std::vector<MetadataOperationPtr> operations;
-    MetadataFromDiskTransactionState state{MetadataFromDiskTransactionState::PREPARING};
-
-    void addOperation(MetadataOperationPtr && operation);
-
-    void rollback(size_t until_pos);
+    MetadataOperationsHolder operations;
 
 public:
     explicit MetadataStorageFromDiskTransaction(const MetadataStorageFromDisk & metadata_storage_)
@@ -95,17 +91,17 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const final;
 
-    void commit() final;
+    void commit(const TransactionCommitOptionsVariant & options) final;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
 
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
-    void createEmptyMetadataFile(const std::string & path) override;
+    void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
 
-    void createMetadataFile(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    bool supportAddingBlobToMetadata() override { return true; }
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey object_key, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 
@@ -116,6 +112,8 @@ public:
     void setReadOnly(const std::string & path) override;
 
     void unlinkFile(const std::string & path) override;
+
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
 
     void createDirectory(const std::string & path) override;
 
@@ -133,10 +131,9 @@ public:
 
     void replaceFile(const std::string & path_from, const std::string & path_to) override;
 
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
+    TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
-
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
 };
-
 
 }

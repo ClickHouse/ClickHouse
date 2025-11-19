@@ -1,17 +1,14 @@
 #pragma once
 
 #include <cassert>
-#include <stdexcept> // for std::logic_error
+
 #include <string>
-#include <type_traits>
 #include <vector>
-#include <functional>
-#include <iosfwd>
 
 #include <base/defines.h>
+#include <base/simd.h>
 #include <base/types.h>
 #include <base/unaligned.h>
-#include <base/simd.h>
 
 #include <city.h>
 
@@ -38,6 +35,10 @@
 #if defined(__s390x__)
     #include <base/crc32c_s390x.h>
     #define CRC_INT s390x_crc32c
+#endif
+
+#if !defined(CRC_INT)
+#include <stdexcept> // for std::logic_error
 #endif
 
 /**
@@ -84,7 +85,7 @@ using StringRefs = std::vector<StringRef>;
   * For more information, see hash_map_string_2.cpp
   */
 
-inline bool compare8(const char * p1, const char * p2)
+inline bool compare16(const char * p1, const char * p2)
 {
     return 0xFFFF == _mm_movemask_epi8(_mm_cmpeq_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(p1)),
@@ -113,7 +114,7 @@ inline bool compare64(const char * p1, const char * p2)
 
 #elif defined(__aarch64__) && defined(__ARM_NEON)
 
-inline bool compare8(const char * p1, const char * p2)
+inline bool compare16(const char * p1, const char * p2)
 {
     uint64_t mask = getNibbleMask(vceqq_u8(
             vld1q_u8(reinterpret_cast<const unsigned char *>(p1)), vld1q_u8(reinterpret_cast<const unsigned char *>(p2))));
@@ -149,19 +150,19 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
             return unalignedLoad<uint64_t>(p1) == unalignedLoad<uint64_t>(p2)
                 && unalignedLoad<uint64_t>(p1 + size - 8) == unalignedLoad<uint64_t>(p2 + size - 8);
         }
-        else if (size >= 4)
+        if (size >= 4)
         {
             /// Chunks of 4..7 bytes.
             return unalignedLoad<uint32_t>(p1) == unalignedLoad<uint32_t>(p2)
                 && unalignedLoad<uint32_t>(p1 + size - 4) == unalignedLoad<uint32_t>(p2 + size - 4);
         }
-        else if (size >= 2)
+        if (size >= 2)
         {
             /// Chunks of 2..3 bytes.
             return unalignedLoad<uint16_t>(p1) == unalignedLoad<uint16_t>(p2)
                 && unalignedLoad<uint16_t>(p1 + size - 2) == unalignedLoad<uint16_t>(p2 + size - 2);
         }
-        else if (size >= 1)
+        if (size >= 1)
         {
             /// A single byte.
             return *p1 == *p2;
@@ -183,13 +184,22 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
     switch (size / 16) // NOLINT(bugprone-switch-missing-default-case)
     {
-        case 3: if (!compare8(p1 + 32, p2 + 32)) return false; [[fallthrough]];
-        case 2: if (!compare8(p1 + 16, p2 + 16)) return false; [[fallthrough]];
-        case 1: if (!compare8(p1, p2)) return false; [[fallthrough]];
+        case 3:
+            if (!compare16(p1 + 32, p2 + 32))
+                return false;
+            [[fallthrough]];
+        case 2:
+            if (!compare16(p1 + 16, p2 + 16))
+                return false;
+            [[fallthrough]];
+        case 1:
+            if (!compare16(p1, p2))
+                return false;
+            [[fallthrough]];
         default: ;
     }
 
-    return compare8(p1 + size - 16, p2 + size - 16);
+    return compare16(p1 + size - 16, p2 + size - 16);
 }
 
 #endif
@@ -237,6 +247,11 @@ inline bool operator> (StringRef lhs, StringRef rhs)
 
 struct StringRefHash64
 {
+    size_t operator() (std::string_view x) const
+    {
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
+    }
+
     size_t operator() (StringRef x) const
     {
         return CityHash_v1_0_2::CityHash64(x.data, x.size);
@@ -300,7 +315,8 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef x) const
+    size_t operator()(std::string_view x) const { return (*this)(StringRef{x}); }
+    size_t operator() (StringRef x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -316,7 +332,7 @@ struct CRC32Hash
         }
 
         const char * end = pos + size;
-        unsigned res = -1U;
+        size_t res = -1U;
 
         do
         {
@@ -329,7 +345,11 @@ struct CRC32Hash
         UInt64 word = unalignedLoadLittleEndian<UInt64>(end - 8);    /// I'm not sure if this is normal.
         res = static_cast<unsigned>(CRC_INT(res, word));
 
-        return res;
+        // abseil-cpp and std require hash functions to return 64-bit values,
+        // though we intentionally use crc32 for the sake of speed.
+        //
+        // Fill upper bits with the same value as the lower ones.
+        return (res << 32) | res;
     }
 };
 
@@ -349,6 +369,7 @@ struct StringRefHash : StringRefHash64 {};
 
 #endif
 
+using StringViewHash = StringRefHash;
 
 namespace std
 {
@@ -367,11 +388,15 @@ namespace PackedZeroTraits
 {
     template <typename Second, template <typename, typename> class PackedPairNoInit>
     inline bool check(const PackedPairNoInit<StringRef, Second> p)
-    { return 0 == p.key.size; }
+    {
+        return 0 == p.key.size;
+    }
 
     template <typename Second, template <typename, typename> class PackedPairNoInit>
     inline void set(PackedPairNoInit<StringRef, Second> & p)
-    { p.key.size = 0; }
+    {
+        p.key.size = 0;
+    }
 }
 
 

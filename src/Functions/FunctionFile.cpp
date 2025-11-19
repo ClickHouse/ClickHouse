@@ -64,6 +64,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -129,13 +134,12 @@ public:
 
             try
             {
-                if (need_check && file_path.string().find(user_files_absolute_path_string) != 0)
+                if (need_check && !file_path.string().starts_with(user_files_absolute_path_string))
                     throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File is not inside {}", user_files_absolute_path.string());
 
                 ReadBufferFromFile in(file_path);
-                WriteBufferFromVector out(res_chars, AppendModeTag{});
+                auto out = WriteBufferFromVector<ColumnString::Chars>(res_chars, AppendModeTag{});
                 copyData(in, out);
-                out.finalize();
             }
             catch (...)
             {
@@ -148,7 +152,6 @@ public:
                     res_chars.insert(default_result.data(), default_result.data() + default_result.size());
             }
 
-            res_chars.push_back(0);
             res_offsets[row] = res_chars.size();
         }
 
@@ -162,7 +165,33 @@ public:
 
 REGISTER_FUNCTION(File)
 {
-    factory.registerFunction<FunctionFile>();
+    FunctionDocumentation::Description description = R"(
+Reads a file as a string and loads the data into the specified column.
+The file content is not interpreted.
+
+Also see the [`file`](../table-functions/file.md) table function.
+        )";
+    FunctionDocumentation::Syntax syntax = "file(path[, default])";
+    FunctionDocumentation::Arguments arguments = {
+        {"path", "The path of the file relative to the `user_files_path`. Supports wildcards `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` are numbers and `'abc', 'def'` are strings.", {"String"}},
+        {"default", "The value returned if the file does not exist or cannot be accessed.", {"String", "NULL"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the file content as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Insert files into a table",
+            R"(
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
+            )",
+            R"(
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFile>(documentation);
 }
 
 }

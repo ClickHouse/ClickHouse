@@ -13,6 +13,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -160,7 +161,7 @@ void MatcherNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state,
     }
 }
 
-bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const
+bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const MatcherNode &>(rhs);
     if (matcher_type != rhs_typed.matcher_type ||
@@ -173,15 +174,15 @@ bool MatcherNode::isEqualImpl(const IQueryTreeNode & rhs) const
 
     if (!columns_matcher && !rhs_columns_matcher)
         return true;
-    else if (columns_matcher && !rhs_columns_matcher)
+    if (columns_matcher && !rhs_columns_matcher)
         return false;
-    else if (!columns_matcher && rhs_columns_matcher)
+    if (!columns_matcher && rhs_columns_matcher)
         return false;
 
     return columns_matcher->pattern() == rhs_columns_matcher->pattern();
 }
 
-void MatcherNode::updateTreeHashImpl(HashState & hash_state) const
+void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(matcher_type));
 

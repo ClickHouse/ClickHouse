@@ -5,9 +5,15 @@
 #include <boost/noncopyable.hpp>
 #include <Disks/IDisk.h>
 #include <sys/types.h>
+#include <Disks/DiskCommitTransactionOptions.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 struct RemoveRequest
 {
@@ -27,11 +33,18 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 struct IDiskTransaction : private boost::noncopyable
 {
 public:
+
     /// Tries to commit all accumulated operations simultaneously.
     /// If something fails rollback and throw exception.
-    virtual void commit() = 0;
+    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
+    virtual void commit() { commit(NoCommitOptions{}); }
 
-    virtual void undo() = 0;
+    virtual void undo() noexcept = 0;
+
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Commit with ZK connection not implemented");
+    }
 
     virtual ~IDiskTransaction() = default;
 
@@ -40,9 +53,6 @@ public:
 
     /// Create directory and all parent directories if necessary.
     virtual void createDirectories(const std::string & path) = 0;
-
-    /// Remove all files from the directory. Directories are not removed.
-    virtual void clearDirectory(const std::string & path) = 0;
 
     /// Move directory from `from_path` to `to_path`.
     virtual void moveDirectory(const std::string & from_path, const std::string & to_path) = 0;
@@ -66,12 +76,18 @@ public:
         const WriteSettings & write_settings) = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFileWithAutoCommit(
         const std::string & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        const WriteSettings & settings = {},
-        bool autocommit = true) = 0;
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) = 0;
+
+    /// Open the file for write and return WriteBufferFromFileBase object.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const std::string & path,
+        size_t buf_size,
+        WriteMode mode,
+        const WriteSettings & settings) = 0;
 
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
@@ -123,6 +139,9 @@ public:
 
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const std::string & src_path, const std::string & dst_path) = 0;
+
+    /// Truncate file to the target size.
+    virtual void truncateFile(const std::string & src_path, size_t size) = 0;
 };
 
 using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;

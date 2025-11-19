@@ -1,12 +1,13 @@
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <IO/WriteHelpers.h>
+
+#include <Columns/IColumn.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/IDataPartStorage.h>
+
 #include <numeric>
-
-#include <boost/algorithm/string.hpp>
-
 
 namespace DB
 {
@@ -15,6 +16,25 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
+{
+    return index.expression->getRequiredColumns();
+}
+
+MergeTreeIndexFormat IMergeTreeIndex::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+{
+    if (checksums.files.contains(relative_path_prefix + ".idx"))
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+
+    return {0 /*unknown*/, {}};
+}
+
+void IMergeTreeIndexGranule::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
+{
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    serializeBinary(stream->compressed_hashing);
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)
@@ -29,6 +49,11 @@ void MergeTreeIndexFactory::registerValidator(const std::string & index_type, Va
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreeIndexFactory: the Index validator name '{}' is not unique", index_type);
 }
 
+void IMergeTreeIndexGranule::deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
+{
+    auto * stream = streams.at(MergeTreeIndexSubstream::Type::Regular);
+    deserializeBinary(*stream->getDataBuffer(), state.version);
+}
 
 MergeTreeIndexPtr MergeTreeIndexFactory::get(
     const IndexDescription & index) const
@@ -43,8 +68,7 @@ MergeTreeIndexPtr MergeTreeIndexFactory::get(
                         {
                             if (left.empty())
                                 return right.first;
-                            else
-                                return left + ", " + right.first;
+                            return left + ", " + right.first;
                         })
                 );
     }
@@ -98,8 +122,7 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
                     {
                         if (left.empty())
                             return right.first;
-                        else
-                            return left + ", " + right.first;
+                        return left + ", " + right.first;
                     })
             );
     }
@@ -115,31 +138,28 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
     registerCreator("set", setIndexCreator);
     registerValidator("set", setIndexValidator);
 
-    registerCreator("ngrambf_v1", bloomFilterIndexCreator);
-    registerValidator("ngrambf_v1", bloomFilterIndexValidator);
+    registerCreator("ngrambf_v1", bloomFilterIndexTextCreator);
+    registerValidator("ngrambf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("tokenbf_v1", bloomFilterIndexCreator);
-    registerValidator("tokenbf_v1", bloomFilterIndexValidator);
+    registerCreator("tokenbf_v1", bloomFilterIndexTextCreator);
+    registerValidator("tokenbf_v1", bloomFilterIndexTextValidator);
 
-    registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
-    registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
+    registerCreator("sparse_grams", bloomFilterIndexTextCreator);
+    registerValidator("sparse_grams", bloomFilterIndexTextValidator);
+
+    registerCreator("bloom_filter", bloomFilterIndexCreator);
+    registerValidator("bloom_filter", bloomFilterIndexValidator);
 
     registerCreator("hypothesis", hypothesisIndexCreator);
     registerValidator("hypothesis", hypothesisIndexValidator);
 
-#ifdef ENABLE_ANNOY
-    registerCreator("annoy", annoyIndexCreator);
-    registerValidator("annoy", annoyIndexValidator);
+#if USE_USEARCH
+    registerCreator("vector_similarity", vectorSimilarityIndexCreator);
+    registerValidator("vector_similarity", vectorSimilarityIndexValidator);
 #endif
 
-#ifdef ENABLE_USEARCH
-    registerCreator("usearch", usearchIndexCreator);
-    registerValidator("usearch", usearchIndexValidator);
-#endif
-
-    registerCreator("inverted", invertedIndexCreator);
-    registerValidator("inverted", invertedIndexValidator);
-
+    registerCreator("text", textIndexCreator);
+    registerValidator("text", textIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

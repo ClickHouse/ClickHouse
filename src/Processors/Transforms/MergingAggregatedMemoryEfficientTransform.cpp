@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/sortBlock.h>
@@ -14,12 +15,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-GroupingAggregatedTransform::GroupingAggregatedTransform(
-    const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
-    : IProcessor(InputPorts(num_inputs_, header_), { Block() })
+GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
+    : IProcessor(InputPorts(num_inputs_, header_), {Block()})
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
+    , input_out_of_order_buckets(num_inputs)
 {
 }
 
@@ -30,10 +31,10 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     auto info = std::make_shared<ChunksToMerge>();
     info->bucket_num = bucket;
     info->is_overflows = is_overflows;
-    info->chunks = std::make_unique<Chunks>(std::move(chunks));
+    info->chunks = std::make_shared<Chunks>(std::move(chunks));
 
     Chunk chunk;
-    chunk.setChunkInfo(std::move(info));
+    chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
 }
 
@@ -65,9 +66,30 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
     else
     {
+        for (const auto & [bucket, inputs_delayed_that_bucket] : out_of_order_buckets)
+        {
+            /// The bucket is no longer delayed by any of the inputs.
+            /// Either we received it from all sources (where it was not empty),
+            /// or we received buckets with higher id-s and no delayed bucket information.
+            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
+            {
+                if (try_push_by_iter(chunks_map.find(bucket)))
+                {
+                    out_of_order_buckets.erase(bucket);
+                    return true;
+                }
+            }
+        }
+
         for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
+        {
+            /// If bucket is delayed by any of the inputs, we cannot push it. The loop above will take care of it at some point.
+            if (out_of_order_buckets.contains(next_bucket_to_push))
+                continue;
+
             if (try_push_by_iter(chunks_map.find(next_bucket_to_push)))
                 return true;
+        }
     }
 
     return false;
@@ -116,13 +138,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             index_to_input[i] = in;
     }
 
-    auto need_input = [this](size_t input_num)
-    {
-        if (last_bucket_number[input_num] < current_bucket)
-            return true;
-
-        return expect_several_chunks_for_single_bucket_per_source && last_bucket_number[input_num] == current_bucket;
-    };
+    auto need_input = [this](size_t input_num) { return last_bucket_number[input_num] <= current_bucket; };
 
     if (!wait_input_ports_numbers.empty())
     {
@@ -214,6 +230,9 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             break;
         }
 
+        if (out_of_order_buckets.contains(current_bucket))
+            continue;
+
         if (need_data)
             return Status::NeedData;
     }
@@ -255,11 +274,10 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     if (!chunk.hasRows())
         return;
 
-    const auto & info = chunk.getChunkInfo();
-    if (!info)
+    if (chunk.getChunkInfos().empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in GroupingAggregatedTransform.");
 
-    if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get()))
+    if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
         Int32 bucket = agg_info->bucket_num;
         bool is_overflows = agg_info->is_overflows;
@@ -273,9 +291,14 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
+            for (const auto ooo_bucket : input_out_of_order_buckets[input])
+                out_of_order_buckets[ooo_bucket]--;
+            input_out_of_order_buckets[input] = agg_info->out_of_order_buckets;
+            for (const auto ooo_bucket : input_out_of_order_buckets[input])
+                out_of_order_buckets[ooo_bucket]++;
         }
     }
-    else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(info.get()))
+    else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
     {
         single_level_chunks.emplace_back(std::move(chunk));
     }
@@ -298,13 +321,17 @@ void GroupingAggregatedTransform::work()
 
         for (auto & cur_block : blocks)
         {
-            if (!cur_block)
+            if (cur_block.empty())
                 continue;
 
             Int32 bucket = cur_block.info.bucket_num;
             auto chunk_info = std::make_shared<AggregatedChunkInfo>();
             chunk_info->bucket_num = bucket;
-            chunks_map[bucket].emplace_back(Chunk(cur_block.getColumns(), cur_block.rows(), std::move(chunk_info)));
+
+            auto chunk = Chunk(cur_block.getColumns(), cur_block.rows());
+            chunk.getChunkInfos().add(std::move(chunk_info));
+
+            chunks_map[bucket].emplace_back(std::move(chunk));
         }
     }
 }
@@ -319,9 +346,7 @@ MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
 
 void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 {
-    const auto & info = chunk.getChunkInfo();
-    const auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
-
+    auto chunks_to_merge = chunk.getChunkInfos().get<ChunksToMerge>();
     if (!chunks_to_merge)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergingAggregatedSimpleTransform chunk must have ChunkInfo with type ChunksToMerge.");
 
@@ -330,19 +355,19 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     BlocksList blocks_list;
     for (auto & cur_chunk : *chunks_to_merge->chunks)
     {
-        const auto & cur_info = cur_chunk.getChunkInfo();
-        if (!cur_info)
+        if (cur_chunk.getChunkInfos().empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in MergingAggregatedBucketTransform.");
 
-        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(cur_info.get()))
+        if (auto agg_info = cur_chunk.getChunkInfos().get<AggregatedChunkInfo>())
         {
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = agg_info->is_overflows;
             block.info.bucket_num = agg_info->bucket_num;
+            block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
 
             blocks_list.emplace_back(std::move(block));
         }
-        else if (typeid_cast<const ChunkInfoWithAllocatedBytes *>(cur_info.get()))
+        else if (cur_chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
         {
             Block block = header.cloneWithColumns(cur_chunk.detachColumns());
             block.info.is_overflows = false;
@@ -361,7 +386,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->is_overflows = chunks_to_merge->is_overflows;
     res_info->bucket_num = chunks_to_merge->bucket_num;
     res_info->chunk_num = chunks_to_merge->chunk_num;
-    chunk.setChunkInfo(std::move(res_info));
+    chunk.getChunkInfos().add(std::move(res_info));
 
     auto block = params->aggregator.mergeBlocks(blocks_list, params->final, is_cancelled);
 
@@ -405,11 +430,7 @@ bool SortingAggregatedTransform::tryPushChunk()
 
 void SortingAggregatedTransform::addChunk(Chunk chunk, size_t from_input)
 {
-    const auto & info = chunk.getChunkInfo();
-    if (!info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in SortingAggregatedTransform.");
-
-    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
     if (!agg_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Chunk should have AggregatedChunkInfo in SortingAggregatedTransform.");
@@ -528,9 +549,7 @@ IProcessor::Status SortingAggregatedTransform::prepare()
 
 
 void addMergingAggregatedMemoryEfficientTransform(
-    Pipe & pipe,
-    AggregatingTransformParamsPtr params,
-    size_t num_merging_processors)
+    Pipe & pipe, AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number)
 {
     pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
 
@@ -547,12 +566,13 @@ void addMergingAggregatedMemoryEfficientTransform(
 
     pipe.resize(num_merging_processors);
 
-    pipe.addSimpleTransform([params](const Block &)
+    pipe.addSimpleTransform([params](const SharedHeader &)
     {
         return std::make_shared<MergingAggregatedBucketTransform>(params);
     });
 
-    pipe.addTransform(std::make_shared<SortingAggregatedTransform>(num_merging_processors, params));
+    if (should_produce_results_in_order_of_bucket_number)
+        pipe.addTransform(std::make_shared<SortingAggregatedTransform>(num_merging_processors, params));
 }
 
 }

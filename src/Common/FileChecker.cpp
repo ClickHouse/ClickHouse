@@ -10,6 +10,8 @@
 #include <IO/ReadHelpers.h>
 #include <base/JSON.h>
 
+#include <boost/range/adaptor/map.hpp>
+
 
 namespace fs = std::filesystem;
 
@@ -58,6 +60,11 @@ void FileChecker::update(const String & full_file_path)
     bool exists = fileReallyExists(full_file_path);
     auto real_size = exists ? getRealFileSize(full_file_path) : 0;  /// No race condition assuming no one else is working with these files.
     map[fileName(full_file_path)] = real_size;
+}
+
+void FileChecker::update(const String & filename, size_t size)
+{
+    map[filename] = size;
 }
 
 void FileChecker::setEmpty(const String & full_file_path)
@@ -132,31 +139,35 @@ void FileChecker::repair()
     }
 }
 
+void FileChecker::save(WriteBuffer & buffer) const
+{
+    /// So complex JSON structure - for compatibility with the old format.
+    writeCString("{\"clickhouse\":{", buffer);
+
+    auto settings = FormatSettings();
+    for (auto it = map.begin(); it != map.end(); ++it)
+    {
+        if (it != map.begin())
+            writeString(",", buffer);
+
+        /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
+        writeJSONString(escapeForFileName(it->first), buffer, settings);
+        writeString(R"(:{"size":")", buffer);
+        writeIntText(it->second, buffer);
+        writeString("\"}", buffer);
+    }
+
+    writeCString("}}", buffer);
+
+}
+
 void FileChecker::save() const
 {
     std::string tmp_files_info_path = parentPath(files_info_path) + "tmp_" + fileName(files_info_path);
 
     {
         std::unique_ptr<WriteBufferFromFileBase> out = disk ? disk->writeFile(tmp_files_info_path) : std::make_unique<WriteBufferFromFile>(tmp_files_info_path);
-
-        /// So complex JSON structure - for compatibility with the old format.
-        writeCString("{\"clickhouse\":{", *out);
-
-        auto settings = FormatSettings();
-        for (auto it = map.begin(); it != map.end(); ++it)
-        {
-            if (it != map.begin())
-                writeString(",", *out);
-
-            /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
-            writeJSONString(escapeForFileName(it->first), *out, settings);
-            writeString(R"(:{"size":")", *out);
-            writeIntText(it->second, *out);
-            writeString("\"}", *out);
-        }
-
-        writeCString("}}", *out);
-
+        save(*out);
         out->sync();
         out->finalize();
     }
@@ -174,7 +185,7 @@ void FileChecker::load()
     if (!fileReallyExists(files_info_path))
         return;
 
-    std::unique_ptr<ReadBuffer> in = disk ? disk->readFile(files_info_path) : std::make_unique<ReadBufferFromFile>(files_info_path);
+    std::unique_ptr<ReadBuffer> in = disk ? disk->readFile(files_info_path, getReadSettings()) : std::make_unique<ReadBufferFromFile>(files_info_path);
     WriteBufferFromOwnString out;
 
     /// The JSON library does not support whitespace. We delete them. Inefficient.
@@ -194,7 +205,7 @@ void FileChecker::load()
 
 bool FileChecker::fileReallyExists(const String & path_) const
 {
-    return disk ? disk->exists(path_) : fs::exists(path_);
+    return disk ? disk->existsFile(path_) : fs::exists(path_);
 }
 
 size_t FileChecker::getRealFileSize(const String & path_) const

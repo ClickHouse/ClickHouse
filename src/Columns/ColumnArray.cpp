@@ -1,5 +1,6 @@
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -8,6 +9,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -15,8 +17,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <base/unaligned.h>
-#include <base/sort.h>
+#include <IO/Operators.h>
 #include <cstring> // memcpy
 
 
@@ -141,13 +142,35 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.get<Array &>();
+    Array & res_arr = res.safeGet<Array>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
         res_arr.push_back(getData()[offset + i]);
 }
 
+DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
+{
+    size_t offset = offsetAt(n);
+    size_t size = sizeAt(n);
+
+    if (options.notFull(name_buf))
+        name_buf << "[";
+    DataTypes element_types;
+    element_types.reserve(size);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
+        element_types.push_back(type);
+    }
+    if (options.notFull(name_buf))
+        name_buf << "]";
+
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
+}
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
@@ -181,13 +204,11 @@ bool ColumnArray::isDefaultAt(size_t n) const
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
-    /** Similarly - only for arrays of fixed length values.
-      */
+    /// Similarly - only for arrays of fixed length values.
     if (!data->isFixedAndContiguous())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
-
     size_t elems = 0;
 
     if (length)
@@ -225,6 +246,27 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 }
 
 
+StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t array_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    char * pos = arena.allocContinue(sizeof(array_size), begin);
+    memcpy(pos, &array_size, sizeof(array_size));
+
+    StringRef res(pos, sizeof(array_size));
+
+    for (size_t i = 0; i < array_size; ++i)
+    {
+        auto value_ref = getData().serializeAggregationStateValueIntoArena(offset + i, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
+
+    return res;
+}
+
+
 char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t array_size = sizeAt(n);
@@ -237,6 +279,25 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
     return memory;
 }
 
+std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
+{
+    const auto & offsets_data = getOffsets();
+
+    size_t pos = offsets_data[n - 1];
+    size_t end = offsets_data[n];
+
+    size_t res = sizeof(offsets_data[0]);
+    for (; pos < end; ++pos)
+    {
+        auto element_size = getData().getSerializedValueSize(pos);
+        if (!element_size)
+            return std::nullopt;
+        res += *element_size;
+    }
+
+    return res;
+}
+
 
 const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 {
@@ -245,6 +306,18 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 
     for (size_t i = 0; i < array_size; ++i)
         pos = getData().deserializeAndInsertFromArena(pos);
+
+    getOffsets().push_back(getOffsets().back() + array_size);
+    return pos;
+}
+
+const char * ColumnArray::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    size_t array_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(array_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+        pos = getData().deserializeAndInsertAggregationStateValueFromArena(pos);
 
     getOffsets().push_back(getOffsets().back() + array_size);
     return pos;
@@ -271,15 +344,12 @@ void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
         getData().updateHashWithValue(offset + i, hash);
 }
 
-void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
+WeakHash32 ColumnArray::getWeakHash32() const
 {
     auto s = offsets->size();
-    if (hash.getData().size() != s)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of WeakHash32 does not match size of column: "
-                        "column size is {}, hash size is {}", s, hash.getData().size());
+    WeakHash32 hash(s);
 
-    WeakHash32 internal_hash(data->size());
-    data->updateWeakHash32(internal_hash);
+    WeakHash32 internal_hash = data->getWeakHash32();
 
     Offset prev_offset = 0;
     const auto & offsets_data = getOffsets();
@@ -300,6 +370,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
         prev_offset = offsets_data[i];
     }
+
+    return hash;
 }
 
 void ColumnArray::updateHashFast(SipHash & hash) const
@@ -310,7 +382,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.get<const Array &>();
+    const Array & array = x.safeGet<Array>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -322,7 +394,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.get<const Array &>();
+    const Array & array = x.safeGet<Array>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -337,7 +409,11 @@ bool ColumnArray::tryInsert(const Field & x)
     return true;
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnArray::insertFrom(const IColumn & src_, size_t n)
+#else
+void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
+#endif
 {
     const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
     size_t size = src.sizeAt(n);
@@ -366,6 +442,23 @@ void ColumnArray::popBack(size_t n)
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
+ColumnCheckpointPtr ColumnArray::getCheckpoint() const
+{
+    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
+}
+
+void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
+{
+    checkpoint.size = size();
+    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
+void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
+{
+    getOffsets().resize_assume_reserved(checkpoint.size);
+    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
+}
+
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
 {
     const ColumnArray & rhs = assert_cast<const ColumnArray &>(rhs_);
@@ -392,7 +485,11 @@ int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan
             : 1);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 int ColumnArray::compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+#else
+int ColumnArray::doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+#endif
 {
     return compareAtImpl(n, m, rhs_, nan_direction_hint);
 }
@@ -443,6 +540,27 @@ void ColumnArray::reserve(size_t n)
 {
     getOffsets().reserve_exact(n);
     getData().reserve(n); /// The average size of arrays is not taken into account here. Or it is considered to be no more than 1.
+}
+
+size_t ColumnArray::capacity() const
+{
+    return getOffsets().capacity();
+}
+
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
+{
+    size_t new_size = size();
+    Columns source_data_columns;
+    source_data_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+    {
+        const auto & source_array_column = assert_cast<const ColumnArray &>(*source_column);
+        new_size += source_array_column.size();
+        source_data_columns.push_back(source_array_column.getDataPtr());
+    }
+
+    getOffsets().reserve_exact(new_size * factor);
+    data->prepareForSquashing(source_data_columns, factor);
 }
 
 void ColumnArray::shrinkToFit()
@@ -535,7 +653,11 @@ void ColumnArray::getExtremes(Field & min, Field & max) const
 }
 
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
 void ColumnArray::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+#else
+void ColumnArray::doInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+#endif
 {
     if (length == 0)
         return;
@@ -613,6 +735,8 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Int128>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return filterNumber<Int256>(filt, result_size_hint);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return filterNumber<BFloat16>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return filterNumber<Float32>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
@@ -828,7 +952,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+        return filterGeneric(filt, result_size_hint);
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -973,10 +1097,10 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, Perm
             DefaultPartialSort());
 }
 
-ColumnPtr ColumnArray::compress() const
+ColumnPtr ColumnArray::compress(bool force_compression) const
 {
-    ColumnPtr data_compressed = data->compress();
-    ColumnPtr offsets_compressed = offsets->compress();
+    ColumnPtr data_compressed = data->compress(force_compression);
+    ColumnPtr offsets_compressed = offsets->compress(force_compression);
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
@@ -1016,6 +1140,8 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Int128>(replicate_offsets);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return replicateNumber<Int256>(replicate_offsets);
+    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+        return replicateNumber<BFloat16>(replicate_offsets);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return replicateNumber<Float32>(replicate_offsets);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
@@ -1134,7 +1260,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
-        /// Number of characters in strings of the array, including zero bytes.
+        /// Number of characters in strings of the array.
         size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
@@ -1145,7 +1271,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
             size_t prev_src_string_offset_local = prev_src_string_offset;
             for (size_t k = 0; k < value_size; ++k)
             {
-                /// Size of single string.
+                /// Size of a single string.
                 size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
                 current_res_string_offset += chars_size;
@@ -1265,7 +1391,7 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
     size_t tuple_size = tuple.tupleSize();
 
     if (tuple_size == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty tuple");
+        return replicateGeneric(replicate_offsets);
 
     Columns temporary_arrays(tuple_size);
     for (size_t i = 0; i < tuple_size; ++i)
@@ -1283,10 +1409,25 @@ ColumnPtr ColumnArray::replicateTuple(const Offsets & replicate_offsets) const
 
 size_t ColumnArray::getNumberOfDimensions() const
 {
-    const auto * nested_array = checkAndGetColumn<ColumnArray>(*data);
+    const auto * nested_array = checkAndGetColumn<ColumnArray>(&*data);
     if (!nested_array)
         return 1;
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
+}
+
+void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+{
+    Columns nested_source_columns;
+    nested_source_columns.reserve(source_columns.size());
+    for (const auto & source_column : source_columns)
+        nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
+
+    data->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+}
+
+void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    data->takeDynamicStructureFromColumn(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 }
 
 }

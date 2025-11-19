@@ -1,0 +1,10 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS test_avg_insert</create_query>
+    <create_query>
+        CREATE TABLE test_avg_insert (key UInt64, value AggregateFunction(avg, UInt8)) ENGINE = Memory() SETTINGS max_rows_to_keep=1
+    </create_query>
+
+    <query>INSERT INTO test_avg_insert with initializeAggregation('avgState', 1) as s select number, s AS value FROM numbers(200000000)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_avg_insert</drop_query>
+</test>

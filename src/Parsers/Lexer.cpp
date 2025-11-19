@@ -1,8 +1,18 @@
-#include <cassert>
-#include <base/defines.h>
+#if !defined(LEXER_STANDALONE_BUILD)
+
 #include <Parsers/Lexer.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <base/defines.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
+
+#else /// This allows building Lexer without any dependencies or includes for WebAssembly or Emscripten.
+
+#include <Parsers/LexerStandalone.h>
+#include <Parsers/Lexer.h>
+
+#endif
+
 
 namespace DB
 {
@@ -11,8 +21,9 @@ namespace
 {
 
 /// This must be consistent with functions in ReadHelpers.h
-template <char quote, TokenType success_token, TokenType error_token>
-Token quotedString(const char *& pos, const char * const token_begin, const char * const end)
+template <char quote>
+Token quotedString(const char *& pos, const char * const token_begin, const char * const end,
+    TokenType success_token, TokenType error_token)
 {
     ++pos;
     while (true)
@@ -41,7 +52,31 @@ Token quotedString(const char *& pos, const char * const token_begin, const char
             continue;
         }
 
-        UNREACHABLE();
+        chassert(false);
+    }
+}
+
+Token quotedStringWithUnicodeQuotes(const char *& pos, const char * const token_begin, const char * const end,
+    char expected_end_byte, TokenType success_token, TokenType error_token)
+{
+    /// ‘: e2 80 98
+    /// ’: e2 80 99
+    /// “: e2 80 9c
+    /// ”: e2 80 9d
+
+    while (true)
+    {
+        pos = find_first_symbols<'\xE2'>(pos, end);
+        if (pos + 2 >= end)
+            return Token(error_token, token_begin, end);
+
+        if (pos[0] == '\xE2' && pos[1] == '\x80' && pos[2] == expected_end_byte)
+        {
+            pos += 3;
+            return Token(success_token, token_begin, pos);
+        }
+
+        ++pos;
     }
 }
 
@@ -49,7 +84,7 @@ Token quotedHexOrBinString(const char *& pos, const char * const token_begin, co
 {
     constexpr char quote = '\'';
 
-    assert(pos[1] == quote);
+    chassert(pos[1] == quote);
 
     bool hex = (*pos == 'x' || *pos == 'X');
 
@@ -224,11 +259,11 @@ Token Lexer::nextTokenImpl()
         }
 
         case '\'':
-            return quotedString<'\'', TokenType::StringLiteral, TokenType::ErrorSingleQuoteIsNotClosed>(pos, token_begin, end);
+            return quotedString<'\''>(pos, token_begin, end, TokenType::StringLiteral, TokenType::ErrorSingleQuoteIsNotClosed);
         case '"':
-            return quotedString<'"', TokenType::QuotedIdentifier, TokenType::ErrorDoubleQuoteIsNotClosed>(pos, token_begin, end);
+            return quotedString<'"'>(pos, token_begin, end, TokenType::QuotedIdentifier, TokenType::ErrorDoubleQuoteIsNotClosed);
         case '`':
-            return quotedString<'`', TokenType::QuotedIdentifier, TokenType::ErrorBackQuoteIsNotClosed>(pos, token_begin, end);
+            return quotedString<'`'>(pos, token_begin, end, TokenType::QuotedIdentifier, TokenType::ErrorBackQuoteIsNotClosed);
 
         case '(':
             return Token(TokenType::OpeningRoundBracket, token_begin, ++pos);
@@ -316,34 +351,32 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                     return comment_until_end_of_line();
                 }
-                else
+
+                ++pos;
+
+                /// Nested multiline comments are supported according to the SQL standard.
+                size_t nesting_level = 1;
+
+                while (pos + 2 <= end)
                 {
-                    ++pos;
-
-                    /// Nested multiline comments are supported according to the SQL standard.
-                    size_t nesting_level = 1;
-
-                    while (pos + 2 <= end)
+                    if (pos[0] == '/' && pos[1] == '*')
                     {
-                        if (pos[0] == '/' && pos[1] == '*')
-                        {
-                            pos += 2;
-                            ++nesting_level;
-                        }
-                        else if (pos[0] == '*' && pos[1] == '/')
-                        {
-                            pos += 2;
-                            --nesting_level;
-
-                            if (nesting_level == 0)
-                                return Token(TokenType::Comment, token_begin, pos);
-                        }
-                        else
-                            ++pos;
+                        pos += 2;
+                        ++nesting_level;
                     }
-                    pos = end;
-                    return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
+                    else if (pos[0] == '*' && pos[1] == '/')
+                    {
+                        pos += 2;
+                        --nesting_level;
+
+                        if (nesting_level == 0)
+                            return Token(TokenType::Comment, token_begin, pos);
+                    }
+                    else
+                        ++pos;
                 }
+                pos = end;
+                return Token(TokenType::ErrorMultilineCommentIsNotClosed, token_begin, pos);
             }
             return Token(TokenType::Slash, token_begin, pos);
         }
@@ -398,6 +431,8 @@ Token Lexer::nextTokenImpl()
         }
         case '?':
             return Token(TokenType::QuestionMark, token_begin, ++pos);
+        case '^':
+            return Token(TokenType::Caret, token_begin, ++pos);
         case ':':
         {
             ++pos;
@@ -434,35 +469,52 @@ Token Lexer::nextTokenImpl()
                 pos += 3;
                 return Token(TokenType::Minus, token_begin, pos);
             }
+            /// Unicode quoted string, ‘Hello’ or “World”.
+            if (pos + 5 < end && pos[0] == '\xE2' && pos[1] == '\x80' && (pos[2] == '\x98' || pos[2] == '\x9C'))
+            {
+                const char expected_end_byte = pos[2] + 1;
+                TokenType success_token = pos[2] == '\x98' ? TokenType::StringLiteral : TokenType::QuotedIdentifier;
+                TokenType error_token = pos[2] == '\x98' ? TokenType::ErrorSingleQuoteIsNotClosed : TokenType::ErrorDoubleQuoteIsNotClosed;
+                pos += 3;
+                return quotedStringWithUnicodeQuotes(pos, token_begin, end, expected_end_byte, success_token, error_token);
+            }
             /// Other characters starting at E2 can be parsed, see skipWhitespacesUTF8
             [[fallthrough]];
         }
         default:
             if (*pos == '$')
             {
-                /// Try to capture dollar sign as start of here doc
+                /// Try to capture a dollar sign as a start of heredoc
 
-                std::string_view token_stream(pos, end - pos);
-                auto heredoc_name_end_position = token_stream.find('$', 1);
-                if (heredoc_name_end_position != std::string::npos)
+                const char * tag_end = find_first_symbols<'$'>(pos + 1, end);
+                if (tag_end != end)
                 {
-                    size_t heredoc_size = heredoc_name_end_position + 1;
-                    std::string_view heredoc = {token_stream.data(), heredoc_size};
+                    size_t heredoc_size = tag_end + 1 - pos;
 
-                    size_t heredoc_end_position = token_stream.find(heredoc, heredoc_size);
-                    if (heredoc_end_position != std::string::npos)
+                    bool is_valid_name = true;
+                    for (const char * name_pos = pos + 1; name_pos < tag_end; ++name_pos)
                     {
+                        if (!isWordCharASCII(*name_pos))
+                        {
+                            is_valid_name = false;
+                            break;
+                        }
+                    }
 
-                        pos += heredoc_end_position;
-                        pos += heredoc_size;
-
-                        return Token(TokenType::HereDoc, token_begin, pos);
+                    if (is_valid_name)
+                    {
+                        size_t heredoc_end_position = std::string_view{tag_end + 1, end}.find(std::string_view{pos, heredoc_size});
+                        if (heredoc_end_position != std::string::npos)
+                        {
+                            pos = tag_end + 1 + heredoc_end_position + heredoc_size;
+                            return Token(TokenType::HereDoc, token_begin, pos);
+                        }
                     }
                 }
 
                 if (((pos + 1 < end && !isWordCharASCII(pos[1])) || pos + 1 == end))
                 {
-                    /// Capture standalone dollar sign
+                    /// Capture a standalone dollar sign
                     return Token(TokenType::DollarSign, token_begin, ++pos);
                 }
             }
@@ -479,18 +531,21 @@ Token Lexer::nextTokenImpl()
                     ++pos;
                 return Token(TokenType::BareWord, token_begin, pos);
             }
-            else
-            {
-                /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
-                pos = skipWhitespacesUTF8(pos, end);
-                if (pos > token_begin)
-                    return Token(TokenType::Whitespace, token_begin, pos);
-                else
-                    return Token(TokenType::Error, token_begin, ++pos);
-            }
+
+            /// We will also skip unicode whitespaces in UTF-8 to support for queries copy-pasted from MS Word and similar.
+            pos = skipWhitespacesUTF8(pos, end);
+            if (pos > token_begin)
+                return Token(TokenType::Whitespace, token_begin, pos);
+
+            ++pos;
+            while (pos < end && UTF8::isContinuationOctet(*pos))
+                ++pos;
+
+            return Token(TokenType::Error, token_begin, pos);
     }
 }
 
+#if !defined(LEXER_STANDALONE_BUILD)
 
 const char * getTokenName(TokenType type)
 {
@@ -501,8 +556,6 @@ const char * getTokenName(TokenType type)
 APPLY_FOR_TOKENS(M)
 #undef M
     }
-
-    UNREACHABLE();
 }
 
 
@@ -527,10 +580,49 @@ const char * getErrorTokenDescription(TokenType type)
         case TokenType::ErrorWrongNumber:
             return "Wrong number";
         case TokenType::ErrorMaxQuerySizeExceeded:
-            return "Max query size exceeded";
+            return "Max query size exceeded (can be increased with the `max_query_size` setting)";
         default:
             return "Not an error";
     }
 }
+
+#else
+
+extern "C"
+{
+
+size_t clickhouse_lexer_size = sizeof(Lexer);
+
+void clickhouse_lexer_create(void * ptr, const char * begin, const char * end, size_t max_query_size)
+{
+    new(ptr) Lexer(begin, end, max_query_size);
+}
+
+unsigned char clickhouse_lexer_next_token(void * ptr, const char ** out_token_begin, const char ** out_token_end)
+{
+    Token res = reinterpret_cast<Lexer *>(ptr)->nextToken();
+    *out_token_begin = res.begin;
+    *out_token_end = res.end;
+    return static_cast<unsigned char>(res.type);
+}
+
+int clickhouse_lexer_token_is_significant(unsigned char token)
+{
+    return token != static_cast<unsigned char>(TokenType::Whitespace) && token != static_cast<unsigned char>(TokenType::Comment);
+}
+
+int clickhouse_lexer_token_is_error(unsigned char token)
+{
+    return token > static_cast<unsigned char>(TokenType::EndOfStream);
+}
+
+int clickhouse_lexer_token_is_end(unsigned char token)
+{
+    return token == static_cast<unsigned char>(TokenType::EndOfStream);
+}
+
+}
+
+#endif
 
 }

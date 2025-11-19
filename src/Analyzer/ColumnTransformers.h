@@ -1,9 +1,8 @@
 #pragma once
 
-#include <Analyzer/Identifier.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/ListNode.h>
-
+#include <Core/Names.h>
 
 namespace re2
 {
@@ -61,7 +60,7 @@ namespace DB
   */
 
 /// Column transformer type
-enum class ColumnTransfomerType
+enum class ColumnTransfomerType : uint8_t
 {
     APPLY,
     EXCEPT,
@@ -98,7 +97,7 @@ protected:
     explicit IColumnTransformerNode(size_t children_size);
 };
 
-enum class ApplyColumnTransformerType
+enum class ApplyColumnTransformerType : uint8_t
 {
     LAMBDA,
     FUNCTION
@@ -137,9 +136,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -153,7 +152,7 @@ private:
 };
 
 /// Except column transformer type
-enum class ExceptColumnTransformerType
+enum class ExceptColumnTransformerType : uint8_t
 {
     REGEXP,
     COLUMN_LIST,
@@ -214,9 +213,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 
@@ -290,9 +289,9 @@ public:
     void dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, size_t indent) const override;
 
 protected:
-    bool isEqualImpl(const IQueryTreeNode & rhs) const override;
+    bool isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const override;
 
-    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state) const override;
+    void updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const override;
 
     QueryTreeNodePtr cloneImpl() const override;
 

@@ -1,3 +1,5 @@
+#include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/PeekableReadBuffer.h>
@@ -10,6 +12,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 input_format_max_rows_to_read_for_schema_inference;
+    extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
+    extern const SettingsSchemaInferenceMode schema_inference_mode;
+}
 
 namespace ErrorCodes
 {
@@ -97,9 +105,11 @@ std::pair<ColumnsDescription, String> readSchemaFromFormatImpl(
     const ContextPtr & context)
 try
 {
+    FormatFactory & format_factory = FormatFactory::instance();
+
     NamesAndTypesList names_and_types;
-    SchemaInferenceMode mode = context->getSettingsRef().schema_inference_mode;
-    if (format_name && mode == SchemaInferenceMode::UNION && !FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
+    SchemaInferenceMode mode = context->getSettingsRef()[Setting::schema_inference_mode];
+    if (format_name && mode == SchemaInferenceMode::UNION && !format_factory.checkIfFormatSupportsSubsetOfColumns(*format_name, context, format_settings))
     {
         String additional_message;
         /// Better exception message for WithNames(AndTypes) formats.
@@ -109,9 +119,9 @@ try
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION schema inference mode is not supported for format {}, because it doesn't support reading subset of columns{}", *format_name, additional_message);
     }
 
-    if (format_name && FormatFactory::instance().checkIfFormatHasExternalSchemaReader(*format_name))
+    if (format_name && format_factory.checkIfFormatHasExternalSchemaReader(*format_name))
     {
-        auto external_schema_reader = FormatFactory::instance().getExternalSchemaReader(*format_name, context, format_settings);
+        auto external_schema_reader = format_factory.getExternalSchemaReader(*format_name, context, format_settings);
         try
         {
             return {ColumnsDescription(external_schema_reader->readSchema()), *format_name};
@@ -124,15 +134,15 @@ try
         }
     }
 
-    if (!format_name || FormatFactory::instance().checkIfFormatHasSchemaReader(*format_name))
+    if (!format_name || format_factory.checkIfFormatHasSchemaReader(*format_name))
     {
         IReadBufferIterator::Data iterator_data;
         std::vector<std::pair<NamesAndTypesList, String>> schemas_for_union_mode;
         std::string exception_messages;
         size_t max_rows_to_read = format_settings ? format_settings->max_rows_to_read_for_schema_inference
-                                                  : context->getSettingsRef().input_format_max_rows_to_read_for_schema_inference;
+                                                  : context->getSettingsRef()[Setting::input_format_max_rows_to_read_for_schema_inference];
         size_t max_bytes_to_read = format_settings ? format_settings->max_bytes_to_read_for_schema_inference
-                                                                             : context->getSettingsRef().input_format_max_bytes_to_read_for_schema_inference;
+                                                   : context->getSettingsRef()[Setting::input_format_max_bytes_to_read_for_schema_inference];
         size_t iterations = 0;
         while (true)
         {
@@ -163,7 +173,7 @@ try
                         return {*iterator_data.cached_columns, *format_name};
                     }
 
-                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFileName());
+                    schemas_for_union_mode.emplace_back(iterator_data.cached_columns->getAll(), read_buffer_iterator.getLastFilePath());
                     continue;
                 }
 
@@ -232,11 +242,18 @@ try
 
             if (format_name)
             {
+                if (!format_factory.checkIfFormatHasSchemaReader(*format_name))
+                {
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "{} file format doesn't support schema inference. You must specify the structure manually",
+                        *format_name);
+                }
                 SchemaReaderPtr schema_reader;
 
                 try
                 {
-                    schema_reader = FormatFactory::instance().getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
+                    schema_reader = format_factory.getSchemaReader(*format_name, *iterator_data.buf, context, format_settings);
                     schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                     names_and_types = schema_reader->readSchema();
                     auto num_rows = schema_reader->readNumberOrRows();
@@ -249,7 +266,7 @@ try
 
                     if (!names_and_types.empty())
                         read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
                 }
                 catch (...)
                 {
@@ -313,7 +330,7 @@ try
                 {
                     try
                     {
-                        SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
+                        SchemaReaderPtr schema_reader = format_factory.getSchemaReader(format_to_detect, support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                         schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                         names_and_types = schema_reader->readSchema();
                         if (names_and_types.empty())
@@ -358,7 +375,7 @@ try
                     {
                         try
                         {
-                            SchemaReaderPtr schema_reader = FormatFactory::instance().getSchemaReader(
+                            SchemaReaderPtr schema_reader = format_factory.getSchemaReader(
                                 formats_set_to_detect[i], support_buf_recreation ? *iterator_data.buf : *peekable_buf, context, format_settings);
                             schema_reader->setMaxRowsAndBytesToRead(max_rows_to_read, max_bytes_to_read);
                             auto tmp_names_and_types = schema_reader->readSchema();
@@ -410,7 +427,7 @@ try
                         throw Exception(ErrorCodes::CANNOT_DETECT_FORMAT, "The data format cannot be detected by the contents of the files. You can specify the format manually");
 
                     read_buffer_iterator.setSchemaToLastFile(ColumnsDescription(names_and_types));
-                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFileName());
+                    schemas_for_union_mode.emplace_back(names_and_types, read_buffer_iterator.getLastFilePath());
                 }
 
                 if (format_name && mode == SchemaInferenceMode::DEFAULT)
@@ -425,13 +442,12 @@ try
         /// could not even create a schema reader (for example when we got schema from cache).
         /// Let's create stateless schema reader from empty read buffer.
         EmptyReadBuffer empty;
-        SchemaReaderPtr stateless_schema_reader = FormatFactory::instance().getSchemaReader(*format_name, empty, context, format_settings);
+        SchemaReaderPtr stateless_schema_reader = format_factory.getSchemaReader(*format_name, empty, context, format_settings);
 
         if (mode == SchemaInferenceMode::UNION)
         {
             Names names_order; /// Try to save original columns order;
             std::unordered_map<String, DataTypePtr> names_to_types;
-
 
             for (const auto & [schema, file_name] : schemas_for_union_mode)
             {
@@ -526,9 +542,9 @@ try
 }
 catch (Exception & e)
 {
-    auto file_name = read_buffer_iterator.getLastFileName();
-    if (!file_name.empty())
-        e.addMessage(fmt::format("(in file/uri {})", file_name));
+    auto file_path = read_buffer_iterator.getLastFilePath();
+    if (!file_path.empty())
+        e.addMessage(fmt::format("(in file/uri {})", file_path));
     throw;
 }
 
@@ -569,7 +585,7 @@ SchemaCache::Keys getKeysForSchemaCache(
     /// For example, for Protobuf format additional information is the path to the schema
     /// and message name.
     String additional_format_info = FormatFactory::instance().getAdditionalInfoForSchemaCache(format, context, format_settings);
-    String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef().schema_inference_mode.value));
+    String schema_inference_mode(magic_enum::enum_name(context->getSettingsRef()[Setting::schema_inference_mode].value));
     SchemaCache::Keys cache_keys;
     cache_keys.reserve(sources.size());
     std::transform(

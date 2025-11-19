@@ -1,0 +1,55 @@
+name: Unexpected behaviour
+description: Some feature is working in non-obvious way
+labels: ["unexpected behaviour"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > (you don't have to strictly follow this form)
+  - type: textarea
+    attributes:
+      label: Company or project name
+      description: Put your company name or project description here.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Describe the unexpected behaviour
+      description: A clear and concise description of what doesn't work as it is supposed to.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Which ClickHouse versions are affected?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: How to reproduce
+      description: |
+        * Which ClickHouse server version to use
+        * Which interface to use, if matters
+        * Non-default settings, if any
+        * `CREATE TABLE` statements for all tables involved
+        * Sample data for all these tables, use [clickhouse-obfuscator](https://github.com/ClickHouse/ClickHouse/blob/c81bec37a58757be1e2b1ac6f20a62b3f14a31f1/programs/obfuscator/Obfuscator.cpp#L55-L95) if necessary
+        * Queries to run that lead to unexpected result
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Expected behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Error message and/or stacktrace
+      description: If applicable, add screenshots to help explain your problem.
+    validations:
+      required: false
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Add any other context about the problem here.
+    validations:
+      required: false

@@ -1,12 +1,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Functions/logical.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Columns/FilterDescription.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -26,10 +29,118 @@ namespace DB
 
 REGISTER_FUNCTION(Logical)
 {
-    factory.registerFunction<FunctionAnd>();
-    factory.registerFunction<FunctionOr>();
-    factory.registerFunction<FunctionXor>();
-    factory.registerFunction<FunctionNot>({}, FunctionFactory::CaseInsensitive); /// Operator NOT(x) can be parsed as a function.
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical conjunction of two or more values.
+
+Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+If enabled, `val_i` is evaluated only if `(val_1 AND val_2 AND ... AND val_{i-1})` is `true`.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "and(val1, val2[, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"val1, val2[, ...]", "List of at least two values.", {"Nullable((U)Int*)", "Nullable(Float*)"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `0`, if at least one argument evaluates to `false`
+- `NULL`, if no argument evaluates to `false` and at least one argument is `NULL`
+- `1`, otherwise
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT and(0, 1, -2);", "0"},
+            {"With NULL", "SELECT and(NULL, 1, 10, -2);", "ᴺᵁᴸᴸ"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionAnd>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical disjunction of two or more values.
+
+Setting [`short_circuit_function_evaluation`](https://clickhouse.com/docs/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used.
+If enabled, `val_i` is evaluated only if `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` is `true`.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "or(val1, val2[, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"val1, val2[, ...]", "List of at least two values.", {"Nullable((U)Int*)", "Nullable(Float*)"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `1`, if at least one argument evaluates to `true`
+- `0`, if all arguments evaluate to `false`
+- `NULL`, if all arguments evaluate to `false` and at least one argument is `NULL`
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT or(1, 0, 0, 2, NULL);", "1"},
+            {"With NULL", "SELECT or(0, NULL);", "ᴺᵁᴸᴸ"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionOr>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical exclusive disjunction of two or more values.
+For more than two input values, the function first xor-s the first two values, then xor-s the result with the third value etc.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "xor(val1, val2[, ...])";
+        FunctionDocumentation::Arguments arguments = {
+            {"val1, val2[, ...]", "List of at least two values.", {"Nullable((U)Int*)", "Nullable(Float*)"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `1`, for two values: if one of the values evaluates to `false` and other does not
+- `0`, for two values: if both values evaluate to `false` or to both `true`
+- `NULL`, if at least one of the inputs is `NULL`.
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT xor(0, 1, 1);", "0"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionXor>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Calculates the logical negation of a value.
+Zero as an argument is considered `false`, non-zero values are considered `true`.
+)";
+        FunctionDocumentation::Syntax syntax = "not(val)";
+        FunctionDocumentation::Arguments arguments = {
+            {"val", "The value.", {"(U)Int*", "Float*"}}
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {R"(
+Returns:
+- `1`, if `val` evaluates to `false`
+- `0`, if `val` evaluates to `true`
+- `NULL`, if `val` is `NULL`.
+        )", {"Nullable(UInt8)"}};
+        FunctionDocumentation::Examples examples = {
+            {"Basic usage", "SELECT NOT(1);", "0"}
+        };
+        FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Logical;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionNot>(documentation, FunctionFactory::Case::Insensitive); /// Operator NOT(x) can be parsed as a function.
+    }
 }
 
 namespace ErrorCodes
@@ -48,7 +159,7 @@ using UInt8Container = ColumnUInt8::Container;
 using UInt8ColumnPtrs = std::vector<const ColumnUInt8 *>;
 
 
-MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, const bool make_nullable)
+MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data, bool make_nullable)
 {
     const size_t rows_count = ternary_data.size();
 
@@ -64,35 +175,6 @@ MutableColumnPtr buildColumnFromTernaryData(const UInt8Container & ternary_data,
         null_column->getData()[i] = (ternary_data[i] == Ternary::Null);
 
     return ColumnNullable::create(std::move(new_column), std::move(null_column));
-}
-
-template <typename T>
-bool tryConvertColumnToBool(const IColumn * column, UInt8Container & res)
-{
-    const auto column_typed = checkAndGetColumn<ColumnVector<T>>(column);
-    if (!column_typed)
-        return false;
-
-    auto & data = column_typed->getData();
-    size_t data_size = data.size();
-    for (size_t i = 0; i < data_size; ++i)
-        res[i] = static_cast<bool>(data[i]);
-
-    return true;
-}
-
-void convertAnyColumnToBool(const IColumn * column, UInt8Container & res)
-{
-    if (!tryConvertColumnToBool<Int8>(column, res) &&
-        !tryConvertColumnToBool<Int16>(column, res) &&
-        !tryConvertColumnToBool<Int32>(column, res) &&
-        !tryConvertColumnToBool<Int64>(column, res) &&
-        !tryConvertColumnToBool<UInt16>(column, res) &&
-        !tryConvertColumnToBool<UInt32>(column, res) &&
-        !tryConvertColumnToBool<UInt64>(column, res) &&
-        !tryConvertColumnToBool<Float32>(column, res) &&
-        !tryConvertColumnToBool<Float64>(column, res))
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
 }
 
 
@@ -170,7 +252,7 @@ public:
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline ResultValueType apply(const size_t i) const
+    ResultValueType apply(const size_t i) const
     {
         const auto a = !!vec[i];
         return Op::apply(a, next.apply(i));
@@ -190,7 +272,7 @@ public:
     explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
-    inline ResultValueType apply(const size_t i) const { return !!vec[i]; }
+    ResultValueType apply(const size_t i) const { return !!vec[i]; }
 
 private:
     const UInt8Container & vec;
@@ -291,7 +373,7 @@ public:
         }
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
-    inline ResultValueType apply(const size_t i) const
+    ResultValueType apply(const size_t i) const
     {
         return Op::ternaryApply(vec[i], next.apply(i));
     }
@@ -315,7 +397,7 @@ public:
             TernaryValueBuilder::build(in[in.size() - 1], vec.data());
         }
 
-    inline ResultValueType apply(const size_t i) const { return vec[i]; }
+    ResultValueType apply(const size_t i) const { return vec[i]; }
 
 private:
     UInt8Container vec;
@@ -496,8 +578,9 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
         }
         else
         {
-            auto converted_column = ColumnUInt8::create(input_rows_count);
-            convertAnyColumnToBool(column, converted_column->getData());
+            auto converted_column = ColumnUInt8::create();
+            if (!tryConvertAnyColumnToBool(*column, converted_column->getData()))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of column: {}", column->getName());
             uint8_args.push_back(converted_column.get());
             converted_columns_holder.emplace_back(std::move(converted_column));
         }
@@ -649,8 +732,42 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
-    if (checkShortCircuitArguments(arguments) != -1)
-        return executeShortCircuit(arguments, result_type);
+    if constexpr (std::is_same_v<Name, NameAnd> || std::is_same_v<Name, NameOr>)
+    {
+        /// To apply short circuit execution on non function column arguments has negative return, since it needs to
+        /// run `filter` and `expand` on a column. For `and` and `or`, the execution order for arguments doesn't
+        /// affect the correctness of result. So we first to calculate a map column from all non function column
+        /// arguments, and combine it with the remaining function column arguments, use them as the input of
+        /// `exeucteShortCircuit` to calculate the final result.
+        ColumnRawPtrs not_short_circuit_args;
+        std::vector<size_t> short_circuit_args_index;
+        ColumnsWithTypeAndName new_args;
+
+        for (size_t i = 0, n = args.size(); i < n; ++i)
+        {
+            if (checkAndGetShortCircuitArgument(arguments[i].column))
+                short_circuit_args_index.emplace_back(i);
+            else
+                not_short_circuit_args.emplace_back(arguments[i].column.get());
+        }
+
+        ColumnPtr partial_result = nullptr;
+        if (not_short_circuit_args.size() > 1)
+        {
+            partial_result = result_type->isNullable()
+                ? executeForTernaryLogicImpl<Impl>(std::move(not_short_circuit_args), result_type, input_rows_count)
+                : basicExecuteImpl<Impl>(std::move(not_short_circuit_args), input_rows_count);
+            if (short_circuit_args_index.empty())
+                return partial_result;
+            new_args.emplace_back(partial_result, result_type, "__partial_result");
+            for (const auto & index : short_circuit_args_index)
+                new_args.emplace_back(std::move(arguments[index]));
+        }
+        else
+            new_args.swap(arguments);
+
+        return executeShortCircuit(new_args, result_type);
+    }
 
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
@@ -658,8 +775,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 
     if (result_type->isNullable())
         return executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    else
-        return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    return basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
 }
 
 template <typename Impl, typename Name>
@@ -701,11 +817,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
         bool constant_value_bool = false;
 
         if (field_type == Field::Types::Float64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<Float64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Float64>());
         else if (field_type == Field::Types::Int64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<Int64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<Int64>());
         else if (field_type == Field::Types::UInt64)
-            constant_value_bool = static_cast<bool>(constant_field_value.get<UInt64>());
+            constant_value_bool = static_cast<bool>(constant_field_value.safeGet<UInt64>());
 
         has_true_constant = has_true_constant || constant_value_bool;
         has_false_constant = has_false_constant || !constant_value_bool;
@@ -716,12 +832,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     if constexpr (std::is_same_v<Impl, AndImpl>)
     {
         if (has_false_constant)
-            result_column = result_type->createColumnConst(0, static_cast<UInt8>(false));
+            result_column = result_type->createColumnConst(1, static_cast<UInt8>(false));
     }
     else if constexpr (std::is_same_v<Impl, OrImpl>)
     {
         if (has_true_constant)
-            result_column = result_type->createColumnConst(0, static_cast<UInt8>(true));
+            result_column = result_type->createColumnConst(1, static_cast<UInt8>(true));
     }
 
     return result_column;

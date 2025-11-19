@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -mn -q """
+$CLICKHOUSE_CLIENT -m -q """
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
@@ -46,6 +46,8 @@ DESC=$(sed -n "$SED_EXPR" <<<  "$QUERY_RESULT")
 # - expected number of steps in plan
 # - expected number of steps in pipeline
 function test() {
+
+echo "Test $1 $2 $3 $4"
 
 PARAM_VALUE=$1
 JOIN_KIND=${2:-}

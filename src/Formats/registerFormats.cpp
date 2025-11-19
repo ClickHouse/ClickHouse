@@ -76,14 +76,16 @@ void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatNpy(FormatFactory & factory);
+void registerOutputFormatNpy(FormatFactory & factory);
+void registerInputFormatForm(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
 void registerOutputFormatPretty(FormatFactory & factory);
-void registerOutputFormatPrettyCompact(FormatFactory & factory);
-void registerOutputFormatPrettySpace(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
+void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
@@ -92,6 +94,7 @@ void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
 void registerOutputFormatPrometheus(FormatFactory & factory);
 void registerOutputFormatSQLInsert(FormatFactory & factory);
+void registerOutputFormatHash(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -103,7 +106,6 @@ void registerInputFormatMySQLDump(FormatFactory & factory);
 void registerInputFormatParquetMetadata(FormatFactory & factory);
 void registerInputFormatDWARF(FormatFactory & factory);
 void registerInputFormatOne(FormatFactory & factory);
-void registerInputFormatNpy(FormatFactory & factory);
 
 #if USE_HIVE
 void registerInputFormatHiveText(FormatFactory & factory);
@@ -148,6 +150,7 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
+void registerFormSchemaReader(FormatFactory & factory);
 
 void registerFileExtensions(FormatFactory & factory);
 
@@ -212,6 +215,7 @@ void registerFormats()
     registerOutputFormatRawBLOB(factory);
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
+    registerInputFormatForm(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);
@@ -221,12 +225,13 @@ void registerFormats()
     registerOutputFormatAvro(factory);
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
+    registerInputFormatNpy(factory);
+    registerOutputFormatNpy(factory);
 
     registerOutputFormatPretty(factory);
-    registerOutputFormatPrettyCompact(factory);
-    registerOutputFormatPrettySpace(factory);
     registerOutputFormatVertical(factory);
     registerOutputFormatJSONEachRowWithProgress(factory);
+    registerOutputFormatJSONCompactEachRowWithProgress(factory);
     registerOutputFormatXML(factory);
     registerOutputFormatODBCDriver2(factory);
     registerOutputFormatNull(factory);
@@ -236,6 +241,7 @@ void registerFormats()
     registerOutputFormatCapnProto(factory);
     registerOutputFormatPrometheus(factory);
     registerOutputFormatSQLInsert(factory);
+    registerOutputFormatHash(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
@@ -251,7 +257,6 @@ void registerFormats()
     registerInputFormatParquetMetadata(factory);
     registerInputFormatDWARF(factory);
     registerInputFormatOne(factory);
-    registerInputFormatNpy(factory);
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
@@ -291,6 +296,7 @@ void registerFormats()
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
+    registerFormSchemaReader(factory);
 }
 
 }

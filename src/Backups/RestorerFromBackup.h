@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/RestoreSettings.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Parsers/ASTBackupQuery.h>
@@ -8,7 +9,9 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/ThreadPool_fwd.h>
+
 #include <filesystem>
+#include <future>
 
 
 namespace DB
@@ -20,8 +23,7 @@ struct StorageID;
 class IDatabase;
 using DatabasePtr = std::shared_ptr<IDatabase>;
 class AccessRestorerFromBackup;
-struct IAccessEntity;
-using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
+struct AccessEntitiesToRestore;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 
@@ -36,6 +38,7 @@ public:
         std::shared_ptr<IRestoreCoordination> restore_coordination_,
         const BackupPtr & backup_,
         const ContextMutablePtr & context_,
+        const ContextPtr & query_context_,
         ThreadPool & thread_pool_,
         const std::function<void()> & after_task_callback_);
 
@@ -54,7 +57,7 @@ public:
     using DataRestoreTasks = std::vector<DataRestoreTask>;
 
     /// Restores the metadata of databases and tables and returns tasks to restore the data of tables.
-    void run(Mode mode);
+    void run(Mode mode_);
 
     BackupPtr getBackup() const { return backup; }
     const RestoreSettings & getRestoreSettings() const { return restore_settings; }
@@ -68,23 +71,25 @@ public:
     void addDataRestoreTasks(DataRestoreTasks && new_tasks);
 
     /// Returns the list of access entities to restore.
-    std::vector<std::pair<UUID, AccessEntityPtr>> getAccessEntitiesToRestore();
+    AccessEntitiesToRestore getAccessEntitiesToRestore(const String & data_path_in_backup) const;
 
     /// Throws an exception that a specified table is already non-empty.
     [[noreturn]] static void throwTableIsNotEmpty(const StorageID & storage_id);
 
-private:
+protected:
     const ASTBackupQuery::Elements restore_query_elements;
     const RestoreSettings restore_settings;
     std::shared_ptr<IRestoreCoordination> restore_coordination;
     BackupPtr backup;
     ContextMutablePtr context;
+    ContextPtr query_context;
     QueryStatusPtr process_list_element;
     std::function<void()> after_task_callback;
-    std::chrono::milliseconds on_cluster_first_sync_timeout;
     std::chrono::milliseconds create_table_timeout;
     LoggerPtr log;
 
+    const ZooKeeperRetriesInfo zookeeper_retries_info;
+    Mode mode = Mode::RESTORE;
     Strings all_hosts;
     DDLRenamingMap renaming_map;
     std::vector<std::filesystem::path> root_paths_in_backup;
@@ -92,25 +97,33 @@ private:
     void findRootPathsInBackup();
 
     void findDatabasesAndTablesInBackup();
-    void findTableInBackup(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
-    void findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, const std::optional<ASTs> & partitions);
+    void findTableInBackup(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions);
+    void findTableInBackupImpl(const QualifiedTableName & table_name_in_backup, bool skip_if_inner_table, const std::optional<ASTs> & partitions);
     void findDatabaseInBackup(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findDatabaseInBackupImpl(const String & database_name_in_backup, const std::set<DatabaseAndTableName> & except_table_names);
     void findEverythingInBackup(const std::set<String> & except_database_names, const std::set<DatabaseAndTableName> & except_table_names);
 
+    void logNumberOfDatabasesAndTablesToRestore() const;
     size_t getNumDatabases() const;
     size_t getNumTables() const;
 
+    void loadSystemAccessTables();
     void checkAccessForObjectsFoundInBackup() const;
 
-    void createDatabases();
+    void createAndCheckDatabases();
+    void createAndCheckDatabase(const String & database_name);
+    void createAndCheckDatabaseImpl(const String & database_name);
     void createDatabase(const String & database_name) const;
     void checkDatabase(const String & database_name);
 
     void applyCustomStoragePolicy(ASTPtr query_ptr);
 
     void removeUnresolvedDependencies();
-    void createTables();
+
+    void createAndCheckTables();
+    void createAndCheckTablesWithSameDependencyLevel(const std::vector<StorageID> & table_ids);
+    void createAndCheckTable(const QualifiedTableName & table_name);
+    void createAndCheckTableImpl(const QualifiedTableName & table_name);
     void createTable(const QualifiedTableName & table_name);
     void checkTable(const QualifiedTableName & table_name);
 
@@ -120,17 +133,19 @@ private:
 
     void runDataRestoreTasks();
 
+    void finalizeTables();
+
     void setStage(const String & new_stage, const String & message = "");
 
     /// Schedule a task from the thread pool and start executing it.
-    void schedule(std::function<void()> && task_, const char * thread_name_);
+    void schedule(std::function<void()> && task_, ThreadName thread_name_);
 
     /// Returns the number of currently scheduled or executing tasks.
     size_t getNumFutures() const;
 
     /// Waits until all tasks are processed (including the tasks scheduled while we're waiting).
     /// Throws an exception if any of the tasks throws an exception.
-    void waitFutures();
+    void waitFutures(bool throw_if_error = true);
 
     /// Throws an exception if the RESTORE query was cancelled.
     void checkIsQueryCancelled() const;
@@ -163,7 +178,6 @@ private:
     TablesDependencyGraph tables_dependencies TSA_GUARDED_BY(mutex);
     std::vector<DataRestoreTask> data_restore_tasks TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessRestorerFromBackup> access_restorer TSA_GUARDED_BY(mutex);
-    bool access_restored TSA_GUARDED_BY(mutex) = false;
 
     std::vector<std::future<void>> futures TSA_GUARDED_BY(mutex);
     std::atomic<bool> exception_caught = false;

@@ -1,11 +1,10 @@
 #pragma once
+
+#include <base/types.h>
+
 #include <map>
 #include <optional>
 #include <city.h>
-#include <base/types.h>
-#include <Disks/IDisk.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 
 class SipHash;
 
@@ -13,6 +12,8 @@ namespace DB
 {
 
 class IDataPartStorage;
+class ReadBuffer;
+class WriteBuffer;
 
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
@@ -32,7 +33,7 @@ struct MergeTreeDataPartChecksum
         : file_size(file_size_), file_hash(file_hash_), is_compressed(true),
         uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
 
-    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
+    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name, const String & part_name) const;
     void checkSize(const IDataPartStorage & storage, const String & name) const;
 };
 
@@ -49,10 +50,11 @@ struct MergeTreeDataPartChecksums
     FileChecksums files;
 
     void addFile(const String & file_name, UInt64 file_size, Checksum::uint128 file_hash);
+    void addFile(const String & file_name, const Checksum & checksum);
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
+    bool has(const String & file_name) const { return files.contains(file_name); }
 
     bool remove(const String & file_name) { return files.erase(file_name); }
 
@@ -61,12 +63,9 @@ struct MergeTreeDataPartChecksums
     /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
     /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data.
     /// Otherwise, it compares only the checksums of the files.
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed, const String & part_name) const;
 
     static bool isBadChecksumsErrorCode(int code);
-
-    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
-    void checkSizes(const IDataPartStorage & storage) const;
 
     /// Returns false if the checksum is too old.
     bool read(ReadBuffer & in);
@@ -132,8 +131,8 @@ struct MinimalisticDataPartChecksums
     String getSerializedString() const;
     static String getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic);
 
-    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
+    void checkEqual(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
+    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files, const String & part_name) const;
     void checkEqualImpl(const MinimalisticDataPartChecksums & rhs, bool check_uncompressed_hash_in_compressed_files) const;
 };
 

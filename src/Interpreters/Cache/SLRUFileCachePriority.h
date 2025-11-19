@@ -7,8 +7,10 @@
 namespace DB
 {
 
-/// Based on the SLRU algorithm implementation, the record with the lowest priority is stored at
-/// the head of the queue, and the record with the highest priority is stored at the tail.
+/// Based on the SLRU algorithm implementation.
+/// There are two queues: "protected" and "probationary".
+/// All cache entries which have been accessed only once, would lie in probationary queue.
+/// When entry is accessed more than once, it would go to the protected queue.
 class SLRUFileCachePriority : public IFileCachePriority
 {
 public:
@@ -18,8 +20,11 @@ public:
         size_t max_size_,
         size_t max_elements_,
         double size_ratio_,
+        const std::string & description_,
         LRUFileCachePriority::StatePtr probationary_state_ = nullptr,
         LRUFileCachePriority::StatePtr protected_state_ = nullptr);
+
+    Type getType() const override { return Type::SLRU; }
 
     size_t getSize(const CachePriorityGuard::Lock & lock) const override;
 
@@ -30,6 +35,8 @@ public:
     size_t getElementsCountApprox() const override;
 
     std::string getStateInfoForLog(const CachePriorityGuard::Lock & lock) const override;
+
+    double getSLRUSizeRatio() const override { return size_ratio; }
 
     void check(const CachePriorityGuard::Lock &) const override;
 
@@ -54,20 +61,43 @@ public:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock &) override;
+
+    CollectStatus collectCandidatesForEviction(
+        size_t desired_size,
+        size_t desired_elements_count,
+        size_t max_candidates_to_evict,
+        FileCacheReserveStat & stat,
+        EvictionCandidates & res,
+        const CachePriorityGuard::Lock &) override;
+
+    void resetEvictionPos(const CachePriorityGuard::Lock &) override;
+
+    void iterate(IterateFunc func, const CachePriorityGuard::Lock &) override;
 
     void shuffle(const CachePriorityGuard::Lock &) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::Lock &) override;
 
-    bool modifySizeLimits(size_t max_size_, size_t max_elements_, double size_ratio_, const CachePriorityGuard::Lock &) override;
+    bool modifySizeLimits(
+        size_t max_size_,
+        size_t max_elements_,
+        double size_ratio_,
+        const CachePriorityGuard::Lock &) override;
+
+    FileCachePriorityPtr copy() const;
 
 private:
+    using LRUIterator = LRUFileCachePriority::LRUIterator;
+    using LRUQueue = std::list<Entry>;
+
+    std::string description;
     double size_ratio;
     LRUFileCachePriority protected_queue;
     LRUFileCachePriority probationary_queue;
-    LoggerPtr log = getLogger("SLRUFileCachePriority");
+    LoggerPtr log;
 
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::Lock & lock);
 
@@ -79,6 +109,7 @@ private:
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         IFileCachePriority::IteratorPtr reservee,
+        bool continue_from_last_eviction_pos,
         const UserID & user_id,
         const CachePriorityGuard::Lock & lock);
 
@@ -116,7 +147,10 @@ private:
 
     SLRUFileCachePriority * cache_priority;
     LRUFileCachePriority::LRUIterator lru_iterator;
-    const EntryPtr entry;
+    /// Entry itself is stored by lru_iterator.entry.
+    /// We have it as a separate field to use entry without requiring any lock
+    /// (which will be required if we wanted to get entry from lru_iterator.getEntry()).
+    const std::weak_ptr<Entry> entry;
     /// Atomic,
     /// but needed only in order to do FileSegment::getInfo() without any lock,
     /// which is done for system tables and logging.

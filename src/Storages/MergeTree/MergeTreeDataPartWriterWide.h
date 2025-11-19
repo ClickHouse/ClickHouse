@@ -19,28 +19,39 @@ using ColumnNameToMark = std::unordered_map<String, StreamsWithMarks>;
 /// Writes data part in wide format.
 class MergeTreeDataPartWriterWide : public MergeTreeDataPartWriterOnDisk
 {
+    using Base = MergeTreeDataPartWriterOnDisk;
+
 public:
     MergeTreeDataPartWriterWide(
-        const MergeTreeMutableDataPartPtr & data_part,
+        const String & data_part_name_,
+        const String & logger_name_,
+        const SerializationByName & serializations_,
+        MutableDataPartStoragePtr data_part_storage_,
+        const MergeTreeIndexGranularityInfo & index_granularity_info_,
+        const MergeTreeSettingsPtr & storage_settings_,
         const NamesAndTypesList & columns_list,
         const StorageMetadataPtr & metadata_snapshot,
+        const VirtualsDescriptionPtr & virtual_columns_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const Statistics & stats_to_recalc_,
+        const ColumnsStatistics & stats_to_recalc_,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity);
+        MergeTreeIndexGranularityPtr index_granularity_);
 
-    void write(const Block & block, const IColumn::Permutation * permutation) override;
+    void write(const Block & block, const IColumnPermutation * permutation) override;
 
-    void fillChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove) final;
+    void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) final;
 
     void finish(bool sync) final;
+    void cancel() noexcept override;
+
+    size_t getNumberOfOpenStreams() const override { return column_streams.size(); }
 
 private:
     /// Finish serialization of data: write final mark if required and compute checksums
     /// Also validate written data in debug mode
-    void fillDataChecksums(IMergeTreeDataPart::Checksums & checksums, NameSet & checksums_to_remove);
+    void fillDataChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove);
     void finishDataSerialization(bool sync);
 
     /// Write data of one column.
@@ -63,7 +74,7 @@ private:
 
     /// Take offsets from column and return as MarkInCompressed file with stream name
     StreamsWithMarks getCurrentMarksForColumn(
-        const NameAndTypePair & column,
+        const NameAndTypePair & name_and_type,
         WrittenOffsetColumns & offset_columns);
 
     /// Write mark to disk using stream and rows count
@@ -73,17 +84,17 @@ private:
 
     /// Write mark for column taking offsets from column stream
     void writeSingleMark(
-        const NameAndTypePair & column,
+        const NameAndTypePair & name_and_type,
         WrittenOffsetColumns & offset_columns,
         size_t number_of_rows);
 
     void writeFinalMark(
-        const NameAndTypePair & column,
+        const NameAndTypePair & name_and_type,
         WrittenOffsetColumns & offset_columns);
 
     void addStreams(
-        const NameAndTypePair & column,
-        const ASTPtr & effective_codec_desc);
+        const NameAndTypePair & name_and_type,
+        const ASTPtr & effective_codec_desc) override;
 
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
@@ -104,8 +115,14 @@ private:
     /// Also useful to have exact amount of rows in last (non-final) mark.
     void adjustLastMarkIfNeedAndFlushToDisk(size_t new_rows_in_last_mark);
 
+    void initColumnsSubstreamsIfNeeded(const Block & block);
+
+    ISerialization::SerializeBinaryBulkSettings getSerializationSettings() const;
+
     ISerialization::OutputStreamGetter createStreamGetter(const NameAndTypePair & column, WrittenOffsetColumns & offset_columns) const;
     const String & getStreamName(const NameAndTypePair & column, const ISerialization::SubstreamPath & substream_path) const;
+
+    ISerialization::EnumerateStreamsSettings getEnumerateSettings() const;
 
     using SerializationState = ISerialization::SerializeBinaryBulkStatePtr;
     using SerializationStates = std::unordered_map<String, SerializationState>;
@@ -125,6 +142,9 @@ private:
     /// this marks will be written to disk.
     using MarksForColumns = std::unordered_map<String, StreamsWithMarks>;
     MarksForColumns last_non_written_marks;
+
+    /// Set of columns to put marks in cache during write.
+    NameSet columns_to_load_marks;
 
     /// How many rows we have already written in the current mark.
     /// More than zero when incoming blocks are smaller then their granularity.

@@ -37,7 +37,7 @@ struct WindowExpressionsCollectorMatcher
         }
 
         // We process every expression manually
-        if (auto * func = node->as<ASTFunction>())
+        if (auto * /*func*/ _ = node->as<ASTFunction>())
             return false;
 
         return true;

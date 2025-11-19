@@ -1,21 +1,31 @@
-#include "DatabaseSQLite.h"
+#include <Databases/SQLite/DatabaseSQLite.h>
 
 #if USE_SQLITE
 
+#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_parser_depth;
+}
 
 namespace ErrorCodes
 {
@@ -29,7 +39,7 @@ DatabaseSQLite::DatabaseSQLite(
         const ASTStorage * database_engine_define_,
         bool is_attach_,
         const String & database_path_)
-    : IDatabase("SQLite")
+    : DatabaseWithAltersOnDiskBase("SQLite")
     , WithContext(context_->getGlobalContext())
     , database_engine_define(database_engine_define_->clone())
     , database_path(database_path_)
@@ -46,7 +56,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &, bool) const
 {
     std::lock_guard lock(mutex);
 
@@ -95,7 +105,7 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}';", table_name);
+    const String query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = " + quoteStringSQLite(table_name) + ";";
 
     auto callback_get_data = [](void * res, int, char **, char **) -> int
     {
@@ -153,24 +163,24 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         table_name,
         ColumnsDescription{*columns},
         ConstraintsDescription{},
+        /* comment = */ "",
         local_context);
 
     return storage;
 }
 
 
-ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
+ASTPtr DatabaseSQLite::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_define);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
-
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
@@ -196,8 +206,13 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
 
     const Settings & settings = getContext()->getSettingsRef();
 
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, table_storage_define, true,
-        static_cast<uint32_t>(settings.max_parser_depth), static_cast<uint32_t>(settings.max_parser_backtracks), throw_on_error);
+    auto create_table_query = DB::getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        true,
+        static_cast<uint32_t>(settings[Setting::max_parser_depth]),
+        static_cast<uint32_t>(settings[Setting::max_parser_backtracks]),
+        throw_on_error);
 
     return create_table_query;
 }
@@ -218,7 +233,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn);
+    factory.registerDatabase("SQLite", create_fn, {.supports_arguments = true});
 }
 }
 

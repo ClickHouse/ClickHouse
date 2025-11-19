@@ -63,6 +63,7 @@ public:
     /// messages are passed on.
 
     void log(const Message & msg);
+    void log(Message && msg);
     /// Formats the given Message using the Formatter and
     /// passes the formatted message on to the destination
     /// Channel.

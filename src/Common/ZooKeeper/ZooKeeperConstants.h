@@ -1,18 +1,19 @@
 #pragma once
 
-#include <string>
 #include <cstdint>
+#include <limits>
 
 
 namespace Coordination
 {
 
-using XID = int32_t;
+using XID = int64_t;
 
 static constexpr XID WATCH_XID = -1;
 static constexpr XID PING_XID  = -2;
 static constexpr XID AUTH_XID  = -4;
-static constexpr XID CLOSE_XID = 0x7FFFFFFF;
+static constexpr XID CLOSE_XID = std::numeric_limits<int32_t>::max();
+static constexpr XID CLOSE_XID_64 = std::numeric_limits<int64_t>::max();
 
 enum class OpNum : int32_t
 {
@@ -39,14 +40,20 @@ enum class OpNum : int32_t
     FilteredList = 500,
     CheckNotExists = 501,
     CreateIfNotExists = 502,
+    RemoveRecursive = 503,
+    CheckStat = 504,
 
     SessionID = 997, /// Special internal request
 };
 
 OpNum getOpNum(int32_t raw_op_num);
 
+/// Returns operation type for use in metric labels (e.g., OpNum::Get -> "readonly", OpNum::Set -> "write")
+const char * toOperationTypeMetricLabel(OpNum op_num);
+
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION = 0;
 static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_COMPRESSION = 10;
+static constexpr int32_t ZOOKEEPER_PROTOCOL_VERSION_WITH_XID_64 = 11;
 static constexpr int32_t KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT = 42;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH = 44;
 static constexpr int32_t CLIENT_HANDSHAKE_LENGTH_WITH_READONLY = 45;

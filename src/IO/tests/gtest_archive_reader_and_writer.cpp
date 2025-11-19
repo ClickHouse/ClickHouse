@@ -2,7 +2,7 @@
 #include "config.h"
 
 #include <filesystem>
-#include <format>
+
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
@@ -22,8 +22,9 @@
 
 namespace DB::ErrorCodes
 {
-extern const int CANNOT_UNPACK_ARCHIVE;
-extern const int LOGICAL_ERROR;
+    extern const int CANNOT_UNPACK_ARCHIVE;
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace fs = std::filesystem;
@@ -357,8 +358,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesInMemory)
         {
             for (int i = 0; i < files; i++)
             {
-                auto filename = std::format("{}.txt", i);
-                auto contents = std::format("The contents of {}.txt", i);
+                auto filename = fmt::format("{}.txt", i);
+                auto contents = fmt::format("The contents of {}.txt", i);
                 auto out = writer->writeFile(filename, times * contents.size());
                 for (int j = 0; j < times; j++)
                     writeString(contents, *out);
@@ -378,8 +379,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesInMemory)
 
     for (int i = 0; i < files; i++)
     {
-        auto filename = std::format("{}.txt", i);
-        auto contents = std::format("The contents of {}.txt", i);
+        auto filename = fmt::format("{}.txt", i);
+        auto contents = fmt::format("The contents of {}.txt", i);
         ASSERT_TRUE(reader->fileExists(filename));
         EXPECT_EQ(reader->getFileInfo(filename).uncompressed_size, times * contents.size());
 
@@ -460,8 +461,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesOnDisk)
         {
             for (int i = 0; i < files; i++)
             {
-                auto filename = std::format("{}.txt", i);
-                auto contents = std::format("The contents of {}.txt", i);
+                auto filename = fmt::format("{}.txt", i);
+                auto contents = fmt::format("The contents of {}.txt", i);
                 auto out = writer->writeFile(filename, times * contents.size());
                 for (int j = 0; j < times; j++)
                     writeString(contents, *out);
@@ -479,8 +480,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesOnDisk)
 
     for (int i = 0; i < files; i++)
     {
-        auto filename = std::format("{}.txt", i);
-        auto contents = std::format("The contents of {}.txt", i);
+        auto filename = fmt::format("{}.txt", i);
+        auto contents = fmt::format("The contents of {}.txt", i);
         ASSERT_TRUE(reader->fileExists(filename));
         EXPECT_EQ(reader->getFileInfo(filename).uncompressed_size, times * contents.size());
 
@@ -489,48 +490,6 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesOnDisk)
             for (int j = 0; j < times; j++)
                 ASSERT_TRUE(checkString(String(contents), *in));
         }
-    }
-}
-
-TEST_P(ArchiveReaderAndWriterTest, LargeFile)
-{
-    /// Make an archive.
-    std::string_view contents = "The contents of a.txt\n";
-    int times = 10000000;
-    {
-        auto writer = createArchiveWriter(getPathToArchive());
-        {
-            auto out = writer->writeFile("a.txt", times * contents.size());
-            for (int i = 0; i < times; i++)
-                writeString(contents, *out);
-            out->finalize();
-        }
-        writer->finalize();
-    }
-
-    /// Read the archive.
-    auto reader = createArchiveReader(getPathToArchive());
-
-    ASSERT_TRUE(reader->fileExists("a.txt"));
-
-    auto file_info = reader->getFileInfo("a.txt");
-    EXPECT_EQ(file_info.uncompressed_size, contents.size() * times);
-    EXPECT_GT(file_info.compressed_size, 0);
-
-    {
-        auto in = reader->readFile("a.txt", /*throw_on_not_found=*/true);
-        for (int i = 0; i < times; i++)
-            ASSERT_TRUE(checkString(String(contents), *in));
-    }
-
-    {
-        /// Use an enumerator.
-        auto enumerator = reader->firstFile();
-        ASSERT_NE(enumerator, nullptr);
-        EXPECT_EQ(enumerator->getFileName(), "a.txt");
-        EXPECT_EQ(enumerator->getFileInfo().uncompressed_size, contents.size() * times);
-        EXPECT_GT(enumerator->getFileInfo().compressed_size, 0);
-        EXPECT_FALSE(enumerator->nextFile());
     }
 }
 

@@ -1,10 +1,10 @@
 #pragma once
 
+#include <AggregateFunctions/WindowFunction.h>
+#include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
-
 #include <Processors/IProcessor.h>
-
-#include <Common/AlignedBuffer.h>
+#include <Processors/Port.h>
 
 #include <deque>
 
@@ -21,33 +21,12 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class Arena;
 
-// Runtime data for computing one window function.
-struct WindowFunctionWorkspace
-{
-    AggregateFunctionPtr aggregate_function;
-
-    // Cached value of aggregate function isState virtual method
-    bool is_aggregate_function_state = false;
-
-    // This field is set for pure window functions. When set, we ignore the
-    // window_function.aggregate_function, and work through this interface
-    // instead.
-    IWindowFunction * window_function_impl = nullptr;
-
-    std::vector<size_t> argument_column_indices;
-
-    // Will not be initialized for a pure window function.
-    mutable AlignedBuffer aggregate_function_state;
-
-    // Argument columns. Be careful, this is a per-block cache.
-    std::vector<const IColumn *> argument_columns;
-    UInt64 cached_block_number = std::numeric_limits<UInt64>::max();
-};
 
 struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
+    Columns cast_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;
@@ -81,8 +60,8 @@ class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
-            const Block & input_header_,
-            const Block & output_header_,
+            SharedHeader input_header_,
+            SharedHeader output_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> &
                 functions);

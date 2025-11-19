@@ -21,6 +21,8 @@
 #include <atomic>
 #include <cstddef>
 #include <map>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include "Poco/Channel.h"
@@ -125,6 +127,7 @@ public:
     /// The "channel" and "level" properties are set-only.
 
     void log(const Message & msg);
+    void log(Message && msg);
     /// Logs the given message if its priority is
     /// greater than or equal to the Logger's log level.
 

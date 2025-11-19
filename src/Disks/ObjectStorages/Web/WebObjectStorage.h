@@ -2,8 +2,10 @@
 
 #include "config.h"
 
+#include <Common/SharedMutex.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
-#include <shared_mutex>
+
+#include <filesystem>
 
 namespace Poco
 {
@@ -33,15 +35,8 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
-        const StoredObjects & objects,
-        const ReadSettings & read_settings = ReadSettings{},
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -51,15 +46,12 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         const WriteSettings & write_settings = {}) override;
 
-    void removeObject(const StoredObject & object) override;
-
-    void removeObjects(const StoredObjects &  objects) override;
-
     void removeObjectIfExists(const StoredObject & object) override;
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -72,23 +64,14 @@ public:
 
     void startup() override;
 
-    void applyNewSettings(
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     String getObjectsNamespace() const override { return ""; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & /* key_prefix */) const override
     {
         return ObjectStorageKey::createAsRelative(path);
     }
+
+    bool areObjectKeysRandom() const override { return false; }
 
     bool isRemote() const override { return true; }
 
@@ -98,7 +81,7 @@ protected:
     [[noreturn]] static void throwNotAllowed();
     bool exists(const std::string & path) const;
 
-    enum class FileType
+    enum class FileType : uint8_t
     {
         File,
         Directory
@@ -133,21 +116,19 @@ protected:
         {
             if (is_file)
                 return std::map<String, FileDataPtr>::find(path);
-            else
-                return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
+            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
         }
 
         auto add(const String & path, FileDataPtr data)
         {
             if (data->type == FileType::Directory)
                 return emplace(path.ends_with("/") ? path : path + '/', data);
-            else
-                return emplace(path, data);
+            return emplace(path, data);
         }
     };
 
     mutable Files files;
-    mutable std::shared_mutex metadata_mutex;
+    mutable SharedMutex metadata_mutex;
 
     FileDataPtr tryGetFileInfo(const String & path) const;
     std::vector<std::filesystem::path> listDirectory(const String & path) const;
@@ -155,7 +136,7 @@ protected:
 
 private:
     std::pair<WebObjectStorage::FileDataPtr, std::vector<std::filesystem::path>>
-    loadFiles(const String & path, const std::unique_lock<std::shared_mutex> &) const;
+    loadFiles(const String & path, const std::unique_lock<SharedMutex> &) const;
 
     const String url;
     LoggerPtr log;

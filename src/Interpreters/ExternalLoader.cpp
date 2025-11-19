@@ -1,19 +1,20 @@
-#include "ExternalLoader.h"
+#include <Interpreters/ExternalLoader.h>
 
 #include <mutex>
-#include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/ThreadPool.h>
-#include <Common/randomSeed.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/logger_useful.h>
+#include <unordered_set>
 #include <base/chrono_io.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <unordered_set>
+#include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils.h>
+#include <Common/ThreadPool.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
 
 
 namespace DB
@@ -472,7 +473,7 @@ public:
         /// Insert to the map those objects which added to the new configuration.
         for (const auto & [name, config] : new_configs->configs_by_name)
         {
-            if (infos.find(name) == infos.end())
+            if (!infos.contains(name))
             {
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
@@ -730,10 +731,9 @@ private:
         {
             if (object)
                 return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
-            else if (exception)
+            if (exception)
                 return isLoading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
-            else
-                return isLoading() ? Status::LOADING : Status::NOT_LOADED;
+            return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
         Duration loadingDuration() const
@@ -755,6 +755,7 @@ private:
                 result.exception = exception;
                 result.loading_start_time = loading_start_time;
                 result.last_successful_update_time = last_successful_update_time;
+                result.error_count = error_count;
                 result.loading_duration = loadingDuration();
                 result.config = config;
                 return result;
@@ -921,7 +922,16 @@ private:
         if (enable_async_loading)
         {
             /// Put a job to the thread pool for the loading.
-            auto thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            ThreadFromGlobalPool thread;
+            try
+            {
+                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+            }
+            catch (...)
+            {
+                cancelLoading(info);
+                throw;
+            }
             loading_threads.try_emplace(loading_id, std::move(thread));
         }
         else
@@ -960,13 +970,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::EXTERNAL_LOADER);
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
         MemoryTrackerBlockerInThread memory_blocker;
@@ -995,14 +999,6 @@ private:
             auto [new_object, new_exception] = loadSingleObject(name, *info->config, previous_version_as_base_for_loading);
             if (!new_object && !new_exception)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "No object created and no exception raised for {}", type_name);
-
-            if (!info->object && new_object)
-            {
-                /// If we loaded the object for the first time then we should set `invalidate_query_response` to the current value.
-                /// Otherwise we will immediately try to reload the object again despite the fact that it was just loaded.
-                bool is_modified = new_object->isModified();
-                LOG_TRACE(log, "Object '{}' was{} modified", name, (is_modified ? "" : " not"));
-            }
 
             /// Saving the result of the loading.
             {
@@ -1191,12 +1187,10 @@ private:
             LOG_TRACE(log, "Supposed update time for '{}' is {} (backoff, {} errors)", loaded_object->getLoadableName(), to_string(result), error_count);
             return result;
         }
-        else
-        {
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
-            LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors.", to_string(result), error_count);
-            return result;
-        }
+
+        auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+        LOG_TRACE(log, "Supposed update time for unspecified object is {} (backoff, {} errors)", to_string(result), error_count);
+        return result;
     }
 
     const String type_name;
@@ -1222,8 +1216,8 @@ class ExternalLoader::PeriodicUpdater : private boost::noncopyable
 public:
     static constexpr UInt64 check_period_sec = 5;
 
-    PeriodicUpdater(LoadablesConfigReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_)
-        : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_)
+    PeriodicUpdater(LoadablesConfigReader & config_files_reader_, LoadingDispatcher & loading_dispatcher_, LoggerPtr log_)
+        : config_files_reader(config_files_reader_), loading_dispatcher(loading_dispatcher_), log(log_)
     {
     }
 
@@ -1234,12 +1228,22 @@ public:
         std::unique_lock lock{mutex};
         enabled = enable_;
 
+        LOG_DEBUG(log, "Periodic updates {}", enabled ? "enabled" : "disabled");
+
         if (enable_)
         {
             if (!thread.joinable())
             {
-                /// Starts the thread which will do periodic updates.
-                thread = ThreadFromGlobalPool{&PeriodicUpdater::doPeriodicUpdates, this};
+                try
+                {
+                    /// Starts the thread which will do periodic updates.
+                    thread = ThreadFromGlobalPool{&PeriodicUpdater::doPeriodicUpdates, this};
+                }
+                catch (Exception & e)
+                {
+                    e.addMessage("while enabling periodic updates");
+                    throw;
+                }
             }
         }
         else
@@ -1259,21 +1263,35 @@ public:
 private:
     void doPeriodicUpdates()
     {
-        setThreadName("ExterLdrReload");
+        DB::setThreadName(ThreadName::EXTERNAL_LOADER);
+
+        LOG_DEBUG(log, "Starting periodic updates");
+        SCOPE_EXIT_SAFE({
+            LOG_DEBUG(log, "Stopped periodic updates (enabled: {})", enabled);
+        });
 
         std::unique_lock lock{mutex};
         auto pred = [this] { return !enabled; };
         while (!event.wait_for(lock, std::chrono::seconds(check_period_sec), pred))
         {
             lock.unlock();
-            loading_dispatcher.setConfiguration(config_files_reader.read());
-            loading_dispatcher.reloadOutdated();
+            try
+            {
+                loading_dispatcher.setConfiguration(config_files_reader.read());
+                loading_dispatcher.reloadOutdated();
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "Received uncaught exception: {}", getCurrentExceptionMessage(true));
+            }
             lock.lock();
         }
     }
 
     LoadablesConfigReader & config_files_reader;
     LoadingDispatcher & loading_dispatcher;
+    LoggerPtr log;
+
     mutable std::mutex mutex;
     bool enabled = false;
     ThreadFromGlobalPool thread;
@@ -1284,7 +1302,7 @@ private:
 ExternalLoader::ExternalLoader(const String & type_name_, LoggerPtr log_)
     : config_files_reader(std::make_unique<LoadablesConfigReader>(type_name_, log_))
     , loading_dispatcher(std::make_unique<LoadingDispatcher>(type_name_, log_, *this))
-    , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher))
+    , periodic_updater(std::make_unique<PeriodicUpdater>(*config_files_reader, *loading_dispatcher, log_))
     , type_name(type_name_)
     , log(log_)
 {
@@ -1297,8 +1315,18 @@ scope_guard ExternalLoader::addConfigRepository(std::unique_ptr<IExternalLoaderC
     auto * ptr = repository.get();
     String name = ptr->getName();
 
-    config_files_reader->addConfigRepository(std::move(repository));
-    reloadConfig(name);
+    /// Avoid leaving dangling repository in case of reloadConfig() fails
+    /// (it can be possible in case of CANNOT_SCHEDULE_TASK)
+    try
+    {
+        config_files_reader->addConfigRepository(std::move(repository));
+        reloadConfig(name);
+    }
+    catch (...)
+    {
+        config_files_reader->removeConfigRepository(ptr);
+        throw;
+    }
 
     return [this, ptr, name]()
     {

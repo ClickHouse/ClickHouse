@@ -1,31 +1,40 @@
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
+}
+
 IMergedBlockOutputStream::IMergedBlockOutputStream(
-    const MergeTreeMutableDataPartPtr & data_part,
+    const MergeTreeSettingsPtr & storage_settings_,
+    MutableDataPartStoragePtr data_part_storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const NamesAndTypesList & columns_list,
     bool reset_columns_)
-    : storage(data_part->storage)
+    : storage_settings(storage_settings_)
     , metadata_snapshot(metadata_snapshot_)
-    , data_part_storage(data_part->getDataPartStoragePtr())
+    , data_part_storage(data_part_storage_)
     , reset_columns(reset_columns_)
+    , info_settings
+    {
+        (*storage_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization],
+        false,
+        (*storage_settings)[MergeTreeSetting::serialization_info_version],
+        (*storage_settings)[MergeTreeSetting::string_serialization_version],
+    }
+    , new_serialization_infos(info_settings)
 {
     if (reset_columns)
-    {
-        SerializationInfo::Settings info_settings =
-        {
-            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
-            .choose_kind = false,
-        };
-
         new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
-    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
@@ -42,7 +51,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         return {};
 
     for (const auto & column : empty_columns)
-        LOG_TRACE(storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
+        LOG_TRACE(data_part->storage.log, "Skipping expired/empty column {} for part {}", column, data_part->name);
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
@@ -51,7 +60,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             });
@@ -67,7 +76,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, checksums);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)
@@ -91,7 +100,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         }
         else /// If we have no file in checksums it doesn't exist on disk
         {
-            LOG_TRACE(storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
+            LOG_TRACE(data_part->storage.log, "Files {} doesn't exist in checksums so it doesn't exist on disk, will not try to remove it", *itr);
             itr = remove_files.erase(itr);
         }
     }

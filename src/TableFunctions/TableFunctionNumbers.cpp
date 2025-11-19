@@ -9,8 +9,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
-#include "base/types.h"
-#include "registerTableFunctions.h"
+#include <base/types.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -44,7 +45,11 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
-    const char * getStorageTypeName() const override { return "SystemNumbers"; }
+    const char * getStorageEngineName() const override
+    {
+        /// Technically it's SystemNumbers but it doesn't register itself
+        return "";
+    }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
@@ -70,16 +75,25 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(
     {
         auto arguments = function->arguments->children;
 
-        if ((arguments.empty()) || (arguments.size() >= 4))
+        if (arguments.size() >= 4)
             throw Exception(
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' requires 'length' or 'offset, length'.", getName());
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' cannot have more than three params", getName());
+        if (!arguments.empty())
+        {
+            UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
+            UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
+            UInt64 step = arguments.size() == 3 ? evaluateArgument(context, arguments[2]) : 1;
 
-        UInt64 offset = arguments.size() >= 2 ? evaluateArgument(context, arguments[0]) : 0;
-        UInt64 length = arguments.size() >= 2 ? evaluateArgument(context, arguments[1]) : evaluateArgument(context, arguments[0]);
-        UInt64 step = arguments.size() == 3 ? evaluateArgument(context, arguments[2]) : 1;
+            if (!step)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function {} requires step to be a positive number", getName());
 
-        auto res = std::make_shared<StorageSystemNumbers>(
-            StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
+            auto res = std::make_shared<StorageSystemNumbers>(
+                StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"}, length, offset, step);
+            res->startup();
+            return res;
+        }
+
+        auto res = std::make_shared<StorageSystemNumbers>(StorageID(getDatabaseName(), table_name), multithreaded, std::string{"number"});
         res->startup();
         return res;
     }

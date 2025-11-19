@@ -1,15 +1,20 @@
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
 
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/AsyncLoader.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -20,16 +25,26 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Common/escapeForFileName.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace MaterializedPostgreSQLSetting
+{
+    extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
+}
 
 namespace ErrorCodes
 {
@@ -147,7 +162,7 @@ LoadTaskPtr DatabaseMaterializedPostgreSQL::startupDatabaseAsync(AsyncLoader & a
     auto job = makeLoadJob(
         base->goals(),
         TablesLoaderBackgroundStartupPoolId,
-        fmt::format("startup MaterializedMySQL database {}", getDatabaseName()),
+        fmt::format("startup MaterializedPostgreSQL database {}", getDatabaseName()),
         [this] (AsyncLoader &, const LoadJobPtr &)
         {
             startup_task->activateAndSchedule();
@@ -356,7 +371,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
 
         try
         {
-            auto tables_to_replicate = settings->materialized_postgresql_tables_list.value;
+            auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
             if (tables_to_replicate.empty())
                 tables_to_replicate = getFormattedTablesList();
 
@@ -455,8 +470,6 @@ void DatabaseMaterializedPostgreSQL::shutdown()
 
 void DatabaseMaterializedPostgreSQL::stopReplication()
 {
-    stopLoading();
-
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdown();
@@ -484,10 +497,10 @@ void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 
 
 DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
-    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const
+    ContextPtr local_context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
     /// Modify context into nested_context and pass query to Atomic database.
-    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name);
+    return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
@@ -530,7 +543,12 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         }
 
         auto connection_info = postgres::formatConnectionString(
-            configuration.database, configuration.host, configuration.port, configuration.username, configuration.password);
+            configuration.database,
+            configuration.host,
+            configuration.port,
+            configuration.username,
+            configuration.password,
+            args.context->getSettingsRef()[Setting::postgresql_connection_attempt_timeout]);
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)
@@ -541,7 +559,11 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             args.database_name, configuration.database, connection_info,
             std::move(postgresql_replica_settings));
     };
-    factory.registerDatabase("MaterializedPostgreSQL", create_fn);
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
+        .supports_arguments = true,
+        .supports_settings = true,
+        .supports_table_overrides = true,
+    });
 }
 }
 

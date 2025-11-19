@@ -1,40 +1,68 @@
 #include <Storages/ColumnsDescription.h>
 
+#include <memory>
+#include <Compression/CompressionFactory.h>
+#include <algorithm>
+#include <functional>
+#include <unordered_map>
+#include <Core/Defines.h>
+#include <Core/Settings.h>
+#include <Core/Names.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/NestedUtils.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadBuffer.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/ReadBufferFromString.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeNested.h>
-#include <Common/Exception.h>
-#include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDummy.h>
+#include <Common/Exception.h>
+#include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/ASTSetQuery.h"
-#include <Core/Defines.h>
-#include <Compression/CompressionFactory.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/FunctionNameNormalizer.h>
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/MatcherNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCodes
 {
@@ -43,6 +71,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int CYCLIC_ALIASES;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
@@ -60,20 +90,68 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr cod
 {
 }
 
+ColumnDescription & ColumnDescription::operator=(const ColumnDescription & other)
+{
+    if (this == &other)
+        return *this;
+
+    name = other.name;
+    type = other.type;
+    default_desc = other.default_desc;
+    comment = other.comment;
+    codec = other.codec ? other.codec->clone() : nullptr;
+    settings = other.settings;
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
+    statistics = other.statistics;
+
+    return *this;
+}
+
+ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noexcept
+{
+    if (this == &other)
+        return *this;
+
+    name = std::move(other.name);
+    type = std::move(other.type);
+    default_desc = std::move(other.default_desc);
+    comment = std::move(other.comment);
+
+    codec = other.codec ? other.codec->clone() : nullptr;
+    other.codec.reset();
+
+    settings = std::move(other.settings);
+
+    ttl = other.ttl ? other.ttl->clone() : nullptr;
+    other.ttl.reset();
+
+    statistics = std::move(other.statistics);
+
+    return *this;
+}
+
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? queryToString(ast) : String{}; };
+    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
         && default_desc == other.default_desc
-        && stat == other.stat
+        && statistics == other.statistics
         && ast_to_str(codec) == ast_to_str(other.codec)
         && settings == other.settings
         && ast_to_str(ttl) == ast_to_str(other.ttl);
 }
 
-void ColumnDescription::writeText(WriteBuffer & buf) const
+String formatASTStateAware(IAST & ast, IAST::FormatState & state)
+{
+    WriteBufferFromOwnString buf;
+    IAST::FormatSettings settings(true);
+    ast.format(buf, settings, state, IAST::FormatStateStacked());
+    return buf.str();
+}
+
+void ColumnDescription::writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const
 {
     /// NOTE: Serialization format is insane.
 
@@ -86,20 +164,34 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         writeChar('\t', buf);
         DB::writeText(DB::toString(default_desc.kind), buf);
         writeChar('\t', buf);
-        writeEscapedString(queryToString(default_desc.expression), buf);
+        writeEscapedString(formatASTStateAware(*default_desc.expression, state), buf);
     }
 
-    if (!comment.empty())
+    if (!comment.empty() && include_comment)
     {
         writeChar('\t', buf);
         DB::writeText("COMMENT ", buf);
-        writeEscapedString(queryToString(ASTLiteral(Field(comment))), buf);
+        auto ast = ASTLiteral(Field(comment));
+        writeEscapedString(formatASTStateAware(ast, state), buf);
     }
 
     if (codec)
     {
         writeChar('\t', buf);
-        writeEscapedString(queryToString(codec), buf);
+        writeEscapedString(formatASTStateAware(*codec, state), buf);
+    }
+
+    if (statistics.hasExplicitStatistics())
+    {
+        writeChar('\t', buf);
+        writeEscapedString(formatASTStateAware(*statistics.getAST(), state), buf);
+    }
+
+    if (ttl)
+    {
+        writeChar('\t', buf);
+        DB::writeText("TTL ", buf);
+        writeEscapedString(formatASTStateAware(*ttl, state), buf);
     }
 
     if (!settings.empty())
@@ -110,21 +202,8 @@ void ColumnDescription::writeText(WriteBuffer & buf) const
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = settings;
-        writeEscapedString(queryToString(ast), buf);
+        writeEscapedString(formatASTStateAware(ast, state), buf);
         DB::writeText(")", buf);
-    }
-
-    if (stat)
-    {
-        writeChar('\t', buf);
-        writeEscapedString(queryToString(stat->ast), buf);
-    }
-
-    if (ttl)
-    {
-        writeChar('\t', buf);
-        DB::writeText("TTL ", buf);
-        writeEscapedString(queryToString(ttl), buf);
     }
 
     writeChar('\n', buf);
@@ -157,7 +236,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
             }
 
             if (col_ast->comment)
-                comment = col_ast->comment->as<ASTLiteral &>().value.get<String>();
+                comment = col_ast->comment->as<ASTLiteral &>().value.safeGet<String>();
 
             if (col_ast->codec)
                 codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(col_ast->codec, type, false, true, true, true);
@@ -167,6 +246,9 @@ void ColumnDescription::readText(ReadBuffer & buf)
 
             if (col_ast->settings)
                 settings = col_ast->settings->as<ASTSetQuery &>().changes;
+
+            if (col_ast->statistics_desc)
+                statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(col_ast->statistics_desc, name, type);
         }
         else
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse column description");
@@ -187,10 +269,10 @@ ColumnsDescription ColumnsDescription::fromNamesAndTypes(NamesAndTypes ordinary)
     return result;
 }
 
-ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary)
+ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, bool with_subcolumns)
 {
     for (auto & elem : ordinary)
-        add(ColumnDescription(std::move(elem.name), std::move(elem.type)));
+        add(ColumnDescription(std::move(elem.name), std::move(elem.type)), String(), false, with_subcolumns);
 }
 
 ColumnsDescription::ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases)
@@ -328,7 +410,9 @@ void ColumnsDescription::modifyColumnOrder(const String & column_name, const Str
     };
 
     if (first)
+    {
         reorder_column([&]() { return columns.cbegin(); });
+    }
     else if (!after_column.empty() && column_name != after_column)
     {
         /// Checked first
@@ -364,7 +448,7 @@ void ColumnsDescription::flattenNested()
             continue;
         }
 
-        if (!type_tuple->haveExplicitNames())
+        if (!type_tuple->hasExplicitNames())
         {
             ++it;
             continue;
@@ -547,7 +631,19 @@ bool ColumnsDescription::hasNested(const String & column_name) const
 
 bool ColumnsDescription::hasSubcolumn(const String & column_name) const
 {
-    return subcolumns.get<0>().count(column_name);
+    if (subcolumns.get<0>().count(column_name))
+        return true;
+
+    /// Check for dynamic subcolumns
+    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+    auto it = columns.get<1>().find(ordinary_column_name);
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
+    {
+        if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+            return true;
+    }
+
+    return false;
 }
 
 const ColumnDescription & ColumnsDescription::get(const String & column_name) const
@@ -586,29 +682,7 @@ NamesAndTypesList ColumnsDescription::getByNames(const GetColumnsOptions & optio
 {
     NamesAndTypesList res;
     for (const auto & name : names)
-    {
-        if (auto it = columns.get<1>().find(name); it != columns.get<1>().end())
-        {
-            auto kind = defaultKindToGetKind(it->default_desc.kind);
-            if (options.kind & kind)
-            {
-                res.emplace_back(name, it->type);
-                continue;
-            }
-        }
-        else if (options.with_subcolumns)
-        {
-            auto jt = subcolumns.get<0>().find(name);
-            if (jt != subcolumns.get<0>().end())
-            {
-                res.push_back(*jt);
-                continue;
-            }
-        }
-
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table", name);
-    }
-
+        res.push_back(getColumn(options, name));
     return res;
 }
 
@@ -642,6 +716,15 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
         auto jt = subcolumns.get<0>().find(column_name);
         if (jt != subcolumns.get<0>().end())
             return *jt;
+
+        /// Check for dynamic subcolumns.
+        auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+        it = columns.get<1>().find(ordinary_column_name);
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        {
+            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
+        }
     }
 
     return {};
@@ -730,9 +813,19 @@ bool ColumnsDescription::hasAlias(const String & column_name) const
 bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const
 {
     auto it = columns.get<1>().find(column_name);
-    return (it != columns.get<1>().end()
-        && (defaultKindToGetKind(it->default_desc.kind) & kind))
-            || hasSubcolumn(column_name);
+    if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
+        return true;
+
+    /// Check for dynamic subcolumns.
+    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
+    it = columns.get<1>().find(ordinary_column_name);
+    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+    {
+        if (auto /*dynamic_subcolumn_type*/ _ = it->type->hasSubcolumn(dynamic_subcolumn_name))
+            return true;
+    }
+
+    return false;
 }
 
 bool ColumnsDescription::hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const
@@ -817,16 +910,17 @@ void ColumnsDescription::resetColumnTTLs()
 }
 
 
-String ColumnsDescription::toString() const
+String ColumnsDescription::toString(bool include_comments) const
 {
     WriteBufferFromOwnString buf;
+    IAST::FormatState ast_format_state;
 
     writeCString("columns format version: 1\n", buf);
     DB::writeText(columns.size(), buf);
     writeCString(" columns:\n", buf);
 
     for (const ColumnDescription & column : columns)
-        column.writeText(buf);
+        column.writeText(buf, ast_format_state, include_comments);
 
     return buf.str();
 }
@@ -880,33 +974,332 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     names.reserve(columns.size());
     for (const auto & column : columns)
     {
-        if (column.name.find('.') == std::string::npos)
+        if (!column.name.contains('.'))
             names.push_back(column.name);
     }
     return names;
 }
 
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
 {
+    if (!col_decl.default_expression)
+        return;
+
+    /** For columns with explicitly-specified type create two expressions:
+    * 1. default_expression aliased as column name with _tmp suffix
+    * 2. conversion of expression (1) to explicitly-specified type alias as column name
+    */
+    if (col_decl.type)
+    {
+        const auto & final_column_name = col_decl.name;
+        const auto tmp_column_name = final_column_name + "_tmp_alter" + toString(randomSeed());
+        const auto * data_type_ptr = data_type.get();
+
+        info.expr_list->children.emplace_back(setAlias(
+            addTypeConversionToAST(std::make_shared<ASTIdentifier>(tmp_column_name), data_type_ptr->getName()), final_column_name));
+
+        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), tmp_column_name));
+    }
+    else
+    {
+        info.has_columns_with_default_without_type = true;
+        info.expr_list->children.emplace_back(setAlias(col_decl.default_expression->clone(), col_decl.name));
+    }
+}
+
+namespace
+{
+
+void assertNoMatcherNodes(const QueryTreeNodePtr & node, const String & context_description)
+{
+    if (node->getNodeType() == QueryTreeNodeType::MATCHER)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "Matcher (e.g. asterisk '*' or COLUMNS expression) is not allowed {}. "
+            "Use explicit column names instead",
+            context_description);
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child)
+            assertNoMatcherNodes(child, context_description);
+    }
+}
+
+void collectAliasDependenciesFromAST(
+    const ASTPtr & node,
+    const NameSet & candidate_names,
+    NameSet & dependencies)
+{
+    if (!node)
+        return;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        const auto & column_name = identifier->name();
+        if (candidate_names.contains(column_name))
+            dependencies.insert(column_name);
+        return;
+    }
+
+    for (const auto & child : node->children)
+        if (child)
+            collectAliasDependenciesFromAST(child, candidate_names, dependencies);
+}
+
+[[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
+{
+    Strings formatted_cycle = cycle_path;
+    formatted_cycle.emplace_back(cycle_path.front());
+
+    std::string message;
+    message.reserve(32 * formatted_cycle.size());
+    for (size_t i = 0; i < formatted_cycle.size(); ++i)
+    {
+        if (i)
+            message += " -> ";
+        message += formatted_cycle[i];
+    }
+
+    throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in column DEFAULT expressions: {}", message);
+}
+
+/**
+ * Build a dependency graph between all aliases present in the DEFAULT expression list.
+ * The additional alias map is required because typed defaults are rewritten into temporary
+ * aliases (e.g. `a_tmp_alter...`) before the analyzer runs, so we must consider every alias,
+ * not only user-visible column names, to detect cycles that pass through those synthetic nodes.
+ */
+void detectRecursiveDefaultCycles(
+    const ASTPtr & expression_list,
+    const NameSet & default_column_names)
+{
+    if (!expression_list || default_column_names.empty())
+        return;
+
+    const auto * list_node = expression_list->as<ASTExpressionList>();
+    if (!list_node)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Default expression list node is expected to be a list node");
+
+    NameSet alias_names;
+    std::unordered_map<String, ASTPtr> alias_to_expression;
+    alias_names.reserve(list_node->children.size());
+    alias_to_expression.reserve(list_node->children.size());
+    for (const auto & child : list_node->children)
+    {
+        if (!child)
+            continue;
+
+        String alias = child->tryGetAlias();
+        if (alias.empty())
+            alias = child->getColumnName();
+
+        if (alias.empty())
+            continue;
+
+        alias_names.insert(alias);
+        alias_to_expression.emplace(alias, child);
+    }
+
+    enum class Color
+    {
+        White,
+        Gray,
+        Black,
+    };
+
+    std::unordered_map<String, Color> colors;
+    colors.reserve(alias_to_expression.size());
+
+    Strings dfs_stack;
+    dfs_stack.reserve(alias_to_expression.size());
+
+    std::function<void(const String &)> dfs = [&](const String & vertex)
+    {
+        auto & color = colors[vertex];
+        if (color == Color::Black)
+            return;
+        if (color == Color::Gray)
+        {
+            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
+            Strings cycle;
+            if (it != dfs_stack.end())
+                cycle.assign(it, dfs_stack.end());
+            else
+                cycle.emplace_back(vertex);
+            throwDefaultCycleException(cycle);
+        }
+
+        color = Color::Gray;
+        dfs_stack.push_back(vertex);
+
+        NameSet dependencies;
+        if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
+        {
+            collectAliasDependenciesFromAST(it->second, alias_names, dependencies);
+            for (const auto & dependency : dependencies)
+                dfs(dependency);
+        }
+
+        dfs_stack.pop_back();
+        color = Color::Black;
+    };
+
+    for (const auto & column_name : default_column_names)
+    {
+        if (!alias_names.contains(column_name))
+            continue;
+
+        if (colors[column_name] != Color::Black)
+            dfs(column_name);
+    }
+}
+
+std::optional<Block> validateDefaultsWithAnalyzer(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
+{
+    if (!default_expr_list || default_expr_list->children.empty())
+    {
+        if (!get_sample_block)
+            return {};
+        return Block{};
+    }
+
+    auto execution_context = Context::createCopy(context);
+
+    NameSet table_column_names;
+    table_column_names.reserve(all_columns.size());
+    for (const auto & column : all_columns)
+        table_column_names.insert(column.name);
+
+    NameSet default_column_names;
+    default_column_names.reserve(default_expr_list->children.size());
+    for (const auto & child : default_expr_list->children)
+    {
+        if (!child)
+            continue;
+        String alias = child->tryGetAlias();
+        if (alias.empty())
+            alias = child->getColumnName();
+        if (!alias.empty() && table_column_names.contains(alias))
+            default_column_names.insert(alias);
+    }
+
+    detectRecursiveDefaultCycles(default_expr_list, default_column_names);
+
+    ColumnsDescription fake_column_descriptions(all_columns);
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+    QueryAnalyzer analyzer(/* only_analyze */ true);
+
+    auto query_node = std::make_shared<QueryNode>(execution_context);
+    auto expression_list = buildQueryTree(default_expr_list, execution_context);
+
+    /// Fail fast before analyzer expands matchers into concrete columns.
+    assertNoMatcherNodes(expression_list, "in column DEFAULT expression");
+
+    query_node->getProjectionNode() = expression_list;
+    query_node->getJoinTree() = fake_table_expression;
+
+    QueryTreeNodePtr query_tree = query_node;
+    analyzer.resolve(query_tree, nullptr, execution_context);
+
+    query_node = std::static_pointer_cast<QueryNode>(query_tree);
+    expression_list = query_node->getProjectionNode();
+
+    assertNoAggregateFunctionNodes(expression_list, "in column DEFAULT expression");
+
+    if (!get_sample_block)
+        return {};
+
+    collectSourceColumns(expression_list, planner_context, false);
+    collectSets(expression_list, *planner_context);
+
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    auto [actions, _] = buildActionsDAGFromExpressionNode(
+        expression_list,
+        {},
+        planner_context,
+        empty_correlated_columns_set);
+
+    // Get all projected column names from actions dag and rename/alias each output result to match the original column names in the sample output block.
+    const auto & projection_columns = query_node->getProjectionColumns();
+    auto & outputs = actions.getOutputs();
+    NamesWithAliases rename_pairs;
+    rename_pairs.reserve(outputs.size());
+
+    for (size_t i = 0; i != outputs.size(); ++i)
+        rename_pairs.emplace_back(outputs[i]->result_name, projection_columns[i].name);
+
+    // do the actual projecting/renaming for the output actions
+    actions.project(rename_pairs);
+
+    for (const auto & action : actions.getNodes())
+        if (action.type == ActionsDAG::ActionType::ARRAY_JOIN)
+            throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
+
+    Block result_block;
+    for (const auto * output : outputs)
+        result_block.insert(ColumnWithTypeAndName{output->column, output->result_type, output->result_name});
+
+    return result_block;
+}
+
+std::optional<Block> validateColumnsDefaultsAndGetSampleBlockImpl(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context, bool get_sample_block)
+{
+    if (!default_expr_list || default_expr_list->children.empty())
+    {
+        if (!get_sample_block)
+            return {};
+        return Block{};
+    }
+
     for (const auto & child : default_expr_list->children)
         if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
             throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Select query is not allowed in columns DEFAULT expression");
 
     try
     {
-        auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
-        const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (const auto & action : actions->getActions())
-            if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-                throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            return validateDefaultsWithAnalyzer(default_expr_list, all_columns, context, get_sample_block);
+        else
+        {
+            auto syntax_analyzer_result = TreeRewriter(context).analyze(default_expr_list, all_columns, {}, {}, false, /* allow_self_aliases = */ false);
+            const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
+            for (const auto & action : actions->getActions())
+                if (action.node->type == ActionsDAG::ActionType::ARRAY_JOIN)
+                    throw Exception(ErrorCodes::THERE_IS_NO_DEFAULT_VALUE, "Unsupported default value that requires ARRAY JOIN action");
 
-        return actions->getSampleBlock();
+            if (!get_sample_block)
+                return {};
+
+            return actions->getSampleBlock();
+        }
     }
     catch (Exception & ex)
     {
         ex.addMessage("default expression and column type are incompatible.");
         throw;
     }
+}
+}
+
+void validateColumnsDefaults(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    /// Do not execute the default expressions as they might be heavy, e.g.: access remote servers, etc.
+    validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/false);
+}
+
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context)
+{
+    auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true);
+    chassert(result.has_value());
+    return std::move(*result);
 }
 
 }

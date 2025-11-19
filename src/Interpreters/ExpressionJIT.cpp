@@ -2,7 +2,6 @@
 
 #if USE_EMBEDDED_COMPILER
 
-#include <optional>
 #include <stack>
 
 #include <Common/logger_useful.h>
@@ -14,7 +13,6 @@
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionsComparison.h>
 #include <DataTypes/Native.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -266,7 +264,7 @@ public:
     {
         const auto & type = function.getArgumentTypes().at(0);
         ColumnsWithTypeAndName args{{type->createColumnConst(1, value), type, "x" }};
-        auto col = function.execute(args, function.getResultType(), 1);
+        auto col = function.execute(args, function.getResultType(), 1, /* dry_run = */ false);
         col->get(0, value);
     }
 
@@ -499,7 +497,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
 
             while (current_frame.next_child_to_visit < current_node->children.size())
             {
-                const auto & child = node.children[current_frame.next_child_to_visit];
+                const auto & child = current_node->children[current_frame.next_child_to_visit];
 
                 if (visited_nodes.contains(child))
                 {

@@ -1,7 +1,0 @@
-<clickhouse>
-
-    <query_cache>
-        <max_entries>1</max_entries>
-    </query_cache>
-
-</clickhouse>

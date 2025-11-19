@@ -20,7 +20,7 @@ function test_db_comments()
     local ENGINE_NAME="$1"
     echo "engine : ${ENGINE_NAME}"
 
-    $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -nm <<EOF
+    $CLICKHOUSE_CLIENT --allow_deprecated_database_ordinary=1 -m <<EOF
 DROP DATABASE IF EXISTS ${DB_NAME};
 CREATE DATABASE ${DB_NAME} ENGINE = ${ENGINE_NAME} COMMENT 'Test DB with comment';
 EOF
@@ -34,5 +34,4 @@ test_db_comments "Ordinary"
 test_db_comments "Lazy(1)"
 # test_db_comments "MySQL('127.0.0.1:9004', 'default', 'default', '')" # fails due to CH internal reasons
 # test_db_comments "SQLite('dummy_sqlitedb')"
-## needs to be explicitly enabled with `SET allow_experimental_database_replicated=1`
 # test_db_comments "Replicated('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX', '1') ORDER BY k"

@@ -1,46 +1,51 @@
-#include <filesystem>
 
-#include <Interpreters/DDLWorker.h>
+#include <Core/ServerSettings.h>
+#include <Core/ServerUUID.h>
+#include <Core/Settings.h>
+#include <IO/NullWriteBuffer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
+#include <Interpreters/DDLWorker.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/ASTCreateIndexQuery.h>
-#include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
-#include <Interpreters/executeQuery.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/setThreadName.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/ZooKeeperLock.h>
-#include <Common/isLocalAddress.h>
-#include <Core/ServerUUID.h>
+
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <base/sleep.h>
-#include <base/getFQDNOrHostName.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperLock.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
+#include <Common/scope_guard_safe.h>
+#include <Common/setThreadName.h>
+
+#include <base/getFQDNOrHostName.h>
+#include <base/sleep.h>
 #include <base/sort.h>
+
 #include <memory>
 #include <random>
 #include <pcg_random.hpp>
-#include <Common/scope_guard_safe.h>
-#include <Common/ThreadPool.h>
-
-#include <Interpreters/ZooKeeperLog.h>
 
 namespace fs = std::filesystem;
-
 
 namespace CurrentMetrics
 {
@@ -51,6 +56,12 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool implicit_transaction;
+    extern const SettingsUInt64 readonly;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
+}
 
 namespace ErrorCodes
 {
@@ -64,6 +75,8 @@ namespace ErrorCodes
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int NO_ZOOKEEPER;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -71,7 +84,8 @@ constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already proces
 
 DDLWorker::DDLWorker(
     int pool_size_,
-    const std::string & zk_root_dir,
+    const std::string & zk_queue_dir,
+    const std::string & zk_replicas_dir,
     ContextPtr context_,
     const Poco::Util::AbstractConfiguration * config,
     const String & prefix,
@@ -97,9 +111,14 @@ DDLWorker::DDLWorker(
         worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
     }
 
-    queue_dir = zk_root_dir;
+    queue_dir = zk_queue_dir;
     if (queue_dir.back() == '/')
         queue_dir.resize(queue_dir.size() - 1);
+
+    replicas_dir = zk_replicas_dir;
+    if (replicas_dir.back() == '/')
+        replicas_dir.resize(replicas_dir.size() - 1);
+
 
     if (config)
     {
@@ -114,7 +133,7 @@ DDLWorker::DDLWorker(
             context->setSetting("profile", config->getString(prefix + ".profile"));
     }
 
-    if (context->getSettingsRef().readonly)
+    if (context->getSettingsRef()[Setting::readonly])
     {
         LOG_WARNING(log, "Distributed DDL worker is run with readonly settings, it will not be able to execute DDL queries Set appropriate system_profile or distributed_ddl.profile to fix this.");
     }
@@ -125,8 +144,8 @@ DDLWorker::DDLWorker(
 
 void DDLWorker::startup()
 {
-    [[maybe_unused]] bool prev_stop_flag = stop_flag.exchange(false);
-    chassert(prev_stop_flag);
+    chassert(!initialized && !main_thread && !cleanup_thread);
+    stop_flag = false;
     main_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runMainThread, this);
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>(&DDLWorker::runCleanupThread, this);
 }
@@ -152,9 +171,11 @@ DDLWorker::~DDLWorker()
 }
 
 
-ZooKeeperPtr DDLWorker::tryGetZooKeeper() const
+ZooKeeperPtr DDLWorker::getZooKeeper() const
 {
     std::lock_guard lock(zookeeper_mutex);
+    if (!current_zookeeper)
+        throw Exception(ErrorCodes::NO_ZOOKEEPER, "Unable to get zookeeper");
     return current_zookeeper;
 }
 
@@ -169,7 +190,7 @@ ZooKeeperPtr DDLWorker::getAndSetZooKeeper()
 }
 
 
-DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper)
+DDLTaskPtr DDLWorker::initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool /*dry_run*/)
 {
     if (entries_to_skip.contains(entry_name))
         return {};
@@ -259,7 +280,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::scheduleTasks(bool reinitialized)
 {
     LOG_DEBUG(log, "Scheduling tasks");
-    auto zookeeper = tryGetZooKeeper();
+    auto zookeeper = getZooKeeper();
 
     /// Main thread of DDLWorker was restarted, probably due to lost connection with ZooKeeper.
     /// We have some unfinished tasks.
@@ -278,6 +299,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         while (task_it != current_tasks.end())
         {
             auto & task = *task_it;
+
             if (task->completely_processed)
             {
                 chassert(task->was_executed);
@@ -305,7 +327,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 }
                 else
                 {
-                    processTask(*task, zookeeper);
+                    processTask(*task, zookeeper, /*internal_query=*/ false);
                 }
                 ++task_it;
             }
@@ -333,7 +355,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                    "first_failed_task_name={}, current_tasks_size={}, "
                    "last_current_task={}, "
                    "last_skipped_entry_name={}",
-                   initialized, size_before_filtering, queue_nodes.size(),
+                   initialized.load(), size_before_filtering, queue_nodes.size(),
                    queue_nodes.empty() ? "none" : queue_nodes.front(), queue_nodes.empty() ? "none" : queue_nodes.back(),
                    first_failed_task_name ? *first_failed_task_name : "none", current_tasks.size(),
                    current_tasks.empty() ? "none" : current_tasks.back()->entry_name,
@@ -373,11 +395,11 @@ void DDLWorker::scheduleTasks(bool reinitialized)
     /// Maybe such asserts are too paranoid and excessive,
     /// but it's easy enough to break DDLWorker in a very unobvious way by making some minor change in code.
     [[maybe_unused]] bool have_no_tasks_info = !first_failed_task_name && current_tasks.empty() && !last_skipped_entry_name;
-    assert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
+    chassert(have_no_tasks_info || queue_nodes.end() == std::find_if(queue_nodes.begin(), queue_nodes.end(), [&](const String & entry_name)
     {
         /// We should return true if some invariants are violated.
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ true);
         bool maybe_currently_processing = current_tasks.end() != std::find_if(current_tasks.begin(), current_tasks.end(), [&](const auto & t)
         {
             return t->entry_name == entry_name;
@@ -391,18 +413,16 @@ void DDLWorker::scheduleTasks(bool reinitialized)
             bool maybe_concurrently_deleting = task && !zookeeper->exists(fs::path(task->entry_path) / "active");
             return task && !maybe_concurrently_deleting && !maybe_currently_processing;
         }
-        else if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
+        if (last_skipped_entry_name.has_value() && !queue_fully_loaded_after_initialization_debug_helper)
         {
             /// If connection was lost during queue loading
             /// we may start processing from finished task (because we don't know yet that it's finished) and it's ok.
             return false;
         }
-        else
-        {
-            /// Return true if entry should not be scheduled.
-            bool processed = !task && reason == TASK_PROCESSED_OUT_REASON;
-            return processed || maybe_currently_processing;
-        }
+
+        /// Return true if entry should not be scheduled.
+        bool processed = !task && reason == TASK_PROCESSED_OUT_REASON;
+        return processed || maybe_currently_processing;
     }));
 
     for (auto it = begin_node; it != queue_nodes.end() && !stop_flag; ++it)
@@ -411,7 +431,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         LOG_TRACE(log, "Checking task {}", entry_name);
 
         String reason;
-        auto task = initAndCheckTask(entry_name, reason, zookeeper);
+        auto task = initAndCheckTask(entry_name, reason, zookeeper, /*dry_run*/ false);
         if (task)
         {
             queue_fully_loaded_after_initialization_debug_helper = true;
@@ -430,13 +450,13 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         {
             worker_pool->scheduleOrThrowOnError([this, &saved_task, zookeeper]()
             {
-                setThreadName("DDLWorkerExec");
-                processTask(saved_task, zookeeper);
+                DB::setThreadName(ThreadName::DDL_WORKER_EXECUTER);
+                processTask(saved_task, zookeeper, /*internal_query=*/ false);
             });
         }
         else
         {
-            processTask(saved_task, zookeeper);
+            processTask(saved_task, zookeeper, /*internal_query=*/ false);
         }
     }
 }
@@ -465,7 +485,7 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     return *current_tasks.back();
 }
 
-bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
+bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal)
 {
     /// Add special comment at the start of query to easily identify DDL-produced queries in query_log
     String query_prefix = "/* ddl_entry=" + task.entry_name + " */ ";
@@ -473,8 +493,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     String query_to_show_in_logs = query_prefix + task.query_for_logging;
 
     ReadBufferFromString istr(query_to_execute);
-    String dummy_string;
-    WriteBufferFromString ostr(dummy_string);
     std::optional<CurrentThread::QueryScope> query_scope;
 
     try
@@ -482,9 +500,9 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         auto query_context = task.makeQueryContext(context, zookeeper);
 
         chassert(!query_context->getCurrentTransaction());
-        if (query_context->getSettingsRef().implicit_transaction)
+        if (query_context->getSettingsRef()[Setting::implicit_transaction])
         {
-            if (query_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+            if (query_context->getSettingsRef()[Setting::throw_on_unsupported_query_inside_transaction])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot begin an implicit transaction inside distributed DDL query");
             query_context->setSetting("implicit_transaction", Field{0});
         }
@@ -494,7 +512,8 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
         if (!task.is_initial_query)
             query_scope.emplace(query_context);
 
-        executeQuery(istr, ostr, !task.is_initial_query, query_context, {}, QueryFlags{ .internal = false, .distributed_backup_restore = task.entry.is_backup_restore });
+        NullWriteBuffer nullwb;
+        executeQuery(istr, nullwb, query_context, {}, QueryFlags{ .internal = internal, .distributed_backup_restore = task.entry.is_backup_restore });
 
         if (auto txn = query_context->getZooKeeperMetadataTransaction())
         {
@@ -510,7 +529,6 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
             throw;
 
         task.execution_status = ExecutionStatus::fromCurrentException();
-        tryLogCurrentException(log, "Query " + query_to_show_in_logs + " wasn't finished successfully");
 
         /// We use return value of tryExecuteQuery(...) in tryExecuteQueryOnLeaderReplica(...) to determine
         /// if replica has stopped being leader and we should retry query.
@@ -523,7 +541,11 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
                                  e.code() != ErrorCodes::TABLE_IS_READ_ONLY &&
                                  e.code() != ErrorCodes::CANNOT_ASSIGN_ALTER &&
                                  e.code() != ErrorCodes::CANNOT_ALLOCATE_MEMORY &&
+                                 e.code() != ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES &&
                                  e.code() != ErrorCodes::MEMORY_LIMIT_EXCEEDED;
+
+        tryLogCurrentException(
+            log, String(fmt::format("Query {} wasn't finished successfully, retriable {}", query_to_show_in_logs, !no_sense_to_retry)));
         return no_sense_to_retry;
     }
     catch (...)
@@ -560,7 +582,7 @@ void DDLWorker::updateMaxDDLEntryID(const String & entry_name)
     }
 }
 
-void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
+void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper, bool internal_query)
 {
     LOG_DEBUG(log, "Processing task {} (query: {}, backup restore: {})", task.entry_name, task.query_for_logging, task.entry.is_backup_restore);
     chassert(!task.completely_processed);
@@ -569,7 +591,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     OpenTelemetry::TracingContextHolder tracing_ctx_holder(__PRETTY_FUNCTION__,
         task.entry.tracing_context,
         this->context->getOpenTelemetrySpanLog());
-    tracing_ctx_holder.root_span.kind = OpenTelemetry::CONSUMER;
+    tracing_ctx_holder.root_span.kind = OpenTelemetry::SpanKind::CONSUMER;
 
     String active_node_path = task.getActiveNodePath();
     String finished_node_path = task.getFinishedNodePath();
@@ -634,6 +656,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
         task.ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
         task.ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, ExecutionStatus(0).serializeText(), zkutil::CreateMode::Persistent));
 
+        bool retriable = false;
         try
         {
             LOG_DEBUG(log, "Executing query: {}", task.query_for_logging);
@@ -653,12 +676,12 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
 
             if (task.execute_on_leader)
             {
-                tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
+                retriable = !tryExecuteQueryOnLeaderReplica(task, storage, task.entry_path, zookeeper, execute_on_leader_lock);
             }
             else
             {
                 storage.reset();
-                tryExecuteQuery(task, zookeeper);
+                retriable = !tryExecuteQuery(task, zookeeper, internal_query);
             }
         }
         catch (const Coordination::Exception &)
@@ -672,20 +695,18 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             tryLogCurrentException(log, "An error occurred before execution of DDL task: ");
             task.execution_status = ExecutionStatus::fromCurrentException("An error occurred before execution");
         }
-
         if (task.execution_status.code != 0)
         {
             bool status_written_by_table_or_db = task.ops.empty();
-            if (status_written_by_table_or_db)
+            bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+            if (status_written_by_table_or_db || is_replicated_database_task || retriable)
             {
                 throw Exception(ErrorCodes::UNFINISHED, "Unexpected error: {}", task.execution_status.message);
             }
-            else
-            {
-                /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
-                /// writing query execution status into ZooKeeper.
-                task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
-            }
+
+            /// task.ops where not executed by table or database engine, so DDLWorker is responsible for
+            /// writing query execution status into ZooKeeper.
+            task.ops.emplace_back(zkutil::makeSetRequest(finished_node_path, task.execution_status.serializeText(), -1));
         }
 
         /// We need to distinguish ZK errors occurred before and after query executing
@@ -710,6 +731,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
     task.createSyncedNodeIfNeed(zookeeper);
     updateMaxDDLEntryID(task.entry_name);
     task.completely_processed = true;
+    subsequent_errors_count = 0;
 }
 
 
@@ -731,6 +753,7 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         // Setting alters should be executed on all replicas
         if (alter->isSettingsAlter() ||
             alter->isFreezeAlter() ||
+            alter->isUnlockSnapshot() ||
             alter->isMovePartitionToDiskOrVolumeAlter() ||
             alter->isCommentAlter())
             return false;
@@ -771,7 +794,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
     String executed_by;
 
-    zkutil::EventPtr event = std::make_shared<Poco::Event>();
+    Coordination::EventPtr event = std::make_shared<Poco::Event>();
     /// We must use exists request instead of get, because zookeeper will not setup event
     /// for non existing node after get request
     if (zookeeper->exists(is_executed_path, nullptr, event))
@@ -791,12 +814,14 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
     bool executed_by_us = false;
     bool executed_by_other_leader = false;
 
+    bool extra_attempt_for_replicated_database = false;
+
     /// Defensive programming. One hour is more than enough to execute almost all DDL queries.
     /// If it will be very long query like ALTER DELETE for a huge table it's still will be executed,
     /// but DDL worker can continue processing other queries.
     while (stopwatch.elapsedSeconds() <= MAX_EXECUTION_TIMEOUT_SEC)
     {
-        ReplicatedTableStatus status;
+        StorageReplicatedMergeTree::ReplicatedStatus status;
         // Has to get with zk fields to get active replicas field
         replicated_storage->getStatus(status, true);
 
@@ -835,7 +860,14 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             /// Checking and incrementing counter exclusively.
             size_t counter = parse<int>(zookeeper->get(tries_to_execute_path));
             if (counter > MAX_TRIES_TO_EXECUTE)
-                break;
+            {
+                /// Replicated databases have their own retries, limiting retries here would break outer retries
+                bool is_replicated_database_task = dynamic_cast<DatabaseReplicatedTask *>(&task);
+                if (is_replicated_database_task)
+                    extra_attempt_for_replicated_database = true;
+                else
+                    break;
+            }
 
             zookeeper->set(tries_to_execute_path, toString(counter + 1));
 
@@ -844,11 +876,13 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
             /// If the leader will unexpectedly changed this method will return false
             /// and on the next iteration new leader will take lock
-            if (tryExecuteQuery(task, zookeeper))
+            if (tryExecuteQuery(task, zookeeper, /*internal=*/ false))
             {
                 executed_by_us = true;
                 break;
             }
+            if (extra_attempt_for_replicated_database)
+                break;
         }
 
         /// Waiting for someone who will execute query and change is_executed_path node
@@ -860,22 +894,19 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
                 task.ops.push_back(op);
             break;
         }
-        else
+
+        String tries_count;
+        zookeeper->tryGet(tries_to_execute_path, tries_count);
+        if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
         {
-            String tries_count;
-            zookeeper->tryGet(tries_to_execute_path, tries_count);
-            if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
-            {
-                /// Nobody will try to execute query again
-                LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-                break;
-            }
-            else
-            {
-                /// Will try to wait or execute
-                LOG_TRACE(log, "Task {} still not executed, will try to wait for it or execute ourselves, tries count {}", task.entry_name, tries_count);
-            }
+            /// Nobody will try to execute query again
+            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+            break;
         }
+
+        /// Will try to wait or execute
+        LOG_TRACE(
+            log, "Task {} still not executed, will try to wait for it or execute ourselves, tries count {}", task.entry_name, tries_count);
     }
 
     chassert(!(executed_by_us && executed_by_other_leader));
@@ -892,7 +923,9 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         else /// If we exceeded amount of tries
         {
             LOG_WARNING(log, "Task {} was not executed by anyone, maximum number of retries exceeded", task.entry_name);
-            task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
+            bool keep_original_error = extra_attempt_for_replicated_database && task.execution_status.code;
+            if (!keep_original_error)
+                task.execution_status = ExecutionStatus(ErrorCodes::UNFINISHED, "Cannot execute replicated DDL query, maximum retries exceeded");
         }
         return false;
     }
@@ -922,7 +955,6 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
         String node_path = fs::path(queue_dir) / node_name;
 
         Coordination::Stat stat;
-        String dummy;
 
         try
         {
@@ -970,7 +1002,7 @@ void DDLWorker::cleanupQueue(Int64, const ZooKeeperPtr & zookeeper)
                 /// No one has started to process the entry, so node_path/active and node_path/finished nodes were never created, node_path has no children.
                 /// Entry became outdated, but we cannot remove remove it in a transaction with node_path/finished.
                 chassert(res[0]->error == Coordination::Error::ZOK && res[1]->error == Coordination::Error::ZNONODE);
-                rm_entry_res = zookeeper->tryRemove(node_path);
+                rm_entry_res = zookeeper->tryRemove(node_path);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
                 chassert(rm_entry_res != Coordination::Error::ZNOTEMPTY);
                 continue;
             }
@@ -1024,7 +1056,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     if (is_currently_deleting)
     {
         cleanup_event->set();
-        throw Exception(ErrorCodes::UNFINISHED, "Cannot create status dirs for {}, "
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot create znodes (status) for {} in [Zoo]Keeper, "
                         "most likely because someone is deleting it concurrently", node_path);
     }
 
@@ -1034,15 +1066,41 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
 }
 
 
-String DDLWorker::enqueueQuery(DDLLogEntry & entry)
+String DDLWorker::enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo & retries_info)
 {
+    if (stop_flag)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't enqueue a query after shutdown");
+
     if (entry.hosts.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty host list in a distributed DDL task");
 
-    auto zookeeper = getAndSetZooKeeper();
+    String node_path;
+    if (retries_info.max_retries > 0)
+    {
+        ZooKeeperRetriesControl retries_ctl{"DDLWorker::enqueueQuery", log, retries_info};
+        retries_ctl.retryLoop([&]{
+            node_path = enqueueQueryAttempt(entry);
+        });
+    }
+    else
+    {
+        node_path = enqueueQueryAttempt(entry);
+    }
+    return node_path;
+}
+
+
+String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
+{
+    auto zookeeper = context->getZooKeeper();
 
     String query_path_prefix = fs::path(queue_dir) / "query-";
     zookeeper->createAncestors(query_path_prefix);
+
+    NameSet host_ids;
+    for (const HostID & host : entry.hosts)
+        host_ids.emplace(host.toString());
+    createReplicaDirs(zookeeper, host_ids);
 
     String node_path = zookeeper->create(query_path_prefix, entry.toString(), zkutil::CreateMode::PersistentSequential);
     if (max_pushed_entry_metric)
@@ -1074,7 +1132,7 @@ String DDLWorker::enqueueQuery(DDLLogEntry & entry)
 bool DDLWorker::initializeMainThread()
 {
     chassert(!initialized);
-    setThreadName("DDLWorker");
+    DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Initializing DDLWorker thread");
 
     while (!stop_flag)
@@ -1083,6 +1141,8 @@ bool DDLWorker::initializeMainThread()
         {
             auto zookeeper = getAndSetZooKeeper();
             zookeeper->createAncestors(fs::path(queue_dir) / "");
+            initializeReplication();
+            markReplicasActive(true);
             initialized = true;
             return true;
         }
@@ -1111,13 +1171,23 @@ bool DDLWorker::initializeMainThread()
 
 void DDLWorker::runMainThread()
 {
-    auto reset_state = [&]()
+    auto mark_reinitializing = [&]()
     {
+        LOG_INFO(log, "Marking reinitializing");
         initialized = false;
         /// It will wait for all threads in pool to finish and will not rethrow exceptions (if any).
         /// We create new thread pool to forget previous exceptions.
         if (1 < pool_size)
-            worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+            worker_pool = std::make_unique<ThreadPool>(
+                CurrentMetrics::DDLWorkerThreads,
+                CurrentMetrics::DDLWorkerThreadsActive,
+                CurrentMetrics::DDLWorkerThreadsScheduled,
+                pool_size);
+    };
+
+    auto reset_state = [&]()
+    {
+        mark_reinitializing();
         /// Clear other in-memory state, like server just started.
         current_tasks.clear();
         last_skipped_entry_name.reset();
@@ -1125,7 +1195,8 @@ void DDLWorker::runMainThread()
         LOG_INFO(log, "Cleaned DDLWorker state");
     };
 
-    setThreadName("DDLWorker");
+
+    DB::setThreadName(ThreadName::DDL_WORKER);
     LOG_DEBUG(log, "Starting DDLWorker thread");
 
     while (!stop_flag)
@@ -1145,18 +1216,17 @@ void DDLWorker::runMainThread()
 
             cleanup_event->set();
             scheduleTasks(reinitialized);
+            subsequent_errors_count = 0;
 
             LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)
         {
+            subsequent_errors_count = 0;
             if (Coordination::isHardwareError(e.code))
             {
-                initialized = false;
-                /// Wait for pending async tasks
-                if (1 < pool_size)
-                    worker_pool = std::make_unique<ThreadPool>(CurrentMetrics::DDLWorkerThreads, CurrentMetrics::DDLWorkerThreadsActive, CurrentMetrics::DDLWorkerThreadsScheduled, pool_size);
+                mark_reinitializing();
                 LOG_INFO(log, "Lost ZooKeeper connection, will try to connect again: {}", getCurrentExceptionMessage(true));
             }
             else
@@ -1168,17 +1238,209 @@ void DDLWorker::runMainThread()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Unexpected error, will try to restart main thread");
-            reset_state();
+            String message = getCurrentExceptionMessage(/*with_stacktrace*/ true);
+            if (subsequent_errors_count)
+            {
+                if (last_unexpected_error == message)
+                {
+                    ++subsequent_errors_count;
+                }
+                else
+                {
+                    subsequent_errors_count = 1;
+                    last_unexpected_error = message;
+                }
+            }
+            else
+            {
+                subsequent_errors_count = 1;
+                last_unexpected_error = message;
+            }
+
+            LOG_ERROR(log, "Unexpected error ({} times in a row), will try to restart main thread: {}", subsequent_errors_count.load(), message);
+
+            /// Sleep before retrying
             sleepForSeconds(5);
+            /// Reset state after sleeping, so DatabaseReplicated::canExecuteReplicatedMetadataAlter()
+            /// will have a chance even when the database got stuck in infinite retries
+            reset_state();
         }
     }
 }
 
 
+void DDLWorker::initializeReplication()
+{
+    auto zookeeper = getZooKeeper();
+
+    zookeeper->createAncestors(fs::path(replicas_dir) / "");
+
+    NameSet host_id_set;
+    for (const auto & it : context->getClusters())
+    {
+        auto cluster = it.second;
+        for (const auto & host_ids : cluster->getHostIDs())
+            for (const auto & host_id : host_ids)
+                host_id_set.emplace(host_id);
+    }
+
+    createReplicaDirs(zookeeper, host_id_set);
+}
+
+void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet & host_ids)
+{
+    for (const auto & host_id : host_ids)
+        zookeeper->createAncestors(fs::path(replicas_dir) / host_id / "");
+}
+
+void DDLWorker::markReplicasActive(bool /*reinitialized*/)
+{
+    auto zookeeper = getZooKeeper();
+
+    // Reset all active_node_holders
+    for (auto & it : active_node_holders)
+    {
+        auto & active_node_holder = it.second.second;
+        if (active_node_holder)
+            active_node_holder->setAlreadyRemoved();
+        active_node_holder.reset();
+    }
+
+    active_node_holders.clear();
+
+    for (auto it = active_node_holders.begin(); it != active_node_holders.end();)
+    {
+        auto & zk = it->second.first;
+        if (zk->expired())
+        {
+            const auto & host_id = it->first;
+            String active_path = fs::path(replicas_dir) / host_id / "active";
+            LOG_DEBUG(log, "Zookeeper of active_path {} expired, removing the holder", active_path);
+
+            auto & active_node_holder = it->second.second;
+            if (active_node_holder)
+                active_node_holder->setAlreadyRemoved();
+            it = active_node_holders.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+
+
+    const auto maybe_secure_port = context->getTCPPortSecure();
+    const auto port = context->getTCPPort();
+
+    Coordination::Stat replicas_stat;
+    Strings host_ids = zookeeper->getChildren(replicas_dir, &replicas_stat);
+    NameSet local_host_ids;
+    for (const auto & host_id : host_ids)
+    {
+        if (active_node_holders.contains(host_id))
+            continue;
+
+        try
+        {
+            HostID host = HostID::fromString(host_id);
+            if (DDLTask::IsSelfHostID(host, maybe_secure_port, port))
+                local_host_ids.emplace(host_id);
+        }
+        catch (const Exception & e)
+        {
+            LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", host_id, e.displayText());
+            continue;
+        }
+    }
+
+    for (const auto & host_id : local_host_ids)
+    {
+        auto it = active_node_holders.find(host_id);
+        if (it != active_node_holders.end())
+            continue;
+
+        String active_path = fs::path(replicas_dir) / host_id / "active";
+        String active_id = toString(ServerUUID::get());
+
+        LOG_TRACE(log, "Trying to mark a replica active: active_path={}, active_id={}", active_path, active_id);
+        if (HostID::fromString(host_id).isLoopbackHost())
+        {
+            String content;
+            Coordination::Stat stat;
+            if (zookeeper->tryGet(active_path, content, &stat))
+            {
+                // For a loopback host, many replicas might try to claim it as their own host.
+                // If the host is claimed by a replica, we skip it.
+                // Loopback host is supposed to be used in test environment.
+                if (content != active_id)
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which is claimed by another replica {}", host_id, content);
+                    continue;
+                }
+
+                auto code = zookeeper->tryRemove(active_path, stat.version);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    throw Coordination::Exception::fromPath(code, active_path);
+            }
+        }
+        else
+        {
+            zookeeper->deleteEphemeralNodeIfContentMatches(active_path, active_id);
+        }
+        Coordination::Requests ops;
+        Coordination::Responses res;
+        ops.emplace_back(zkutil::makeCreateRequest(active_path, active_id, zkutil::CreateMode::Ephemeral));
+        /// To bump node mtime
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(replicas_dir) / host_id, "", -1));
+        auto code = zookeeper->tryMulti(ops, res);
+
+        /// We have this tryMulti for a very weird edge case when it's related to localhost.
+        /// Each replica may have a localhost as hostid and if we configured multiple replicas to add their
+        /// localhosts to some clusters multiple of them may think that they must mark it as active.
+        if (code != Coordination::Error::ZOK)
+        {
+            LOG_WARNING(log, "Cannot mark a replica active: active_path={}, active_id={}, code={}", active_path, active_id, Coordination::errorMessage(code));
+        }
+        else
+        {
+            LOG_DEBUG(log, "Marked a replica active: active_path={}, active_id={}", active_path, active_id);
+        }
+
+        auto active_node_holder_zookeeper = zookeeper;
+        auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
+        active_node_holders[host_id] = {active_node_holder_zookeeper, active_node_holder};
+    }
+}
+
+void DDLWorker::cleanupStaleReplicas(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper)
+{
+    auto replicas = zookeeper->getChildren(replicas_dir);
+    static constexpr Int64 REPLICA_MAX_INACTIVE_SECONDS = 86400;
+    for (const auto & replica : replicas)
+    {
+        auto replica_path = fs::path(replicas_dir) / replica;
+        auto responses = zookeeper->tryGet({replica_path, fs::path(replica_path) / "active"});
+        /// Replica not active
+        if (responses[1].error == Coordination::Error::ZNONODE)
+        {
+            auto stat = responses[0].stat;
+            /// Replica was not active for too long, let's cleanup to avoid polluting Keeper with
+            /// removed replicas
+            if (stat.mtime / 1000 + REPLICA_MAX_INACTIVE_SECONDS < current_time_seconds)
+            {
+                LOG_INFO(log, "Replica {} is stale, removing it", replica);
+                auto code = zookeeper->tryRemove(replica_path, -1);
+                if (code != Coordination::Error::ZOK)
+                    LOG_WARNING(log, "Cannot remove stale replica {}, code {}", replica, Coordination::errorMessage(code));
+            }
+        }
+    }
+
+}
+
 void DDLWorker::runCleanupThread()
 {
-    setThreadName("DDLWorkerClnr");
+    DB::setThreadName(ThreadName::DDL_WORKER_CLEANUP);
     LOG_DEBUG(log, "Started DDLWorker cleanup thread");
 
     Int64 last_cleanup_time_seconds = 0;
@@ -1198,11 +1460,12 @@ void DDLWorker::runCleanupThread()
             }
 
             /// ZooKeeper connection is recovered by main thread. We will wait for it on cleanup_event.
-            auto zookeeper = tryGetZooKeeper();
+            auto zookeeper = getZooKeeper();
             if (zookeeper->expired())
                 continue;
 
             cleanupQueue(current_time_seconds, zookeeper);
+            cleanupStaleReplicas(current_time_seconds, zookeeper);
             last_cleanup_time_seconds = current_time_seconds;
         }
         catch (...)

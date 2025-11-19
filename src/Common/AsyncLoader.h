@@ -14,8 +14,10 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Priority.h>
 #include <Common/Stopwatch.h>
+#include <Common/setThreadName.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Logger.h>
+#include <Common/AsyncLoader_fwd.h>
 
 
 namespace Poco { class Logger; }
@@ -44,7 +46,7 @@ class AsyncLoader;
 void logAboutProgress(LoggerPtr log, size_t processed, size_t total, AtomicStopwatch & watch);
 
 // Execution status of a load job.
-enum class LoadStatus
+enum class LoadStatus : uint8_t
 {
     PENDING,  // Load job is not started yet.
     OK,       // Load job executed and was successful.
@@ -365,11 +367,11 @@ private:
     {
         const String name;
         const Priority priority;
-        std::unique_ptr<ThreadPool> thread_pool; // NOTE: we avoid using a `ThreadPool` queue to be able to move jobs between pools.
         std::map<UInt64, LoadJobPtr> ready_queue; // FIFO queue of jobs to be executed in this pool. Map is used for faster erasing. Key is `ready_seqno`
         size_t max_threads; // Max number of workers to be spawn
         size_t workers = 0; // Number of currently executing workers
         std::atomic<size_t> suspended_workers{0}; // Number of workers that are blocked by `wait()` call on a job executing in the same pool (for deadlock resolution)
+        std::unique_ptr<ThreadPool> thread_pool; // NOTE: we avoid using a `ThreadPool` queue to be able to move jobs between pools.
 
         explicit Pool(const PoolInitializer & init);
         Pool(Pool&& o) noexcept;
@@ -395,17 +397,20 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
-    // Start workers to execute scheduled load jobs. Note that AsyncLoader is constructed as already started.
-    void start();
-
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
     void wait();
 
+    // Wait for currently executing jobs to finish, cancel pending jobs with an exception,
+    // prevent scheduling of new jobs.
+    void shutdown();
+
     // Wait for currently executing jobs to finish, but do not run any other pending jobs.
     // Not finished jobs are left in pending state:
-    //  - they can be executed by calling start() again;
+    //  - they can be executed by calling unpause() again;
     //  - or canceled using ~Task() or remove() later.
-    void stop();
+    // Currently only used in tests.
+    void pause();
+    void unpause();
 
     // Schedule all jobs of given `task` and their dependencies (even if they are not in task).
     // All dependencies of a scheduled job inherit its pool if it has higher priority. This way higher priority job
@@ -484,6 +489,7 @@ private:
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;
+    bool shutdown_requested = false;
     std::optional<Priority> current_priority; // highest priority among active pools
     UInt64 last_ready_seqno = 0; // Increasing counter for ready queue keys.
     UInt64 last_job_id = 0; // Increasing counter for job IDs

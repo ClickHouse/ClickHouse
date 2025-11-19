@@ -17,6 +17,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_introspection_functions;
+}
+
+
 namespace ErrorCodes
 {
     extern const int FUNCTION_NOT_ALLOWED;
@@ -95,7 +101,7 @@ struct AggregateFunctionFlameGraphTree
         return node;
     }
 
-    static void append(DB::PaddedPODArray<UInt64> & values, DB::PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
+    static void append(PaddedPODArray<UInt64> & values, PaddedPODArray<UInt64> & offsets, std::vector<UInt64> & frame)
     {
         UInt64 prev = offsets.empty() ? 0 : offsets.back();
         offsets.push_back(prev + frame.size());
@@ -177,20 +183,19 @@ struct AggregateFunctionFlameGraphTree
     }
 };
 
-static void insertData(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
+static void insertData(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & offsets, const char * pos, size_t length)
 {
     const size_t old_size = chars.size();
-    const size_t new_size = old_size + length + 1;
+    const size_t new_size = old_size + length;
 
     chars.resize(new_size);
     if (length)
         memcpy(chars.data() + old_size, pos, length);
-    chars[old_size + length] = 0;
     offsets.push_back(new_size);
 }
 
 /// Split str by line feed and write as separate row to ColumnString.
-static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UInt64> & offsets, const std::string & str)
+static void fillColumn(PaddedPODArray<UInt8> & chars, PaddedPODArray<UInt64> & offsets, const std::string & str)
 {
     size_t start = 0;
     size_t end = 0;
@@ -211,17 +216,17 @@ static void fillColumn(DB::PaddedPODArray<UInt8> & chars, DB::PaddedPODArray<UIn
         insertData(chars, offsets, str.data() + start, end - start);
 }
 
-void dumpFlameGraph(
+static void dumpFlameGraphImpl(
     const AggregateFunctionFlameGraphTree::Traces & traces,
-    DB::PaddedPODArray<UInt8> & chars,
-    DB::PaddedPODArray<UInt64> & offsets)
+    PaddedPODArray<UInt8> & chars,
+    PaddedPODArray<UInt64> & offsets)
 {
-    DB::WriteBufferFromOwnString out;
+    WriteBufferFromOwnString out;
 
     std::unordered_map<uintptr_t, size_t> mapping;
 
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
     for (const auto & trace : traces)
@@ -240,9 +245,9 @@ void dumpFlameGraph(
             if (const auto * symbol = symbol_index.findSymbol(ptr))
                 writeString(demangle(symbol->name), out);
             else
-                DB::writePointerHex(ptr, out);
+                writePointerHex(ptr, out);
 #else
-            DB::writePointerHex(ptr, out);
+            writePointerHex(ptr, out);
 #endif
         }
 
@@ -269,9 +274,9 @@ struct AggregateFunctionFlameGraphData
 
     using Entries = HashMap<UInt64, Pair>;
 
-    AggregateFunctionFlameGraphTree tree;
     Entries entries;
     Entry * free_list = nullptr;
+    AggregateFunctionFlameGraphTree tree;
 
     Entry * alloc(Arena * arena)
     {
@@ -322,21 +327,19 @@ struct AggregateFunctionFlameGraphData
             list = list->next;
             return entry;
         }
-        else
+
+        Entry * parent = list;
+        while (parent->next && parent->next->size != size)
+            parent = parent->next;
+
+        if (parent->next && parent->next->size == size)
         {
-            Entry * parent = list;
-            while (parent->next && parent->next->size != size)
-                parent = parent->next;
-
-            if (parent->next && parent->next->size == size)
-            {
-                Entry * entry = parent->next;
-                parent->next = entry->next;
-                return entry;
-            }
-
-            return nullptr;
+            Entry * entry = parent->next;
+            parent->next = entry->next;
+            return entry;
         }
+
+        return nullptr;
     }
 
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)
@@ -461,11 +464,11 @@ struct AggregateFunctionFlameGraphData
     }
 
     void dumpFlameGraph(
-        DB::PaddedPODArray<UInt8> & chars,
-        DB::PaddedPODArray<UInt64> & offsets,
+        PaddedPODArray<UInt8> & chars,
+        PaddedPODArray<UInt64> & offsets,
         size_t max_depth, size_t min_bytes) const
     {
-        DB::dumpFlameGraph(tree.dump(max_depth, min_bytes), chars, offsets);
+        dumpFlameGraphImpl(tree.dump(max_depth, min_bytes), chars, offsets);
     }
 };
 
@@ -559,7 +562,7 @@ public:
             ptr = ptrs[row_num];
         }
 
-        this->data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
+        data(place).add(ptr, allocated, trace_values.data() + prev_offset, trace_size, arena);
     }
 
     void addManyDefaults(
@@ -572,7 +575,7 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        data(place).merge(data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t> /* version */) const override
@@ -590,7 +593,7 @@ public:
         auto & array = assert_cast<ColumnArray &>(to);
         auto & str = assert_cast<ColumnString &>(array.getData());
 
-        this->data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
+        data(place).dumpFlameGraph(str.getChars(), str.getOffsets(), 0, 0);
 
         array.getOffsets().push_back(str.size());
     }
@@ -626,9 +629,9 @@ static void check(const std::string & name, const DataTypes & argument_types, co
             name, argument_types[2]->getName());
 }
 
-AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
+static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    if (!settings->allow_introspection_functions)
+    if (!(*settings)[Setting::allow_introspection_functions])
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
         "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 

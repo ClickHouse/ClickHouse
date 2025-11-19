@@ -1,33 +1,46 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/cramersv
-sidebar_position: 351
+description: 'The result of the `cramersV` function ranges from 0 (corresponding to
+  no association between the variables) to 1 and can reach 1 only when each value
+  is completely determined by the other. It may be viewed as the association between
+  two variables as a percentage of their maximum possible variation.'
+sidebar_position: 127
+slug: /sql-reference/aggregate-functions/reference/cramersv
+title: 'cramersV'
+doc_type: 'reference'
 ---
 
 # cramersV
 
 [Cramer's V](https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V) (sometimes referred to as Cramer's phi) is a measure of association between two columns in a table. The result of the `cramersV` function ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other. It may be viewed as the association between two variables as a percentage of their maximum possible variation.
 
+:::note
+For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramersvbiascorrected.md)
+:::
+
 **Syntax**
 
-``` sql
+```sql
 cramersV(column1, column2)
 ```
 
-**Arguments**
+**Parameters**
 
-- `column1` and `column2` are the columns to be compared
+- `column1`: first column to be compared.
+- `column2`: second column to be compared.
 
 **Returned value**
 
 - a value between 0 (corresponding to no association between the columns' values) to 1 (complete association).
 
-**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
+Type: always [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
 The following two columns being compared below have no association with each other, so the result of `cramersV` is 0:
 
-``` sql
+Query:
+
+```sql
 SELECT
     cramersV(a, b)
 FROM
@@ -57,7 +70,7 @@ FROM
     (
         SELECT
             number % 10 AS a,
-            number % 5 AS b
+            if(number % 12 = 0, (number + 1) % 5, number % 5) AS b
         FROM
             numbers(150)
     );
@@ -67,6 +80,6 @@ Result:
 
 ```response
 ┌─────cramersV(a, b)─┐
-│ 0.8944271909999159 │
+│ 0.9066801892162646 │
 └────────────────────┘
 ```

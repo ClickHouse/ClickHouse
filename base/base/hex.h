@@ -146,7 +146,7 @@ namespace impl
             TUInt res;
             if constexpr (sizeof(TUInt) == 1)
             {
-                res = static_cast<UInt8>(unhexDigit(data[0])) * 0x10 + static_cast<UInt8>(unhexDigit(data[1]));
+                res = unhexDigit(data[0]) * 0x10 + unhexDigit(data[1]);
             }
             else if constexpr (sizeof(TUInt) == 2)
             {
@@ -176,17 +176,19 @@ namespace impl
     };
 
     /// Helper template class to convert a value of any supported type to hexadecimal representation and back.
-    template <typename T, typename SFINAE = void>
+    template <typename T>
     struct HexConversion;
 
     template <typename TUInt>
-    struct HexConversion<TUInt, std::enable_if_t<std::is_integral_v<TUInt>>> : public HexConversionUInt<TUInt> {};
+    requires(std::is_integral_v<TUInt>)
+    struct HexConversion<TUInt> : public HexConversionUInt<TUInt> {};
 
     template <size_t Bits, typename Signed>
     struct HexConversion<wide::integer<Bits, Signed>> : public HexConversionUInt<wide::integer<Bits, Signed>> {};
 
     template <typename CityHashUInt128> /// Partial specialization here allows not to include <city.h> in this header.
-    struct HexConversion<CityHashUInt128, std::enable_if_t<std::is_same_v<CityHashUInt128, typename CityHash_v1_0_2::uint128>>>
+    requires(std::is_same_v<CityHashUInt128, typename CityHash_v1_0_2::uint128>)
+    struct HexConversion<CityHashUInt128>
     {
         static const constexpr size_t num_hex_digits = 32;
 

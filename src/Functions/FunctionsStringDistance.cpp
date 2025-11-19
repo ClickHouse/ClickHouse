@@ -8,7 +8,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/iota.h>
 
-#include <numeric>
+#include <algorithm>
 
 #ifdef __SSE4_2__
 #    include <nmmintrin.h>
@@ -37,18 +37,18 @@ struct FunctionStringDistanceImpl
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
-        size_t size = res.size();
         const char * haystack = reinterpret_cast<const char *>(haystack_data.data());
         const char * needle = reinterpret_cast<const char *>(needle_data.data());
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(
                 haystack + haystack_offsets[i - 1],
-                haystack_offsets[i] - haystack_offsets[i - 1] - 1,
+                haystack_offsets[i] - haystack_offsets[i - 1],
                 needle + needle_offsets[i - 1],
-                needle_offsets[i] - needle_offsets[i - 1] - 1);
+                needle_offsets[i] - needle_offsets[i - 1]);
         }
     }
 
@@ -56,16 +56,16 @@ struct FunctionStringDistanceImpl
         const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
         const char * haystack_data = haystack.data();
         size_t haystack_size = haystack.size();
         const char * needle = reinterpret_cast<const char *>(needle_data.data());
-        size_t size = res.size();
-        for (size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             res[i] = Op::process(haystack_data, haystack_size,
-                needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1] - 1);
+                needle + needle_offsets[i - 1], needle_offsets[i] - needle_offsets[i - 1]);
         }
     }
 
@@ -73,9 +73,10 @@ struct FunctionStringDistanceImpl
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const String & needle,
-        PaddedPODArray<ResultType> & res)
+        PaddedPODArray<ResultType> & res,
+        size_t input_rows_count)
     {
-        constantVector(needle, data, offsets, res);
+        constantVector(needle, data, offsets, res, input_rows_count);
     }
 
 };
@@ -113,6 +114,37 @@ struct ByteHammingDistanceImpl
     }
 };
 
+void parseUTF8String(const char * __restrict data, size_t size, std::function<void(UInt32)> utf8_consumer, std::function<void(unsigned char)> ascii_consumer = nullptr)
+{
+    const char * end = data + size;
+    while (data < end)
+    {
+        size_t len = UTF8::seqLength(*data);
+        if (len == 1)
+        {
+            if (ascii_consumer)
+                ascii_consumer(static_cast<unsigned char>(*data));
+            else
+                utf8_consumer(static_cast<UInt32>(*data));
+            ++data;
+        }
+        else
+        {
+            auto code_point = UTF8::convertUTF8ToCodePoint(data, end - data);
+            if (code_point.has_value())
+            {
+                utf8_consumer(code_point.value());
+                data += len;
+            }
+            else
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", std::string_view(data, end - data));
+            }
+        }
+    }
+}
+
 template <bool is_utf8>
 struct ByteJaccardIndexImpl
 {
@@ -138,56 +170,27 @@ struct ByteJaccardIndexImpl
         haystack_set.fill(0);
         needle_set.fill(0);
 
-        while (haystack < haystack_end)
+        if constexpr (is_utf8)
         {
-            size_t len = 1;
-            if constexpr (is_utf8)
-                len = UTF8::seqLength(*haystack);
-
-            if (len == 1)
+            parseUTF8String(
+                haystack,
+                haystack_size,
+                [&](UInt32 data) { haystack_utf8_set.insert(data); },
+                [&](unsigned char data) { haystack_set[data] = 1; });
+            parseUTF8String(
+                needle, needle_size, [&](UInt32 data) { needle_utf8_set.insert(data); }, [&](unsigned char data) { needle_set[data] = 1; });
+        }
+        else
+        {
+            while (haystack < haystack_end)
             {
                 haystack_set[static_cast<unsigned char>(*haystack)] = 1;
                 ++haystack;
             }
-            else
-            {
-                auto code_point = UTF8::convertUTF8ToCodePoint(haystack, haystack_end - haystack);
-                if (code_point.has_value())
-                {
-                    haystack_utf8_set.insert(code_point.value());
-                    haystack += len;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(haystack, haystack_end - haystack));
-                }
-            }
-        }
-
-        while (needle < needle_end)
-        {
-
-            size_t len = 1;
-            if constexpr (is_utf8)
-                len = UTF8::seqLength(*needle);
-
-            if (len == 1)
+            while (needle < needle_end)
             {
                 needle_set[static_cast<unsigned char>(*needle)] = 1;
                 ++needle;
-            }
-            else
-            {
-                auto code_point = UTF8::convertUTF8ToCodePoint(needle, needle_end - needle);
-                if (code_point.has_value())
-                {
-                    needle_utf8_set.insert(code_point.value());
-                    needle += len;
-                }
-                else
-                {
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Illegal UTF-8 sequence, while processing '{}'", StringRef(needle, needle_end - needle));
-                }
             }
         }
 
@@ -226,6 +229,7 @@ struct ByteJaccardIndexImpl
 
 static constexpr size_t max_string_size = 1u << 16;
 
+template<bool is_utf8>
 struct ByteEditDistanceImpl
 {
     using ResultType = UInt64;
@@ -241,6 +245,16 @@ struct ByteEditDistanceImpl
             throw Exception(
                 ErrorCodes::TOO_LARGE_STRING_SIZE,
                 "The string size is too big for function editDistance, should be at most {}", max_string_size);
+
+        PaddedPODArray<UInt32> haystack_utf8;
+        PaddedPODArray<UInt32> needle_utf8;
+        if constexpr (is_utf8)
+        {
+            parseUTF8String(haystack, haystack_size, [&](UInt32 data) { haystack_utf8.push_back(data); });
+            parseUTF8String(needle, needle_size, [&](UInt32 data) { needle_utf8.push_back(data); });
+            haystack_size = haystack_utf8.size();
+            needle_size = needle_utf8.size();
+        }
 
         PaddedPODArray<ResultType> distances0(haystack_size + 1, 0);
         PaddedPODArray<ResultType> distances1(haystack_size + 1, 0);
@@ -261,10 +275,17 @@ struct ByteEditDistanceImpl
                 insertion = distances1[pos_haystack] + 1;
                 substitution = distances0[pos_haystack];
 
-                if (*(needle + pos_needle) != *(haystack + pos_haystack))
-                    substitution += 1;
-
-                distances1[pos_haystack + 1] = std::min(deletion, std::min(substitution, insertion));
+                if constexpr (is_utf8)
+                {
+                    if (needle_utf8[pos_needle] != haystack_utf8[pos_haystack])
+                        substitution += 1;
+                }
+                else
+                {
+                    if (*(needle + pos_needle) != *(haystack + pos_haystack))
+                        substitution += 1;
+                }
+                distances1[pos_haystack + 1] = std::min({deletion, substitution, insertion});
             }
             distances0.swap(distances1);
         }
@@ -323,10 +344,11 @@ struct ByteDamerauLevenshteinDistanceImpl
             for (size_t j = 1; j <= needle_size; ++j)
             {
                 int cost = (haystack[i - 1] == needle[j - 1]) ? 0 : 1;
-                starts[i][j] = std::min(starts[i - 1][j] + 1,                  /// deletion
-                                        std::min(starts[i][j - 1] + 1,         /// insertion
-                                                 starts[i - 1][j - 1] + cost)  /// substitution
-                               );
+                starts[i][j] = std::min(
+                    {starts[i - 1][j] + 1, /// deletion
+                     starts[i][j - 1] + 1, /// insertion
+                     starts[i - 1][j - 1] + cost} /// substitution
+                );
                 if (i > 1 && j > 1 && haystack[i - 1] == needle[j - 2] && haystack[i - 2] == needle[j - 1])
                     starts[i][j] = std::min(starts[i][j], starts[i - 2][j - 2] + 1); /// transposition
             }
@@ -436,7 +458,7 @@ struct ByteJaroWinklerSimilarityImpl
 
         if (jaro_winkler_similarity > boost_threshold)
         {
-            const int common_length = std::min(max_prefix_length, std::min(s1len, s2len));
+            const int common_length = std::min({max_prefix_length, s1len, s2len});
             int common_prefix = 0;
             while (common_prefix < common_length && haystack[common_prefix] == needle[common_prefix])
                 common_prefix++;
@@ -457,7 +479,12 @@ struct NameEditDistance
 {
     static constexpr auto name = "editDistance";
 };
-using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl>, NameEditDistance>;
+using FunctionEditDistance = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<false>>, NameEditDistance>;
+struct NameEditDistanceUTF8
+{
+    static constexpr auto name = "editDistanceUTF8";
+};
+using FunctionEditDistanceUTF8 = FunctionsStringSimilarity<FunctionStringDistanceImpl<ByteEditDistanceImpl<true>>, NameEditDistanceUTF8>;
 
 struct NameDamerauLevenshteinDistance
 {
@@ -491,26 +518,206 @@ using FunctionJaroWinklerSimilarity = FunctionsStringSimilarity<FunctionStringDi
 
 REGISTER_FUNCTION(StringDistance)
 {
-    factory.registerFunction<FunctionByteHammingDistance>(
-        FunctionDocumentation{.description = R"(Calculates Hamming distance between two byte-strings.)"});
+    FunctionDocumentation::Description description_hamming = R"(
+Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
+)";
+    FunctionDocumentation::Syntax syntax_hamming = "byteHammingDistance(s1, s2)";
+    FunctionDocumentation::Arguments arguments_hamming = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_hamming = {"Returns the Hamming distance between the two strings.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_hamming = {
+    {
+        "Usage example",
+        "SELECT byteHammingDistance('karolin', 'kathrin')",
+        R"(
+┌─byteHammingDistance('karolin', 'kathrin')─┐
+│                                         3 │
+└───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation_hamming = {description_hamming, syntax_hamming, arguments_hamming, returned_value_hamming, examples_hamming, introduced_in, category};
+
+    FunctionDocumentation::Description description_edit = R"(
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
+)";
+    FunctionDocumentation::Syntax syntax_edit = "editDistance(s1, s2)";
+    FunctionDocumentation::Arguments arguments_edit = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_edit = {"Returns the edit distance between the two strings.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_edit = {
+    {
+        "Usage example",
+        "SELECT editDistance('clickhouse', 'mouse')",
+        R"(
+┌─editDistance('clickhouse', 'mouse')─┐
+│                                   6 │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation documentation_edit = {description_edit, syntax_edit, arguments_edit, returned_value_edit, examples_edit, introduced_in, category};
+
+    FunctionDocumentation::Description description_edit_utf8 = R"(
+Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings.
+)";
+    FunctionDocumentation::Syntax syntax_edit_utf8 = "editDistanceUTF8(s1, s2)";
+    FunctionDocumentation::Arguments arguments_edit_utf8 = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_edit_utf8 = {"Returns the edit distance between the two UTF8 strings.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_edit_utf8 = {
+    {
+        "Usage example",
+        "SELECT editDistanceUTF8('我是谁', '我是我')",
+        R"(
+┌─editDistanceUTF8('我是谁', '我是我')──┐
+│                                   1 │
+└─────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_utf8 = {24, 6};
+    FunctionDocumentation documentation_edit_utf8 = {description_edit_utf8, syntax_edit_utf8, arguments_edit_utf8, returned_value_edit_utf8, examples_edit_utf8, introduced_in_utf8, category};
+
+    FunctionDocumentation::Description description_damerau = R"(
+Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
+)";
+    FunctionDocumentation::Syntax syntax_damerau = "damerauLevenshteinDistance(s1, s2)";
+    FunctionDocumentation::Arguments arguments_damerau = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_damerau = {"Returns the Damerau-Levenshtein distance between the two strings.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_damerau = {
+    {
+        "Usage example",
+        "SELECT damerauLevenshteinDistance('clickhouse', 'mouse')",
+        R"(
+┌─damerauLevenshteinDistance('clickhouse', 'mouse')─┐
+│                                                 6 │
+└───────────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_damerau = {24, 1};
+    FunctionDocumentation documentation_damerau = {description_damerau, syntax_damerau, arguments_damerau, returned_value_damerau, examples_damerau, introduced_in_damerau, category};
+
+    FunctionDocumentation::Description description_jaccard = R"(
+Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
+)";
+    FunctionDocumentation::Syntax syntax_jaccard = "stringJaccardIndex(s1, s2)";
+    FunctionDocumentation::Arguments arguments_jaccard = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_jaccard = {"Returns the Jaccard similarity index between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_jaccard = {
+    {
+        "Usage example",
+        "SELECT stringJaccardIndex('clickhouse', 'mouse')",
+        R"(
+┌─stringJaccardIndex('clickhouse', 'mouse')─┐
+│                                       0.4 │
+└───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_jaccard = {23, 11};
+    FunctionDocumentation documentation_jaccard = {description_jaccard, syntax_jaccard, arguments_jaccard, returned_value_jaccard, examples_jaccard, introduced_in_jaccard, category};
+
+    FunctionDocumentation::Description description_jaccard_utf8 = R"(
+Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
+)";
+    FunctionDocumentation::Syntax syntax_jaccard_utf8 = "stringJaccardIndexUTF8(s1, s2)";
+    FunctionDocumentation::Arguments arguments_jaccard_utf8 = {
+        {"s1", "First input UTF8 string.", {"String"}},
+        {"s2", "Second input UTF8 string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_jaccard_utf8 = {"Returns the Jaccard similarity index between the two UTF8 strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_jaccard_utf8 = {
+    {
+        "Usage example",
+        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')",
+        R"(
+┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
+│                                       0.75 │
+└─────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_jaccard_utf8 = {23, 11};
+    FunctionDocumentation documentation_jaccard_utf8 = {description_jaccard_utf8, syntax_jaccard_utf8, arguments_jaccard_utf8, returned_value_jaccard_utf8, examples_jaccard_utf8, introduced_in_jaccard_utf8, category};
+
+    FunctionDocumentation::Description description_jaro = R"(
+Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
+)";
+    FunctionDocumentation::Syntax syntax_jaro = "jaroSimilarity(s1, s2)";
+    FunctionDocumentation::Arguments arguments_jaro = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_jaro = {"Returns the Jaro similarity between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_jaro = {
+    {
+        "Usage example",
+        "SELECT jaroSimilarity('clickhouse', 'click')",
+        R"(
+┌─jaroSimilarity('clickhouse', 'click')─┐
+│                    0.8333333333333333 │
+└───────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_jaro = {24, 1};
+    FunctionDocumentation documentation_jaro = {description_jaro, syntax_jaro, arguments_jaro, returned_value_jaro, examples_jaro, introduced_in_jaro, category};
+
+    FunctionDocumentation::Description description_jaro_winkler = R"(
+Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance) between two byte strings.
+)";
+    FunctionDocumentation::Syntax syntax_jaro_winkler = "jaroWinklerSimilarity(s1, s2)";
+    FunctionDocumentation::Arguments arguments_jaro_winkler = {
+        {"s1", "First input string.", {"String"}},
+        {"s2", "Second input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_jaro_winkler = {"Returns the Jaro-Winkler similarity between the two strings.", {"Float64"}};
+    FunctionDocumentation::Examples examples_jaro_winkler = {
+    {
+        "Usage example",
+        "SELECT jaroWinklerSimilarity('clickhouse', 'click')",
+        R"(
+┌─jaroWinklerSimilarity('clickhouse', 'click')─┐
+│                           0.8999999999999999 │
+└──────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_jaro_winkler = {24, 1};
+    FunctionDocumentation documentation_jaro_winkler = {description_jaro_winkler, syntax_jaro_winkler, arguments_jaro_winkler, returned_value_jaro_winkler, examples_jaro_winkler, introduced_in_jaro_winkler, category};
+
+    factory.registerFunction<FunctionByteHammingDistance>(documentation_hamming);
     factory.registerAlias("mismatches", NameByteHammingDistance::name);
 
-    factory.registerFunction<FunctionEditDistance>(
-        FunctionDocumentation{.description = R"(Calculates the edit distance between two byte-strings.)"});
+    factory.registerFunction<FunctionEditDistance>(documentation_edit);
     factory.registerAlias("levenshteinDistance", NameEditDistance::name);
 
-    factory.registerFunction<FunctionDamerauLevenshteinDistance>(
-        FunctionDocumentation{.description = R"(Calculates the Damerau-Levenshtein distance two between two byte-string.)"});
+    factory.registerFunction<FunctionEditDistanceUTF8>(documentation_edit_utf8);
+    factory.registerAlias("levenshteinDistanceUTF8", NameEditDistanceUTF8::name);
 
-    factory.registerFunction<FunctionStringJaccardIndex>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two byte strings.)"});
-    factory.registerFunction<FunctionStringJaccardIndexUTF8>(
-        FunctionDocumentation{.description = R"(Calculates the Jaccard similarity index between two UTF8 strings.)"});
+    factory.registerFunction<FunctionDamerauLevenshteinDistance>(documentation_damerau);
 
-    factory.registerFunction<FunctionJaroSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro similarity between two byte-string.)"});
+    factory.registerFunction<FunctionStringJaccardIndex>(documentation_jaccard);
+    factory.registerFunction<FunctionStringJaccardIndexUTF8>(documentation_jaccard_utf8);
 
-    factory.registerFunction<FunctionJaroWinklerSimilarity>(
-        FunctionDocumentation{.description = R"(Calculates the Jaro-Winkler similarity between two byte-string.)"});
+    factory.registerFunction<FunctionJaroSimilarity>(documentation_jaro);
+
+    factory.registerFunction<FunctionJaroWinklerSimilarity>(documentation_jaro_winkler);
 }
 }

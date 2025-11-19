@@ -1,4 +1,4 @@
-#include "RedisSource.h"
+#include <Dictionaries/RedisSource.h>
 
 #include <vector>
 #include <Columns/ColumnNullable.h>
@@ -25,7 +25,7 @@ namespace DB
         RedisConnectionPtr connection_,
         const RedisArray & keys_,
         const RedisStorageType & storage_type_,
-        const DB::Block & sample_block,
+        SharedHeader sample_block,
         size_t max_block_size_)
         : ISource(sample_block)
         , connection(std::move(connection_))
@@ -33,7 +33,7 @@ namespace DB
         , storage_type(storage_type_)
         , max_block_size{max_block_size_}
     {
-        description.init(sample_block);
+        description.init(*sample_block);
     }
 
     RedisSource::~RedisSource() = default;
@@ -99,8 +99,7 @@ namespace DB
                     ReadBufferFromString in(string_value);
                     time_t time = 0;
                     readDateTimeText(time, in);
-                    if (time < 0)
-                        time = 0;
+                    time = std::max<time_t>(time, 0);
                     assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(time));
                     break;
                 }

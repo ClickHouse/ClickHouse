@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
+#include <Databases/DatabaseMetadataDiskSettings.h>
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/DatabasesCommon.h>
+#include <Storages/IStorage_fwd.h>
 
 
 namespace DB
@@ -19,8 +21,19 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, const String & logger_name, ContextPtr context_);
-    DatabaseAtomic(String name_, String metadata_path_, UUID uuid, ContextPtr context_);
+    DatabaseAtomic(
+        String name_,
+        String metadata_path_,
+        UUID uuid,
+        const String & logger_name,
+        ContextPtr context_,
+        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
+    DatabaseAtomic(
+        String name_,
+        String metadata_path_,
+        UUID uuid,
+        ContextPtr context_,
+        DatabaseMetadataDiskSettings database_metadata_disk_settings_ = {});
 
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
@@ -46,7 +59,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void beforeLoadingMetadata(ContextMutablePtr context, LoadingStrictnessLevel mode) override;
 
@@ -59,7 +72,7 @@ public:
 
     UUID tryGetTableUUID(const String & table_name) const override;
 
-    void tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist = false);
+    void tryCreateSymlink(const StoragePtr & table, bool if_data_path_exist = false);
     void tryRemoveSymlink(const String & table_name);
 
     void waitDetachedTableNotInUse(const UUID & uuid) override;
@@ -75,6 +88,9 @@ protected:
     using DetachedTables = std::unordered_map<UUID, StoragePtr>;
     [[nodiscard]] DetachedTables cleanupDetachedTables() TSA_REQUIRES(mutex);
 
+    void createDirectories();
+    void createDirectoriesUnlocked() TSA_REQUIRES(mutex);
+
     void tryCreateMetadataSymlink();
 
     virtual bool allowMoveTableToOtherDatabaseEngine(IDatabase & /*to_database*/) const { return false; }
@@ -84,8 +100,8 @@ protected:
     NameToPathMap table_name_to_path TSA_GUARDED_BY(mutex);
 
     DetachedTables detached_tables TSA_GUARDED_BY(mutex);
-    String path_to_table_symlinks;
-    String path_to_metadata_symlink;
+    std::filesystem::path path_to_table_symlinks;
+    std::filesystem::path path_to_metadata_symlink;
     const UUID db_uuid;
 
     LoadTaskPtr startup_atomic_database_task TSA_GUARDED_BY(mutex);

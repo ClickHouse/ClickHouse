@@ -1,16 +1,19 @@
 ---
-slug: /en/sql-reference/statements/exchange
+description: 'Documentation for EXCHANGE Statement'
+sidebar_label: 'EXCHANGE'
 sidebar_position: 49
-sidebar_label: EXCHANGE
+slug: /sql-reference/statements/exchange
+title: 'EXCHANGE Statement'
+doc_type: 'reference'
 ---
 
 # EXCHANGE Statement
 
 Exchanges the names of two tables or dictionaries atomically.
-This task can also be accomplished with a [RENAME](./rename.md) query using a temporary name, but the operation is not atomic in that case.
+This task can also be accomplished with a [`RENAME`](./rename.md) query using a temporary name, but the operation is not atomic in that case.
 
 :::note    
-The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine only.
+The `EXCHANGE` query is supported by the [`Atomic`](../../engines/database-engines/atomic.md) and [`Shared`](/cloud/reference/shared-catalog#shared-database-engine) database engines only.
 :::
 
 **Syntax**
@@ -19,7 +22,7 @@ The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines
 EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 ```
 
-## EXCHANGE TABLES
+## EXCHANGE TABLES {#exchange-tables}
 
 Exchanges the names of two tables.
 
@@ -29,7 +32,7 @@ Exchanges the names of two tables.
 EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
 ```
 
-## EXCHANGE DICTIONARIES
+## EXCHANGE DICTIONARIES {#exchange-dictionaries}
 
 Exchanges the names of two dictionaries.
 

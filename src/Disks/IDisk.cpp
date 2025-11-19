@@ -1,13 +1,25 @@
-#include "IDisk.h"
+#include <Disks/IDisk.h>
+#include <Core/Field.h>
+#include <Core/ServerUUID.h>
+#include <Disks/FakeDiskTransaction.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <Poco/Logger.h>
 #include <Interpreters/Context.h>
+#include <Storages/PartitionCommands.h>
+#include <Poco/Logger.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
-#include <Core/ServerUUID.h>
-#include <Disks/FakeDiskTransaction.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+namespace CurrentMetrics
+{
+    extern const Metric IDiskCopierThreads;
+    extern const Metric IDiskCopierThreadsActive;
+    extern const Metric IDiskCopierThreadsScheduled;
+}
 
 namespace DB
 {
@@ -18,6 +30,25 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int LOGICAL_ERROR;
 }
+
+IDisk::IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    : name(name_)
+    , copying_thread_pool(std::make_unique<ThreadPool>(
+          CurrentMetrics::IDiskCopierThreads,
+          CurrentMetrics::IDiskCopierThreadsActive,
+          CurrentMetrics::IDiskCopierThreadsScheduled,
+          config.getUInt(config_prefix + ".thread_pool_size", 16)))
+{
+}
+
+IDisk::IDisk(const String & name_)
+    : name(name_)
+    , copying_thread_pool(std::make_unique<ThreadPool>(
+          CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16))
+{
+}
+
+IDisk::~IDisk() = default;
 
 bool IDisk::isDirectoryEmpty(const String & path) const
 {
@@ -40,6 +71,17 @@ void IDisk::copyFile( /// NOLINT
     auto out = to_disk.writeFile(to_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
     copyData(*in, *out, cancellation_hook);
     out->finalize();
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IDisk::readFileIfExists( /// NOLINT
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    if (existsFile(path))
+        return readFile(path, settings, read_hint);
+    else
+        return {};
 }
 
 DiskTransactionPtr IDisk::createTransaction()
@@ -84,59 +126,31 @@ UInt128 IDisk::getEncryptedFileIV(const String &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "File encryption is not implemented for disk of type {}", getDataSourceDescription().type);
 }
 
-
-using ResultsCollector = std::vector<std::future<void>>;
-
 void asyncCopy(
     IDisk & from_disk,
     String from_path,
     IDisk & to_disk,
     String to_path,
-    ThreadPool & pool,
-    ResultsCollector & results,
-    bool copy_root_dir,
+    ThreadPoolCallbackRunnerLocal<void> & runner,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    if (from_disk.isFile(from_path))
+    if (from_disk.existsFile(from_path))
     {
-        auto promise = std::make_shared<std::promise<void>>();
-        auto future = promise->get_future();
-
-        pool.scheduleOrThrowOnError(
-            [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, promise, thread_group = CurrentThread::getGroup(), &cancellation_hook]()
-            {
-                try
-                {
-                    SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
-                    if (thread_group)
-                        CurrentThread::attachToGroup(thread_group);
-
-                    from_disk.copyFile(from_path, to_disk, fs::path(to_path) / fileName(from_path), read_settings, write_settings, cancellation_hook);
-                    promise->set_value();
-                }
-                catch (...)
-                {
-                    promise->set_exception(std::current_exception());
-                }
+        runner(
+            [&from_disk, from_path, &to_disk, to_path, &read_settings, &write_settings, &cancellation_hook] {
+                from_disk.copyFile(
+                    from_path, to_disk, to_path, read_settings, write_settings, cancellation_hook);
             });
-
-        results.push_back(std::move(future));
     }
-    else
+    else /// Directory
     {
         fs::path dest(to_path);
-        if (copy_root_dir)
-        {
-            fs::path dir_name = fs::path(from_path).parent_path().filename();
-            dest /= dir_name;
-            to_disk.createDirectories(dest);
-        }
+        to_disk.createDirectories(dest);
 
         for (auto it = from_disk.iterateDirectory(from_path); it->isValid(); it->next())
-            asyncCopy(from_disk, it->path(), to_disk, dest, pool, results, true, read_settings, write_settings, cancellation_hook);
+            asyncCopy(from_disk, it->path(), to_disk, dest / it->name(), runner, read_settings, write_settings, cancellation_hook);
     }
 }
 
@@ -144,23 +158,20 @@ void IDisk::copyThroughBuffers(
     const String & from_path,
     const std::shared_ptr<IDisk> & to_disk,
     const String & to_path,
-    bool copy_root_dir,
     const ReadSettings & read_settings,
     WriteSettings write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    ResultsCollector results;
+    ThreadPoolCallbackRunnerLocal<void> runner(*copying_thread_pool, ThreadName::ASYNC_COPY);
 
     /// Disable parallel write. We already copy in parallel.
     /// Avoid high memory usage. See test_s3_zero_copy_ttl/test.py::test_move_and_s3_memory_usage
     write_settings.s3_allow_parallel_part_upload = false;
+    write_settings.azure_allow_parallel_part_upload = false;
 
-    asyncCopy(*this, from_path, *to_disk, to_path, copying_thread_pool, results, copy_root_dir, read_settings, write_settings, cancellation_hook);
+    asyncCopy(*this, from_path, *to_disk, to_path, runner, read_settings, write_settings, cancellation_hook);
 
-    for (auto & result : results)
-        result.wait();
-    for (auto & result : results)
-        result.get();  /// May rethrow an exception
+    runner.waitForAllToFinishAndRethrowFirstError();
 }
 
 
@@ -172,10 +183,7 @@ void IDisk::copyDirectoryContent(
     const WriteSettings & write_settings,
     const std::function<void()> & cancellation_hook)
 {
-    if (!to_disk->exists(to_dir))
-        to_disk->createDirectories(to_dir);
-
-    copyThroughBuffers(from_dir, to_disk, to_dir, /* copy_root_dir= */ false, read_settings, write_settings, cancellation_hook);
+    copyThroughBuffers(from_dir, to_disk, to_dir, read_settings, write_settings, cancellation_hook);
 }
 
 void IDisk::truncateFile(const String &, size_t)
@@ -188,7 +196,7 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
-void IDisk::startup(ContextPtr context, bool skip_access_check)
+void IDisk::startup(bool skip_access_check)
 {
     if (!skip_access_check)
     {
@@ -201,7 +209,7 @@ void IDisk::startup(ContextPtr context, bool skip_access_check)
         else
             checkAccess();
     }
-    startupImpl(context);
+    startupImpl();
 }
 
 void IDisk::checkAccess()
@@ -209,7 +217,7 @@ void IDisk::checkAccess()
     DB::UUID server_uuid = DB::ServerUUID::get();
     if (server_uuid == DB::UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
-    const String path = fmt::format("clickhouse_access_check_{}", DB::toString(server_uuid));
+    const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
 
     checkAccessImpl(path);
 }
@@ -219,10 +227,13 @@ void IDisk::checkAccessImpl(const String & path)
 try
 {
     const std::string_view payload("test", 4);
+    const auto read_settings = getReadSettings();
+    auto write_settings = getWriteSettings();
+    write_settings.is_initial_access_check = true;
 
     /// write
     {
-        auto file = writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        auto file = writeFile(path, std::min<size_t>(DBMS_DEFAULT_BUFFER_SIZE, payload.size()), WriteMode::Rewrite, write_settings);
         try
         {
             file->write(payload.data(), payload.size());
@@ -238,7 +249,7 @@ try
 
     /// read
     {
-        auto file = readFile(path);
+        auto file = readFile(path, read_settings);
         String buf(payload.size(), '0');
         file->readStrict(buf.data(), buf.size());
         if (buf != payload)
@@ -250,7 +261,7 @@ try
 
     /// read with offset
     {
-        auto file = readFile(path);
+        auto file = readFile(path, read_settings);
         auto offset = 2;
         String buf(payload.size() - offset, '0');
         file->seek(offset, 0);
@@ -273,7 +284,7 @@ catch (Exception & e)
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)
 {
-    copying_thread_pool.setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
+    copying_thread_pool->setMaxThreads(config.getInt(config_prefix + ".thread_pool_size", 16));
 }
 
 }

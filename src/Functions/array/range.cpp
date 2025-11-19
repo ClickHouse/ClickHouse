@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -9,6 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
+#include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <numeric>
@@ -17,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 function_range_max_elements_in_block;
+}
 
 namespace ErrorCodes
 {
@@ -40,7 +46,7 @@ public:
 
     const size_t max_elements;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
-    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
+    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef()[Setting::function_range_max_elements_in_block]) { }
 
 private:
     String getName() const override { return name; }
@@ -119,7 +125,7 @@ private:
             for (size_t row_idx = 0, rows = in->size(); row_idx < rows; ++row_idx)
             {
                 for (T elem_idx = 0, elems = in_data[row_idx]; elem_idx < elems; ++elem_idx)
-                    out_data[offset + elem_idx] = static_cast<T>(elem_idx);
+                    out_data[offset + elem_idx] = elem_idx;
 
                 offset += in_data[row_idx];
                 out_offsets[row_idx] = offset;
@@ -127,8 +133,7 @@ private:
 
             return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
-        else
-            return nullptr;
+        return nullptr;
     }
 
     template <typename T>
@@ -404,7 +409,7 @@ private:
         {
             if (!col.type->isNullable())
                 return;
-            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(*col.column);
+            const ColumnNullable * nullable_col = checkAndGetColumn<ColumnNullable>(col.column.get());
             if (!nullable_col)
                 nullable_col = checkAndGetColumnConstData<ColumnNullable>(col.column.get());
             if (!nullable_col)
@@ -421,8 +426,8 @@ private:
             const auto * col = arguments[0].column.get();
             if (arguments[0].type->isNullable())
             {
-                const auto * nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
-                col = nullable->getNestedColumnPtr().get();
+                const auto & nullable = checkAndGetColumn<ColumnNullable>(*arguments[0].column);
+                col = nullable.getNestedColumnPtr().get();
             }
 
             if (!((res = executeInternal<UInt8>(col)) || (res = executeInternal<UInt16>(col)) || (res = executeInternal<UInt32>(col))
@@ -567,7 +572,33 @@ private:
 
 REGISTER_FUNCTION(Range)
 {
-    factory.registerFunction<FunctionRange>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of numbers from `start` to `end - 1` by `step`.
+
+The supported types are:
+- `UInt8/16/32/64`
+- `Int8/16/32/64]`
+
+- All arguments `start`, `end`, `step` must be one of the above supported types. Elements of the returned array will be a super type of the arguments.
+- An exception is thrown if the function returns an array with a total length more than the number of elements specified by setting [`function_range_max_elements_in_block`](../../operations/settings/settings.md#function_range_max_elements_in_block).
+- Returns `NULL` if any argument has Nullable(nothing) type. An exception is thrown if any argument has `NULL` value (Nullable(T) type).
+    )";
+    FunctionDocumentation::Syntax syntax = "range([start, ] end [, step])";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "Optional. The first element of the array. Required if `step` is used. Default value: `0`."},
+        {"end", "Required. The number before which the array is constructed."},
+        {"step", "Optional. Determines the incremental step between each element in the array. Default value: `1`."},};
+    FunctionDocumentation::ReturnedValue returned_value = {"Array of numbers from `start` to `end - 1` by `step`.", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT range(5), range(1, 5), range(1, 5, 2), range(-1, 5, 2);", R"(
+┌─range(5)────┬─range(1, 5)─┬─range(1, 5, 2)─┬─range(-1, 5, 2)─┐
+│ [0,1,2,3,4] │ [1,2,3,4]   │ [1,3]          │ [-1,1,3]        │
+└─────────────┴─────────────┴────────────────┴─────────────────┘
+    )"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionRange>(documentation);
 }
 
 }

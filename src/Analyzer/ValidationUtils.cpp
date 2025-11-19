@@ -1,24 +1,32 @@
 #include <Analyzer/ValidationUtils.h>
 
+#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/QueryNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/AggregationUtils.h>
+#include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
+#include <Storages/IStorage.h>
+
+#include <memory>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_PREWHERE;
+    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_AN_AGGREGATE;
     extern const int NOT_IMPLEMENTED;
-    extern const int BAD_ARGUMENTS;
-    extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
-    extern const int ILLEGAL_PREWHERE;
+    extern const int UNEXPECTED_EXPRESSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -26,7 +34,24 @@ namespace
 
 void validateFilter(const QueryTreeNodePtr & filter_node, std::string_view exception_place_message, const QueryTreeNodePtr & query_node)
 {
-    auto filter_node_result_type = filter_node->getResultType();
+    DataTypePtr filter_node_result_type;
+    try
+    {
+        filter_node_result_type = filter_node->getResultType();
+    }
+    catch (const DB::Exception &e)
+    {
+        if (e.code() != ErrorCodes::UNSUPPORTED_METHOD)
+            e.rethrow();
+    }
+
+    if (!filter_node_result_type)
+        throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION,
+                        "Unexpected expression '{}' in filter in {}. In query {}",
+                        filter_node->formatASTForErrorMessage(),
+                        exception_place_message,
+                        query_node->formatASTForErrorMessage());
+
     if (!filter_node_result_type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
             "Invalid type for filter in {}: {}. In query {}",
@@ -56,6 +81,68 @@ void validateFilters(const QueryTreeNodePtr & query_node)
 
     if (query_node_typed.hasHaving())
         validateFilter(query_node_typed.getHaving(), "HAVING", query_node);
+
+    if (query_node_typed.hasQualify())
+        validateFilter(query_node_typed.getQualify(), "QUALIFY", query_node);
+}
+
+bool areColumnSourcesEqual(const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+{
+    using NodePair = std::pair<const IQueryTreeNode *, const IQueryTreeNode *>;
+    std::vector<NodePair> nodes_to_process;
+    nodes_to_process.emplace_back(lhs.get(), rhs.get());
+
+    while (!nodes_to_process.empty())
+    {
+        const auto [lhs_node, rhs_node] = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        if (lhs_node->getNodeType() != rhs_node->getNodeType())
+            return false;
+
+        if (lhs_node->getNodeType() == QueryTreeNodeType::COLUMN)
+        {
+            const auto * lhs_column_node = lhs_node->as<ColumnNode>();
+            const auto * rhs_column_node = rhs_node->as<ColumnNode>();
+            if (!lhs_column_node->getColumnSource()->isEqual(*rhs_column_node->getColumnSource()))
+                return false;
+        }
+
+        const auto & lhs_children = lhs_node->getChildren();
+        const auto & rhs_children = rhs_node->getChildren();
+        if (lhs_children.size() != rhs_children.size())
+            return false;
+
+        for (size_t i = 0; i < lhs_children.size(); ++i)
+        {
+            const auto & lhs_child = lhs_children[i];
+            const auto & rhs_child = rhs_children[i];
+
+            if (!lhs_child && !rhs_child)
+                continue;
+            if (lhs_child && !rhs_child)
+                return false;
+            if (!lhs_child && rhs_child)
+                return false;
+
+            nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
+        }
+    }
+    return true;
+}
+
+bool compareGroupByKeys(const QueryTreeNodePtr & node, const QueryTreeNodePtr & group_by_key_node)
+{
+    if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
+    {
+        /** Column sources should be compared with aliases for correct GROUP BY keys validation,
+            * otherwise t2.x and t1.x will be considered as the same column:
+            * SELECT t2.x FROM t1 JOIN t1 as t2 ON t1.x = t2.x GROUP BY t1.x;
+            */
+        if (areColumnSourcesEqual(node, group_by_key_node))
+            return true;
+    }
+    return false;
 }
 
 namespace
@@ -116,7 +203,7 @@ public:
             return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
-            "Column {} is not under aggregate function and not in GROUP BY keys. In query {}",
+            "Column '{}' is not under aggregate function and not in GROUP BY keys. In query {}",
             column_node->formatConvertedASTForErrorMessage(),
             query_node->formatASTForErrorMessage());
     }
@@ -131,6 +218,7 @@ public:
     }
 
 private:
+
     bool nodeIsAggregateFunctionOrInGroupByKeys(const QueryTreeNodePtr & node) const
     {
         if (auto * function_node = node->as<FunctionNode>())
@@ -138,8 +226,10 @@ private:
                 return true;
 
         for (const auto & group_by_key_node : group_by_keys_nodes)
-            if (node->isEqual(*group_by_key_node, {.compare_aliases = false}))
+        {
+            if (compareGroupByKeys(node, group_by_key_node))
                 return true;
+        }
 
         return false;
     }
@@ -263,8 +353,14 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         if (query_node_typed.hasHaving())
             validate_group_by_columns_visitor.visit(query_node_typed.getHaving());
 
+        if (query_node_typed.hasQualify())
+            validate_group_by_columns_visitor.visit(query_node_typed.getQualify());
+
         if (query_node_typed.hasOrderBy())
             validate_group_by_columns_visitor.visit(query_node_typed.getOrderByNode());
+
+        if (query_node_typed.hasInterpolate())
+            validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
 
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }
@@ -344,7 +440,21 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         if (processed_children)
         {
             ++tree_size;
-            node_to_tree_size.emplace(node_to_process, tree_size);
+
+            size_t subtree_size = 1;
+            for (const auto & node_to_process_child : node_to_process->getChildren())
+            {
+                if (!node_to_process_child)
+                    continue;
+
+                subtree_size += node_to_tree_size[node_to_process_child];
+            }
+
+            auto * constant_node = node_to_process->as<ConstantNode>();
+            if (constant_node && constant_node->hasSourceExpression())
+                subtree_size += node_to_tree_size[constant_node->getSourceExpression()];
+
+            node_to_tree_size.emplace(node_to_process, subtree_size);
             continue;
         }
 
@@ -374,6 +484,138 @@ void validateTreeSize(const QueryTreeNodePtr & node,
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Query tree is too big. Maximum: {}",
             max_size);
+}
+
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node)
+{
+    bool has_remote = false;
+    bool has_correlated_subquery = false;
+    QueryTreeNodes nodes_to_process = { node };
+
+    while (!nodes_to_process.empty())
+    {
+        auto current_node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        switch (current_node->getNodeType())
+        {
+            case QueryTreeNodeType::QUERY:
+            {
+                auto & query_node = current_node->as<QueryNode &>();
+                if (query_node.isCorrelated())
+                    has_correlated_subquery = true;
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                auto & union_node = current_node->as<UnionNode &>();
+                if (union_node.isCorrelated())
+                    has_correlated_subquery = true;
+                break;
+            }
+            case QueryTreeNodeType::TABLE:
+            {
+                auto & table_node = current_node->as<TableNode &>();
+                const auto & storage = table_node.getStorage();
+                if (storage && storage->isRemote())
+                    has_remote = true;
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                auto & table_function_node = current_node->as<TableFunctionNode &>();
+                const auto & storage = table_function_node.getStorage();
+                if (storage && storage->isRemote())
+                    has_remote = true;
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (has_remote && has_correlated_subquery)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported with remote tables. In query {}",
+                node->formatASTForErrorMessage());
+
+        for (const auto & child : current_node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child);
+        }
+    }
+}
+
+void validateFromClause(const QueryTreeNodePtr & node)
+{
+    const auto & root_query_node = node->as<QueryNode &>();
+    auto correlated_columns_set = root_query_node.getCorrelatedColumnsSet();
+
+    std::vector<QueryTreeNodePtr> nodes_to_process = { root_query_node.getJoinTree() };
+
+    while (!nodes_to_process.empty())
+    {
+        auto node_to_process = std::move(nodes_to_process.back());
+        nodes_to_process.pop_back();
+
+        auto node_type = node_to_process->getNodeType();
+
+        switch (node_type)
+        {
+            case QueryTreeNodeType::TABLE:
+                [[fallthrough]];
+            case QueryTreeNodeType::TABLE_FUNCTION:
+                break;
+            case QueryTreeNodeType::QUERY:
+            {
+                auto & query_node = node_to_process->as<QueryNode &>();
+                const auto & correlated_columns = query_node.getCorrelatedColumns();
+                for (const auto & column : correlated_columns)
+                {
+                    if (!correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Lateral joins are not supported. Correlated column '{}' is found in the FROM clause. In query {}",
+                            column->formatASTForErrorMessage(),
+                            node->formatASTForErrorMessage());
+                }
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                for (const auto & union_node : node_to_process->as<UnionNode>()->getQueries().getNodes())
+                    nodes_to_process.push_back(union_node);
+                break;
+            }
+            case QueryTreeNodeType::ARRAY_JOIN:
+            {
+                auto & array_join_node = node_to_process->as<ArrayJoinNode &>();
+                nodes_to_process.push_back(array_join_node.getTableExpression());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & join_node = node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : std::ranges::reverse_view(join_node.getTableExpressions()))
+                    nodes_to_process.push_back(expr);
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                auto & join_node = node_to_process->as<JoinNode &>();
+                nodes_to_process.push_back(join_node.getRightTableExpression());
+                nodes_to_process.push_back(join_node.getLeftTableExpression());
+                break;
+            }
+            default:
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Unexpected node type for table expression. "
+                                "Expected table, table function, query, union, join or array join. Actual {}",
+                                node_to_process->getNodeTypeName());
+            }
+        }
+    }
+
 }
 
 }

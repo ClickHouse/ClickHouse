@@ -17,7 +17,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Core/Defines.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/re2.h>
 
 namespace DB
@@ -867,6 +867,14 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
         last_table_elem->children.erase(
             std::remove(last_table_elem->children.begin(), last_table_elem->children.end(), last_select_elem->table_join),
             last_table_elem->children.end());
+
+        ASTTableExpression * source_table_expression = last_table_elem->table_expression->as<ASTTableExpression>();
+        ASTTableExpression * target_table_expression = last_select_elem->table_expression->as<ASTTableExpression>();
+        if (source_table_expression && target_table_expression && source_table_expression->subquery && source_table_expression->final)
+        {
+            target_table_expression->final = source_table_expression->final;
+            source_table_expression->final = false;
+        }
 
         RewriteVisitor::Data visitor_data{{src_tables.back()}};
         RewriteVisitor(visitor_data).visit(last_select);

@@ -1,11 +1,7 @@
 #pragma once
 
-#include "config.h"
-#include "threadPoolCallbackRunner.h"
-#include "IO/WriteBufferFromS3.h"
-
-#include "logger_useful.h"
-
+#include <Common/threadPoolCallbackRunner.h>
+#include <Common/logger_useful.h>
 #include <list>
 
 namespace DB
@@ -23,10 +19,10 @@ class TaskTracker
 public:
     using Callback = std::function<void()>;
 
-    TaskTracker(ThreadPoolCallbackRunner<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limitedLog_);
+    TaskTracker(ThreadPoolCallbackRunnerUnsafe<void> scheduler_, size_t max_tasks_inflight_, LogSeriesLimiterPtr limited_log_);
     ~TaskTracker();
 
-    static ThreadPoolCallbackRunner<void> syncRunner();
+    static ThreadPoolCallbackRunnerUnsafe<void> syncRunner();
 
     bool isAsync() const;
 
@@ -50,12 +46,12 @@ private:
     void collectFinishedFutures(bool propagate_exceptions) TSA_REQUIRES(mutex);
 
     const bool is_async;
-    ThreadPoolCallbackRunner<void> scheduler;
+    ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     const size_t max_tasks_inflight;
 
     using FutureList = std::list<std::future<void>>;
     FutureList futures;
-    LogSeriesLimiterPtr limitedLog;
+    LogSeriesLimiterPtr limited_log;
 
     std::mutex mutex;
     std::condition_variable has_finished TSA_GUARDED_BY(mutex);

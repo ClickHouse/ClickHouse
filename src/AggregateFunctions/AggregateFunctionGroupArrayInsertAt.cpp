@@ -16,7 +16,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#define AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE = 0xFFFFFF;
 
 
 namespace DB
@@ -27,6 +27,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int CANNOT_CONVERT_TYPE;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -74,7 +75,7 @@ public:
         if (!params.empty())
         {
             if (params.size() > 2)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} requires at most two parameters.", getName());
+                throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires at most two parameters.", getName());
 
             default_value = params[0];
 
@@ -175,14 +176,16 @@ public:
                             "Too large array size (maximum: {})", AGGREGATE_FUNCTION_GROUP_ARRAY_INSERT_AT_MAX_SIZE);
 
         Array & arr = data(place).value;
-
         arr.resize(size);
+
+        FormatSettings format_settings;
+
         for (size_t i = 0; i < size; ++i)
         {
             UInt8 is_null = 0;
             readBinary(is_null, buf);
             if (!is_null)
-                serialization->deserializeBinary(arr[i], buf, {});
+                serialization->deserializeBinary(arr[i], buf, format_settings);
         }
     }
 

@@ -5,22 +5,29 @@
 #include <Storages/System/StorageSystemErrors.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool system_events_show_zero_values;
+}
 
 ColumnsDescription StorageSystemErrors::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        { "name",                    std::make_shared<DataTypeString>(), "Name of the error (errorCodeToName)."},
-        { "code",                    std::make_shared<DataTypeInt32>(), "Code number of the error."},
-        { "value",                   std::make_shared<DataTypeUInt64>(), "The number of times this error happened."},
-        { "last_error_time",         std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
-        { "last_error_message",      std::make_shared<DataTypeString>(), "Message for the last error."},
-        { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
-        { "remote",                  std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
+        { "name",                     std::make_shared<DataTypeString>(), "Name of the error (errorCodeToName)."},
+        { "code",                     std::make_shared<DataTypeInt32>(), "Code number of the error."},
+        { "value",                    std::make_shared<DataTypeUInt64>(), "The number of times this error happened."},
+        { "last_error_time",          std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
+        { "last_error_message",       std::make_shared<DataTypeString>(), "Message for the last error."},
+        { "last_error_format_string", std::make_shared<DataTypeString>(), "Format string for the last error."},
+        { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
+        { "remote",                   std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
+        { "query_id",                 std::make_shared<DataTypeString>(), "Id of a query that caused an error (if available)." },
     };
 }
 
@@ -29,7 +36,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
 {
     auto add_row = [&](std::string_view name, size_t code, const auto & error, bool remote)
     {
-        if (error.count || context->getSettingsRef().system_events_show_zero_values)
+        if (error.count || context->getSettingsRef()[Setting::system_events_show_zero_values])
         {
             size_t col_num = 0;
             res_columns[col_num++]->insert(name);
@@ -37,6 +44,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             res_columns[col_num++]->insert(error.count);
             res_columns[col_num++]->insert(error.error_time_ms / 1000);
             res_columns[col_num++]->insert(error.message);
+            res_columns[col_num++]->insert(error.format_string);
             {
                 Array trace_array;
                 trace_array.reserve(error.trace.size());
@@ -46,6 +54,7 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
                 res_columns[col_num++]->insert(trace_array);
             }
             res_columns[col_num++]->insert(remote);
+            res_columns[col_num++]->insert(error.query_id);
         }
     };
 

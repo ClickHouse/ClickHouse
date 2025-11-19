@@ -16,24 +16,25 @@
    Copyright (c) 2018      Anton Maklakov <antmak.pub@gmail.com>
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2020      Boris Kolpackov <boris@codesynthesis.com>
+   Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
    Licensed under the MIT license:
 
-   Permission is  hereby granted,  free of charge,  to any  person obtaining
-   a  copy  of  this  software   and  associated  documentation  files  (the
-   "Software"),  to  deal in  the  Software  without restriction,  including
-   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   Permission is hereby granted, free of charge, to any person obtaining
+   a copy of this software  and associated documentation files (the
+   "Software"), to deal in the Software without restriction, including
+   without limitation the rights to use, copy, modify, merge, publish,
    distribute, sublicense, and/or sell copies of the Software, and to permit
-   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   persons to whom the Software is furnished to do so, subject to the
    following conditions:
 
-   The above copyright  notice and this permission notice  shall be included
+   The above copyright notice and this permission notice shall be included
    in all copies or substantial portions of the Software.
 
-   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
-   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
@@ -96,7 +97,7 @@
 
 #  define CHECK_NMSTRT_CASE(n, enc, ptr, end, nextTokPtr)                      \
   case BT_LEAD##n:                                                             \
-    if (end - ptr < n)                                                         \
+    if ((end) - (ptr) < (n))                                                   \
       return XML_TOK_PARTIAL_CHAR;                                             \
     if (IS_INVALID_CHAR(enc, ptr, n) || ! IS_NMSTRT_CHAR(enc, ptr, n)) {       \
       *nextTokPtr = ptr;                                                       \
@@ -124,7 +125,8 @@
 #    define PREFIX(ident) ident
 #  endif
 
-#  define HAS_CHARS(enc, ptr, end, count) (end - ptr >= count * MINBPC(enc))
+#  define HAS_CHARS(enc, ptr, end, count)                                      \
+    ((end) - (ptr) >= ((count) * MINBPC(enc)))
 
 #  define HAS_CHAR(enc, ptr, end) HAS_CHARS(enc, ptr, end, 1)
 

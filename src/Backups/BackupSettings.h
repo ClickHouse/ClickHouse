@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Backups/BackupInfo.h>
 #include <optional>
+#include <Backups/BackupDataFileNameGeneratorType.h>
+#include <Backups/BackupInfo.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -44,8 +46,14 @@ struct BackupSettings
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_s3_native_copy = true;
 
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_azure_native_copy = true;
+
     /// Whether base backup to S3 should inherit credentials from the BACKUP query.
     bool use_same_s3_credentials_for_base_backup = false;
+
+    /// Whether base backup archive should be unlocked using the same password as the incremental archive
+    bool use_same_password_for_base_backup = false;
 
     /// Whether a new Azure container should be created if it does not exist (requires permissions at storage account level)
     bool azure_attempt_to_create_container = true;
@@ -71,6 +79,29 @@ struct BackupSettings
     /// Allow to create backup with broken projections.
     bool allow_backup_broken_projections = false;
 
+    /// Whether dependents of access entities should be written along with the access entities.
+    /// For example, if a role is granted to a user and we're making a backup of system.roles (but not system.users)
+    /// this is whether the backup will contain information to grant the role to the corresponding user again.
+    bool write_access_entities_dependents = true;
+
+    /// Only use in SharedMergeTree. Lightweight backup will only copy the meta and object keys of the files from parts.
+    /// This will avoid repeated data copy from original object storage to backup files. Instead of that, data will copy to destinated storage directly.
+    bool experimental_lightweight_snapshot = false;
+
+    /// Is it allowed to use blob paths to calculate checksums of backup entries?
+    bool allow_checksums_from_remote_paths = true;
+
+    /// Defines how backup data file names are generated.
+    /// - `FirstFileName`: use the original file name from BackupFileInfo.
+    /// - `Checksum`: derive the name from the file checksum.
+    /// Example: for a 128-bit checksum = `abcd1234ef567890abcd1234ef567890`
+    /// and `data_file_name_prefix_length = 3`, the resulting path will be: `abc/d1234ef567890abcd1234ef567890`.
+    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
+
+    /// Optional length of the checksum prefix used as a directory path segment
+    /// when `data_file_name_generator` is `Checksum`.
+    std::optional<size_t> data_file_name_prefix_length;
+
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
@@ -87,8 +118,13 @@ struct BackupSettings
     /// UUID of the backup. If it's not set it will be generated randomly.
     std::optional<UUID> backup_uuid;
 
+    /// Core settings specified in the query.
+    SettingsChanges core_settings;
+
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
+
+    static bool isAsync(const ASTBackupQuery & query);
 
     struct Util
     {

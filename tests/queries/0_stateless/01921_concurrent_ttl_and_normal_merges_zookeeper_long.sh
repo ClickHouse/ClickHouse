@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, zookeeper, no-parallel
+# Tags: long, zookeeper, no-shared-merge-tree, no-parallel
+# no-shared-merge-tree -- replace with other test (this one checks queue)
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
@@ -18,7 +19,7 @@ done
 wait
 
 for i in $(seq 1 $NUM_REPLICAS); do
-    $CLICKHOUSE_CLIENT -n --query "CREATE TABLE ttl_table$i(
+    $CLICKHOUSE_CLIENT --query "CREATE TABLE ttl_table$i(
         key DateTime
     )
     ENGINE ReplicatedMergeTree('/test/01921_concurrent_ttl_and_normal_merges/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/ttl_table', '$i')
@@ -30,7 +31,8 @@ done
 
 function optimize_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE ttl_table$REPLICA FINAl"
     done
@@ -38,7 +40,8 @@ function optimize_thread
 
 function insert_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]; do
         REPLICA=$(($RANDOM % 5 + 1))
         $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
         $CLICKHOUSE_CLIENT --optimize_on_insert=0 --query "INSERT INTO ttl_table$REPLICA SELECT now() + rand() % 5 - rand() % 3 FROM numbers(5)"
@@ -47,21 +50,18 @@ function insert_thread
 }
 
 
-export -f insert_thread;
-export -f optimize_thread;
+TIMEOUT=20
 
-TIMEOUT=30
-
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c insert_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
-timeout $TIMEOUT bash -c optimize_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+insert_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
+optimize_thread 2> /dev/null &
 
 wait
 for i in $(seq 1 $NUM_REPLICAS); do

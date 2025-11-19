@@ -1,11 +1,15 @@
-#include "HashedArrayDictionary.h"
+#include <memory>
+#include <Dictionaries/HashedArrayDictionary.h>
 
 #include <Common/ArenaUtils.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
 
 #include <Dictionaries/ClickHouseDictionarySource.h>
 #include <Dictionaries/DictionarySource.h>
@@ -16,6 +20,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -239,7 +248,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getHierarchy(Colu
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.get<UInt64>();
+            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
 
         auto is_key_valid_func = [&, this](auto & key)
@@ -312,7 +321,7 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type, sharded>::isInHierar
         std::optional<UInt64> null_value;
 
         if (!dictionary_attribute.null_value.isNull())
-            null_value = dictionary_attribute.null_value.get<UInt64>();
+            null_value = dictionary_attribute.null_value.safeGet<UInt64>();
 
 
         auto is_key_valid_func = [&](auto & key)
@@ -470,39 +479,43 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::createAttributes()
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 void HashedArrayDictionary<dictionary_key_type, sharded>::updateData()
 {
+    BlockIO io = source_ptr->loadUpdatedAll();
+
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
         update_field_loaded_block.reset();
-        Block block;
 
-        while (executor.pull(block))
+        io.executeWithCallbacks([&]()
         {
-            if (!block.rows())
-                continue;
-
-            convertToFullIfSparse(block);
-
-            /// We are using this to keep saved data if input stream consists of multiple blocks
-            if (!update_field_loaded_block)
-                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
-
-            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            Block block;
+            while (executor.pull(block))
             {
-                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
-                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
-                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                if (!block.rows())
+                    continue;
+
+                removeSpecialColumnRepresentations(block);
+
+                /// We are using this to keep saved data if input stream consists of multiple blocks
+                if (!update_field_loaded_block)
+                    update_field_loaded_block = std::make_shared<Block>(block.cloneEmpty());
+
+                for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+                {
+                    const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                    MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                    saved_column->insertRangeFrom(update_column, 0, update_column.size());
+                }
             }
-        }
+        });
     }
     else
     {
-        auto pipe = source_ptr->loadUpdatedAll();
-        mergeBlockWithPipe<dictionary_key_type>(
+        update_field_loaded_block = std::make_shared<Block>(mergeBlockWithPipe<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            std::move(io)));
     }
 
     if (update_field_loaded_block)
@@ -580,13 +593,13 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::blockToAttributes(cons
 
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
-                    String & value_to_insert = column_value_to_insert.get<String>();
+                    String & value_to_insert = column_value_to_insert.safeGet<String>();
                     StringRef string_in_arena_reference = copyStringInArena(*string_arenas[shard], value_to_insert);
                     attribute_container.back() = string_in_arena_reference;
                 }
                 else
                 {
-                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.get<AttributeValueType>());
+                    auto value_to_insert = static_cast<AttributeValueType>(column_value_to_insert.safeGet<AttributeValueType>());
                     attribute_container.back() = value_to_insert;
                 }
             };
@@ -650,24 +663,20 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
         if (is_short_circuit)
         {
             IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
-            size_t keys_found = 0;
 
             if constexpr (std::is_same_v<ValueType, Array>)
             {
                 auto * out = column.get();
 
-                keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                    attribute,
-                    keys_object,
-                    [&](const size_t, const Array & value, bool) { out->insert(value); },
-                    default_mask);
+                getItemsShortCircuitImpl<ValueType, false>(
+                    attribute, keys_object, [&](const size_t, const Array & value, bool) { out->insert(value); }, default_mask);
             }
             else if constexpr (std::is_same_v<ValueType, StringRef>)
             {
                 auto * out = column.get();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         keys_object,
                         [&](size_t row, StringRef value, bool is_null)
@@ -677,7 +686,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                         },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
+                    getItemsShortCircuitImpl<ValueType, false>(
                         attribute,
                         keys_object,
                         [&](size_t, StringRef value, bool) { out->insertData(value.data, value.size); },
@@ -688,7 +697,7 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                 auto & out = column->getData();
 
                 if (is_attribute_nullable)
-                    keys_found = getItemsShortCircuitImpl<ValueType, true>(
+                    getItemsShortCircuitImpl<ValueType, true>(
                         attribute,
                         keys_object,
                         [&](size_t row, const auto value, bool is_null)
@@ -698,17 +707,9 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type, sharded>::getAttributeColum
                         },
                         default_mask);
                 else
-                    keys_found = getItemsShortCircuitImpl<ValueType, false>(
-                        attribute,
-                        keys_object,
-                        [&](size_t row, const auto value, bool) { out[row] = value; },
-                        default_mask);
-
-                out.resize(keys_found);
+                    getItemsShortCircuitImpl<ValueType, false>(
+                        attribute, keys_object, [&](size_t row, const auto value, bool) { out[row] = value; }, default_mask);
             }
-
-            if (is_attribute_nullable)
-                vec_null_map_to->resize(keys_found);
         }
         else
         {
@@ -834,7 +835,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
+void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
     ValueSetter && set_value,
@@ -870,14 +871,16 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
             ++keys_found;
         }
         else
+        {
             default_mask[key_index] = 1;
+            set_value(key_index, AttributeType{}, true);
+        }
 
         keys_extractor.rollbackCurrentKey();
     }
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
-    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -929,7 +932,7 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsImpl(
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
+void HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuitImpl(
     const Attribute & attribute,
     const KeyIndexToElementIndex & key_index_to_element_index,
     ValueSetter && set_value,
@@ -938,7 +941,6 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
     const auto & attribute_containers = std::get<AttributeContainerShardsType<AttributeType>>(attribute.containers);
     const size_t keys_size = key_index_to_element_index.size();
     size_t shard = 0;
-    size_t keys_found = 0;
 
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
@@ -955,7 +957,6 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
 
         if (element_index != -1)
         {
-            keys_found++;
             const auto & attribute_container = attribute_containers[shard];
 
             size_t found_element_index = static_cast<size_t>(element_index);
@@ -966,9 +967,11 @@ size_t HashedArrayDictionary<dictionary_key_type, sharded>::getItemsShortCircuit
             else
                 set_value(key_index, element, false);
         }
+        else
+        {
+            set_value(key_index, AttributeType{}, true);
+        }
     }
-
-    return keys_found;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sharded>
@@ -980,8 +983,10 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         if constexpr (sharded)
             parallel_loader.emplace(*this);
 
-        QueryPipeline pipeline(source_ptr->loadAll());
-        DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
+        BlockIO io = source_ptr->loadAll();
+
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
 
         UInt64 pull_time_microseconds = 0;
         UInt64 process_time_microseconds = 0;
@@ -990,33 +995,36 @@ void HashedArrayDictionary<dictionary_key_type, sharded>::loadData()
         size_t total_blocks = 0;
         String dictionary_name = getFullName();
 
-        Block block;
-        while (true)
+        io.executeWithCallbacks([&]()
         {
-            Stopwatch watch_pull;
-            bool has_data = executor.pull(block);
-            pull_time_microseconds += watch_pull.elapsedMicroseconds();
-
-            if (!has_data)
-                break;
-
-            ++total_blocks;
-            total_rows += block.rows();
-
-            Stopwatch watch_process;
-            resize(total_rows);
-
-            if (parallel_loader)
+            Block block;
+            while (true)
             {
-                parallel_loader->addBlock(std::move(block));
+                Stopwatch watch_pull;
+                bool has_data = executor.pull(block);
+                pull_time_microseconds += watch_pull.elapsedMicroseconds();
+
+                if (!has_data)
+                    break;
+
+                ++total_blocks;
+                total_rows += block.rows();
+
+                Stopwatch watch_process;
+                resize(total_rows);
+
+                if (parallel_loader)
+                {
+                    parallel_loader->addBlock(std::move(block));
+                }
+                else
+                {
+                    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+                    blockToAttributes(block, arena_holder, /* shard = */ 0);
+                }
+                process_time_microseconds += watch_process.elapsedMicroseconds();
             }
-            else
-            {
-                DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-                blockToAttributes(block, arena_holder, /* shard = */ 0);
-            }
-            process_time_microseconds += watch_process.elapsedMicroseconds();
-        }
+        });
 
         if (parallel_loader)
             parallel_loader->finish();
@@ -1155,7 +1163,7 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
     {
         if (dictionary_key_type == DictionaryKeyType::Simple && dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed array dictionary");
-        else if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
+        if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed array dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -1171,11 +1179,11 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         std::string dictionary_layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "hashed_array" : "complex_key_hashed_array";
         std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
 
-        Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
+        Int64 shards = config.getInt64(config_prefix + dictionary_layout_prefix + ".shards", 1);
         if (shards <= 0 || 128 < shards)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [1, 128]", full_name);
 
-        Int64 shard_load_queue_backlog = config.getInt(config_prefix + dictionary_layout_prefix + ".shard_load_queue_backlog", 10000);
+        Int64 shard_load_queue_backlog = config.getInt64(config_prefix + dictionary_layout_prefix + ".shard_load_queue_backlog", 10000);
         if (shard_load_queue_backlog <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
@@ -1188,10 +1196,10 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
         const auto & settings = context->getSettingsRef();
 
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+        configuration.use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings[Setting::dictionary_use_async_executor];
 
-        if (settings.max_execution_time.totalSeconds() > 0)
-            configuration.load_timeout = std::chrono::seconds(settings.max_execution_time.totalSeconds());
+        if (settings[Setting::max_execution_time].totalSeconds() > 0)
+            configuration.load_timeout = std::chrono::seconds(settings[Setting::max_execution_time].totalSeconds());
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
@@ -1199,12 +1207,12 @@ void registerDictionaryArrayHashed(DictionaryFactory & factory)
                 return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
-        else
-        {
-            if (shards > 1)
-                return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-        }
+
+        if (shards > 1)
+            return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, true>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<HashedArrayDictionary<DictionaryKeyType::Complex, false>>(
+            dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed_array",

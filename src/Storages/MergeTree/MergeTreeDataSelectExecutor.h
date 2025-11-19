@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Core/QueryProcessingStage.h>
+#include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Interpreters/ActionsDAG.h>
 
 
 namespace DB
@@ -13,8 +14,7 @@ namespace DB
 
 class KeyCondition;
 struct QueryIdHolder;
-
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+class VectorSimilarityIndexCache;
 
 /** Executes SELECT queries on data from the merge tree.
   */
@@ -34,41 +34,68 @@ public:
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         bool enable_parallel_reading = false) const;
 
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
-        MergeTreeData::DataPartsVector parts,
-        std::vector<AlterConversionsPtr> alter_conversions,
+        RangesInDataPartsPtr parts,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         UInt64 max_block_size,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr,
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr,
         ReadFromMergeTree::AnalysisResultPtr merge_tree_select_result_ptr = nullptr,
-        bool enable_parallel_reading = false) const;
+        bool enable_parallel_reading = false,
+        std::shared_ptr<ParallelReadingExtension> extension_ = nullptr) const;
 
     /// Get an estimation for the number of marks we are going to read.
     /// Reads nothing. Secondary indexes are not used.
     /// This method is used to select best projection for table.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
-        MergeTreeData::DataPartsVector parts,
+        RangesInDataParts parts,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
         ContextPtr context,
         size_t num_streams,
-        std::shared_ptr<PartitionIdToMaxBlock> max_block_numbers_to_read = nullptr) const;
+        PartitionIdToMaxBlockPtr max_block_numbers_to_read = nullptr) const;
 
     static MarkRanges markRangesFromPKRange(
-        const MergeTreeData::DataPartPtr & part,
+        const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
+        const std::optional<KeyCondition> & total_offset_condition,
+        MarkRanges * exact_ranges,
         const Settings & settings,
+        LoggerPtr log);
+
+    static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
+        MergeTreeIndexPtr index_helper,
+        MergeTreeIndexConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const RangesInDataPartReadHints & in_read_hints,
+        const MergeTreeReaderSettings & reader_settings,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
+        LoggerPtr log);
+
+    static MarkRanges filterMarksUsingMergedIndex(
+        MergeTreeIndices indices,
+        MergeTreeIndexMergedConditionPtr condition,
+        MergeTreeData::DataPartPtr part,
+        const MarkRanges & ranges,
+        const MergeTreeReaderSettings & reader_settings,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
 private:
@@ -77,32 +104,10 @@ private:
 
     /// Get the approximate value (bottom estimate - only by full marks) of the number of rows falling under the index.
     static size_t getApproximateTotalRowsToRead(
-        const MergeTreeData::DataPartsVector & parts,
+        const RangesInDataParts & parts,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
         const Settings & settings,
-        LoggerPtr log);
-
-    static MarkRanges filterMarksUsingIndex(
-        MergeTreeIndexPtr index_helper,
-        MergeTreeIndexConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
-        LoggerPtr log);
-
-    static MarkRanges filterMarksUsingMergedIndex(
-        MergeTreeIndices indices,
-        MergeTreeIndexMergedConditionPtr condition,
-        MergeTreeData::DataPartPtr part,
-        const MarkRanges & ranges,
-        const Settings & settings,
-        const MergeTreeReaderSettings & reader_settings,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -117,20 +122,19 @@ private:
 
     /// Select the parts in which there can be data that satisfy `minmax_idx_condition` and that match the condition on `_part`,
     ///  as well as `max_block_number_to_read`.
-    static void selectPartsToRead(
-        MergeTreeData::DataPartsVector & parts,
-        std::vector<AlterConversionsPtr> & alter_conversions,
+    static RangesInDataParts selectPartsToRead(
+        const RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        PartFilterCounters & counters);
+        PartFilterCounters & counters,
+        QueryStatusPtr query_status);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static void selectPartsToReadWithUUIDFilter(
-        MergeTreeData::DataPartsVector & parts,
-        std::vector<AlterConversionsPtr> & alter_conversions,
+    static RangesInDataParts selectPartsToReadWithUUIDFilter(
+        const RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
@@ -152,31 +156,31 @@ public:
 
     /// The same as roundRowsOrBytesToMarks, but return no more than max_marks.
     static size_t minMarksForConcurrentRead(
-        size_t rows_setting,
-        size_t bytes_setting,
-        size_t rows_granularity,
-        size_t bytes_granularity,
-        size_t max_marks);
+        size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset column.
+    /// If possible, construct optional key condition from predicates containing _part_offset and _part column.
     static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAGPtr & filter_dag, ContextPtr context);
+        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+
+    /// If possible, construct optional key condition from predicates containing _part_offset + _part_starting_offset expression.
+    static void buildKeyConditionFromTotalOffset(
+        std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
     /// If expression found, return a set with allowed part names (std::nullopt otherwise).
     static std::optional<std::unordered_set<String>> filterPartsByVirtualColumns(
+        const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
-        const MergeTreeData::DataPartsVector & parts,
-        const ActionsDAGPtr & filter_dag,
+        const RangesInDataParts & parts,
+        const ActionsDAG::Node * predicate,
         ContextPtr context);
 
     /// Filter parts using minmax index and partition key.
-    static void filterPartsByPartition(
+    static RangesInDataParts filterPartsByPartition(
+        const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
-        MergeTreeData::DataPartsVector & parts,
-        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
@@ -189,18 +193,31 @@ public:
     /// For every part, select mark ranges to read.
     /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
-        MergeTreeData::DataPartsVector && parts,
-        std::vector<AlterConversionsPtr> && alter_conversions,
+        RangesInDataParts parts_with_ranges,
         StorageMetadataPtr metadata_snapshot,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
+        const std::optional<KeyCondition> & total_offset_condition,
         const UsefulSkipIndexes & skip_indexes,
         const MergeTreeReaderSettings & reader_settings,
         LoggerPtr log,
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
-        bool use_skip_indexes);
+        bool use_skip_indexes,
+        bool find_exact_ranges,
+        bool is_final_query,
+        bool is_parallel_reading_from_replicas);
+
+    /// Filter parts using query condition cache.
+    static void filterPartsByQueryConditionCache(
+        RangesInDataParts & parts_with_ranges,
+        const SelectQueryInfo & select_query_info,
+        const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ContextPtr & context,
+        LoggerPtr log);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
@@ -208,7 +225,7 @@ public:
     static MergeTreeDataSelectSamplingData getSampling(
         const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
-        const MergeTreeData::DataPartsVector & parts,
+        const RangesInDataParts & parts,
         KeyCondition & key_condition,
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,

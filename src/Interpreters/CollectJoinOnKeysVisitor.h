@@ -6,7 +6,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -17,7 +16,7 @@ class TableJoin;
 
 namespace ASOF
 {
-    enum class Inequality;
+    enum class Inequality : uint8_t;
 }
 
 namespace ErrorCodes
@@ -25,7 +24,7 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
-enum class JoinIdentifierPos
+enum class JoinIdentifierPos : uint8_t
 {
     /// Position can't be established, identifier not resolved
     Unknown,
@@ -74,7 +73,7 @@ public:
         else
         {
             if (ast->children.empty())
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", queryToString(ast));
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", ast->formatForErrorMessage());
 
             /// visit children
         }

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Core/Block_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -12,26 +12,8 @@ namespace DB
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
 public:
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_)
-        : IInterpreterUnionOrSelectQuery(query_ptr_, Context::createCopy(context_), options_)
-    {
-    }
-
-    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_)
-        : query_ptr(query_ptr_)
-        , context(context_)
-        , options(options_)
-        , max_streams(context->getSettingsRef().max_threads)
-    {
-        if (options.shard_num)
-            context->addSpecialScalar(
-                "_shard_num",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
-        if (options.shard_count)
-            context->addSpecialScalar(
-                "_shard_count",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
-    }
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextPtr & context_, const SelectQueryOptions & options_);
+    IInterpreterUnionOrSelectQuery(const ASTPtr & query_ptr_, const ContextMutablePtr & context_, const SelectQueryOptions & options_);
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
     QueryPipelineBuilder buildQueryPipeline();
@@ -41,7 +23,7 @@ public:
 
     ~IInterpreterUnionOrSelectQuery() override = default;
 
-    Block getSampleBlock() { return result_header; }
+    SharedHeader getSampleBlock() { return result_header; }
 
     size_t getMaxStreams() const { return max_streams; }
 
@@ -62,7 +44,7 @@ public:
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
-    Block result_header;
+    SharedHeader result_header;
     SelectQueryOptions options;
     StorageLimitsList storage_limits;
 

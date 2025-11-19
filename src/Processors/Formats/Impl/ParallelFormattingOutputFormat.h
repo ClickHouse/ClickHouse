@@ -7,8 +7,8 @@
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
@@ -16,6 +16,7 @@
 
 #include <deque>
 #include <atomic>
+
 
 namespace CurrentMetrics
 {
@@ -26,6 +27,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 namespace ErrorCodes
 {
@@ -71,7 +75,7 @@ public:
     struct Params
     {
         WriteBuffer & out;
-        const Block & header;
+        SharedHeader header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
     };
@@ -87,12 +91,14 @@ public:
         LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
-        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+        auto internal_formatter = internal_formatter_creator(buf);
+        save_totals_and_extremes_in_statistics = internal_formatter->areTotalsAndExtremesUsedInFinalize();
+        supports_non_default_serialization_kinds = internal_formatter->supportsSpecialSerializationKinds();
         buf.finalize();
 
         /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
         /// and n threads for formatting.
-        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
+        processing_units.resize(std::min(params.max_threads_for_parallel_formatting + 2, size_t{1024}));
 
         /// Do not put any code that could throw an exception under this line.
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
@@ -111,9 +117,10 @@ public:
 
     String getName() const override { return "ParallelFormattingOutputFormat"; }
 
-    void flush() override
+    void flushImpl() override
     {
-        need_flush = true;
+        if (!auto_flush)
+            need_flush = true;
     }
 
     void writePrefix() override
@@ -122,15 +129,9 @@ public:
         started_prefix = true;
     }
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         finishAndWait();
-    }
-
-    void onProgress(const Progress & value) override
-    {
-        std::lock_guard lock(statistics_mutex);
-        statistics.progress.incrementPiecewiseAtomically(value);
     }
 
     void writeSuffix() override
@@ -139,19 +140,15 @@ public:
         started_suffix = true;
     }
 
-    String getContentType() const override
-    {
-        WriteBufferFromOwnString buffer;
-        return internal_formatter_creator(buffer)->getContentType();
-    }
-
     bool supportsWritingException() const override
     {
-        WriteBufferFromOwnString buffer;
+        NullWriteBuffer buffer;
         return internal_formatter_creator(buffer)->supportsWritingException();
     }
 
     void setException(const String & exception_message_) override { exception_message = exception_message_; }
+
+    bool supportsSpecialSerializationKinds() const override { return supports_non_default_serialization_kinds; }
 
 private:
     void consume(Chunk chunk) final
@@ -205,7 +202,7 @@ private:
     };
 
     /// Some information about what methods to call from internal parser.
-    enum class ProcessingUnitType
+    enum class ProcessingUnitType : uint8_t
     {
         START,
         PLAIN,
@@ -259,6 +256,7 @@ private:
     /// We change statistics in onProgress() which can be called from different threads.
     std::mutex statistics_mutex;
     bool save_totals_and_extremes_in_statistics;
+    bool supports_non_default_serialization_kinds;
 
     String exception_message;
     bool exception_is_rethrown = false;
@@ -268,7 +266,7 @@ private:
     bool collected_suffix = false;
     bool collected_finalize = false;
 
-    void finishAndWait();
+    void finishAndWait() noexcept;
 
     void onBackgroundException()
     {
@@ -312,6 +310,12 @@ private:
         std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
+    }
+    void setRowsBeforeAggregation(size_t rows_before_aggregation) override
+    {
+        std::lock_guard lock(statistics_mutex);
+        statistics.rows_before_aggregation = rows_before_aggregation;
+        statistics.applied_aggregation = true;
     }
 };
 

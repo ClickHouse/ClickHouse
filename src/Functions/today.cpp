@@ -1,11 +1,9 @@
-#include <Common/DateLUT.h>
-
 #include <Core/Field.h>
-
 #include <DataTypes/DataTypeDate.h>
-
-#include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 
 
 namespace DB
@@ -85,9 +83,30 @@ public:
 
 REGISTER_FUNCTION(Today)
 {
-    factory.registerFunction<TodayOverloadResolver>();
-    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
-    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::CaseInsensitive);
+    FunctionDocumentation::Description description = "Returns the current date at moment of query analysis. Same as `toDate(now())`.";
+    FunctionDocumentation::Syntax syntax = "today()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the current date", {"Date"}};
+    FunctionDocumentation::Examples example = {
+        {
+            "Usage example",
+            "SELECT today() AS today, curdate() AS curdate, current_date() AS current_date FORMAT Pretty",
+R"(
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━┓
+┃      today ┃    curdate ┃ current_date ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━┩
+│ 2025-03-03 │ 2025-03-03 │   2025-03-03 │
+└────────────┴────────────┴──────────────┘
+)"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<TodayOverloadResolver>(documentation);
+    factory.registerAlias("current_date", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("curdate", TodayOverloadResolver::name, FunctionFactory::Case::Insensitive);
 }
 
 }

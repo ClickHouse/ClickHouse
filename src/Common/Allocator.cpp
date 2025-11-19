@@ -1,12 +1,15 @@
 #include <Common/Allocator.h>
-#include <Common/Exception.h>
-#include <Common/logger_useful.h>
-#include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/Exception.h>
+#include <Common/VersionNumber.h>
+#include <Common/formatReadable.h>
+#include <Common/logger_useful.h>
+#include <Common/AllocationInterceptors.h>
 
 #include <base/errnoToString.h>
 #include <base/getPageSize.h>
 
+#include <Poco/Environment.h>
 #include <Poco/Logger.h>
 #include <sys/mman.h> /// MADV_POPULATE_WRITE
 
@@ -35,6 +38,20 @@ auto adjustToPageSize(void * buf, size_t len, size_t page_size)
     const size_t next_page_start = ((address_numeric + page_size - 1) / page_size) * page_size;
     return std::make_pair(reinterpret_cast<void *>(next_page_start), len - (next_page_start - address_numeric));
 }
+
+bool madviseSupportsMadvPopulateWrite()
+{
+    /// Can't rely for detection on madvise(MADV_POPULATE_WRITE) == EINVAL, since this will be returned in many other cases.
+    VersionNumber linux_version(Poco::Environment::osVersion());
+    VersionNumber supported_version(5, 14, 0);
+    bool is_supported = linux_version >= supported_version;
+    if (!is_supported)
+        LOG_TRACE(getLogger("Allocator"), "Disabled page pre-faulting (kernel is too old).");
+    return is_supported;
+}
+
+const bool is_supported_by_kernel = madviseSupportsMadvPopulateWrite();
+
 #endif
 
 void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
@@ -43,16 +60,11 @@ void prefaultPages([[maybe_unused]] void * buf_, [[maybe_unused]] size_t len_)
     if (len_ < POPULATE_THRESHOLD)
         return;
 
-    static const size_t page_size = ::getPageSize();
-    if (len_ < page_size) /// Rounded address should be still within [buf, buf + len).
+    if (unlikely(!is_supported_by_kernel))
         return;
 
-    auto [buf, len] = adjustToPageSize(buf_, len_, page_size);
-    if (::madvise(buf, len, MADV_POPULATE_WRITE) < 0)
-        LOG_TRACE(
-            LogFrequencyLimiter(getLogger("Allocator"), 1),
-            "Attempt to populate pages failed: {} (EINVAL is expected for kernels < 5.14)",
-            errnoToString(errno));
+    auto [buf, len] = adjustToPageSize(buf_, len_, staticPageSize);
+    ::madvise(buf, len, MADV_POPULATE_WRITE);
 #endif
 }
 
@@ -60,22 +72,22 @@ template <bool clear_memory, bool populate>
 void * allocNoTrack(size_t size, size_t alignment)
 {
     void * buf;
-    if (alignment <= MALLOC_MIN_ALIGNMENT)
+    if (likely(alignment <= MALLOC_MIN_ALIGNMENT))
     {
         if constexpr (clear_memory)
-            buf = ::calloc(size, 1);
+            buf = __real_calloc(size, 1);
         else
-            buf = ::malloc(size);
+            buf = __real_malloc(size);
 
-        if (nullptr == buf)
+        if (unlikely(nullptr == buf))
             throw DB::ErrnoException(DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Allocator: Cannot malloc {}.", ReadableSize(size));
     }
     else
     {
         buf = nullptr;
-        int res = posix_memalign(&buf, alignment, size);
+        int res = __real_posix_memalign(&buf, alignment, size);
 
-        if (0 != res)
+        if (unlikely(0 != res))
             throw DB::ErrnoException(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Cannot allocate memory (posix_memalign) {}.", ReadableSize(size));
 
@@ -91,13 +103,13 @@ void * allocNoTrack(size_t size, size_t alignment)
 
 void freeNoTrack(void * buf)
 {
-    ::free(buf);
+    __real_free(buf);
 }
 
 void checkSize(size_t size)
 {
     /// More obvious exception in case of possible overflow (instead of just "Cannot mmap").
-    if (size >= 0x8000000000000000ULL)
+    if (unlikely(size >= 0x8000000000000000ULL))
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Too large size ({}) passed to allocator. It indicates an error.", size);
 }
 
@@ -105,7 +117,7 @@ void checkSize(size_t size)
 
 
 /// Constant is chosen almost arbitrarily, what I observed is 128KB is too small, 1MB is almost indistinguishable from 64MB and 1GB is too large.
-extern const size_t POPULATE_THRESHOLD = 16 * 1024 * 1024;
+extern const size_t POPULATE_THRESHOLD = std::max(Int64{16 * 1024 * 1024}, ::getPageSize());
 
 template <bool clear_memory_, bool populate>
 void * Allocator<clear_memory_, populate>::alloc(size_t size, size_t alignment)
@@ -144,17 +156,23 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
     {
         /// nothing to do.
         /// BTW, it's not possible to change alignment while doing realloc.
+        return buf;
     }
-    else if (alignment <= MALLOC_MIN_ALIGNMENT)
+
+    if (likely(alignment <= MALLOC_MIN_ALIGNMENT))
     {
         /// Resize malloc'd memory region with no special alignment requirement.
-        auto trace_free = CurrentMemoryTracker::free(old_size);
+        /// Realloc can do 2 possible things:
+        /// - expand existing memory region
+        /// - allocate new memory block and free the old one
+        /// Because we don't know which option will be picked we need to make sure there is enough
+        /// memory for all options
         auto trace_alloc = CurrentMemoryTracker::alloc(new_size);
-        trace_free.onFree(buf, old_size);
 
-        void * new_buf = ::realloc(buf, new_size);
-        if (nullptr == new_buf)
+        void * new_buf = __real_realloc(buf, new_size);
+        if (unlikely(nullptr == new_buf))
         {
+            [[maybe_unused]] auto trace_free = CurrentMemoryTracker::free(new_size);
             throw DB::ErrnoException(
                 DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY,
                 "Allocator: Cannot realloc from {} to {}",
@@ -162,8 +180,10 @@ void * Allocator<clear_memory_, populate>::realloc(void * buf, size_t old_size, 
                 ReadableSize(new_size));
         }
 
+        auto trace_free = CurrentMemoryTracker::free(old_size);
+        trace_free.onFree(buf, old_size);
+        trace_alloc.onAlloc(new_buf, new_size);
         buf = new_buf;
-        trace_alloc.onAlloc(buf, new_size);
 
         if constexpr (clear_memory)
             if (new_size > old_size)

@@ -1,7 +1,7 @@
-#include "KafkaProducer.h"
-#include "Core/Block.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
+#include <Storages/Kafka/KafkaProducer.h>
+#include <Core/Block.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -60,7 +60,7 @@ void KafkaProducer::produce(const String & message, size_t rows_in_message, cons
     {
         const auto & timestamp_column = assert_cast<const ColumnUInt32 &>(*columns[timestamp_column_index.value()]);
         const auto timestamp = std::chrono::seconds{timestamp_column.getElement(last_row)};
-        builder.timestamp(timestamp);
+        (void)builder.timestamp(timestamp);
     }
 
     while (!shutdown_called)
@@ -105,6 +105,11 @@ void KafkaProducer::finish()
         ProfileEvents::increment(ProfileEvents::KafkaProducerFlushes);
         break;
     }
+}
+
+void KafkaProducer::cancel() noexcept
+{
+    /* no op */
 }
 
 }

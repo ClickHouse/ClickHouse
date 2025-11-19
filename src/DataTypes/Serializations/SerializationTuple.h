@@ -12,14 +12,15 @@ public:
     using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
-    SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_)
-        : elems(elems_), have_explicit_names(have_explicit_names_)
+    SerializationTuple(const ElementSerializations & elems_, bool has_explicit_names_)
+        : elems(elems_), has_explicit_names(has_explicit_names_)
     {
     }
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const override;
@@ -53,7 +54,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
             DeserializeBinaryBulkSettings & settings,
-            DeserializeBinaryBulkStatePtr & state) const override;
+            DeserializeBinaryBulkStatePtr & state,
+            SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
@@ -64,6 +66,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
             ColumnPtr & column,
+            size_t rows_offset,
             size_t limit,
             DeserializeBinaryBulkSettings & settings,
             DeserializeBinaryBulkStatePtr & state,
@@ -73,14 +76,17 @@ public:
 
 private:
     ElementSerializations elems;
-    bool have_explicit_names;
+    bool has_explicit_names;
 
     size_t getPositionByName(const String & name) const;
 
     template <typename ReturnType = void>
     ReturnType deserializeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const;
 
-    template <typename ReturnType = void>
+    template <typename ReturnType>
+    ReturnType deserializeTupleJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, auto && deserialize_element) const;
+
+    template <typename ReturnType>
     ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 
     template <typename ReturnType = void>

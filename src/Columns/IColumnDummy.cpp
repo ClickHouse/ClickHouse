@@ -25,6 +25,11 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
+DataTypePtr IColumnDummy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
+}
+
 void IColumnDummy::insert(const Field &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot insert element into {}", getName());
@@ -60,12 +65,9 @@ ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/
     return cloneDummy(bytes);
 }
 
-void IColumnDummy::expand(const IColumn::Filter & mask, bool inverted)
+void IColumnDummy::expand(const IColumn::Filter & mask, bool)
 {
-    size_t bytes = countBytesInFilter(mask);
-    if (inverted)
-        bytes = mask.size() - bytes;
-    s = bytes;
+    s = mask.size();
 }
 
 ColumnPtr IColumnDummy::permute(const Permutation & perm, size_t limit) const
@@ -81,7 +83,7 @@ ColumnPtr IColumnDummy::index(const IColumn & indexes, size_t limit) const
     if (indexes.size() < limit)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required.");
 
-    return cloneDummy(limit ? limit : s);
+    return cloneDummy(limit ? limit : indexes.size());
 }
 
 void IColumnDummy::getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
@@ -99,7 +101,7 @@ ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const
     return cloneDummy(offsets.back());
 }
 
-MutableColumns IColumnDummy::scatter(ColumnIndex num_columns, const Selector & selector) const
+MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");

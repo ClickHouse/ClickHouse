@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database
+# Tags: no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage, no-encrypted-storage
+# no-fasttest: The test is slow (too many small blocks)
+# no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
+#     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -25,7 +28,7 @@ function insert_data
         $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$TXN_SETTINGS"
         SETTINGS="$SETTINGS&session_check=1"
         BEGIN="begin transaction;"
-        COMMIT=$(echo -ne "\n\ncommit")
+        COMMIT=$(echo -ne "\n\n\ncommit")
     fi
 
     # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)
@@ -41,7 +44,7 @@ function insert_data
     else
         # client will send 1000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
         $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
-            --max_block_size=1000 --max_insert_block_size=1000 --multiquery -q \
+            --max_block_size=1000 --max_insert_block_size=1000 -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
             | grep -Fv "Transaction is not in RUNNING state"
     fi
@@ -51,8 +54,6 @@ function insert_data
     fi
 }
 
-export -f insert_data
-
 ID="02435_insert_init_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data 0
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
@@ -61,17 +62,21 @@ function thread_insert
 {
     # supress "Killed" messages from bash
     i=2
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         export ID="$TEST_MARK$RANDOM-$RANDOM-$i"
         export NUM="$i"
-        bash -c insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
+        insert_data 2>&1| grep -Fav "Killed" | grep -Fav "SESSION_IS_LOCKED" | grep -Fav "SESSION_NOT_FOUND"
         i=$((i + 1))
     done
 }
 
 function thread_select
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         $CLICKHOUSE_CLIENT --implicit_transaction=1 -q "with (select count() from dedup_test) as c select throwIf(c % 1000000 != 0, 'Expected 1000000 * N rows, got ' || toString(c)) format Null"
         sleep 0.$RANDOM;
     done
@@ -79,7 +84,9 @@ function thread_select
 
 function thread_cancel
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         SIGNAL="INT"
         if (( RANDOM % 2 )); then
             SIGNAL="KILL"
@@ -90,19 +97,15 @@ function thread_cancel
     done
 }
 
-export -f thread_insert;
-export -f thread_select;
-export -f thread_cancel;
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c thread_insert &
-timeout $TIMEOUT bash -c thread_select &
-timeout $TIMEOUT bash -c thread_cancel 2> /dev/null &
+thread_insert &
+thread_select &
+thread_cancel 2> /dev/null &
 
 wait
 
-$CLICKHOUSE_CLIENT -q 'system flush logs'
+#$CLICKHOUSE_CLIENT -q 'system flush logs'
 
 ID="02435_insert_last_${CLICKHOUSE_DATABASE}_$RANDOM"
 insert_data 1

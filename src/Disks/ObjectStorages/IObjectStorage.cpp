@@ -1,11 +1,13 @@
-#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Common/Exception.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Common/Exception.h>
+#include <Common/ObjectStorageKeyGenerator.h>
+#include <IO/WriteBufferFromString.h>
 
 
 namespace DB
@@ -17,6 +19,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
+}
+
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;
@@ -24,30 +31,35 @@ bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return !files.empty();
 }
 
-void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, int) const
+void IObjectStorage::listObjects(const std::string &, RelativePathsWithMetadata &, size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "listObjects() is not supported");
 }
 
-
-ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix) const
+/// Read single object
+SmallObjectDataWithMetadata IObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
+    const StoredObject & object,
+    const ReadSettings & read_settings,
+    size_t max_size_bytes,
+    std::optional<size_t> read_hint) const
 {
-    RelativePathsWithMetadata files;
-    listObjects(path_prefix, files, 0);
+    auto buffer = readObject(object, read_settings, read_hint);
+    SmallObjectDataWithMetadata result;
+    WriteBufferFromString out(result.data);
+    copyDataMaxBytes(*buffer, out, max_size_bytes);
+    out.finalize();
 
-    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
+    /// By default no metadata available, derived classes may override this method
+
+    return result;
 }
 
-std::optional<ObjectMetadata> IObjectStorage::tryGetObjectMetadata(const std::string & path) const
+ObjectStorageIteratorPtr IObjectStorage::iterate(const std::string & path_prefix, size_t max_keys, bool) const
 {
-    try
-    {
-        return getObjectMetadata(path);
-    }
-    catch (...)
-    {
-        return {};
-    }
+    RelativePathsWithMetadata files;
+    listObjects(path_prefix, files, max_keys);
+
+    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
 ThreadPool & IObjectStorage::getThreadPoolWriter()
@@ -78,21 +90,17 @@ void IObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
 
 const std::string & IObjectStorage::getCacheName() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName() is not implemented for object storage");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCacheName is not implemented for object storage");
 }
 
 ReadSettings IObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
-    ReadSettings settings{read_settings};
-    settings.for_object_storage = true;
-    return settings;
+    return read_settings;
 }
 
 WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings) const
 {
-    WriteSettings settings{write_settings};
-    settings.for_object_storage = true;
-    return settings;
+    return write_settings;
 }
 
 }

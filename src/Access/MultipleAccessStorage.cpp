@@ -28,17 +28,29 @@ using Storages = std::vector<StoragePtr>;
 MultipleAccessStorage::MultipleAccessStorage(const String & storage_name_)
     : IAccessStorage(storage_name_)
     , nested_storages(std::make_shared<Storages>())
-    , ids_cache(512 /* cache size */)
+    , ids_cache(CurrentMetrics::end(), CurrentMetrics::end(), 512 /* cache size */)
 {
 }
 
 MultipleAccessStorage::~MultipleAccessStorage()
 {
-    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    try
+    {
+        MultipleAccessStorage::shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+void MultipleAccessStorage::shutdown()
+{
+    /// It's better to shutdown the storages in the reverse order because they could depend on each other somehow.
     const auto storages = getStoragesPtr();
     for (const auto & storage : *storages | boost::adaptors::reversed)
     {
-        removeStorage(storage);
+        storage->shutdown();
     }
 }
 
@@ -70,6 +82,16 @@ void MultipleAccessStorage::removeStorage(const StoragePtr & storage_to_remove)
     new_storages->erase(new_storages->begin() + index);
     nested_storages = new_storages;
     ids_cache.clear();
+}
+
+void MultipleAccessStorage::removeAllStorages()
+{
+    /// It's better to remove the storages in the reverse order because they could depend on each other somehow.
+    const auto storages = getStoragesPtr();
+    for (const auto & storage : *storages | boost::adaptors::reversed)
+    {
+        removeStorage(storage);
+    }
 }
 
 std::vector<StoragePtr> MultipleAccessStorage::getStorages()
@@ -170,7 +192,7 @@ StoragePtr MultipleAccessStorage::getStorage(const UUID & id)
     auto storage = findStorage(id);
     if (storage)
         return storage;
-    throwNotFound(id);
+    throwNotFound(id, getStorageName());
 }
 
 
@@ -238,7 +260,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
 
     try
     {
-        source_storage->remove(ids);
+        source_storage->remove(ids); // NOLINT
         need_rollback = true;
         destination_storage->insert(to_move, ids);
     }
@@ -270,7 +292,7 @@ AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_n
         return storage->read(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
-        throwNotFound(id);
+        throwNotFound(id, getStorageName());
     else
         return nullptr;
 }
@@ -282,7 +304,7 @@ std::optional<std::pair<String, AccessEntityType>> MultipleAccessStorage::readNa
         return storage->readNameWithType(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
-        throwNotFound(id);
+        throwNotFound(id, getStorageName());
     else
         return std::nullopt;
 }
@@ -309,6 +331,27 @@ bool MultipleAccessStorage::isReadOnly(const UUID & id) const
 }
 
 
+bool MultipleAccessStorage::isEphemeral() const
+{
+    auto storages = getStoragesInternal();
+    for (const auto & storage : *storages)
+    {
+        if (!storage->isEphemeral())
+            return false;
+    }
+    return true;
+}
+
+
+bool MultipleAccessStorage::isEphemeral(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    if (storage)
+        return storage->isEphemeral(id);
+    return false;
+}
+
+
 void MultipleAccessStorage::startPeriodicReloading()
 {
     auto storages = getStoragesInternal();
@@ -331,7 +374,7 @@ void MultipleAccessStorage::reload(ReloadMode reload_mode)
 }
 
 
-bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
+bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id)
 {
     std::shared_ptr<IAccessStorage> storage_for_insertion;
 
@@ -354,7 +397,7 @@ bool MultipleAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & 
             getStorageName());
     }
 
-    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists))
+    if (storage_for_insertion->insert(id, entity, replace_if_exists, throw_if_exists, conflicting_id))
     {
         std::lock_guard lock{mutex};
         ids_cache.set(id, storage_for_insertion);
@@ -371,7 +414,7 @@ bool MultipleAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists
         return storage->remove(id, throw_if_not_exists);
 
     if (throw_if_not_exists)
-        throwNotFound(id);
+        throwNotFound(id, getStorageName());
     else
         return false;
 }
@@ -383,7 +426,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     if (!storage_for_updating)
     {
         if (throw_if_not_exists)
-            throwNotFound(id);
+            throwNotFound(id, getStorageName());
         else
             return false;
     }
@@ -394,7 +437,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
     {
         if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            auto new_entity = update_func(old_entity);
+            auto new_entity = update_func(old_entity, id);
             if (new_entity->getName() != old_entity->getName())
             {
                 for (const auto & storage : *storages)
@@ -418,6 +461,7 @@ bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 std::optional<AuthResult>
 MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address,
                                         const ExternalAuthenticators & external_authenticators,
+                                        const ClientInfo & client_info,
                                         bool throw_if_user_not_exists,
                                         bool allow_no_password, bool allow_plaintext_password) const
 {
@@ -426,7 +470,7 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     {
         const auto & storage = (*storages)[i];
         bool is_last_storage = (i == storages->size() - 1);
-        auto auth_result = storage->authenticate(credentials, address, external_authenticators,
+        auto auth_result = storage->authenticate(credentials, address, external_authenticators, client_info,
                                         (throw_if_user_not_exists && is_last_storage),
                                         allow_no_password, allow_plaintext_password);
         if (auth_result)
@@ -438,7 +482,7 @@ MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const P
     }
 
     if (throw_if_user_not_exists)
-        throwNotFound(AccessEntityType::USER, credentials.getUserName());
+        throwNotFound(AccessEntityType::USER, credentials.getUserName(), getStorageName());
     else
         return std::nullopt;
 }
@@ -486,7 +530,7 @@ void MultipleAccessStorage::backup(BackupEntriesCollector & backup_entries_colle
         throwBackupNotAllowed();
 }
 
-void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
+void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
 {
     auto storages = getStoragesInternal();
 
@@ -494,7 +538,7 @@ void MultipleAccessStorage::restoreFromBackup(RestorerFromBackup & restorer)
     {
         if (storage->isRestoreAllowed())
         {
-            storage->restoreFromBackup(restorer);
+            storage->restoreFromBackup(restorer, data_path_in_backup);
             return;
         }
     }

@@ -1,4 +1,4 @@
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 set optimize_move_functions_out_of_any = 0;
 
 SELECT 'set optimize_aggregators_of_group_by_keys = 1';

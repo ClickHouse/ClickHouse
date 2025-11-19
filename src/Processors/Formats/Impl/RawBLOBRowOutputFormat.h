@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 
 
@@ -29,7 +28,7 @@ class RawBLOBRowOutputFormat final : public IRowOutputFormat
 public:
     RawBLOBRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header_);
+        SharedHeader header_);
 
     String getName() const override { return "RawBLOBRowOutputFormat"; }
 

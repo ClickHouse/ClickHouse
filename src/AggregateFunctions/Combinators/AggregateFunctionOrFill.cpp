@@ -1,5 +1,5 @@
-#include "AggregateFunctionOrFill.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionOrFill.h>
 
 namespace DB
 {
@@ -7,7 +7,7 @@ namespace DB
 namespace
 {
 
-enum class Kind
+enum class Kind : uint8_t
 {
     OrNull,
     OrDefault
@@ -37,8 +37,7 @@ public:
     {
         if (kind == Kind::OrNull)
             return std::make_shared<AggregateFunctionOrFill<true>>(nested_function, arguments, params);
-        else
-            return std::make_shared<AggregateFunctionOrFill<false>>(nested_function, arguments, params);
+        return std::make_shared<AggregateFunctionOrFill<false>>(nested_function, arguments, params);
     }
 };
 

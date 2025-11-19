@@ -9,7 +9,7 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -18,9 +18,7 @@ using namespace GatherUtils;
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ZERO_ARRAY_OR_TUPLE_INDEX;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 class FunctionBitSlice : public IFunction
@@ -40,28 +38,22 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const size_t number_of_arguments = arguments.size();
+        FunctionArgumentDescriptors mandatory_args{
+            {"s", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String"},
+            {"offset", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
+        };
 
-        if (number_of_arguments < 2 || number_of_arguments > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                getName(), number_of_arguments);
+        FunctionArgumentDescriptors optional_args{
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeNumber), nullptr, "(U)Int8/16/32/64 or Float"},
+        };
 
-        if (!isString(arguments[0]) && !isStringOrFixedString(arguments[0]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                arguments[0]->getName(), getName());
-        if (arguments[0]->onlyNull())
-            return arguments[0];
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        if (!isNativeNumber(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                arguments[1]->getName(), getName());
-
-        if (number_of_arguments == 3 && !isNativeNumber(arguments[2]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of second argument of function {}",
-                arguments[2]->getName(), getName());
+        const auto & type = arguments[0].type;
+        if (type->onlyNull())
+            return type;
 
         return std::make_shared<DataTypeString>();
     }
@@ -92,18 +84,17 @@ public:
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             return executeForSource(column_start, column_length, start_const, length_const, StringSource(*col), input_rows_count);
-        else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
+        if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, FixedStringSource(*col_fixed), input_rows_count);
-        else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
+        if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, ConstSource<StringSource>(*col_const), input_rows_count);
-        else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
+        if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start, column_length, start_const, length_const, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                arguments[0].column->getName(), getName());
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
     }
 
     template <class Source>
@@ -417,7 +408,52 @@ public:
 
 REGISTER_FUNCTION(BitSlice)
 {
-    factory.registerFunction<FunctionBitSlice>();
+    FunctionDocumentation::Description description = "Returns a substring starting with the bit from the 'offset' index that is 'length' bits long.";
+    FunctionDocumentation::Syntax syntax = "bitSlice(s, offset[, length])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The String or Fixed String to slice.", {"String", "FixedString"}},
+        {"offset", R"(
+Returns the starting bit position (1-based indexing).
+- Positive values: count from the beginning of the string.
+- Negative values: count from the end of the string.
+
+        )", {"(U)Int8/16/32/64", "Float*"}},
+        {"length", R"(
+Optional. The number of bits to extract.
+- Positive values: extract `length` bits.
+- Negative values: extract from the offset to `(string_length - |length|)`.
+- Omitted: extract from offset to end of string.
+- If length is not a multiple of 8, the result is padded with zeros on the right.
+        )", {"(U)Int8/16/32/64", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
+    FunctionDocumentation::Examples examples = {{"Usage example",
+        R"(
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 8));
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 2));
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 9));
+SELECT bin('Hello'), bin(bitSlice('Hello', -4, 8));
+        )",
+        R"(
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 8))─┐
+│ 0100100001100101011011000110110001101111 │ 01001000                     │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 2))─┐
+│ 0100100001100101011011000110110001101111 │ 01000000                     │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 9))─┐
+│ 0100100001100101011011000110110001101111 │ 0100100000000000             │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', -4, 8))─┐
+│ 0100100001100101011011000110110001101111 │ 11110000                      │
+└──────────────────────────────────────────┴───────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitSlice>(documentation);
 }
 
 

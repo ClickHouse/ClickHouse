@@ -4,6 +4,7 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromFile.h>
@@ -12,6 +13,7 @@
 
 #include <boost/program_options.hpp>
 #include <filesystem>
+#include <iostream>
 
 namespace fs = std::filesystem;
 
@@ -31,7 +33,7 @@ namespace ErrorCodes
  * If test-mode option is added, files will be put by given url via PUT request.
  */
 
-void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
+static void processFile(const fs::path & file_path, const fs::path & dst_path, bool test_mode, bool link, WriteBuffer & metadata_buf)
 {
     String remote_path;
     RE2::FullMatch(file_path.string(), EXTRACT_PATH_PATTERN, &remote_path);
@@ -65,7 +67,12 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
 
         /// test mode for integration tests.
         if (test_mode)
-            dst_buf = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_file_path), Poco::Net::HTTPRequest::HTTP_PUT);
+        {
+            dst_buf = BuilderWriteBufferFromHTTP(Poco::URI(dst_file_path))
+                          .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                          .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
+                          .create();
+        }
         else
             dst_buf = std::make_shared<WriteBufferFromFile>(dst_file_path);
 
@@ -76,7 +83,7 @@ void processFile(const fs::path & file_path, const fs::path & dst_path, bool tes
 }
 
 
-void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
+static void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_mode, bool link)
 {
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 
@@ -88,7 +95,10 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
     {
         dst_path /= "store";
         auto files_root = dst_path / prefix;
-        root_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(files_root / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(files_root / ".index"))
+                      .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                      .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
+                      .create();
     }
     else
     {
@@ -111,13 +121,14 @@ void processTableFiles(const fs::path & data_path, fs::path dst_path, bool test_
             std::shared_ptr<WriteBuffer> directory_meta;
             if (test_mode)
             {
-                auto files_root = dst_path / prefix;
-                directory_meta = std::make_shared<WriteBufferFromHTTP>(HTTPConnectionGroupType::HTTP, Poco::URI(dst_path / directory_prefix / ".index"), Poco::Net::HTTPRequest::HTTP_PUT);
+                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(dst_path / directory_prefix / ".index"))
+                                    .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                                    .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
+                                    .create();
             }
             else
             {
                 dst_path = fs::canonical(dst_path);
-                auto files_root = dst_path / prefix;
                 fs::create_directories(dst_path / directory_prefix);
                 directory_meta = std::make_shared<WriteBufferFromFile>(dst_path / directory_prefix / ".index");
             }
@@ -159,7 +170,7 @@ try
     po::store(parsed, options);
     po::notify(options);
 
-    if (options.empty() || options.count("help"))
+    if (options.empty() || options.contains("help"))
     {
         std::cout << description << std::endl;
         exit(0); // NOLINT(concurrency-mt-unsafe)
@@ -167,7 +178,7 @@ try
 
     String metadata_path;
 
-    if (options.count("metadata-path"))
+    if (options.contains("metadata-path"))
         metadata_path = options["metadata-path"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No metadata-path option passed");
@@ -183,20 +194,20 @@ try
     auto test_mode = options.contains("test-mode");
     if (test_mode)
     {
-        if (options.count("url"))
+        if (options.contains("url"))
             root_path = options["url"].as<std::string>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No url option passed for test mode");
     }
     else
     {
-        if (options.count("output-dir"))
+        if (options.contains("output-dir"))
             root_path = options["output-dir"].as<std::string>();
         else
             root_path = fs::current_path();
     }
 
-    processTableFiles(fs_path, root_path, test_mode, options.count("link"));
+    processTableFiles(fs_path, root_path, test_mode, options.contains("link"));
 
     return 0;
 }

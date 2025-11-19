@@ -21,10 +21,11 @@ public:
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
 
+    /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
+    bool is_operator = false;
+
     bool is_window_function = false;
-
     bool compute_after_window_functions = false;
-
     bool is_lambda_function = false;
 
     /// This field is updated in executeTableFunction if its a parameterized_view
@@ -46,7 +47,7 @@ public:
 
     NullsAction nulls_action = NullsAction::EMPTY;
 
-    /// do not print empty parentheses if there are no args - compatibility with new AST for data types and engine names.
+    /// do not print empty parentheses if there are no args - compatibility with engine names.
     bool no_empty_args = false;
 
     /// Specifies where this function-like expression is used.
@@ -58,6 +59,8 @@ public:
         TABLE_ENGINE,
         DATABASE_ENGINE,
         BACKUP_NAME,
+        CODEC,
+        STATISTICS,
     };
     Kind kind = Kind::ORDINARY_FUNCTION;
 
@@ -80,24 +83,33 @@ public:
     bool hasSecretParts() const override;
 
 protected:
-    void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
 private:
-    void finishFormatWithWindow(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void finishFormatWithWindow(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
 };
 
 
 template <typename... Args>
-std::shared_ptr<ASTFunction> makeASTFunction(const String & name, Args &&... args)
+std::shared_ptr<ASTFunction> makeASTFunction(std::string_view name, Args &&... args)
 {
     auto function = std::make_shared<ASTFunction>();
 
     function->name = name;
+
     function->arguments = std::make_shared<ASTExpressionList>();
     function->children.push_back(function->arguments);
 
     function->arguments->children = { std::forward<Args>(args)... };
 
+    return function;
+}
+
+template <typename... Args>
+std::shared_ptr<ASTFunction> makeASTOperator(const String & name, Args &&... args)
+{
+    auto function = makeASTFunction(name, std::forward<Args>(args)...);
+    function->is_operator = true;
     return function;
 }
 
@@ -110,5 +122,8 @@ bool tryGetFunctionNameInto(const IAST * ast, String & name);
 inline String getFunctionName(const ASTPtr & ast) { return getFunctionName(ast.get()); }
 inline std::optional<String> tryGetFunctionName(const ASTPtr & ast) { return tryGetFunctionName(ast.get()); }
 inline bool tryGetFunctionNameInto(const ASTPtr & ast, String & name) { return tryGetFunctionNameInto(ast.get(), name); }
+
+/// Checks if function is a lambda function definition `lambda((x, y), x + y)`
+bool isASTLambdaFunction(const ASTFunction & function);
 
 }

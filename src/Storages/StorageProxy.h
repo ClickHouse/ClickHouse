@@ -26,8 +26,10 @@ public:
     bool supportsReplication() const override { return getNested()->supportsReplication(); }
     bool supportsParallelInsert() const override { return getNested()->supportsParallelInsert(); }
     bool supportsDeduplication() const override { return getNested()->supportsDeduplication(); }
-    bool noPushingToViews() const override { return getNested()->noPushingToViews(); }
+    bool noPushingToViewsOnInserts() const override { return getNested()->noPushingToViewsOnInserts(); }
     bool hasEvenlyDistributedRead() const override { return getNested()->hasEvenlyDistributedRead(); }
+    bool supportsSubcolumns() const override { return getNested()->supportsSubcolumns(); }
+    bool supportsDynamicSubcolumns() const override { return getNested()->supportsDynamicSubcolumns(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
 
@@ -62,7 +64,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override
     {
-        return getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+        getNested()->read(query_plan, column_names, storage_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
@@ -155,8 +157,8 @@ public:
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
-    std::optional<UInt64> totalRows(const Settings & settings) const override { return getNested()->totalRows(settings); }
-    std::optional<UInt64> totalBytes(const Settings & settings) const override { return getNested()->totalBytes(settings); }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 

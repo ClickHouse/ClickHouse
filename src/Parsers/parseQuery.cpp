@@ -4,9 +4,10 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/TokenIterator.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 #include <base/find_symbols.h>
@@ -67,7 +68,7 @@ WriteBuffer & operator<< (WriteBuffer & out, const Expected & expected)
 }
 
 
-/// Hilite place of syntax error.
+/// Highlight the place of syntax error.
 void writeQueryWithHighlightedErrorPositions(
     WriteBuffer & out,
     const char * begin,
@@ -90,18 +91,14 @@ void writeQueryWithHighlightedErrorPositions(
             out << "\033[41;1m \033[0m";
             return;
         }
-        else
-        {
-            ssize_t bytes_to_hilite = UTF8::seqLength(*current_position_to_hilite);
-            if (bytes_to_hilite > end - current_position_to_hilite)
-                bytes_to_hilite = end - current_position_to_hilite;
 
-            /// Bright on red background.
-            out << "\033[41;1m";
-            out.write(current_position_to_hilite, bytes_to_hilite);
-            out << "\033[0m";
-            pos = current_position_to_hilite + bytes_to_hilite;
-        }
+        ssize_t bytes_to_hilite = std::min<ssize_t>(UTF8::seqLength(*current_position_to_hilite), end - current_position_to_hilite);
+
+        /// Bright on red background.
+        out << "\033[41;1m";
+        out.write(current_position_to_hilite, bytes_to_hilite);
+        out << "\033[0m";
+        pos = current_position_to_hilite + bytes_to_hilite;
     }
     out.write(pos, end - pos);
 }
@@ -124,7 +121,13 @@ void writeQueryAroundTheError(
     else
     {
         if (num_positions_to_hilite)
-            out << ": " << std::string(positions_to_hilite[0].begin, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0].begin)) << ". ";
+        {
+            const char * example_begin = positions_to_hilite[0].begin;
+            size_t total_bytes = end - example_begin;
+            size_t show_bytes = UTF8::computeBytesBeforeWidth(
+                reinterpret_cast<const UInt8 *>(example_begin), total_bytes, 0, SHOW_CHARS_ON_SYNTAX_ERROR);
+            out << ": " << std::string(example_begin, show_bytes) << (show_bytes < total_bytes ? "... " : ". ");
+        }
     }
 }
 
@@ -149,7 +152,13 @@ void writeCommonErrorMessage(
     }
     else
     {
-        out << " ('" << std::string(last_token.begin, last_token.end - last_token.begin) << "')";
+        /// Do not print too long tokens.
+        size_t token_size_bytes = last_token.end - last_token.begin;
+        size_t token_preview_size_bytes = UTF8::computeBytesBeforeWidth(
+            reinterpret_cast<const UInt8 *>(last_token.begin), token_size_bytes, 0, SHOW_CHARS_ON_SYNTAX_ERROR);
+
+        out << " (" << std::string(last_token.begin, token_preview_size_bytes)
+            << (token_preview_size_bytes < token_size_bytes ? "..." : "") << ")";
     }
 
     /// If query is multiline.
@@ -192,15 +201,9 @@ std::string getLexicalErrorMessage(
     const std::string & query_description)
 {
     WriteBufferFromOwnString out;
+    out << getErrorTokenDescription(last_token.type) << ": ";
     writeCommonErrorMessage(out, begin, end, last_token, query_description);
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
-
-    out << getErrorTokenDescription(last_token.type);
-    if (last_token.size())
-    {
-       out << ": '" << std::string_view{last_token.begin, last_token.size()} << "'";
-    }
-
     return out.str();
 }
 
@@ -223,6 +226,32 @@ std::string getUnmatchedParenthesesErrorMessage(
     return out.str();
 }
 
+}
+
+
+static ASTInsertQuery * getInsertAST(const ASTPtr & ast)
+{
+    /// Either it is INSERT or EXPLAIN INSERT.
+    if (auto * explain = ast->as<ASTExplainQuery>())
+    {
+        if (auto explained_query = explain->getExplainedQuery())
+        {
+            return explained_query->as<ASTInsertQuery>();
+        }
+    }
+    else
+    {
+        return ast->as<ASTInsertQuery>();
+    }
+
+    return nullptr;
+}
+
+const char * getInsertData(const ASTPtr & ast)
+{
+    if (const ASTInsertQuery * insert = getInsertAST(ast))
+        return insert->data;
+    return nullptr;
 }
 
 
@@ -261,6 +290,33 @@ ASTPtr tryParseQuery(
     }
 
     Expected expected;
+
+    /** A shortcut - if Lexer found invalid tokens, fail early without full parsing.
+      * But there are certain cases when invalid tokens are permitted:
+      * 1. INSERT queries can have arbitrary data after the FORMAT clause, that is parsed by a different parser.
+      * 2. It can also be the case when there are multiple queries separated by semicolons, and the first queries are ok
+      * while subsequent queries have syntax errors.
+      *
+      * This shortcut is needed to avoid complex backtracking in case of obviously erroneous queries.
+      */
+    IParser::Pos lookahead(token_iterator);
+    if (!ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
+    {
+        while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
+        {
+            if (lookahead->isError())
+            {
+                out_error_message = getLexicalErrorMessage(query_begin, all_queries_end, *lookahead, hilite, query_description);
+                return nullptr;
+            }
+
+            ++lookahead;
+        }
+
+        /// We should not spoil the info about maximum parsed position in the original iterator.
+        tokens.reset();
+    }
+
     ASTPtr res;
     const bool parse_res = parser.parse(token_iterator, res, expected);
     const auto last_token = token_iterator.max();
@@ -270,29 +326,11 @@ ASTPtr tryParseQuery(
     if (res && max_parser_depth)
         res->checkDepth(max_parser_depth);
 
-    ASTInsertQuery * insert = nullptr;
-    if (parse_res)
-    {
-        if (auto * explain = res->as<ASTExplainQuery>())
-        {
-            if (auto explained_query = explain->getExplainedQuery())
-            {
-                insert = explained_query->as<ASTInsertQuery>();
-            }
-        }
-        else
-        {
-            insert = res->as<ASTInsertQuery>();
-        }
-    }
-
-    // If parsed query ends at data for insertion. Data for insertion could be
-    // in any format and not necessary be lexical correct, so we can't perform
-    // most of the checks.
-    if (insert && insert->data)
-    {
+    /// If parsed query ends at data for insertion. Data for insertion could be
+    /// in any format and not necessary be lexical correct, so we can't perform
+    /// most of the checks.
+    if (res && getInsertData(res))
         return res;
-    }
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error
@@ -416,7 +454,8 @@ std::pair<const char *, bool> splitMultipartQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    bool allow_settings_after_format_in_insert)
+    bool allow_settings_after_format_in_insert,
+    bool implicit_select)
 {
     ASTPtr ast;
 
@@ -424,7 +463,7 @@ std::pair<const char *, bool> splitMultipartQuery(
     const char * pos = begin; /// parser moves pos from begin to the end of current query
     const char * end = begin + queries.size();
 
-    ParserQuery parser(end, allow_settings_after_format_in_insert);
+    ParserQuery parser(end, allow_settings_after_format_in_insert, implicit_select);
 
     queries_list.clear();
 
@@ -434,11 +473,9 @@ std::pair<const char *, bool> splitMultipartQuery(
 
         ast = parseQueryAndMovePosition(parser, pos, end, "", true, max_query_size, max_parser_depth, max_parser_backtracks);
 
-        auto * insert = ast->as<ASTInsertQuery>();
-
-        if (insert && insert->data)
+        if (ASTInsertQuery * insert = getInsertAST(ast); insert && insert->data)
         {
-            /// Data for INSERT is broken on new line
+            /// Data for INSERT is broken on the new line
             pos = insert->data;
             while (*pos && *pos != '\n')
                 ++pos;

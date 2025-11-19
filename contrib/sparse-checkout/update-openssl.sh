@@ -7,7 +7,6 @@ echo '/*' > $FILES_TO_CHECKOUT
 echo '!/fuzz/*' >> $FILES_TO_CHECKOUT
 echo '!/test/*' >> $FILES_TO_CHECKOUT
 echo '!/doc/*' >> $FILES_TO_CHECKOUT
-echo '!/providers/*' >> $FILES_TO_CHECKOUT
 echo '!/apps/*' >> $FILES_TO_CHECKOUT
 
 git config core.sparsecheckout true

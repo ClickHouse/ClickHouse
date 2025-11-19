@@ -44,7 +44,7 @@ select * from tab order by (a + b) * c, sin(a / b);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c, sin(a / b)) where explain like '%sort description%';
   Prefix sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
   Result sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
-select * from tab order by (a + b) * c desc, sin(a / b) desc;
+select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first;
 4	4	4	4
 4	4	4	4
 3	3	3	3
@@ -55,7 +55,7 @@ select * from tab order by (a + b) * c desc, sin(a / b) desc;
 1	1	1	1
 0	0	0	0
 0	0	0	0
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first) where explain like '%sort description%';
   Prefix sort description: multiply(plus(a, b), c) DESC, sin(divide(a, b)) DESC
   Result sort description: multiply(plus(a, b), c) DESC, sin(divide(a, b)) DESC
 -- Exact match, mixed direction
@@ -168,7 +168,7 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c, 
   Prefix sort description: multiply(plus(a, b), c) ASC
   Result sort description: multiply(plus(a, b), c) ASC, intDiv(sin(divide(a, b)), 2) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc;
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc nulls first) where explain like '%sort description%';
   Prefix sort description: multiply(plus(a, b), c) DESC, intDiv(sin(divide(a, b)), 2) DESC
   Result sort description: multiply(plus(a, b), c) DESC, intDiv(sin(divide(a, b)), 2) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2);
@@ -373,7 +373,7 @@ select * from (select * from tab union all select * from tab5) order by (a + b) 
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5) order by (a + b) * c, sin(a / b) limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
-  Limit (preliminary LIMIT (without OFFSET))
+  Limit (preliminary LIMIT)
   Limit 3
     Prefix sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
     Result sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
@@ -391,7 +391,7 @@ select * from (select * from tab union all select * from tab5 union all select *
 0	0	0	0
 0	0	0	0
 select * from (explain plan actions = 1 select * from (select * from tab union all select * from tab5 union all select * from tab4) order by (a + b) * c, sin(a / b), d limit 3) where explain ilike '%sort description%' or explain like '%ReadType%' or explain like '%Limit%';
-  Limit (preliminary LIMIT (without OFFSET))
+  Limit (preliminary LIMIT)
   Limit 3
     Prefix sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC
     Result sort description: multiply(plus(a, b), c) ASC, sin(divide(a, b)) ASC, d ASC

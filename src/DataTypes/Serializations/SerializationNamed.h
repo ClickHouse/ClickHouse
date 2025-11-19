@@ -36,7 +36,8 @@ public:
 
     void deserializeBinaryBulkStatePrefix(
         DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const override;
+        DeserializeBinaryBulkStatePtr & state,
+        SubstreamsDeserializeStatesCache * cache) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
@@ -47,6 +48,7 @@ public:
 
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -65,7 +67,7 @@ private:
 
         DataTypePtr create(const DataTypePtr & prev) const override { return prev; }
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
-        SerializationPtr create(const SerializationPtr & prev) const override
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override
         {
             return std::make_shared<SerializationNamed>(prev, name, substream_type);
         }

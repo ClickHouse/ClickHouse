@@ -1,3 +1,4 @@
+#include <Storages/SetSettings.h>
 #include <Storages/StorageSet.h>
 #include <Storages/StorageFactory.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -8,7 +9,7 @@
 #include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/logger_useful.h>
@@ -23,17 +24,17 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-namespace ErrorCodes
+namespace SetSetting
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const SetSettingsString disk;
+    extern const SetSettingsBool persistent;
 }
-
 
 namespace ErrorCodes
 {
     extern const int INCORRECT_FILE_NAME;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
-
 
 class SetOrJoinSink : public SinkToStorage, WithContext
 {
@@ -42,12 +43,15 @@ public:
         ContextPtr ctx, StorageSetOrJoinBase & table_, const StorageMetadataPtr & metadata_snapshot_,
         const String & backup_path_, const String & backup_tmp_path_,
         const String & backup_file_name_, bool persistent_);
+    ~SetOrJoinSink() override;
 
     String getName() const override { return "SetOrJoinSink"; }
-    void consume(Chunk chunk) override;
+    void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
+    void cancelBuffers() noexcept;
+
     StorageSetOrJoinBase & table;
     StorageMetadataPtr metadata_snapshot;
     String backup_path;
@@ -68,7 +72,7 @@ SetOrJoinSink::SetOrJoinSink(
     const String & backup_tmp_path_,
     const String & backup_file_name_,
     bool persistent_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlock())
+    : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , WithContext(ctx)
     , table(table_)
     , metadata_snapshot(metadata_snapshot_)
@@ -77,14 +81,28 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_file_name(backup_file_name_)
     , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
     , compressed_backup_buf(*backup_buf)
-    , backup_stream(compressed_backup_buf, 0, metadata_snapshot->getSampleBlock())
+    , backup_stream(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()))
     , persistent(persistent_)
 {
 }
 
-void SetOrJoinSink::consume(Chunk chunk)
+SetOrJoinSink::~SetOrJoinSink()
 {
-    Block block = getHeader().cloneWithColumns(chunk.detachColumns());
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void SetOrJoinSink::cancelBuffers() noexcept
+{
+    compressed_backup_buf.cancel();
+    if (backup_buf)
+        backup_buf->cancel();
+}
+
+
+void SetOrJoinSink::consume(Chunk & chunk)
+{
+    Block block = getHeader().cloneWithColumns(chunk.getColumns());
 
     table.insertBlock(block, getContext());
     if (persistent)
@@ -97,11 +115,14 @@ void SetOrJoinSink::onFinish()
     if (persistent)
     {
         backup_stream.flush();
-        compressed_backup_buf.next();
-        backup_buf->next();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+    }
+    else
+    {
+        cancelBuffers();
     }
 }
 
@@ -129,7 +150,6 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
-
 
     if (relative_path_.empty())
         throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "Join and Set storages require data path");
@@ -193,7 +213,7 @@ size_t StorageSet::getSize(ContextPtr) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalRows(const Settings &) const
+std::optional<UInt64> StorageSet::totalRows(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -203,7 +223,7 @@ std::optional<UInt64> StorageSet::totalRows(const Settings &) const
     return current_set->getTotalRowCount();
 }
 
-std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
+std::optional<UInt64> StorageSet::totalBytes(ContextPtr) const
 {
     SetPtr current_set;
     {
@@ -215,7 +235,7 @@ std::optional<UInt64> StorageSet::totalBytes(const Settings &) const
 
 void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &)
 {
-    if (disk->exists(path))
+    if (disk->existsDirectory(path))
         disk->removeRecursive(path);
     else
         LOG_INFO(getLogger("StorageSet"), "Path {} is already removed from disk {}", path, disk->getName());
@@ -238,9 +258,9 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
 
 void StorageSetOrJoinBase::restore()
 {
-    if (!disk->exists(fs::path(path) / "tmp/"))
+    if (!disk->existsDirectory(fs::path(path) / "tmp"))
     {
-        disk->createDirectories(fs::path(path) / "tmp/");
+        disk->createDirectories(fs::path(path) / "tmp");
         return;
     }
 
@@ -254,7 +274,7 @@ void StorageSetOrJoinBase::restore()
         const auto & name = dir_it->name();
         const auto & file_path = dir_it->path();
 
-        if (disk->isFile(file_path)
+        if (disk->existsFile(file_path)
             && endsWith(name, file_suffix)
             && disk->getFileSize(file_path) > 0)
         {
@@ -281,12 +301,12 @@ void StorageSetOrJoinBase::restore()
 void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
 {
     ContextPtr ctx = nullptr;
-    auto backup_buf = disk->readFile(file_path);
+    auto backup_buf = disk->readFile(file_path, getReadSettings());
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
     ProfileInfo info;
-    while (Block block = backup_stream.read())
+    for (Block block = backup_stream.read(); !block.empty(); block = backup_stream.read())
     {
         info.update(block);
         insertBlock(block, ctx);
@@ -323,10 +343,10 @@ void registerStorageSet(StorageFactory & factory)
         if (has_settings)
             set_settings.loadFromQuery(*args.storage_def);
 
-        DiskPtr disk = args.getContext()->getDisk(set_settings.disk);
+        DiskPtr disk = args.getContext()->getDisk(set_settings[SetSetting::disk]);
         return std::make_shared<StorageSet>(
-            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings.persistent);
-    }, StorageFactory::StorageFeatures{ .supports_settings = true, });
+            disk, args.relative_data_path, args.table_id, args.columns, args.constraints, args.comment, set_settings[SetSetting::persistent]);
+    }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, });
 }
 
 

@@ -1,14 +1,10 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <Common/SettingsChanges.h>
+#include <Columns/IColumn.h>
 #include <Common/SimpleIncrement.h>
-#include <Client/ConnectionPool.h>
-#include <Client/ConnectionPoolWithFailover.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -17,6 +13,7 @@
 namespace DB
 {
 
+struct DistributedSettings;
 struct Settings;
 class Context;
 
@@ -31,6 +28,13 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
+
+class SettingsChanges;
+
+class ConnectionPoolWithFailover;
+using ConnectionPoolWithFailoverPtr = std::shared_ptr<ConnectionPoolWithFailover>;
+
+class IStorageCluster;
 
 /** A distributed table that resides on multiple servers.
   * Uses data from the specified database and tables on each server.
@@ -61,21 +65,8 @@ public:
         const DistributedSettings & distributed_settings_,
         LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
-
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        LoadingStrictnessLevel mode,
-        ClusterPtr owned_cluster_ = {});
+        ASTPtr remote_table_function_ptr_ = {},
+        bool is_remote_function_ = false);
 
     ~StorageDistributed() override;
 
@@ -94,17 +85,7 @@ public:
 
     bool isRemote() const override { return true; }
 
-    /// Snapshot for StorageDistributed contains descriptions
-    /// of columns of type Object for each shard at the moment
-    /// of the start of query.
-    struct SnapshotData : public StorageSnapshot::Data
-    {
-        ColumnsDescriptionByShardNum objects_by_shard;
-    };
-
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const override;
-    StorageSnapshotPtr getStorageSnapshotForQuery(
-        const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
@@ -120,7 +101,7 @@ public:
         size_t /*num_streams*/) override;
 
     bool supportsParallelInsert() const override { return true; }
-    std::optional<UInt64> totalBytes(const Settings &) const override;
+    std::optional<UInt64> totalBytes(ContextPtr) const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool /*async_insert*/) override;
 
@@ -176,7 +157,7 @@ private:
     /// Get directory queue thread and connection pool created by disk and subdirectory name
     ///
     /// Used for the INSERT into Distributed in case of distributed_foreground_insert==1, from DistributedSink.
-    DistributedAsyncInsertDirectoryQueue & getDirectoryQueue(const DiskPtr & disk, const std::string & name);
+    std::shared_ptr<DistributedAsyncInsertDirectoryQueue> getDirectoryQueue(const DiskPtr & disk, const std::string & name);
 
     /// Parse the address corresponding to the directory name of the directory queue
     Cluster::Addresses parseAddresses(const std::string & name) const;
@@ -226,14 +207,17 @@ private:
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
+    bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
+
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
-    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
+    const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
     void delayInsertOrThrowIfNeeded() const;
 
-    std::optional<QueryPipeline> distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    std::optional<QueryPipeline>
+    distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();
@@ -252,6 +236,7 @@ private:
     const String cluster_name;
 
     bool has_sharding_key;
+    ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
@@ -271,7 +256,7 @@ private:
     /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
     VolumePtr data_volume;
 
-    DistributedSettings distributed_settings;
+    std::unique_ptr<DistributedSettings> distributed_settings;
 
     struct ClusterNodeData
     {
@@ -286,6 +271,8 @@ private:
     // For random shard index generation
     mutable std::mutex rng_mutex;
     pcg64 rng;
+
+    bool is_remote_function;
 };
 
 }

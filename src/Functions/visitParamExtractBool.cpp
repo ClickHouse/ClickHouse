@@ -21,35 +21,53 @@ using FunctionSimpleJSONExtractBool = FunctionsStringSearch<ExtractParamImpl<Nam
 
 REGISTER_FUNCTION(VisitParamExtractBool)
 {
-    factory.registerFunction<FunctionSimpleJSONExtractBool>(FunctionDocumentation{
-        .description = "Parses a true/false value from the value of the field named field_name. The result is UInt8.",
-        .syntax = "simpleJSONExtractBool(json, field_name)",
-        .arguments
-        = {{"json", "The JSON in which the field is searched for. String."},
-           {"field_name", "The name of the field to search for. String literal."}},
-        .returned_value
-        = R"(It returns 1 if the value of the field is true, 0 otherwise. This means this function will return 0 including (and not only) in the following cases:
- - If the field doesn't exists.
- - If the field contains true as a string, e.g.: {"field":"true"}.
- - If the field contains 1 as a numerical value.)",
-        .examples
-        = {{.name = "simple",
-            .query = R"(CREATE TABLE jsons
+    FunctionDocumentation::Description description = R"(
+Parses a true/false value from the value of the field named `field_name`.
+The result is `UInt8`.
+)";
+    FunctionDocumentation::Syntax syntax = "simpleJSONExtractBool(json, field_name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"json", "The JSON in which the field is searched for.", {"String"}},
+        {"field_name", "The name of the field to search for.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+    R"(
+Returns `1` if the value of the field is `true`, `0` otherwise. This means this function will return `0` including (and not only) in the following cases:
+- If the field doesn't exists.
+- If the field contains `true` as a string, e.g.: `{"field":"true"}`.
+- If the field contains `1` as a numerical value.)",
+    {"UInt8"}
+    };
+    FunctionDocumentation::Examples example = {
+    {
+        "Usage example",
+        R"(
+CREATE TABLE jsons
 (
-    json String
+    `json` String
 )
-ENGINE = Memory;
+ENGINE = MergeTree
+ORDER BY tuple();
 
 INSERT INTO jsons VALUES ('{"foo":false,"bar":true}');
 INSERT INTO jsons VALUES ('{"foo":"true","qux":1}');
 
 SELECT simpleJSONExtractBool(json, 'bar') FROM jsons ORDER BY json;
-SELECT simpleJSONExtractBool(json, 'foo') FROM jsons ORDER BY json;)",
-            .result = R"(0
+SELECT simpleJSONExtractBool(json, 'foo') FROM jsons ORDER BY json;
+        )",
+        R"(
+0
 1
 0
-0)"}},
-        .categories{"JSON"}});
+0
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 4};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::JSON;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, example, introduced_in, category};
+
+    factory.registerFunction<FunctionSimpleJSONExtractBool>(documentation);
     factory.registerAlias("visitParamExtractBool", "simpleJSONExtractBool");
 }
 

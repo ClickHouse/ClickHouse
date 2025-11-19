@@ -1,26 +1,47 @@
-#include <Interpreters/DDLTask.h>
-#include <base/sort.h>
-#include <Common/DNSResolver.h>
-#include <Common/isLocalAddress.h>
+#include <Access/AccessControl.h>
+#include <Access/Role.h>
+#include <Access/User.h>
+#include <Core/ServerSettings.h>
+#include <Core/ServerUUID.h>
+#include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Poco/Net/NetException.h>
-#include <Common/logger_useful.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
+#include <Interpreters/DDLWorker.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
-#include <Parsers/ASTDropQuery.h>
-
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
+#include <base/sort.h>
+#include <Poco/Net/NetException.h>
+#include <Common/DNSResolver.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/isLocalAddress.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsUInt64 distributed_ddl_entry_format_version;
+    extern const SettingsUInt64 log_queries_cut_to_length;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_query_size;
+    }
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
+}
 
 namespace ErrorCodes
 {
@@ -29,6 +50,8 @@ namespace ErrorCodes
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
     extern const int DNS_ERROR;
+    extern const int UNKNOWN_USER;
+    extern const int UNKNOWN_ROLE;
 }
 
 
@@ -44,7 +67,27 @@ bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
     try
     {
-        return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
+        auto address = DNSResolver::instance().resolveAddress(host_name, port);
+        return DB::isLocalAddress(address, clickhouse_port);
+    }
+    catch (const DB::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Avoid "Host not found" exceptions
+        return false;
+    }
+}
+
+bool HostID::isLoopbackHost() const
+{
+    try
+    {
+        auto address = DNSResolver::instance().resolveAddress(host_name, port);
+        return address.host().isLoopback();
     }
     catch (const DB::NetException &)
     {
@@ -70,10 +113,14 @@ void DDLLogEntry::assertVersion() const
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context->getSettingsRef().distributed_ddl_entry_format_version;
+    version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
     if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
+
+    parent_table_uuid = context->getParentTable();
+    if (parent_table_uuid.has_value())
+        version = std::max(version, PARENT_TABLE_UUID_VERSION);
 
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
@@ -106,7 +153,7 @@ String DDLLogEntry::toString() const
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = *settings;
-        wb << "settings: " << serializeAST(ast) << "\n";
+        wb << "settings: " << ast.formatWithSecretsOneLine() << "\n";
     }
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
@@ -122,6 +169,22 @@ String DDLLogEntry::toString() const
 
     if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
         wb << "is_backup_restore: " << is_backup_restore << "\n";
+
+    if (version >= PARENT_TABLE_UUID_VERSION)
+    {
+        wb << "parent: ";
+        if (parent_table_uuid.has_value())
+            wb << parent_table_uuid.value();
+        else
+            wb << "-";
+        wb << "\n";
+    }
+
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        wb << "initiator_user: " << initiator_user << "\n";
+        wb << "initiator_roles: " << initiator_user_roles << "\n";
+    }
 
     return wb.str();
 }
@@ -157,7 +220,8 @@ void DDLLogEntry::parse(const String & data)
             ParserSetQuery parser{true};
             constexpr UInt64 max_depth = 16;
             constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth, max_backtracks);
+            ASTPtr settings_ast = parseQuery(
+                parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -182,6 +246,24 @@ void DDLLogEntry::parse(const String & data)
         checkChar('\n', rb);
     }
 
+    if (version >= PARENT_TABLE_UUID_VERSION)
+    {
+        rb >> "parent: ";
+        if (!checkChar('-', rb))
+        {
+            UUID uuid;
+            rb >> uuid;
+            parent_table_uuid = uuid;
+        }
+        rb >> "\n";
+    }
+
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        rb >> "initiator_user: " >> initiator_user >> "\n";
+        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
+    }
+
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -198,24 +280,16 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     const char * end = begin + entry.query.size();
     const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
+    ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth, settings.max_parser_backtracks);
-    if (auto * query_drop = query->as<ASTDropQuery>())
-    {
-        ASTs drops = query_drop->getRewrittenASTsOfSingleTable();
-        if (drops.size() > 1)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supports drop multiple tables for ddl task.");
-
-        query = drops[0];
-    }
+    query = parseQuery(parser_query, begin, end, description, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
-    query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
+    query_str = query->formatWithSecretsOneLine();
+    query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -224,8 +298,34 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
     query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+
+    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
+    if (preserve_user && !entry.initiator_user.empty())
+    {
+        const auto & access_control = from_context->getAccessControl();
+
+        /// Find the user by name
+        auto user_id = access_control.find<User>(entry.initiator_user);
+        if (!user_id)
+            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
+
+        /// Find all roles by name
+        std::vector<UUID> role_ids;
+        role_ids.reserve(entry.initiator_user_roles.size());
+        for (const auto & role_name : entry.initiator_user_roles)
+        {
+            auto role_id = access_control.find<Role>(role_name);
+            if (!role_id)
+                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
+            role_ids.push_back(*role_id);
+        }
+
+        query_context->setUser(*user_id, role_ids);
+    }
+
     if (entry.settings)
         query_context->applySettingsChanges(*entry.settings);
+
     return query_context;
 }
 
@@ -240,10 +340,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
     if (config_host_name)
     {
-        bool is_local_port = (maybe_secure_port && HostID(*config_host_name, *maybe_secure_port).isLocalAddress(*maybe_secure_port)) ||
-                             HostID(*config_host_name, port).isLocalAddress(port);
-
-        if (!is_local_port)
+        if (!IsSelfHostname(*config_host_name, maybe_secure_port, port))
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
@@ -268,12 +365,28 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            /// The port is considered local if it matches TCP or TCP secure port that the server is listening.
-            bool is_local_port
-                = (maybe_secure_port && host.isLocalAddress(*maybe_secure_port)) || host.isLocalAddress(port);
-
-            if (!is_local_port)
+            if (!IsSelfHostID(host, maybe_secure_port, port))
                 continue;
+
+            if (host.isLoopbackHost())
+            {
+                String current_host_id_str = host.toString();
+                String active_id = toString(ServerUUID::get());
+                String active_path = fs::path(global_context->getDDLWorker().getReplicasDir()) / current_host_id_str / "active";
+                String content;
+                Coordination::Stat stat;
+                if (!zookeeper->tryGet(active_path, content, &stat))
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which has not been claimed by any replica", current_host_id_str);
+                    continue;
+                }
+
+                if (content != active_id)
+                {
+                    LOG_TRACE(log, "HostID {} is a loopback host which is claimed by another replica {}", current_host_id_str, content);
+                    continue;
+                }
+            }
         }
         catch (const Exception & e)
         {
@@ -388,28 +501,27 @@ bool DDLTask::tryFindHostInCluster()
                                         "There are two exactly the same ClickHouse instances {} in cluster {}",
                                         address.readableString(), cluster_name);
                     }
-                    else
-                    {
-                        /* Circular replication is used.
+
+                    /* Circular replication is used.
                          * It is when every physical node contains
                          * replicas of different shards of the same table.
                          * To distinguish one replica from another on the same node,
                          * every shard is placed into separate database.
                          * */
-                        is_circular_replicated = true;
-                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
+                    is_circular_replicated = true;
+                    auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
 
-                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
-                        if (query_with_table)
-                        {
-                            if (!query_with_table->database)
-                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                                "For a distributed DDL on circular replicated cluster its table name "
-                                                "must be qualified by database name.");
+                    /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
+                    if (query_with_table)
+                    {
+                        if (!query_with_table->database)
+                            throw Exception(
+                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                "For a distributed DDL on circular replicated cluster its table name "
+                                "must be qualified by database name.");
 
-                            if (default_database == query_with_table->getDatabase())
-                                return true;
-                        }
+                        if (default_database == query_with_table->getDatabase())
+                            return true;
                     }
                 }
                 found_exact_match = true;
@@ -445,13 +557,11 @@ bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
                                     "There are two the same ClickHouse instances in cluster {} : {} and {}",
                                     cluster_name, address_in_cluster.readableString(), address.readableString());
                 }
-                else
-                {
-                    found_via_resolving = true;
-                    host_shard_num = shard_num;
-                    host_replica_num = replica_num;
-                    address_in_cluster = address;
-                }
+
+                found_via_resolving = true;
+                host_shard_num = shard_num;
+                host_replica_num = replica_num;
+                address_in_cluster = address;
             }
         }
     }
@@ -477,6 +587,20 @@ String DDLTask::getShardID() const
         res += *it + (std::next(it) != replica_names.end() ? "," : "");
 
     return res;
+}
+
+bool DDLTask::IsSelfHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+{
+    // If the checking_host_id has a loopback address, it is not considered as the self host_id.
+    // Because all replicas will try to claim it as their own hosts.
+    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+        || checking_host_id.isLocalAddress(self_port);
+}
+
+bool DDLTask::IsSelfHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+{
+    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
 }
 
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
@@ -546,7 +670,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
     assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
-    if (!value.get<UInt64>())
+    if (!value.safeGet<UInt64>())
         return;
 
     zookeeper->createIfNotExists(getSyncedNodePath(), "");
@@ -573,12 +697,30 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
+
+    if (finalizer)
+    {
+        finalizer();
+        finalizer = FinalizerCallback();
+    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
-    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(cluster_name).get()))
+    String name = cluster_name;
+    bool all_groups = false;
+    if (name.starts_with(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX))
+    {
+        name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
+        all_groups = true;
+    }
+
+    if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
+    {
+        if (all_groups)
+            return replicated_db->tryGetAllGroupsCluster();
         return replicated_db->tryGetCluster();
+    }
     return {};
 }
 

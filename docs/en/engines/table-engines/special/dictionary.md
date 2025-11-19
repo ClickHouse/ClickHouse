@@ -1,10 +1,14 @@
 ---
-slug: /en/engines/table-engines/special/dictionary
+description: 'The `Dictionary` engine displays the dictionary data as a ClickHouse
+  table.'
+sidebar_label: 'Dictionary'
 sidebar_position: 20
-sidebar_label: Dictionary
+slug: /engines/table-engines/special/dictionary
+title: 'Dictionary table engine'
+doc_type: 'reference'
 ---
 
-# Dictionary Table Engine
+# Dictionary table engine
 
 The `Dictionary` engine displays the [dictionary](../../../sql-reference/dictionaries/index.md) data as a ClickHouse table.
 
@@ -12,7 +16,7 @@ The `Dictionary` engine displays the [dictionary](../../../sql-reference/diction
 
 As an example, consider a dictionary of `products` with the following configuration:
 
-``` xml
+```xml
 <dictionaries>
     <dictionary>
         <name>products</name>
@@ -45,7 +49,7 @@ As an example, consider a dictionary of `products` with the following configurat
 
 Query the dictionary data:
 
-``` sql
+```sql
 SELECT
     name,
     type,
@@ -59,37 +63,37 @@ FROM system.dictionaries
 WHERE name = 'products'
 ```
 
-``` text
+```text
 ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
 │ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-You can use the [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) function to get the dictionary data in this format.
+You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) function to get the dictionary data in this format.
 
-This view isn’t helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
+This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
 Syntax:
 
-``` sql
+```sql
 CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 ```
 
 Usage example:
 
-``` sql
-create table products (product_id UInt64, title String) Engine = Dictionary(products);
+```sql
+CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
 ```
 
       Ok
 
-Take a look at what’s in the table.
+Take a look at what's in the table.
 
-``` sql
-select * from products limit 1;
+```sql
+SELECT * FROM products LIMIT 1;
 ```
 
-``` text
+```text
 ┌────product_id─┬─title───────────┐
 │        152689 │ Some item       │
 └───────────────┴─────────────────┘
@@ -97,4 +101,4 @@ select * from products limit 1;
 
 **See Also**
 
-- [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)
+- [Dictionary function](/sql-reference/table-functions/dictionary)

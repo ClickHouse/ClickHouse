@@ -22,8 +22,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -88,7 +86,7 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
         {
             bytes_read += res;
             if (throttler)
-                throttler->add(res, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+                throttler->throttle(res);
         }
 
 
@@ -173,7 +171,8 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
     if (new_pos + (working_buffer.end() - pos) == file_offset_of_buffer_end)
         return new_pos;
 
-    if (file_offset_of_buffer_end - working_buffer.size() <= static_cast<size_t>(new_pos)
+    /// NOLINTBEGIN(readability-else-after-return)
+    if (file_offset_of_buffer_end - working_buffer.size() <= new_pos
         && new_pos <= file_offset_of_buffer_end)
     {
         /// Position is still inside the buffer.
@@ -232,6 +231,7 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 
         return seek_pos;
     }
+    /// NOLINTEND(readability-else-after-return)
 }
 
 
@@ -253,7 +253,7 @@ void ReadBufferFromFileDescriptor::rewind()
     file_offset_of_buffer_end = 0;
 }
 
-size_t ReadBufferFromFileDescriptor::getFileSize()
+std::optional<size_t> ReadBufferFromFileDescriptor::tryGetFileSize()
 {
     return getSizeFromFileDescriptor(fd, getFileName());
 }

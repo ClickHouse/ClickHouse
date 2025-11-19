@@ -1,10 +1,11 @@
-#include <Interpreters/Cache/LRUFileCachePriority.h>
-#include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/EvictionCandidates.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/randomSeed.h>
-#include <Common/logger_useful.h>
+#include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/LRUFileCachePriority.h>
 #include <pcg-random/pcg_random.hpp>
+#include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
+#include <Common/logger_useful.h>
+#include <Common/randomSeed.h>
 
 namespace CurrentMetrics
 {
@@ -16,10 +17,8 @@ namespace ProfileEvents
 {
     extern const Event FilesystemCacheEvictionSkippedFileSegments;
     extern const Event FilesystemCacheEvictionTries;
-    extern const Event FilesystemCacheEvictMicroseconds;
-    extern const Event FilesystemCacheEvictedBytes;
-    extern const Event FilesystemCacheEvictedFileSegments;
     extern const Event FilesystemCacheEvictionSkippedEvictingFileSegments;
+    extern const Event FilesystemCacheEvictionReusedIterator;
 }
 
 namespace DB
@@ -33,11 +32,12 @@ namespace ErrorCodes
 LRUFileCachePriority::LRUFileCachePriority(
     size_t max_size_,
     size_t max_elements_,
-    StatePtr state_,
-    const std::string & description_)
+    const std::string & description_,
+    StatePtr state_)
     : IFileCachePriority(max_size_, max_elements_)
     , description(description_)
     , log(getLogger("LRUFileCachePriority" + (description.empty() ? "" : "(" + description + ")")))
+    , eviction_pos(queue.end())
 {
     if (state_)
         state = state_;
@@ -97,9 +97,16 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
-        entry->key, entry->offset, entry->size);
+        entry->key, entry->offset, entry->size.load());
 
     return LRUIterator(this, iterator);
+}
+
+void LRUFileCachePriority::increasePriority(LRUQueue::iterator it, const CachePriorityGuard::Lock &)
+{
+    if (eviction_pos == it)
+        eviction_pos = std::next(it);
+    queue.splice(queue.end(), queue, it);
 }
 
 LRUFileCachePriority::LRUQueue::iterator
@@ -115,8 +122,10 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Lo
 
     LOG_TEST(
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
-        entry.key, entry.offset, entry.size);
+        entry.key, entry.offset, entry.size.load());
 
+    if (eviction_pos == it)
+        eviction_pos = std::next(it);
     return queue.erase(it);
 }
 
@@ -124,6 +133,9 @@ void LRUFileCachePriority::updateSize(int64_t size)
 {
     chassert(size != 0);
     chassert(size > 0 || state->current_size >= size_t(-size));
+
+    LOG_TEST(log, "Updating size with {}, current is {}",
+             size, state->current_size.load());
 
     state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
@@ -163,10 +175,22 @@ bool LRUFileCachePriority::LRUIterator::operator ==(const LRUIterator & other) c
     return cache_priority == other.cache_priority && iterator == other.iterator;
 }
 
-void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard::Lock & lock)
+void LRUFileCachePriority::iterate(IterateFunc func, const CachePriorityGuard::Lock & lock)
 {
-    for (auto it = queue.begin(); it != queue.end();)
+    iterateImpl(queue.begin(), func, lock);
+}
+
+LRUFileCachePriority::LRUQueue::iterator
+LRUFileCachePriority::iterateImpl(LRUQueue::iterator start_pos, IterateFunc func, const CachePriorityGuard::Lock & lock)
+{
+    const size_t max_elements_to_iterate = queue.size();
+    auto it = start_pos;
+
+    for (size_t iterated_elements = 0; iterated_elements < max_elements_to_iterate; ++iterated_elements)
     {
+        if (it == queue.end())
+            it = queue.begin();
+
         const auto & entry = **it;
 
         if (entry.size == 0)
@@ -214,7 +238,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.size, metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.size.load(), metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
         auto result = func(*locked_key, metadata);
@@ -222,7 +246,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
         {
             case IterationResult::BREAK:
             {
-                return;
+                return it;
             }
             case IterationResult::CONTINUE:
             {
@@ -236,6 +260,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
             }
         }
     }
+    return queue.end();
 }
 
 bool LRUFileCachePriority::canFit( /// NOLINT
@@ -253,10 +278,14 @@ bool LRUFileCachePriority::canFit(
     size_t elements,
     size_t released_size_assumption,
     size_t released_elements_assumption,
-    const CachePriorityGuard::Lock &) const
+    const CachePriorityGuard::Lock &,
+    const size_t * max_size_,
+    const size_t * max_elements_) const
 {
-    return (max_size == 0 || state->current_size + size - released_size_assumption <= max_size)
-        && (max_elements == 0 || state->current_elements_num + elements - released_elements_assumption <= max_elements);
+    return (max_size == 0
+            || (state->current_size + size - released_size_assumption <= (max_size_ ? *max_size_ : max_size.load())))
+        && (max_elements == 0
+            || state->current_elements_num + elements - released_elements_assumption <= (max_elements_ ? *max_elements_ : max_elements.load()));
 }
 
 bool LRUFileCachePriority::collectCandidatesForEviction(
@@ -265,6 +294,7 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
     FileCacheReserveStat & stat,
     EvictionCandidates & res,
     IFileCachePriority::IteratorPtr /* reservee */,
+    bool continue_from_last_eviction_pos,
     const UserID &,
     const CachePriorityGuard::Lock & lock)
 {
@@ -273,9 +303,95 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         return true;
     }
 
+    auto can_fit = [&]
+    {
+        return canFit(size, elements, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
+    };
+
+    iterateForEviction(res, stat, can_fit, continue_from_last_eviction_pos, lock);
+
+    if (can_fit())
+    {
+        /// `res` contains eviction candidates. Do we have any?
+        if (res.size() > 0)
+        {
+            /// As eviction is done without a cache priority lock,
+            /// then if some space was partially available and some needed
+            /// to be freed via eviction, we need to make sure that this
+            /// partially available space is still available
+            /// after we finish with eviction for non-available space.
+            /// So we create a space holder for the currently available part
+            /// of the required space for the duration of eviction of the other
+            /// currently non-available part of the space.
+
+            const size_t hold_size = size > stat.total_stat.releasable_size
+                ? size - stat.total_stat.releasable_size
+                : 0;
+
+            const size_t hold_elements = elements > stat.total_stat.releasable_count
+                ? elements - stat.total_stat.releasable_count
+                : 0;
+
+            if (hold_size || hold_elements)
+                res.setSpaceHolder(hold_size, hold_elements, *this, lock);
+        }
+
+        // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
+        //          "Took hold of size {} and elements {}",
+        //          res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
+
+        return true;
+    }
+
+    return false;
+}
+
+IFileCachePriority::CollectStatus LRUFileCachePriority::collectCandidatesForEviction(
+    size_t desired_size,
+    size_t desired_elements_count,
+    size_t max_candidates_to_evict,
+    FileCacheReserveStat & stat,
+    EvictionCandidates & res,
+    const CachePriorityGuard::Lock & lock)
+{
+    auto desired_limits_satisfied = [&]()
+    {
+        return canFit(0, 0, stat.total_stat.releasable_size, stat.total_stat.releasable_count,
+                      lock, &desired_size, &desired_elements_count);
+    };
+    auto status = CollectStatus::CANNOT_EVICT;
+    auto stop_condition = [&]()
+    {
+        if (desired_limits_satisfied())
+        {
+            status = CollectStatus::SUCCESS;
+            return true;
+        }
+        if (max_candidates_to_evict && res.size() >= max_candidates_to_evict)
+        {
+            status = CollectStatus::REACHED_MAX_CANDIDATES_LIMIT;
+            return true;
+        }
+        return false;
+    };
+    iterateForEviction(res, stat, stop_condition, false, lock);
+    chassert(status != CollectStatus::SUCCESS || stop_condition());
+    return status;
+}
+
+void LRUFileCachePriority::iterateForEviction(
+    EvictionCandidates & res,
+    FileCacheReserveStat & stat,
+    StopConditionFunc stop_condition,
+    bool continue_from_last_eviction_pos,
+    const CachePriorityGuard::Lock & lock)
+{
+    if (stop_condition())
+        return;
+
     ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionTries);
 
-    IterateFunc iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
         const auto & file_segment = segment_metadata->file_segment;
         chassert(file_segment->assertCorrectness());
@@ -287,59 +403,36 @@ bool LRUFileCachePriority::collectCandidatesForEviction(
         }
         else
         {
-            stat.update(segment_metadata->size(), file_segment->getKind(), false);
             ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionSkippedFileSegments);
+            stat.update(segment_metadata->size(), file_segment->getKind(), false);
         }
-
-        return IterationResult::CONTINUE;
     };
 
-    auto can_fit = [&]
+    auto start_pos = queue.begin();
+    if (continue_from_last_eviction_pos && eviction_pos != queue.end() && start_pos != eviction_pos)
     {
-        return canFit(size, elements, stat.total_stat.releasable_size, stat.total_stat.releasable_count, lock);
-    };
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictionReusedIterator);
+        start_pos = eviction_pos;
+    }
 
-    iterate([&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
+    auto iteration_pos = iterateImpl(
+        start_pos,
+        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
     {
-        return can_fit() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata);
+        if (stop_condition())
+            return IterationResult::BREAK;
+        iterate_func(locked_key, segment_metadata);
+        return stop_condition() ? IterationResult::BREAK : IterationResult::CONTINUE;
     }, lock);
 
-    if (can_fit())
-    {
-        /// As eviction is done without a cache priority lock,
-        /// then if some space was partially available and some needed
-        /// to be freed via eviction, we need to make sure that this
-        /// partially available space is still available
-        /// after we finish with eviction for non-available space.
-        /// So we create a space holder for the currently available part
-        /// of the required space for the duration of eviction of the other
-        /// currently non-available part of the space.
-
-        const size_t hold_size = size > stat.total_stat.releasable_size
-            ? size - stat.total_stat.releasable_size
-            : 0;
-
-        const size_t hold_elements = elements > stat.total_stat.releasable_count
-            ? elements - stat.total_stat.releasable_count
-            : 0;
-
-        if (hold_size || hold_elements)
-            res.setSpaceHolder(hold_size, hold_elements, *this, lock);
-
-        // LOG_TEST(log, "Collected {} candidates for eviction (total size: {}). "
-        //          "Took hold of size {} and elements {}",
-        //          res.size(), stat.total_stat.releasable_size, hold_size, hold_elements);
-
-        return true;
-    }
-    else
-    {
-        return false;
-    }
+    if (continue_from_last_eviction_pos)
+        eviction_pos = iteration_pos;
 }
 
-LRUFileCachePriority::LRUIterator
-LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const CachePriorityGuard::Lock &)
+LRUFileCachePriority::LRUIterator LRUFileCachePriority::move(
+    LRUIterator & it,
+    LRUFileCachePriority & other,
+    const CachePriorityGuard::Lock &)
 {
     const auto & entry = *it.getEntry();
     if (entry.size == 0)
@@ -361,6 +454,8 @@ LRUFileCachePriority::move(LRUIterator & it, LRUFileCachePriority & other, const
     }
 #endif
 
+    if (other.eviction_pos == it.iterator)
+        other.eviction_pos = std::next(it.iterator);
     queue.splice(queue.end(), other.queue, it.iterator);
 
     updateSize(entry.size);
@@ -383,48 +478,33 @@ IFileCachePriority::PriorityDumpPtr LRUFileCachePriority::dump(const CachePriori
 }
 
 bool LRUFileCachePriority::modifySizeLimits(
-    size_t max_size_, size_t max_elements_, double /* size_ratio_ */, const CachePriorityGuard::Lock & lock)
+    size_t max_size_, size_t max_elements_, double /* size_ratio_ */, const CachePriorityGuard::Lock &)
 {
     if (max_size == max_size_ && max_elements == max_elements_)
         return false; /// Nothing to change.
 
-    auto check_limits_satisfied = [&]()
+    if (state->current_size > max_size_ || state->current_elements_num > max_elements_)
     {
-        return (max_size_ == 0 || state->current_size <= max_size_)
-            && (max_elements_ == 0 || state->current_elements_num <= max_elements_);
-    };
-
-    if (check_limits_satisfied())
-    {
-        max_size = max_size_;
-        max_elements = max_elements_;
-        return true;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot modify size limits to {} in size and {} in elements: "
+                        "not enough space freed. Current size: {}/{}, elements: {}/{} ({})",
+                        max_size_, max_elements_, state->current_size.load(), max_size.load(),
+                        state->current_elements_num.load(), max_elements.load(), description);
     }
 
-    auto iterate_func = [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-    {
-        chassert(segment_metadata->file_segment->assertCorrectness());
-
-        if (!segment_metadata->releasable())
-            return IterationResult::CONTINUE;
-
-        auto segment = segment_metadata->file_segment;
-        locked_key.removeFileSegment(segment->offset(), segment->lock());
-
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedFileSegments);
-        ProfileEvents::increment(ProfileEvents::FilesystemCacheEvictedBytes, segment->getDownloadedSize());
-        return IterationResult::REMOVE_AND_CONTINUE;
-    };
-
-    auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::FilesystemCacheEvictMicroseconds);
-    iterate(
-        [&](LockedKey & locked_key, const FileSegmentMetadataPtr & segment_metadata)
-        { return check_limits_satisfied() ? IterationResult::BREAK : iterate_func(locked_key, segment_metadata); },
-        lock);
+    LOG_INFO(log, "Modifying size limits from {} to {} in size, "
+             "from {} to {} in elements count",
+             max_size.load(), max_size_, max_elements.load(), max_elements_);
 
     max_size = max_size_;
     max_elements = max_elements_;
     return true;
+}
+
+IFileCachePriority::EntryPtr LRUFileCachePriority::LRUIterator::getEntry() const
+{
+    assertValid();
+    return *iterator;
 }
 
 void LRUFileCachePriority::LRUIterator::remove(const CachePriorityGuard::Lock & lock)
@@ -439,12 +519,15 @@ void LRUFileCachePriority::LRUIterator::invalidate()
     assertValid();
 
     const auto & entry = *iterator;
-    LOG_TEST(cache_priority->log,
-             "Invalidating entry in LRU queue entry {}", entry->toString());
 
     chassert(entry->size != 0);
     cache_priority->updateSize(-entry->size);
     cache_priority->updateElementsCount(-1);
+
+    LOG_TEST(cache_priority->log,
+             "Invalidated entry in LRU queue {}: {}",
+             entry->toString(), cache_priority->getApproxStateInfoForLog());
+
     entry->size = 0;
 }
 
@@ -492,7 +575,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
 size_t LRUFileCachePriority::LRUIterator::increasePriority(const CachePriorityGuard::Lock & lock)
 {
     assertValid();
-    cache_priority->queue.splice(cache_priority->queue.end(), cache_priority->queue, iterator);
+    cache_priority->increasePriority(iterator, lock);
     cache_priority->check(lock);
     return ++((*iterator)->hits);
 }
@@ -505,6 +588,7 @@ void LRUFileCachePriority::LRUIterator::assertValid() const
 
 void LRUFileCachePriority::shuffle(const CachePriorityGuard::Lock &)
 {
+    chassert(eviction_pos == queue.end());
     std::vector<LRUQueue::iterator> its;
     its.reserve(queue.size());
     for (auto it = queue.begin(); it != queue.end(); ++it)
@@ -518,7 +602,13 @@ void LRUFileCachePriority::shuffle(const CachePriorityGuard::Lock &)
 std::string LRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::Lock & lock) const
 {
     return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
-                       getSize(lock), max_size, getElementsCount(lock), max_elements, description);
+                       getSize(lock), max_size.load(), getElementsCount(lock), max_elements.load(), description);
+}
+
+std::string LRUFileCachePriority::getApproxStateInfoForLog() const
+{
+    return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
+                       getSizeApprox(), max_size.load(), getElementsCountApprox(), max_elements.load(), description);
 }
 
 void LRUFileCachePriority::holdImpl(
@@ -533,8 +623,8 @@ void LRUFileCachePriority::holdImpl(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot take space {} in size and {} in elements. "
                         "Current state {}/{} in size, {}/{} in elements",
-                        size, elements, state->current_size, max_size,
-                        state->current_elements_num, max_elements);
+                        size, elements, state->current_size.load(), max_size.load(),
+                        state->current_elements_num.load(), max_elements.load());
     }
 
     state->current_size += size;

@@ -1,6 +1,7 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Core/QualifiedTableName.h>
 
 namespace DB
 {
@@ -24,25 +25,41 @@ class DatabaseReplicatedDDLWorker : public DDLWorker
 public:
     DatabaseReplicatedDDLWorker(DatabaseReplicated * db, ContextPtr context_);
 
-    String enqueueQuery(DDLLogEntry & entry) override;
+    String enqueueQuery(DDLLogEntry & entry, const ZooKeeperRetriesInfo &) override;
 
-    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context);
+    String tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query);
 
     void shutdown() override;
 
     bool waitForReplicaToProcessAllEntries(UInt64 timeout_ms);
 
     static String enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
-                                   DatabaseReplicated * const database, bool committed = false); /// NOLINT
+                                   DatabaseReplicated * const database, bool committed = false, Coordination::Requests additional_checks = {}); /// NOLINT
 
     UInt32 getLogPointer() const;
+
+    UInt64 getCurrentInitializationDurationMs() const;
+
+    bool isUnsyncedAfterRecovery() const { return unsynced_after_recovery; }
+
+    static constexpr const char * FORCE_AUTO_RECOVERY_DIGEST = "42";
+
 private:
     bool initializeMainThread() override;
-    void initializeReplication();
+    void initializeReplication() override;
+
+    void createReplicaDirs(const ZooKeeperPtr &, const NameSet &) override { }
+    void markReplicasActive(bool reinitialized) override;
+
     void initializeLogPointer(const String & processed_entry_name);
 
-    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper) override;
+    DDLTaskPtr initAndCheckTask(const String & entry_name, String & out_reason, const ZooKeeperPtr & zookeeper, bool dry_run) override;
     bool canRemoveQueueEntry(const String & entry_name, const Coordination::Stat & stat) override;
+
+    bool checkParentTableExists(const UUID & uuid) const;
+
+    bool shouldSkipCreatingRMVTempTable(const ZooKeeperPtr & zookeeper, UUID parent_uuid, UUID create_uuid, int64_t ddl_log_ctime);
+    bool shouldSkipRenamingRMVTempTable(const ZooKeeperPtr & zookeeper, UUID parent_uuid, const QualifiedTableName & rename_from_table);
 
     DatabaseReplicated * const database;
     mutable std::mutex mutex;
@@ -50,12 +67,15 @@ private:
 
     String current_task;
     std::atomic<UInt32> logs_to_keep = std::numeric_limits<UInt32>::max();
-
+    std::atomic_bool unsynced_after_recovery = false;
 
     /// EphemeralNodeHolder has reference to ZooKeeper, it may become dangling
     ZooKeeperPtr active_node_holder_zookeeper;
     /// It will remove "active" node when database is detached
     zkutil::EphemeralNodeHolderPtr active_node_holder;
+
+    std::optional<Stopwatch> initialization_duration_timer;
+    mutable std::mutex initialization_duration_timer_mutex;
 };
 
 }

@@ -1,7 +1,7 @@
 #include <Parsers/Lexer.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/SipHash.h>
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -32,7 +32,7 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
             prev_comma = false;
             continue;
         }
-        else if (token.type == TokenType::Comma)
+        if (token.type == TokenType::Comma)
         {
             if (num_literals_in_sequence)
             {
@@ -55,8 +55,8 @@ UInt64 normalizedQueryHash(const char * begin, const char * end, bool keep_names
         /// Slightly normalize something that look like aliases - if they are complex, replace them to `?` placeholders.
         if (token.type == TokenType::QuotedIdentifier
             /// Differentiate identifier from function (example: SHA224(x)).
-            /// By the way, there is padding in columns and pointer dereference is Ok.
-            || (token.type == TokenType::BareWord && *token.end != '('))
+            /// However, it does not account for whitespaces and comments between the function name and the parentheses.
+            || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
         {
             /// Explicitly ask to keep identifier names
             if (keep_names)
@@ -159,7 +159,7 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
             prev_comma = false;
             continue;
         }
-        else if (token.type == TokenType::Comma)
+        if (token.type == TokenType::Comma)
         {
             if (num_literals_in_sequence)
             {
@@ -191,8 +191,8 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
         /// Slightly normalize something that look like aliases - if they are complex, replace them to `?` placeholders.
         if (token.type == TokenType::QuotedIdentifier
             /// Differentiate identifier from function (example: SHA224(x)).
-            /// By the way, there is padding in columns and pointer dereference is Ok.
-            || (token.type == TokenType::BareWord && *token.end != '('))
+            /// However, it does not account for whitespaces and comments between the function name and the parentheses.
+            || (token.type == TokenType::BareWord && (token.end == end || *token.end != '(')))
         {
             /// Explicitly ask to normalize with identifier names
             if (keep_names)
@@ -242,7 +242,6 @@ void normalizeQueryToPODArray(const char * begin, const char * end, PaddedPODArr
 
         res_data.insert(token.begin, token.end);
     }
-    res_data.push_back(0);
 }
 
 }

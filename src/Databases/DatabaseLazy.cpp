@@ -1,6 +1,15 @@
+#include <Databases/DatabaseLazy.h>
+
+#include <base/sort.h>
+#include <base/isSharedPtrUnique.h>
+#include <iomanip>
+#include <filesystem>
+#include <Common/CurrentMetrics.h>
+#include <Common/escapeForFileName.h>
+#include <Common/logger_useful.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseFactory.h>
-#include <Databases/DatabaseLazy.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/Context.h>
@@ -10,13 +19,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 
-#include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
-#include <base/sort.h>
-#include <iomanip>
-#include <filesystem>
 
 namespace fs = std::filesystem;
 
@@ -41,27 +44,30 @@ namespace ErrorCodes
 
 
 DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, time_t expiration_time_, ContextPtr context_)
-    : DatabaseOnDisk(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseLazy (" + name_ + ")", context_)
+    : DatabaseOnDisk(name_, metadata_path_, std::filesystem::path("data") / escapeForFileName(name_) / "", "DatabaseLazy (" + name_ + ")", context_)
     , expiration_time(expiration_time_)
 {
+    createDirectories();
 }
 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
-    iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
-    {
-        const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
-
-        fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
-        if (fs::exists(detached_permanently_flag))
+    auto db_disk = getDisk();
+    iterateMetadataFiles(
+        [this, &local_context, db_disk](const String & file_name)
         {
-            LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
-            return;
-        }
+            const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
-        attachTable(local_context, table_name, nullptr, {});
-    });
+            fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
+            if (db_disk->existsFile(detached_permanently_flag))
+            {
+                LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
+                return;
+            }
+
+            attachTable(local_context, table_name, nullptr, {});
+        });
 }
 
 
@@ -117,7 +123,8 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 void DatabaseLazy::alterTable(
     ContextPtr /* context */,
     const StorageID & /*table_id*/,
-    const StorageInMemoryMetadata & /* metadata */)
+    const StorageInMemoryMetadata & /* metadata */,
+    const bool /*validate_new_create_query*/)
 {
     clearExpiredTables();
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ALTER query is not supported for Lazy database.");
@@ -127,7 +134,7 @@ bool DatabaseLazy::isTableExist(const String & table_name) const
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
-    return tables_cache.find(table_name) != tables_cache.end();
+    return tables_cache.contains(table_name);
 }
 
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
@@ -149,10 +156,19 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
         }
     }
 
-    return loadTable(table_name);
+    try
+    {
+        return loadTable(table_name);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -184,7 +200,15 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists.", backQuote(database_name), backQuote(table_name));
 
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
-    CurrentMetrics::add(CurrentMetrics::AttachedTable, 1);
+
+    LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
+    if (snapshot_detached_tables.contains(table_name))
+    {
+        LOG_DEBUG(log, "Clean info about detached table {} from snapshot.", backQuote(table_name));
+        snapshot_detached_tables.erase(table_name);
+    }
+
+    CurrentMetrics::add(CurrentMetrics::AttachedTable);
 }
 
 StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
@@ -200,7 +224,17 @@ StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & ta
         if (it->second.expiration_iterator != cache_expiration_queue.end())
             cache_expiration_queue.erase(it->second.expiration_iterator);
         tables_cache.erase(it);
-        CurrentMetrics::sub(CurrentMetrics::AttachedTable, 1);
+        LOG_DEBUG(log, "Add info for detached table {} to snapshot.", backQuote(table_name));
+        snapshot_detached_tables.emplace(
+            table_name,
+            SnapshotDetachedTable{
+                .database = res->getStorageID().database_name,
+                .table = res->getStorageID().table_name,
+                .uuid = res->getStorageID().uuid,
+                .metadata_path = getObjectMetadataPath(table_name),
+                .is_permanently = false});
+
+        CurrentMetrics::sub(CurrentMetrics::AttachedTable);
     }
     return res;
 }
@@ -242,13 +276,13 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
     const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
-
+    auto db_disk = getDisk();
     try
     {
         StoragePtr table;
         auto context_copy = Context::createCopy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, getContext(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, getContext(), db_disk, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/ false);
         if (ast)
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();
@@ -301,9 +335,9 @@ try
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || it->second.table.unique())
+        if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
-            LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
+            LOG_DEBUG(log, "Removing table {} from cache.", backQuote(it->first));
             it->second.table.reset();
             expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();
@@ -377,6 +411,6 @@ void registerDatabaseLazy(DatabaseFactory & factory)
             cache_expiration_time_seconds,
             args.context);
     };
-    factory.registerDatabase("Lazy", create_fn);
+    factory.registerDatabase("Lazy", create_fn, {.supports_arguments = true});
 }
 }

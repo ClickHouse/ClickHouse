@@ -1,10 +1,11 @@
-#include "PolygonDictionary.h"
+#include <Dictionaries/PolygonDictionary.h>
 
 #include <cmath>
 
 #include <base/sort.h>
 
 #include <Common/iota.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -62,8 +63,8 @@ void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & ke
 
         auto & key_column_to_cast = key_columns[key_type_index];
         ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-        auto casted_column = castColumnAccurate(column_to_cast, float_64_type);
-        key_column_to_cast = std::move(casted_column);
+        auto cast_column = castColumnAccurate(column_to_cast, float_64_type);
+        key_column_to_cast = std::move(cast_column);
         key_type = float_64_type;
     }
 }
@@ -141,7 +142,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 {
                     getItemsShortCircuitImpl<ValueType>(
                         requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Array>(); },
                         [&](Array & value) { result_column_typed.insert(value); },
                         default_mask.value());
                 }
@@ -149,7 +150,7 @@ ColumnPtr IPolygonDictionary::getColumn(
                 {
                     getItemsImpl<ValueType>(
                         requested_key_points,
-                        [&](size_t row) { return (*attribute_values_column)[row].get<Array>(); },
+                        [&](size_t row) { return (*attribute_values_column)[row].safeGet<Array>(); },
                         [&](Array & value) { result_column_typed.insert(value); },
                         default_value_provider.value());
                 }
@@ -238,7 +239,7 @@ Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
         result_columns.emplace_back(column_with_type);
     }
 
-    auto source = std::make_shared<SourceFromSingleChunk>(Block(result_columns));
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block(result_columns)));
     return Pipe(std::move(source));
 }
 
@@ -288,12 +289,16 @@ void IPolygonDictionary::blockToAttributes(const DB::Block & block)
 
 void IPolygonDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    BlockIO io = source_ptr->loadAll();
 
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    Block block;
-    while (executor.pull(block))
-        blockToAttributes(block);
+    DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+    io.pipeline.setConcurrencyControl(false);
+    io.executeWithCallbacks([&]()
+    {
+        Block block;
+        while (executor.pull(block))
+            blockToAttributes(block);
+    });
 
     /// Correct and sort polygons by area and update polygon_index_to_attribute_value_index after sort
     PaddedPODArray<double> areas;
@@ -432,16 +437,16 @@ void IPolygonDictionary::getItemsImpl(
             }
             else if constexpr (std::is_same_v<AttributeType, Array>)
             {
-                set_value(default_value.get<Array>());
+                set_value(default_value.safeGet<Array>());
             }
             else if constexpr (std::is_same_v<AttributeType, StringRef>)
             {
-                auto default_value_string = default_value.get<String>();
+                auto default_value_string = default_value.safeGet<String>();
                 set_value(default_value_string);
             }
             else
             {
-                set_value(default_value.get<NearestFieldType<AttributeType>>());
+                set_value(default_value.safeGet<NearestFieldType<AttributeType>>());
             }
         }
     }
@@ -475,7 +480,11 @@ void IPolygonDictionary::getItemsShortCircuitImpl(
             default_mask[requested_key_index] = 0;
         }
         else
+        {
+            auto value = AttributeType{};
+            set_value(value);
             default_mask[requested_key_index] = 1;
+        }
     }
 
     query_count.fetch_add(requested_key_size, std::memory_order_relaxed);

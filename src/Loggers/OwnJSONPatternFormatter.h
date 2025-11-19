@@ -1,10 +1,10 @@
 #pragma once
 
 
+#include <Loggers/ExtendedLogMessage.h>
+#include <Loggers/OwnPatternFormatter.h>
 #include <Poco/PatternFormatter.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "ExtendedLogChannel.h"
-#include "OwnPatternFormatter.h"
 
 
 /** Format log messages own way in JSON.
@@ -26,13 +26,14 @@ class Loggers;
 class OwnJSONPatternFormatter : public OwnPatternFormatter
 {
 public:
-    explicit OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config);
+    explicit OwnJSONPatternFormatter(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
 
     void format(const Poco::Message & msg, std::string & text) override;
     void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const override;
 
 private:
     std::string date_time;
+    std::string date_time_utc;
     std::string thread_name;
     std::string thread_id;
     std::string level;

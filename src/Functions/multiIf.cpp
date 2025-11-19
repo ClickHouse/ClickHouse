@@ -1,10 +1,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionIfBase.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/MaskOperations.h>
+#include <Core/Settings.h>
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -23,6 +25,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_execute_multiif_columnar;
+    extern const SettingsBool use_variant_as_common_type;
+}
+
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -51,12 +59,12 @@ public:
     static FunctionPtr create(ContextPtr context_)
     {
         const auto & settings = context_->getSettingsRef();
-        return std::make_shared<FunctionMultiIf>(settings.allow_execute_multiif_columnar, settings.allow_experimental_variant_type, settings.use_variant_as_common_type);
+        return std::make_shared<FunctionMultiIf>(
+            settings[Setting::allow_execute_multiif_columnar], settings[Setting::use_variant_as_common_type]);
     }
 
-    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool allow_experimental_variant_type_, bool use_variant_as_common_type_)
+    explicit FunctionMultiIf(bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
-        , allow_experimental_variant_type(allow_experimental_variant_type_)
         , use_variant_as_common_type(use_variant_as_common_type_)
     {}
 
@@ -134,7 +142,7 @@ public:
             types_of_branches.emplace_back(arg);
         });
 
-        if (allow_experimental_variant_type && use_variant_as_common_type)
+        if (use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches);
 
         return getLeastSupertype(types_of_branches);
@@ -148,19 +156,10 @@ public:
         bool condition_always_true = false;
         bool condition_is_nullable = false;
         bool source_is_constant = false;
-
-        bool condition_is_short = false;
-        bool source_is_short = false;
-        size_t condition_index = 0;
-        size_t source_index = 0;
     };
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        /// Fast path when data is empty
-        if (input_rows_count == 0)
-            return result_type->createColumn();
-
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
@@ -198,13 +197,13 @@ public:
                 if (cond_col->onlyNull())
                     continue;
 
-                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col))
+                if (const auto * column_const = checkAndGetColumn<ColumnConst>(&*cond_col))
                 {
                     Field value = column_const->getField();
 
                     if (value.isNull())
                         continue;
-                    if (value.get<UInt64>() == 0)
+                    if (value.safeGet<UInt64>() == 0)
                         continue;
 
                     instruction.condition_always_true = true;
@@ -214,12 +213,9 @@ public:
                     instruction.condition = cond_col;
                     instruction.condition_is_nullable = instruction.condition->isNullable();
                 }
-
-                instruction.condition_is_short = cond_col->size() < arguments[0].column->size();
             }
 
             const ColumnWithTypeAndName & source_col = arguments[source_idx];
-            instruction.source_is_short = source_col.column->size() < arguments[0].column->size();
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column;
@@ -241,8 +237,7 @@ public:
         }
 
         /// Special case if first instruction condition is always true and source is constant
-        if (instructions.size() == 1 && instructions.front().source_is_constant
-            && instructions.front().condition_always_true)
+        if (instructions.size() == 1 && instructions.front().source_is_constant && instructions.front().condition_always_true)
         {
             MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
@@ -250,19 +245,16 @@ public:
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
 
-        bool contains_short = false;
-        for (const auto & instruction : instructions)
-        {
-            if (instruction.condition_is_short || instruction.source_is_short)
-            {
-                contains_short = true;
-                break;
-            }
-        }
+        /// Fast path when data is empty.
+        /// We should account for the above case when the result is constant, otherwise we might produce a full column instead of a
+        /// ColumnConst. But only for the header (while building pipeline, i.e. when input_rows_count==0), then we will get on with a
+        /// normal execution and return ColumnConst from the happy path.
+        /// It will break code that creates some data structures based on the input header column types.
+        if (input_rows_count == 0)
+            return result_type->createColumn();
 
         const WhichDataType which(removeNullable(result_type));
-        bool execute_multiif_columnar = allow_execute_multiif_columnar && !contains_short
-            && instructions.size() <= std::numeric_limits<UInt8>::max()
+        bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()
             && (which.isInt() || which.isUInt() || which.isFloat() || which.isDecimal() || which.isDateOrDate32OrDateTimeOrDateTime64()
                 || which.isEnum() || which.isIPv4() || which.isIPv6());
 
@@ -339,25 +331,23 @@ private:
             {
                 bool insert = false;
 
-                size_t condition_index = instruction.condition_is_short ? instruction.condition_index++ : i;
                 if (instruction.condition_always_true)
                     insert = true;
                 else if (!instruction.condition_is_nullable)
-                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[condition_index];
+                    insert = assert_cast<const ColumnUInt8 &>(*instruction.condition).getData()[i];
                 else
                 {
                     const ColumnNullable & condition_nullable = assert_cast<const ColumnNullable &>(*instruction.condition);
                     const ColumnUInt8 & condition_nested = assert_cast<const ColumnUInt8 &>(condition_nullable.getNestedColumn());
                     const NullMap & condition_null_map = condition_nullable.getNullMapData();
 
-                    insert = !condition_null_map[condition_index] && condition_nested.getData()[condition_index];
+                    insert = !condition_null_map[i] && condition_nested.getData()[i];
                 }
 
                 if (insert)
                 {
-                    size_t source_index = instruction.source_is_short ? instruction.source_index++ : i;
                     if (!instruction.source_is_constant)
-                        res->insertFrom(*instruction.source, source_index);
+                        res->insertFrom(*instruction.source, i);
                     else
                         res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
 
@@ -538,7 +528,6 @@ private:
     }
 
     const bool allow_execute_multiif_columnar;
-    const bool allow_experimental_variant_type;
     const bool use_variant_as_common_type;
 };
 
@@ -546,16 +535,67 @@ private:
 
 REGISTER_FUNCTION(MultiIf)
 {
-    factory.registerFunction<FunctionMultiIf>();
+    FunctionDocumentation::Description description = R"(
+Allows writing the [`CASE`](/sql-reference/operators#conditional-expression) operator more compactly in the query.
+Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
+If none of the conditions are true, returns the `else` value.
+
+Setting [`short_circuit_function_evaluation`](/operations/settings/settings#short_circuit_function_evaluation) controls
+whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where
+`((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` is true.
+
+For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the following query:
+
+```sql
+SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)
+```
+
+All branch and else expressions must have a common supertype. `NULL` conditions are treated as false.
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+multiIf(cond_1, then_1, cond_2, then_2, ..., else)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"cond_N", "The N-th evaluated condition which controls if `then_N` is returned.", {"UInt8", "Nullable(UInt8)", "NULL"}},
+        {"then_N", "The result of the function when `cond_N` is true."},
+        {"else", "The result of the function if none of the conditions is true."}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the result of `then_N` for matching `cond_N`, otherwise returns the `else` condition."};
+    FunctionDocumentation::Examples examples = {
+        {"Example usage", R"(
+CREATE TABLE LEFT_RIGHT (left Nullable(UInt8), right Nullable(UInt8)) ENGINE = Memory;
+INSERT INTO LEFT_RIGHT VALUES (NULL, 4), (1, 3), (2, 2), (3, 1), (4, NULL);
+
+SELECT
+    left,
+    right,
+    multiIf(left < right, 'left is smaller', left > right, 'left is greater', left = right, 'Both equal', 'Null value') AS result
+FROM LEFT_RIGHT;
+    )",
+    R"(
+┌─left─┬─right─┬─result──────────┐
+│ ᴺᵁᴸᴸ │     4 │ Null value      │
+│    1 │     3 │ left is smaller │
+│    2 │     2 │ Both equal      │
+│    3 │     1 │ left is greater │
+│    4 │  ᴺᵁᴸᴸ │ Null value      │
+└──────┴───────┴─────────────────┘
+    )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Conditional;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionMultiIf>(documentation);
 
     /// These are obsolete function names.
     factory.registerAlias("caseWithoutExpr", "multiIf");
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool allow_experimental_variant_type, bool use_variant_as_common_type)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, allow_experimental_variant_type, use_variant_as_common_type));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type));
 }
 
 }

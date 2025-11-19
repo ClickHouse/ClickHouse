@@ -1,15 +1,21 @@
 ---
-slug: /en/engines/table-engines/integrations/ExternalDistributed
+description: 'The `ExternalDistributed` engine allows to perform `SELECT` queries
+  on data that is stored on a remote servers MySQL or PostgreSQL. Accepts MySQL or
+  PostgreSQL engines as an argument so sharding is possible.'
+sidebar_label: 'ExternalDistributed'
 sidebar_position: 55
-sidebar_label: ExternalDistributed
-title: ExternalDistributed
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: 'ExternalDistributed table engine'
+doc_type: 'reference'
 ---
+
+# ExternalDistributed table engine
 
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.
 
-## Creating a Table {#creating-a-table}
+## Creating a table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -18,12 +24,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original table structure:
 
 - Column names should be the same as in the original table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+- Column types may differ from those in the original table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 
@@ -34,7 +40,7 @@ The table structure can differ from the original table structure:
 - `user` — User name.
 - `password` — User password.
 
-## Implementation Details {#implementation-details}
+## Implementation details {#implementation-details}
 
 Supports multiple replicas that must be listed by `|` and shards must be listed by `,`. For example:
 

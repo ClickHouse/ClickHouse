@@ -12,4 +12,4 @@ FROM
         FROM numbers(10)
     )
 )
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;

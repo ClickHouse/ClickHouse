@@ -1,3 +1,5 @@
+-- Tags: no-shared-merge-tree
+-- Predicate works in a different way
 drop table if exists rmt;
 
 create table rmt (n int, m int) engine=ReplicatedMergeTree('/test/02439/{shard}/{database}', '{replica}') partition by n order by n;
@@ -18,7 +20,7 @@ set optimize_throw_if_noop=1;
 optimize table rmt partition tuple(123); -- { serverError CANNOT_ASSIGN_OPTIMIZE }
 
 select sleepEachRow(3) as higher_probability_of_reproducing_the_issue format Null;
-system flush logs;
+system flush logs zookeeper_log, query_log;
 
 -- it should not list unneeded partitions where we cannot merge anything
 select * from system.zookeeper_log where path like '/test/02439/' || getMacro('shard') || '/' || currentDatabase() || '/block_numbers/%'

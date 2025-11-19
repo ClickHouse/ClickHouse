@@ -3,6 +3,7 @@
 
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
 
@@ -46,6 +48,23 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
             storage->remove(storage->getIDs(query.type, names));
     };
 
+    if (query.type == AccessEntityType::USER)
+    {
+        auto & view_definer_dependencies = ViewDefinerDependencies::instance();
+        for (const auto & name : query.names)
+        {
+            if (view_definer_dependencies.hasViewDependencies(name))
+            {
+                auto views_storage_ids = view_definer_dependencies.getViewsForDefiner(name);
+                std::vector<String> views;
+                views.reserve(views_storage_ids.size());
+                for (const auto & id : views_storage_ids)
+                    views.push_back(id.getNameForLogs());
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer in views {}.", name, toString(views));
+            }
+        }
+    }
+
     if (query.type == AccessEntityType::ROW_POLICY)
         do_drop(query.row_policy_names->toStrings(), query.storage_name);
     else
@@ -63,12 +82,14 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            res.emplace_back(AccessType::DROP_USER);
+            for (const auto & name : query.names)
+                res.emplace_back(AccessType::DROP_USER, name);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            res.emplace_back(AccessType::DROP_ROLE);
+            for (const auto & name : query.names)
+                res.emplace_back(AccessType::DROP_ROLE, name);
             return res;
         }
         case AccessEntityType::SETTINGS_PROFILE:

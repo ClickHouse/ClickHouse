@@ -1,31 +1,168 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <base/types.h>
-
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+/// This namespace defines objects which can be used as a parameter in global_with_parameter access types.
+/// Each such object should be an enum and have a APPLY_FOR_X(M) macro.
+/// Macro M should be defined as M(name, aliases).
+namespace AccessTypeObjects
+{
+
+/// Represents parameter for the SOURCE access type level. Uses corresponding table engine names as an alias.
+enum class Source : uint8_t
+{
+#define APPLY_FOR_SOURCE(M) \
+    M(FILE, "File") \
+    M(URL, "") \
+    M(REMOTE, "Distributed") \
+    M(MONGO, "MongoDB") \
+    M(REDIS, "Redis") \
+    M(MYSQL, "MySQL") \
+    M(POSTGRES, "PostgreSQL") \
+    M(SQLITE, "SQLite") \
+    M(ODBC, "") \
+    M(JDBC, "") \
+    M(HDFS, "") \
+    M(S3, "") \
+    M(HIVE, "Hive") \
+    M(AZURE, "AzureBlobStorage") \
+    M(KAFKA, "Kafka") \
+    M(NATS, "") \
+    M(RABBITMQ, "RabbitMQ") \
+    M(YTSAURUS, "YTsaurus") \
+    M(ARROW_FLIGHT, "ArrowFlight") \
+
+#define DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST(name, aliases) name,
+
+    APPLY_FOR_SOURCE(DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST)
+#undef DECLARE_ACCESS_TYPE_OBJECTS_ENUM_CONST
+};
+
+
+#define ACCESS_TYPE_OBJECT_ADD_TO_MAPPING(name, aliases) \
+        addToMapping(Source::name, #name); \
+        addAliases(Source::name, aliases);
+
+#define ENUM_ACCESS_OBJECT(NAME, M) \
+class EnumHolder##NAME \
+{ \
+public: \
+    static const EnumHolder##NAME & instance() \
+    { \
+        static const EnumHolder##NAME res; \
+        return res; \
+    } \
+    \
+    std::string_view toString(NAME type) const { return entity_enum_to_string[static_cast<size_t>(type)]; } \
+    \
+    NAME fromString(const String & name) const \
+    { \
+        if (auto it = aliases.find(name); it != aliases.end()) \
+            return it->second; \
+        \
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unable to find AccessTypeObject {} by name {}", #NAME, name); \
+    } \
+    \
+    bool validate(const String & name) const { return aliases.contains(name); } \
+    \
+    const std::map<String, NAME> & getAliasesMap() const { return aliases; } \
+    \
+private: \
+    EnumHolder##NAME() \
+    { \
+        M(ACCESS_TYPE_OBJECT_ADD_TO_MAPPING) \
+    } \
+    \
+    void addToMapping(NAME type, std::string_view str) \
+    { \
+        String str2{str}; \
+        size_t index = static_cast<size_t>(type); \
+        entity_enum_to_string.resize(std::max(index + 1, entity_enum_to_string. size())); \
+        entity_enum_to_string[index] = str2; \
+    } \
+    \
+    void addAliases(NAME type, std::string_view str) \
+    { \
+        String str2{str}; \
+        std::vector<String> type_aliases; \
+        \
+        boost::split(type_aliases, str2, [](char c) { return c == ','; }); \
+        for (auto & alias : type_aliases) \
+        { \
+            boost::trim(alias); \
+            aliases[alias] = type; \
+        } \
+        \
+        aliases[String{toString(type)}] = type; \
+    } \
+    \
+    std::vector<String> entity_enum_to_string; \
+    std::map<String, NAME> aliases; \
+}; \
+\
+inline auto toString##NAME(NAME type) \
+{ \
+    return EnumHolder##NAME::instance().toString(type); \
+} \
+\
+inline auto fromString##NAME(const String & name) \
+{ \
+    return EnumHolder##NAME::instance().fromString(name); \
+} \
+inline auto unify##NAME(const String & name) \
+{ \
+    return toString##NAME(fromString##NAME(name)); \
+} \
+\
+inline auto & getAliasesMap##NAME() \
+{ \
+    return EnumHolder##NAME::instance().getAliasesMap(); \
+} \
+\
+inline auto validate##NAME(const String & name) \
+{ \
+    return EnumHolder##NAME::instance().validate(name); \
+}
+
+ENUM_ACCESS_OBJECT(Source, APPLY_FOR_SOURCE)
+
+#undef ENUM_ACCESS_OBJECT
+#undef ACCESS_TYPE_OBJECT_ADD_TO_MAPPING
+}
+
+
 /// Represents an access type which can be granted on databases, tables, columns, etc.
-enum class AccessType
+enum class AccessType : uint8_t
 {
 /// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
 /// where name is identifier with underscores (instead of spaces);
 /// aliases is a string containing comma-separated list;
-/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// node_type either specifies access type's level (GLOBAL/NAMED_COLLECTION/USER_NAME/SOURCE/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
 /// or specifies that the access type is a GROUP of other access types;
 /// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
 /// NOTE A parent group must be declared AFTER all its children.
 #define APPLY_FOR_ACCESS_TYPES(M) \
     M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>;
                                              implicitly enabled by any grant on the database */\
-    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>, CHECK <table>;
+    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>;
                                        implicitly enabled by any grant on the table */\
+    M(CHECK, "", TABLE, ALL) /* allows to execute CHECK TABLE; */\
     M(SHOW_COLUMNS, "", COLUMN, SHOW) /* allows to execute SHOW CREATE TABLE, DESCRIBE;
                                          implicitly enabled with any grant on the column */\
     M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>;
                                                   implicitly enabled by any grant on the dictionary */\
-    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE */\
+    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, DESCRIBE */\
     M(SHOW_FILESYSTEM_CACHES, "", GROUP, ALL) \
     \
     M(SELECT, "", COLUMN, ALL) \
@@ -42,6 +179,7 @@ enum class AccessType
     M(ALTER_MATERIALIZE_COLUMN, "MATERIALIZE COLUMN", COLUMN, ALTER_COLUMN) \
     M(ALTER_COLUMN, "", GROUP, ALTER_TABLE) /* allow to execute ALTER {ADD|DROP|MODIFY...} COLUMN */\
     M(ALTER_MODIFY_COMMENT, "MODIFY COMMENT", TABLE, ALTER_TABLE) /* modify table comment */\
+    M(ALTER_MODIFY_DATABASE_COMMENT, "MODIFY DATABASE COMMENT", DATABASE, ALTER_DATABASE) /* modify database comment*/\
     \
     M(ALTER_ORDER_BY, "ALTER MODIFY ORDER BY, MODIFY ORDER BY", TABLE, ALTER_INDEX) \
     M(ALTER_SAMPLE_BY, "ALTER MODIFY SAMPLE BY, MODIFY SAMPLE BY", TABLE, ALTER_INDEX) \
@@ -51,10 +189,11 @@ enum class AccessType
     M(ALTER_CLEAR_INDEX, "CLEAR INDEX", TABLE, ALTER_INDEX) \
     M(ALTER_INDEX, "INDEX", GROUP, ALTER_TABLE) /* allows to execute ALTER ORDER BY or ALTER {ADD|DROP...} INDEX */\
     \
-    M(ALTER_ADD_STATISTIC, "ALTER ADD STATISTIC", TABLE, ALTER_STATISTIC) \
-    M(ALTER_DROP_STATISTIC, "ALTER DROP STATISTIC", TABLE, ALTER_STATISTIC) \
-    M(ALTER_MATERIALIZE_STATISTIC, "ALTER MATERIALIZE STATISTIC", TABLE, ALTER_STATISTIC) \
-    M(ALTER_STATISTIC, "STATISTIC", GROUP, ALTER_TABLE) /* allows to execute ALTER STATISTIC */\
+    M(ALTER_ADD_STATISTICS, "ALTER ADD STATISTIC", TABLE, ALTER_STATISTICS) \
+    M(ALTER_DROP_STATISTICS, "ALTER DROP STATISTIC", TABLE, ALTER_STATISTICS) \
+    M(ALTER_MODIFY_STATISTICS, "ALTER MODIFY STATISTIC", TABLE, ALTER_STATISTICS) \
+    M(ALTER_MATERIALIZE_STATISTICS, "ALTER MATERIALIZE STATISTIC", TABLE, ALTER_STATISTICS) \
+    M(ALTER_STATISTICS, "STATISTIC", GROUP, ALTER_TABLE) /* allows to execute ALTER STATISTIC */\
     \
     M(ALTER_ADD_PROJECTION, "ADD PROJECTION", TABLE, ALTER_PROJECTION) \
     M(ALTER_DROP_PROJECTION, "DROP PROJECTION", TABLE, ALTER_PROJECTION) \
@@ -69,10 +208,12 @@ enum class AccessType
     M(ALTER_TTL, "ALTER MODIFY TTL, MODIFY TTL", TABLE, ALTER_TABLE) /* allows to execute ALTER MODIFY TTL */\
     M(ALTER_MATERIALIZE_TTL, "MATERIALIZE TTL", TABLE, ALTER_TABLE) /* allows to execute ALTER MATERIALIZE TTL;
                                                                        enabled implicitly by the grant ALTER_TABLE */\
+    M(ALTER_REWRITE_PARTS, "REWRITE PARTS", TABLE, ALTER_TABLE) /* allows to execute ALTER REWRITE PARTS */\
     M(ALTER_SETTINGS, "ALTER SETTING, ALTER MODIFY SETTING, MODIFY SETTING, RESET SETTING", TABLE, ALTER_TABLE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_MOVE_PARTITION, "ALTER MOVE PART, MOVE PARTITION, MOVE PART", TABLE, ALTER_TABLE) \
     M(ALTER_FETCH_PARTITION, "ALTER FETCH PART, FETCH PARTITION", TABLE, ALTER_TABLE) \
     M(ALTER_FREEZE_PARTITION, "FREEZE PARTITION, UNFREEZE", TABLE, ALTER_TABLE) \
+    M(ALTER_UNLOCK_SNAPSHOT, "UNLOCK SNAPSHOT", TABLE, ALTER_TABLE) \
     \
     M(ALTER_DATABASE_SETTINGS, "ALTER DATABASE SETTING, ALTER MODIFY DATABASE SETTING, MODIFY DATABASE SETTING", DATABASE, ALTER_DATABASE) /* allows to execute ALTER MODIFY SETTING */\
     M(ALTER_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute ALTER NAMED COLLECTION */\
@@ -97,7 +238,11 @@ enum class AccessType
                                                      implicitly enabled by the grant CREATE_TABLE on any table */ \
     M(CREATE_ARBITRARY_TEMPORARY_TABLE, "", GLOBAL, CREATE)  /* allows to create  and manipulate temporary tables
                                                                 with arbitrary table engine */\
+    M(CREATE_TEMPORARY_VIEW, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables;
+                                                     implicitly enabled by the grant CREATE_VIEW on any table */ \
     M(CREATE_FUNCTION, "", GLOBAL, CREATE) /* allows to execute CREATE FUNCTION */ \
+    M(CREATE_WORKLOAD, "", GLOBAL, CREATE) /* allows to execute CREATE WORKLOAD */ \
+    M(CREATE_RESOURCE, "", GLOBAL, CREATE) /* allows to execute CREATE RESOURCE */ \
     M(CREATE_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute CREATE NAMED COLLECTION */ \
     M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
     \
@@ -107,6 +252,8 @@ enum class AccessType
                                     implicitly enabled by the grant DROP_TABLE */\
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP_FUNCTION, "", GLOBAL, DROP) /* allows to execute DROP FUNCTION */\
+    M(DROP_WORKLOAD, "", GLOBAL, DROP) /* allows to execute DROP WORKLOAD */\
+    M(DROP_RESOURCE, "", GLOBAL, DROP) /* allows to execute DROP RESOURCE */\
     M(DROP_NAMED_COLLECTION, "", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) /* allows to execute DROP NAMED COLLECTION */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
@@ -123,12 +270,12 @@ enum class AccessType
     M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
                                                          identified by its ZooKeeper path */\
     \
-    M(CREATE_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(ALTER_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(DROP_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(CREATE_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(ALTER_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
-    M(DROP_ROLE, "", GLOBAL, ACCESS_MANAGEMENT) \
+    M(CREATE_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(ALTER_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(DROP_USER, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(CREATE_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(ALTER_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
+    M(DROP_ROLE, "", USER_NAME, ACCESS_MANAGEMENT) \
     M(ROLE_ADMIN, "", GLOBAL, ACCESS_MANAGEMENT) /* allows to grant and revoke the roles which are not granted to the current user with admin option */\
     M(CREATE_ROW_POLICY, "CREATE POLICY", TABLE, ACCESS_MANAGEMENT) \
     M(ALTER_ROW_POLICY, "ALTER POLICY", TABLE, ACCESS_MANAGEMENT) \
@@ -146,19 +293,32 @@ enum class AccessType
     M(SHOW_QUOTAS, "SHOW CREATE QUOTA", GLOBAL, SHOW_ACCESS) \
     M(SHOW_SETTINGS_PROFILES, "SHOW PROFILES, SHOW CREATE SETTINGS PROFILE, SHOW CREATE PROFILE", GLOBAL, SHOW_ACCESS) \
     M(SHOW_ACCESS, "", GROUP, ACCESS_MANAGEMENT) \
+    M(IMPERSONATE, "EXECUTE AS", USER_NAME, ACCESS_MANAGEMENT) \
     M(ACCESS_MANAGEMENT, "", GROUP, ALL) \
     M(SHOW_NAMED_COLLECTIONS, "SHOW NAMED COLLECTIONS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(SHOW_NAMED_COLLECTIONS_SECRETS, "SHOW NAMED COLLECTIONS SECRETS", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION, "NAMED COLLECTION USAGE, USE NAMED COLLECTION", NAMED_COLLECTION, NAMED_COLLECTION_ADMIN) \
     M(NAMED_COLLECTION_ADMIN, "NAMED COLLECTION CONTROL", NAMED_COLLECTION, ALL) \
-    M(SET_DEFINER, "", USER_NAME, ALL) \
+    M(SET_DEFINER, "", DEFINER, ALL) \
+    \
+    M(TABLE_ENGINE, "TABLE ENGINE", TABLE_ENGINE, ALL) \
     \
     M(SYSTEM_SHUTDOWN, "SYSTEM KILL, SHUTDOWN", GLOBAL, SYSTEM) \
     M(SYSTEM_DROP_DNS_CACHE, "SYSTEM DROP DNS, DROP DNS CACHE, DROP DNS", GLOBAL, SYSTEM_DROP_CACHE)  \
     M(SYSTEM_DROP_CONNECTIONS_CACHE, "SYSTEM DROP CONNECTIONS CACHE, DROP CONNECTIONS CACHE", GLOBAL, SYSTEM_DROP_CACHE)  \
+    M(SYSTEM_PREWARM_MARK_CACHE, "SYSTEM PREWARM MARK, PREWARM MARK CACHE, PREWARM MARKS", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_MARK_CACHE, "SYSTEM DROP MARK, DROP MARK CACHE, DROP MARKS", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_ICEBERG_METADATA_CACHE, "SYSTEM DROP ICEBERG_METADATA_CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, "SYSTEM PREWARM PRIMARY INDEX, PREWARM PRIMARY INDEX CACHE, PREWARM PRIMARY INDEX", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_PRIMARY_INDEX_CACHE, "SYSTEM DROP PRIMARY INDEX, DROP PRIMARY INDEX CACHE, DROP PRIMARY INDEX", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_UNCOMPRESSED_CACHE, "SYSTEM DROP UNCOMPRESSED, DROP UNCOMPRESSED CACHE, DROP UNCOMPRESSED", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE, "SYSTEM DROP VECTOR SIMILARITY INDEX CACHE, DROP VECTOR SIMILARITY INDEX CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_TEXT_INDEX_DICTIONARY_CACHE, "SYSTEM DROP TEXT INDEX DICTIONARY CACHE, DROP TEXT INDEX DICTIONARY CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE, "SYSTEM DROP TEXT INDEX HEADER CACHE, DROP TEXT INDEX HEADER CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE, "SYSTEM DROP TEXT INDEX POSTINGS CACHE, DROP TEXT INDEX POSTINGS CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_TEXT_INDEX_CACHES, "SYSTEM DROP TEXT INDEX CACHES, DROP TEXT INDEX CACHES", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_MMAP_CACHE, "SYSTEM DROP MMAP, DROP MMAP CACHE, DROP MMAP", GLOBAL, SYSTEM_DROP_CACHE) \
+    M(SYSTEM_DROP_QUERY_CONDITION_CACHE, "SYSTEM DROP QUERY CONDITION, DROP QUERY CONDITION CACHE, DROP QUERY CONDITION", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_QUERY_CACHE, "SYSTEM DROP QUERY, DROP QUERY CACHE, DROP QUERY", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_COMPILED_EXPRESSION_CACHE, "SYSTEM DROP COMPILED EXPRESSION, DROP COMPILED EXPRESSION CACHE, DROP COMPILED EXPRESSIONS", GLOBAL, SYSTEM_DROP_CACHE) \
     M(SYSTEM_DROP_FILESYSTEM_CACHE, "SYSTEM DROP FILESYSTEM CACHE, DROP FILESYSTEM CACHE", GLOBAL, SYSTEM_DROP_CACHE) \
@@ -176,6 +336,7 @@ enum class AccessType
     M(SYSTEM_RELOAD_FUNCTION, "SYSTEM RELOAD FUNCTIONS, RELOAD FUNCTION, RELOAD FUNCTIONS", GLOBAL, SYSTEM_RELOAD) \
     M(SYSTEM_RELOAD_EMBEDDED_DICTIONARIES, "RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM_RELOAD) /* implicitly enabled by the grant SYSTEM_RELOAD_DICTIONARY ON *.* */\
     M(SYSTEM_RELOAD_ASYNCHRONOUS_METRICS, "RELOAD ASYNCHRONOUS METRICS", GLOBAL, SYSTEM_RELOAD) \
+    M(SYSTEM_RECONNECT_ZOOKEEPER, "SYSTEM RECONNECT ZOOKEEPER, RECONNECT ZOOKEEPER", GLOBAL, SYSTEM) \
     M(SYSTEM_RELOAD, "", GROUP, SYSTEM) \
     M(SYSTEM_RESTART_DISK, "SYSTEM RESTART DISK", GLOBAL, SYSTEM) \
     M(SYSTEM_MERGES, "SYSTEM STOP MERGES, SYSTEM START MERGES, STOP MERGES, START MERGES", TABLE, SYSTEM) \
@@ -190,11 +351,13 @@ enum class AccessType
     M(SYSTEM_SENDS, "SYSTEM STOP SENDS, SYSTEM START SENDS, STOP SENDS, START SENDS", GROUP, SYSTEM) \
     M(SYSTEM_REPLICATION_QUEUES, "SYSTEM STOP REPLICATION QUEUES, SYSTEM START REPLICATION QUEUES, STOP REPLICATION QUEUES, START REPLICATION QUEUES", TABLE, SYSTEM) \
     M(SYSTEM_VIRTUAL_PARTS_UPDATE, "SYSTEM STOP VIRTUAL PARTS UPDATE, SYSTEM START VIRTUAL PARTS UPDATE, STOP VIRTUAL PARTS UPDATE, START VIRTUAL PARTS UPDATE", TABLE, SYSTEM) \
+    M(SYSTEM_REDUCE_BLOCKING_PARTS, "SYSTEM STOP REDUCE BLOCKING PARTS, SYSTEM START REDUCE BLOCKING PARTS, STOP REDUCE BLOCKING PARTS, START REDUCE BLOCKING PARTS", TABLE, SYSTEM) \
     M(SYSTEM_DROP_REPLICA, "DROP REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_SYNC_REPLICA, "SYNC REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_REPLICA_READINESS, "SYSTEM REPLICA READY, SYSTEM REPLICA UNREADY", GLOBAL, SYSTEM) \
     M(SYSTEM_RESTART_REPLICA, "RESTART REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_RESTORE_REPLICA, "RESTORE REPLICA", TABLE, SYSTEM) \
+    M(SYSTEM_RESTORE_DATABASE_REPLICA, "RESTORE DATABASE REPLICA", TABLE, SYSTEM) \
     M(SYSTEM_WAIT_LOADING_PARTS, "WAIT LOADING PARTS", TABLE, SYSTEM) \
     M(SYSTEM_SYNC_DATABASE_REPLICA, "SYNC DATABASE REPLICA", DATABASE, SYSTEM) \
     M(SYSTEM_SYNC_TRANSACTION_LOG, "SYNC TRANSACTION LOG", GLOBAL, SYSTEM) \
@@ -205,9 +368,12 @@ enum class AccessType
     M(SYSTEM_FLUSH, "", GROUP, SYSTEM) \
     M(SYSTEM_THREAD_FUZZER, "SYSTEM START THREAD FUZZER, SYSTEM STOP THREAD FUZZER, START THREAD FUZZER, STOP THREAD FUZZER", GLOBAL, SYSTEM) \
     M(SYSTEM_UNFREEZE, "SYSTEM UNFREEZE", GLOBAL, SYSTEM) \
+    M(SYSTEM_UNLOCK_SNAPSHOT, "SYSTEM UNLOCK_SNAPSHOT", GLOBAL, SYSTEM) \
     M(SYSTEM_FAILPOINT, "SYSTEM ENABLE FAILPOINT, SYSTEM DISABLE FAILPOINT, SYSTEM WAIT FAILPOINT", GLOBAL, SYSTEM) \
     M(SYSTEM_LISTEN, "SYSTEM START LISTEN, SYSTEM STOP LISTEN", GLOBAL, SYSTEM) \
     M(SYSTEM_JEMALLOC, "SYSTEM JEMALLOC PURGE, SYSTEM JEMALLOC ENABLE PROFILE, SYSTEM JEMALLOC DISABLE PROFILE, SYSTEM JEMALLOC FLUSH PROFILE", GLOBAL, SYSTEM) \
+    M(SYSTEM_LOAD_PRIMARY_KEY, "SYSTEM LOAD PRIMARY KEY", TABLE, SYSTEM) \
+    M(SYSTEM_UNLOAD_PRIMARY_KEY, "SYSTEM UNLOAD PRIMARY KEY", TABLE, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
     M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
@@ -219,24 +385,32 @@ enum class AccessType
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
-    M(FILE, "", GLOBAL, SOURCES) \
-    M(URL, "", GLOBAL, SOURCES) \
-    M(REMOTE, "", GLOBAL, SOURCES) \
-    M(MONGO, "", GLOBAL, SOURCES) \
-    M(REDIS, "", GLOBAL, SOURCES) \
-    M(MYSQL, "", GLOBAL, SOURCES) \
-    M(POSTGRES, "", GLOBAL, SOURCES) \
-    M(SQLITE, "", GLOBAL, SOURCES) \
-    M(ODBC, "", GLOBAL, SOURCES) \
-    M(JDBC, "", GLOBAL, SOURCES) \
-    M(HDFS, "", GLOBAL, SOURCES) \
-    M(S3, "", GLOBAL, SOURCES) \
-    M(HIVE, "", GLOBAL, SOURCES) \
-    M(AZURE, "", GLOBAL, SOURCES) \
-    M(SOURCES, "", GROUP, ALL) \
+    M(READ, "SOURCE READ", SOURCE, ALL) \
+    M(WRITE, "SOURCE WRITE", SOURCE, ALL) \
     \
     M(CLUSTER, "", GLOBAL, ALL) /* ON CLUSTER queries */ \
     \
+    /* Deprecated */ \
+    M(FILE, "", GLOBAL, ALL) \
+    M(URL, "", GLOBAL, ALL) \
+    M(REMOTE, "", GLOBAL, ALL) \
+    M(MONGO, "", GLOBAL, ALL) \
+    M(REDIS, "", GLOBAL, ALL) \
+    M(MYSQL, "", GLOBAL, ALL) \
+    M(POSTGRES, "", GLOBAL, ALL) \
+    M(SQLITE, "", GLOBAL, ALL) \
+    M(ODBC, "", GLOBAL, ALL) \
+    M(JDBC, "", GLOBAL, ALL) \
+    M(HDFS, "", GLOBAL, ALL) \
+    M(S3, "", GLOBAL, ALL) \
+    M(HIVE, "", GLOBAL, ALL) \
+    M(AZURE, "", GLOBAL, ALL) \
+    M(KAFKA, "", GLOBAL, ALL) \
+    M(NATS, "", GLOBAL, ALL) \
+    M(RABBITMQ, "", GLOBAL, ALL) \
+    M(SOURCES, "", GLOBAL, ALL) \
+    \
+    /* Consts */ \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
@@ -246,6 +420,7 @@ enum class AccessType
     APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST)
 #undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
+
 
 std::string_view toString(AccessType type);
 

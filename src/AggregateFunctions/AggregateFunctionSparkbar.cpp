@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 struct AggregateFunctionSparkbarData
 {
     /// TODO: calculate histogram instead of storing all points
@@ -45,12 +45,12 @@ struct AggregateFunctionSparkbarData
     Y insert(const X & x, const Y & y)
     {
         if (isNaN(y) || y <= 0)
-            return 0;
+            return {};
 
         auto [it, inserted] = points.insert({x, y});
         if (!inserted)
         {
-            if constexpr (std::is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
             {
                 it->getMapped() += y;
                 return it->getMapped();
@@ -129,7 +129,7 @@ struct AggregateFunctionSparkbarData
     }
 };
 
-template<typename X, typename Y>
+template <typename X, typename Y>
 class AggregateFunctionSparkbar final
     : public IAggregateFunctionDataHelper<AggregateFunctionSparkbarData<X, Y>, AggregateFunctionSparkbar<X, Y>>
 {
@@ -163,8 +163,8 @@ private:
 
         if (data.points.empty())
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
@@ -173,13 +173,12 @@ private:
 
         if (from_x >= to_x)
         {
-            size_t sz = updateFrame(values, 8);
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+            size_t sz = updateFrame(values, Y{8});
+            offsets.push_back(offsets.back() + sz);
             return;
         }
 
-        PaddedPODArray<Y> histogram(width, 0);
+        PaddedPODArray<Y> histogram(width, Y{0});
         PaddedPODArray<UInt64> count_histogram(width, 0); /// The number of points in each bucket
 
         for (const auto & point : data.points)
@@ -197,7 +196,7 @@ private:
 
             Y res;
             bool has_overfllow = false;
-            if constexpr (std::is_floating_point_v<Y>)
+            if constexpr (is_floating_point<Y>)
                 res = histogram[index] + point.getMapped();
             else
                 has_overfllow = common::addOverflow(histogram[index], point.getMapped(), res);
@@ -218,10 +217,10 @@ private:
         for (size_t i = 0; i < histogram.size(); ++i)
         {
             if (count_histogram[i] > 0)
-                histogram[i] /= count_histogram[i];
+                histogram[i] = histogram[i] / count_histogram[i];
         }
 
-        Y y_max = 0;
+        Y y_max{};
         for (auto & y : histogram)
         {
             if (isNaN(y) || y <= 0)
@@ -231,8 +230,8 @@ private:
 
         if (y_max == 0)
         {
-            values.push_back('\0');
-            offsets.push_back(offsets.empty() ? 1 : offsets.back() + 1);
+            auto last = offsets.back();
+            offsets.push_back(last);
             return;
         }
 
@@ -245,17 +244,17 @@ private:
                 continue;
             }
 
-            constexpr auto levels_num = static_cast<Y>(BAR_LEVELS - 1);
-            if constexpr (std::is_floating_point_v<Y>)
+            constexpr auto levels_num = Y{BAR_LEVELS - 1};
+            if constexpr (is_floating_point<Y>)
             {
                 y = y / (y_max / levels_num) + 1;
             }
             else
             {
                 Y scaled;
-                bool has_overfllow = common::mulOverflow<Y>(y, levels_num, scaled);
+                bool has_overflow = common::mulOverflow<Y>(y, levels_num, scaled);
 
-                if (has_overfllow)
+                if (has_overflow)
                     y = y / (y_max / levels_num) + 1;
                 else
                     y = scaled / y_max + 1;
@@ -266,8 +265,7 @@ private:
         for (const auto & y : histogram)
             sz += updateFrame(values, y);
 
-        values.push_back('\0');
-        offsets.push_back(offsets.empty() ? sz + 1 : offsets.back() + sz + 1);
+        offsets.push_back(offsets.back() + sz);
     }
 
 public:

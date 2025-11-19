@@ -1,4 +1,4 @@
-#include "ObjectStorageKeyGenerator.h"
+#include <Common/ObjectStorageKeyGenerator.h>
 
 #include <Common/getRandomASCIIString.h>
 #include <Common/MatchGenerator.h>
@@ -14,10 +14,12 @@ public:
     , re_gen(key_template)
     {
     }
-    DB::ObjectStorageKey generate(const String &) const override
+    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
     {
         return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate());
     }
+
+    bool isRandom() const override { return true; }
 
 private:
     String key_template;
@@ -32,7 +34,7 @@ public:
         : key_prefix(std::move(key_prefix_))
     {}
 
-    DB::ObjectStorageKey generate(const String &) const override
+    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
     {
         /// Path to store the new S3 object.
 
@@ -51,6 +53,8 @@ public:
         return DB::ObjectStorageKey::createAsRelative(key_prefix, key);
     }
 
+    bool isRandom() const override { return true; }
+
 private:
     String key_prefix;
 };
@@ -63,10 +67,13 @@ public:
         : key_prefix(std::move(key_prefix_))
     {}
 
-    DB::ObjectStorageKey generate(const String & path) const override
+    DB::ObjectStorageKey
+    generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
     {
         return DB::ObjectStorageKey::createAsRelative(key_prefix, path);
     }
+
+    bool isRandom() const override { return false; }
 
 private:
     String key_prefix;

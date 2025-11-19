@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 #include <pcg_random.hpp>
 
@@ -17,10 +17,7 @@ public:
     {
     }
 
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef().allow_suspicious_low_cardinality_types.value);
-    }
+    static FunctionPtr create(ContextPtr context);
 
     String getName() const override { return name; }
 

@@ -44,7 +44,7 @@ public:
     {
     }
 
-    inline bool isConstant() const { return default_values_column == nullptr; }
+    bool isConstant() const { return default_values_column == nullptr; }
 
     Field getDefaultValue(size_t row) const
     {
@@ -274,10 +274,8 @@ public:
                 auto nested_column = array_type->getNestedType()->createColumn();
                 return ColumnArray::create(std::move(nested_column));
             }
-            else
-            {
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
-            }
+
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Unsupported attribute type.");
         }
         if constexpr (std::is_same_v<DictionaryAttributeType, String>)
         {
@@ -345,7 +343,7 @@ public:
             if (attribute_default_value.isNull())
                 default_value_is_null = true;
             else
-                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.get<DictionaryAttributeType>());
+                default_value = static_cast<DictionaryAttributeType>(attribute_default_value.safeGet<DictionaryAttributeType>());
         }
         else
         {
@@ -377,7 +375,7 @@ public:
         if constexpr (std::is_same_v<DefaultColumnType, ColumnArray>)
         {
             Field field = (*default_values_column)[row];
-            return field.get<Array>();
+            return field.safeGet<Array>();
         }
         else if constexpr (std::is_same_v<DefaultColumnType, ColumnString>)
             return default_values_column->getDataAt(row);
@@ -440,7 +438,7 @@ public:
 
         if constexpr (key_type == DictionaryKeyType::Simple)
         {
-            key_columns[0] = recursiveRemoveSparse(key_columns[0]->convertToFullColumnIfConst());
+            key_columns[0] = removeSpecialRepresentations(key_columns[0]->convertToFullColumnIfConst());
 
             const auto * vector_col = checkAndGetColumn<ColumnVector<UInt64>>(key_columns[0].get());
             if (!vector_col)
@@ -450,17 +448,17 @@ public:
         keys_size = key_columns.front()->size();
     }
 
-    inline size_t getKeysSize() const
+    size_t getKeysSize() const
     {
         return keys_size;
     }
 
-    inline size_t getCurrentKeyIndex() const
+    size_t getCurrentKeyIndex() const
     {
         return current_key_index;
     }
 
-    inline KeyType extractCurrentKey()
+    KeyType extractCurrentKey()
     {
         assert(current_key_index < keys_size);
 
@@ -543,10 +541,10 @@ ColumnsWithTypeAndName deserializeColumnsWithTypeAndNameFromKeys(
   * Note: readPrefix readImpl readSuffix will be called on stream object during function execution.
   */
 template <DictionaryKeyType dictionary_key_type>
-void mergeBlockWithPipe(
+Block mergeBlockWithPipe(
     size_t key_columns_size,
-    Block & block_to_update,
-    QueryPipeline pipeline)
+    const Block & block_to_update,
+    BlockIO && io)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -596,57 +594,65 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    PullingPipelineExecutor executor(pipeline);
-    Block block;
+    PullingPipelineExecutor executor(io.pipeline);
 
-    while (executor.pull(block))
+    io.executeWithCallbacks([&]()
     {
-        convertToFullIfSparse(block);
-
-        Columns block_key_columns;
-        block_key_columns.reserve(key_columns_size);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < key_columns_size; ++i)
-            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-        PaddedPODArray<KeyType> update_keys = update_keys_extractor.extractAllKeys();
-
-        for (auto update_key : update_keys)
+        Block block;
+        while (executor.pull(block))
         {
-            const auto * it = saved_key_to_index.find(update_key);
-            if (it != nullptr)
+            removeSpecialColumnRepresentations(block);
+            block.checkNumberOfRows();
+
+            Columns block_key_columns;
+            block_key_columns.reserve(key_columns_size);
+
+            /// Split into keys columns and attribute columns
+            for (size_t i = 0; i < key_columns_size; ++i)
+                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+            DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
+            PaddedPODArray<KeyType> update_keys = update_keys_extractor.extractAllKeys();
+
+            for (auto update_key : update_keys)
             {
-                size_t index_to_filter = it->getMapped();
-                filter[index_to_filter] = false;
-                ++indexes_to_remove_count;
+                const auto * it = saved_key_to_index.find(update_key);
+                if (it != nullptr)
+                {
+                    size_t index_to_filter = it->getMapped();
+                    filter[index_to_filter] = false;
+                    ++indexes_to_remove_count;
+                }
+            }
+
+            size_t rows = block.rows();
+
+            for (size_t column_index = 0; column_index < block.columns(); ++column_index)
+            {
+                const auto update_column = block.safeGetByPosition(column_index).column;
+                MutableColumnPtr & result_fetched_column = result_fetched_columns[column_index];
+
+                result_fetched_column->insertRangeFrom(*update_column, 0, rows);
             }
         }
-
-        size_t rows = block.rows();
-
-        for (size_t column_index = 0; column_index < block.columns(); ++column_index)
-        {
-            const auto update_column = block.safeGetByPosition(column_index).column;
-            MutableColumnPtr & result_fetched_column = result_fetched_columns[column_index];
-
-            result_fetched_column->insertRangeFrom(*update_column, 0, rows);
-        }
-    }
+    });
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
     size_t filter_hint = filter.size() - indexes_to_remove_count;
 
+    Block result_block = block_to_update.cloneEmpty();
     for (size_t column_index = 0; column_index < block_to_update.columns(); ++column_index)
     {
-        auto & column = block_to_update.getByPosition(column_index).column;
-        column = column->filter(filter, filter_hint);
+        const auto & column = block_to_update.getByPosition(column_index).column;
 
-        MutableColumnPtr mutable_column = column->assumeMutable();
+        auto & res_column = result_block.getByPosition(column_index).column;
+        res_column = column->filter(filter, filter_hint);
+
+        MutableColumnPtr mutable_column = res_column->assumeMutable();
         const IColumn & fetched_column = *result_fetched_columns[column_index];
         mutable_column->insertRangeFrom(fetched_column, 0, result_fetched_rows);
     }
+    return result_block;
 }
 
 /**
@@ -662,7 +668,7 @@ static const PaddedPODArray<T> & getColumnVectorData(
     PaddedPODArray<T> & backup_storage)
 {
     bool is_const_column = isColumnConst(*column);
-    auto full_column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
+    auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
     if (!vector_col)
@@ -681,10 +687,8 @@ static const PaddedPODArray<T> & getColumnVectorData(
 
         return backup_storage;
     }
-    else
-    {
-        return vector_col->getData();
-    }
+
+    return vector_col->getData();
 }
 
 template <typename T>

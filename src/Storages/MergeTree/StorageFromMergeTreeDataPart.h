@@ -1,65 +1,49 @@
 #pragma once
 
+#include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/AlterConversions.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Core/Defines.h>
-#include <Common/Exception.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
+class QueryPlan;
 
 /// A Storage that allows reading from a single MergeTree data part.
 class StorageFromMergeTreeDataPart final : public IStorage
 {
 public:
     /// Used in part mutation.
-    explicit StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData::DataPartPtr & part_,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot_)
         : IStorage(getIDFromPart(part_))
-        , parts({part_})
-        , alter_conversions({part_->storage.getAlterConversionsForPart(part_)})
+        , parts(RangesInDataParts({part_}))
+        , mutations_snapshot(mutations_snapshot_)
         , storage(part_->storage)
-        , partition_id(part_->info.partition_id)
+        , partition_id(part_->info.getPartitionId())
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
         setVirtuals(*storage.getVirtualsPtr());
     }
 
     /// Used in queries with projection.
-    StorageFromMergeTreeDataPart(const MergeTreeData & storage_, ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
+    StorageFromMergeTreeDataPart(
+        const MergeTreeData & storage_,
+        ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr_)
         : IStorage(storage_.getStorageID()), storage(storage_), analysis_result_ptr(analysis_result_ptr_)
     {
         setInMemoryMetadata(storage.getInMemoryMetadata());
+        setVirtuals(*storage.getVirtualsPtr());
     }
 
     String getName() const override { return "FromMergeTreeDataPart"; }
 
-    StorageSnapshotPtr getStorageSnapshot(
-        const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
-    {
-        const auto & storage_columns = metadata_snapshot->getColumns();
-        if (!hasDynamicSubcolumns(storage_columns))
-            return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-
-        auto data_parts = storage.getDataPartsVectorForInternalUsage();
-
-        auto object_columns = getConcreteObjectColumns(
-            data_parts.begin(), data_parts.end(), storage_columns, [](const auto & part) -> const auto & { return part->getColumns(); });
-
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot, std::move(object_columns));
-    }
+    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -69,21 +53,7 @@ public:
         ContextPtr context,
         QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
-        size_t num_streams) override
-    {
-        query_plan.addStep(MergeTreeDataSelectExecutor(storage)
-                                              .readFromParts(
-                                                  parts,
-                                                  alter_conversions,
-                                                  column_names,
-                                                  storage_snapshot,
-                                                  query_info,
-                                                  context,
-                                                  max_block_size,
-                                                  num_streams,
-                                                  nullptr,
-                                                  analysis_result_ptr));
-    }
+        size_t num_streams) override;
 
     bool supportsPrewhere() const override { return true; }
 
@@ -101,26 +71,21 @@ public:
         return storage.getPartitionIDFromQuery(ast, context);
     }
 
-    bool materializeTTLRecalculateOnly() const
-    {
-        if (parts.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "parts must not be empty for materializeTTLRecalculateOnly");
-        return parts.front()->storage.getSettings()->materialize_ttl_recalculate_only;
-    }
+    bool materializeTTLRecalculateOnly() const;
 
     bool hasLightweightDeletedMask() const override
     {
-        return !parts.empty() && parts.front()->hasLightweightDelete();
+        return !parts.empty() && parts.front().data_part->hasLightweightDelete();
     }
 
     bool supportsLightweightDelete() const override
     {
-        return !parts.empty() && parts.front()->supportLightweightDeleteMutate();
+        return !parts.empty() && parts.front().data_part->supportLightweightDeleteMutate();
     }
 
 private:
-    const MergeTreeData::DataPartsVector parts;
-    const std::vector<AlterConversionsPtr> alter_conversions;
+    const RangesInDataParts parts;
+    const MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     const MergeTreeData & storage;
     const String partition_id;
     const ReadFromMergeTree::AnalysisResultPtr analysis_result_ptr;

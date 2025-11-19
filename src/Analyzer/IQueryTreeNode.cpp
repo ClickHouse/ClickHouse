@@ -39,6 +39,7 @@ const char * toString(QueryTreeNodeType type)
         case QueryTreeNodeType::TABLE_FUNCTION: return "TABLE_FUNCTION";
         case QueryTreeNodeType::QUERY: return "QUERY";
         case QueryTreeNodeType::ARRAY_JOIN: return "ARRAY_JOIN";
+        case QueryTreeNodeType::CROSS_JOIN: return "CROSS_JOIN";
         case QueryTreeNodeType::JOIN: return "JOIN";
         case QueryTreeNodeType::UNION: return "UNION";
     }
@@ -107,7 +108,7 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         }
 
         if (lhs_node_to_compare->getNodeType() != rhs_node_to_compare->getNodeType() ||
-            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare))
+            !lhs_node_to_compare->isEqualImpl(*rhs_node_to_compare, compare_options))
             return false;
 
         if (compare_options.compare_aliases && lhs_node_to_compare->alias != rhs_node_to_compare->alias)
@@ -127,9 +128,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_child && !rhs_child)
                 continue;
-            else if (lhs_child && !rhs_child)
+            if (lhs_child && !rhs_child)
                 return false;
-            else if (!lhs_child && rhs_child)
+            if (!lhs_child && rhs_child)
                 return false;
 
             nodes_to_process.emplace_back(lhs_child.get(), rhs_child.get());
@@ -150,9 +151,9 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
 
             if (!lhs_strong_pointer && !rhs_strong_pointer)
                 continue;
-            else if (lhs_strong_pointer && !rhs_strong_pointer)
+            if (lhs_strong_pointer && !rhs_strong_pointer)
                 return false;
-            else if (!lhs_strong_pointer && rhs_strong_pointer)
+            if (!lhs_strong_pointer && rhs_strong_pointer)
                 return false;
 
             nodes_to_process.emplace_back(lhs_strong_pointer.get(), rhs_strong_pointer.get());
@@ -207,7 +208,7 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
             hash_state.update(node_to_process->alias);
         }
 
-        node_to_process->updateTreeHashImpl(hash_state);
+        node_to_process->updateTreeHashImpl(hash_state, compare_options);
 
         hash_state.update(node_to_process->children.size());
 
@@ -336,7 +337,7 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 {
     auto converted_node = toASTImpl(options);
 
-    if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(converted_node.get()))
+    if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
 
     return converted_node;

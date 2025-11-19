@@ -1,6 +1,6 @@
 #include <Interpreters/Cache/IFileCachePriority.h>
 #include <Common/CurrentMetrics.h>
-
+#include <Common/Exception.h>
 
 namespace CurrentMetrics
 {
@@ -13,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFileCachePriority::IFileCachePriority(size_t max_size_, size_t max_elements_)
@@ -49,6 +50,14 @@ void IFileCachePriority::check(const CachePriorityGuard::Lock & lock) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cache limits violated. "
                         "{}", getStateInfoForLog(lock));
     }
+}
+
+std::unordered_map<std::string, IFileCachePriority::UsageStat> IFileCachePriority::getUsageStatPerClient()
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "getUsageStatPerClient() is not implemented for {} policy",
+        magic_enum::enum_name(getType()));
 }
 
 }

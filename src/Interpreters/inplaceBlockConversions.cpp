@@ -1,29 +1,46 @@
-#include "inplaceBlockConversions.h"
+#include <Interpreters/inplaceBlockConversions.h>
+
+#include <utility>
 
 #include <Core/Block.h>
-#include <Parsers/queryToString.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <utility>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/ObjectUtils.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
-#include <Common/checkStackSize.h>
-#include <Storages/ColumnsDescription.h>
-#include <DataTypes/NestedUtils.h>
+#include <Parsers/ASTWithAlias.h>
+
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageDummy.h>
+#include <Common/checkStackSize.h>
+
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Utils.h>
+#include <Planner/CollectSets.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
+}
 
 namespace ErrorCode
 {
@@ -32,11 +49,15 @@ namespace ErrorCode
 
 namespace
 {
-
 /// Add all required expressions for missing columns calculation
 void addDefaultRequiredExpressionsRecursively(
-    const Block & block, const String & required_column_name, DataTypePtr required_column_type,
-    const ColumnsDescription & columns, ASTPtr default_expr_list_accum, NameSet & added_columns, bool null_as_default)
+    const Block & block,
+    const String & required_column_name,
+    DataTypePtr required_column_type,
+    const ColumnsDescription & columns,
+    ASTPtr default_expr_list_accum,
+    NameSet & added_columns,
+    bool null_as_default)
 {
     checkStackSize();
 
@@ -139,7 +160,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
         if (!block.has(required_column.name))
             continue;
 
-        auto column_in_block = block.getByName(required_column.name);
+        const auto & column_in_block = block.getByName(required_column.name);
         if (column_in_block.type->equals(*required_column.type))
             continue;
 
@@ -152,24 +173,72 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-ActionsDAGPtr createExpressions(
+std::optional<ActionsDAG> createExpressions(
     const Block & header,
     ASTPtr expr_list,
     bool save_unneeded_columns,
     ContextPtr context)
 {
     if (!expr_list)
-        return nullptr;
+        return {};
 
     auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
     auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    auto dag = std::make_shared<ActionsDAG>(header.getNamesAndTypesList());
+    ActionsDAG dag(header.getNamesAndTypesList());
     auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
-    dag = ActionsDAG::merge(std::move(*dag), std::move(*actions));
-
-    return dag;
+    return ActionsDAG::merge(std::move(dag), std::move(actions));
 }
 
+std::optional<ActionsDAG> createExpressionsAnalyzer(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
+{
+    if (!expr_list)
+        return {};
+
+    auto execution_context = Context::createCopy(context);
+    auto expression = buildQueryTree(expr_list, execution_context);
+
+    ColumnsDescription fake_column_descriptions{};
+    // Add columns from index to ensure names are unique in case of duplicated columns.
+    for (const auto & column : header.getIndexByName())
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type));
+    auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
+    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+
+    QueryAnalyzer analyzer(false);
+    analyzer.resolve(expression, fake_table_expression, execution_context);
+
+    GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
+    collectSets(expression, *planner_context);
+
+    auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
+    chassert(expression->getChildren().size() == actions.getOutputs().size());
+
+    NamesWithAliases result_columns;
+    for (size_t i = 0; i < expression->getChildren().size(); ++i)
+        result_columns.emplace_back(actions.getOutputs()[i]->result_name, expr_list->children[i]->getAliasOrColumnName());
+
+    if (!save_unneeded_columns)
+        actions.addAliases(result_columns);
+    else
+        actions.project(result_columns);
+
+    // Output columns without expression as-is
+    NameSet outputs;
+    for (const auto & output : actions.getOutputs())
+        outputs.insert(output->result_name);
+    for (const auto & input : actions.getInputs())
+        if (!outputs.contains(input->result_name))
+            actions.getOutputs().push_back(input);
+
+    return actions;
+}
 }
 
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context)
@@ -178,9 +247,15 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    if (auto dag = createExpressions(block, conversion_expr_list, true, context))
+    std::optional<ActionsDAG> dag;
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
+    else
+        dag = createExpressions(block, conversion_expr_list, true, context);
+
+    if (dag)
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings::fromContext(context));
+        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
         expression->execute(block);
     }
 }
@@ -195,7 +270,7 @@ bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList &
     return false;
 }
 
-ActionsDAGPtr evaluateMissingDefaults(
+std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
     const ColumnsDescription & columns,
@@ -204,9 +279,11 @@ ActionsDAGPtr evaluateMissingDefaults(
     bool null_as_default)
 {
     if (!columns.hasDefaults() && (!null_as_default || !needConvertAnyNullToDefault(header, required_columns, columns)))
-        return nullptr;
+        return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
     return createExpressions(header, expr_list, save_unneeded_columns, context);
 }
 
@@ -227,7 +304,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -253,24 +330,59 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
                     if (offsets_column->size() != current_offsets_column->size() && inside_variant_element)
                         offsets_column = offsets_column->size() < current_offsets_column->size() ? offsets_column : current_offsets_column;
-#ifndef NDEBUG
-                    else
-                    {
-                        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(*offsets_column).getData();
-                        const auto & current_offsets_data = assert_cast<const ColumnUInt64 &>(*current_offsets_column).getData();
-
-                        if (offsets_data != current_offsets_data)
-                            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                                            "Found non-equal columns with offsets (sizes: {} and {}) for stream {}",
-                                            offsets_data.size(), current_offsets_data.size(), stream_name);
-                    }
-#endif
                 }
             }
         }, available_column->type, res_columns[i]);
     }
 
     return offsets_columns;
+}
+
+static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
+{
+    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
+
+    /// We must turn a constant column into a full column because the interpreter could infer
+    /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
+
+    if (subcolumn_name.empty())
+        return column->convertToFullColumnIfConst();
+
+    /// Firstly get subcolumn from const column and then replicate.
+    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+    column = data_type.getSubcolumn(subcolumn_name, column);
+
+    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
+}
+
+static bool hasDefault(const StorageMetadataPtr & metadata_snapshot, const NameAndTypePair & column)
+{
+    if (!metadata_snapshot)
+        return false;
+
+    const auto & columns = metadata_snapshot->getColumns();
+    if (columns.has(column.name))
+        return columns.hasDefault(column.name);
+
+    auto name_in_storage = column.getNameInStorage();
+    return columns.hasDefault(name_in_storage);
+}
+
+static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
+{
+    /// Add a dot to the end of name for convenience.
+    subcolumn_name += ".";
+    for (const auto & elem : tuple_elements)
+    {
+        auto pos = subcolumn_name.find(elem + ".");
+        if (pos != std::string::npos)
+            subcolumn_name.erase(pos, elem.size() + 1);
+    }
+
+    if (subcolumn_name.ends_with("."))
+        subcolumn_name.pop_back();
+
+    return subcolumn_name;
 }
 
 void fillMissingColumns(
@@ -298,24 +410,20 @@ void fillMissingColumns(
     auto requested_column = requested_columns.begin();
     for (size_t i = 0; i < num_columns; ++i, ++requested_column)
     {
-        const auto & [name, type] = *requested_column;
-
-        if (res_columns[i] && partially_read_columns.contains(name))
+        if (res_columns[i] && partially_read_columns.contains(requested_column->name))
             res_columns[i] = nullptr;
 
-        if (res_columns[i])
-            continue;
-
-        if (metadata_snapshot && metadata_snapshot->getColumns().hasDefault(name))
+        /// Nothing to fill or default should be filled in evaluateMissingDefaults
+        if (res_columns[i] || hasDefault(metadata_snapshot, *requested_column))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
         size_t num_dimensions = 0;
 
-        const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
-            num_dimensions = getNumberOfDimensions(*array_type);
+            num_dimensions = array_type->getNumberOfDimensions();
             current_offsets.resize(num_dimensions);
 
             auto serialization = IDataType::getSerialization(*requested_column);
@@ -329,7 +437,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
@@ -347,20 +455,34 @@ void fillMissingColumns(
 
         if (!current_offsets.empty())
         {
-            size_t num_empty_dimensions = num_dimensions - current_offsets.size();
-            auto scalar_type = createArrayOfType(getBaseTypeOfArray(type), num_empty_dimensions);
+            Names tuple_elements;
+            auto serialization = IDataType::getSerialization(*requested_column);
 
+            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
+            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
+            {
+                if (path.back().type == ISerialization::Substream::TupleElement)
+                    tuple_elements.push_back(path.back().name_of_substream);
+            }, ISerialization::SubstreamData(serialization));
+
+            /// The number of dimensions that belongs to the array itself but not shared in Nested column.
+            /// For example for column "n Nested(a UInt64, b Array(UInt64))" this value is 0 for `n.a` and 1 for `n.b`.
+            size_t num_empty_dimensions = num_dimensions - current_offsets.size();
+
+            auto base_type = getBaseTypeOfArray(requested_column->getTypeInStorage(), tuple_elements);
+            auto scalar_type = createArrayOfType(base_type, num_empty_dimensions);
             size_t data_size = assert_cast<const ColumnUInt64 &>(*current_offsets.back()).getData().back();
-            res_columns[i] = scalar_type->createColumnConstWithDefaultValue(data_size)->convertToFullColumnIfConst();
+
+            /// Remove names of tuple elements because they are already processed by 'getBaseTypeOfArray'.
+            auto subcolumn_name = removeTupleElementsFromSubcolumn(requested_column->getSubcolumnName(), tuple_elements);
+            res_columns[i] = createColumnWithDefaultValue(*scalar_type, subcolumn_name, data_size);
 
             for (auto it = current_offsets.rbegin(); it != current_offsets.rend(); ++it)
                 res_columns[i] = ColumnArray::create(res_columns[i], *it);
         }
         else
         {
-            /// We must turn a constant column into a full column because the interpreter could infer
-            /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
-            res_columns[i] = type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+            res_columns[i] = createColumnWithDefaultValue(*requested_column->getTypeInStorage(), requested_column->getSubcolumnName(), num_rows);
         }
     }
 }

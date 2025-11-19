@@ -12,8 +12,10 @@
 #include <Columns/IColumn.h>
 
 #include <Common/assert_cast.h>
-#include "DataTypes/IDataType.h"
 
+#include <Core/Field.h>
+
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,6 +28,8 @@
 #include <IO/readFloatText.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -87,7 +91,7 @@ Float64 tryParseFloat(const String & s)
 
 PrometheusTextOutputFormat::PrometheusTextOutputFormat(
     WriteBuffer & out_,
-    const Block & header_,
+    SharedHeader header_,
     const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_)
     , string_serialization(DataTypeString().getDefaultSerialization())
@@ -128,11 +132,11 @@ void PrometheusTextOutputFormat::fixupBucketLabels(CurrentMetric & metric)
             /// rows with labels at the beginning and then `_sum` and `_count`
             if (lhs_labels_contain_sum && rhs_labels_contain_count)
                 return true;
-            else if (lhs_labels_contain_count && rhs_labels_contain_sum)
+            if (lhs_labels_contain_count && rhs_labels_contain_sum)
                 return false;
-            else if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
+            if (rhs_labels_contain_sum_or_count && !lhs_labels_contain_sum_or_count)
                 return true;
-            else if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
+            if (lhs_labels_contain_sum_or_count && !rhs_labels_contain_sum_or_count)
                 return false;
 
             auto lit = lhs.labels.find(bucket_label);
@@ -286,10 +290,10 @@ static void columnMapToContainer(const ColumnMap * col_map, size_t row_num, Cont
 {
     Field field;
     col_map->get(row_num, field);
-    const auto & map_field = field.get<Map>();
+    const auto & map_field = field.safeGet<Map>();
     for (const auto & map_element : map_field)
     {
-        const auto & map_entry = map_element.get<Tuple>();
+        const auto & map_entry = map_element.safeGet<Tuple>();
 
         String entry_key;
         String entry_value;
@@ -344,10 +348,14 @@ void registerOutputFormatPrometheus(FormatFactory & factory)
     factory.registerOutputFormat(FORMAT_NAME, [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<PrometheusTextOutputFormat>(buf, sample, settings);
+        return std::make_shared<PrometheusTextOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
+
+    /// https://github.com/prometheus/docs/blob/86386ed25bc8a5309492483ec7d18d0914043162/content/docs/instrumenting/exposition_formats.md
+    factory.setContentType(FORMAT_NAME, "text/plain; version=0.0.4; charset=UTF-8");
 }
 
 }

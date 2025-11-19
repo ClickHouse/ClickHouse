@@ -1,12 +1,17 @@
 #include <Server/ReplicasStatusHandler.h>
 
+#include <Common/quoteString.h>
+#include <Core/ServerSettings.h>
 #include <Databases/IDatabase.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
+#include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/typeid_cast.h>
 
@@ -18,6 +23,12 @@
 namespace DB
 {
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 min_absolute_delay_to_close;
+    extern const MergeTreeSettingsUInt64 min_relative_delay_to_close;
+}
+
 ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(server.context())
 {
 }
@@ -26,6 +37,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 {
     try
     {
+        applyHTTPResponseHeaders(response, http_response_headers_override);
+
         HTMLForm params(getContext()->getSettingsRef(), request);
 
         const auto & config = getContext()->getConfigRef();
@@ -42,16 +55,19 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         bool ok = true;
         WriteBufferFromOwnString message;
 
-        auto databases = DatabaseCatalog::instance().getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)
         {
             /// Check if database can contain replicated tables
-            if (!db.second->canContainMergeTreeTables())
+            if (db.second->isExternal())
                 continue;
 
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            // Note that in case `async_load_databases = true` we do not want replica status handler to be hanging
+            // and waiting (in getTablesIterator() call) for every table to be load, so we just skip not-yet-loaded tables.
+            // If they have some lag it will be reflected as soon as they are load.
+            for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
                 const auto & table = iterator->table();
                 if (!table)
@@ -69,8 +85,8 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 {
                     table_replicated->getReplicaDelays(absolute_delay, relative_delay);
 
-                    if ((settings.min_absolute_delay_to_close && absolute_delay >= static_cast<time_t>(settings.min_absolute_delay_to_close))
-                        || (settings.min_relative_delay_to_close && relative_delay >= static_cast<time_t>(settings.min_relative_delay_to_close)))
+                    if ((settings[MergeTreeSetting::min_absolute_delay_to_close] && absolute_delay >= static_cast<time_t>(settings[MergeTreeSetting::min_absolute_delay_to_close]))
+                        || (settings[MergeTreeSetting::min_relative_delay_to_close] && relative_delay >= static_cast<time_t>(settings[MergeTreeSetting::min_relative_delay_to_close])))
                         ok = false;
 
                     message << backQuoteIfNeed(db.first) << "." << backQuoteIfNeed(iterator->name())
@@ -84,8 +100,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        const auto & server_settings = getContext()->getServerSettings();
-        setResponseDefaultHeaders(response, server_settings.keep_alive_timeout.totalSeconds());
+        setResponseDefaultHeaders(response);
 
         if (!ok)
         {
@@ -125,9 +140,16 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
 HTTPRequestHandlerFactoryPtr createReplicasStatusHandlerFactory(IServer & server,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix)
+    const std::string & config_prefix,
+    std::unordered_map<String, String> & common_headers)
 {
-    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(server);
+    std::unordered_map<String, String> http_response_headers_override
+        = parseHTTPResponseHeadersWithCommons(config, config_prefix, "text/plain; charset=UTF-8", common_headers);
+
+    auto creator = [&server, http_response_headers_override]() -> std::unique_ptr<ReplicasStatusHandler>
+    { return std::make_unique<ReplicasStatusHandler>(server, http_response_headers_override); };
+
+    auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<ReplicasStatusHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
     return factory;
 }

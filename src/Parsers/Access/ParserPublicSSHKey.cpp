@@ -1,6 +1,6 @@
 #include <Parsers/Access/ParserPublicSSHKey.h>
-#include <Parsers/Access/ASTPublicSSHKey.h>
 
+#include <Parsers/Access/ASTPublicSSHKey.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 

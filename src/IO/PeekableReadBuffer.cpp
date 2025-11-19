@@ -283,9 +283,7 @@ void PeekableReadBuffer::resizeOwnMemoryIfNecessary(size_t bytes_to_append)
         {
             size_t pos_offset = pos - memory.data();
 
-            size_t new_size_amortized = memory.size() * 2;
-            if (new_size_amortized < new_size)
-                new_size_amortized = new_size;
+            size_t new_size_amortized = std::max(memory.size() * 2, new_size);
             memory.resize(new_size_amortized);
 
             if (need_update_checkpoint)

@@ -85,15 +85,14 @@ query_thread_log:
   table: query_thread_log
   partition_by: toYYYYMM(event_date)
   flush_interval_milliseconds: 7500
-metric_log:
-  database: system
-  table: metric_log
-  flush_interval_milliseconds: 7500
-  collect_interval_milliseconds: 1000
 asynchronous_metric_log:
   database: system
   table: asynchronous_metric_log
   flush_interval_milliseconds: 60000
+iceberg_metadata_log:
+  database: system
+  table: iceberg_metadata_log
+  flush_interval_milliseconds: 2000
 opentelemetry_span_log:
   engine: |-
     engine MergeTree

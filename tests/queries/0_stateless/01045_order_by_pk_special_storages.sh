@@ -16,8 +16,8 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE s1 (a UInt32, s String) ENGINE = MergeTree O
 $CLICKHOUSE_CLIENT -q "CREATE TABLE s2 (a UInt32, s String) ENGINE = MergeTree ORDER BY a PARTITION BY a % 3 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE m (a UInt32, s String) engine = Merge('$CLICKHOUSE_DATABASE', 's[1,2]')"
-$CLICKHOUSE_CLIENT -q "INSERT INTO s1 select (number % 20) * 2 as n, toString(number * number) from numbers(100000)"
-$CLICKHOUSE_CLIENT -q "INSERT INTO s2 select (number % 20) * 2 + 1 as n, toString(number * number * number) from numbers(100000)"
+$CLICKHOUSE_CLIENT --optimize_trivial_insert_select 1 -q "INSERT INTO s1 select (number % 20) * 2 as n, toString(number * number) from numbers(100000)"
+$CLICKHOUSE_CLIENT --optimize_trivial_insert_select 1 -q "INSERT INTO s2 select (number % 20) * 2 + 1 as n, toString(number * number * number) from numbers(100000)"
 
 $CLICKHOUSE_CLIENT -q "SELECT '---StorageMerge---'"
 $CLICKHOUSE_CLIENT -q "SELECT a FROM m ORDER BY a LIMIT 5"
@@ -48,7 +48,7 @@ fi
 $CLICKHOUSE_CLIENT -q "SELECT '---MaterializedView---'"
 $CLICKHOUSE_CLIENT -q "CREATE MATERIALIZED VIEW mv (a UInt32, s String) engine = MergeTree ORDER BY s SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0 POPULATE AS SELECT a, s FROM s1 WHERE a % 7 = 0"
 $CLICKHOUSE_CLIENT -q "SELECT a, s FROM mv ORDER BY s LIMIT 10"
-rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a, s FROM mv ORDER BY s LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 | grep "rows_read" | sed 's/[^0-9]*//g')
+rows_read=$($CLICKHOUSE_CLIENT -q "SELECT a, s FROM mv ORDER BY s LIMIT 10 FORMAT JSON" --max_threads=1 --max_block_size=20 --optimize_read_in_order=1 --allow_prefetched_read_pool_for_remote_filesystem=0  --allow_prefetched_read_pool_for_local_filesystem=0 | grep "rows_read" | sed 's/[^0-9]*//g')
 
 if [[ $rows_read -lt 500 ]]
     then echo "OK"

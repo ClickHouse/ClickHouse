@@ -19,7 +19,6 @@ DROP TABLE null_subcolumns;
 DROP TABLE IF EXISTS map_subcolumns;
 
 SELECT 'Map';
-SET allow_experimental_map_type = 1;
 CREATE TABLE map_subcolumns (id UInt32, m Map(String, UInt32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO map_subcolumns VALUES (1, map('a', 1, 'b', 2)) (2, map('a', 3, 'c', 4)), (3, map('b', 5, 'c', 6, 'd', 7));
 

@@ -1,39 +1,89 @@
 #pragma once
+#include "config.h"
 
+#include <Storages/IndicesDescription.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Storages/MergeTree/VectorSearchUtils.h>
+
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <memory>
-#include <Core/Block.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MergeTree/GinIndexStore.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-
 
 constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 
 namespace DB
 {
 
-namespace ErrorCodes
+namespace Internal
 {
-    extern const int NOT_IMPLEMENTED;
+
+enum class RPNEvaluationIndexUsefulnessState : uint8_t
+{
+    // the following states indicate if the index might be useful
+    TRUE,
+    FALSE,
+    // the following states indicate RPN always evaluates to TRUE or FALSE, they are used for short-circuit.
+    ALWAYS_TRUE,
+    ALWAYS_FALSE
+};
+
+[[nodiscard]] inline RPNEvaluationIndexUsefulnessState
+evalAndRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
+{
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
 }
 
-using MergeTreeIndexVersion = uint8_t;
-struct MergeTreeIndexFormat
+[[nodiscard]] inline RPNEvaluationIndexUsefulnessState
+evalOrRpnIndexStates(RPNEvaluationIndexUsefulnessState lhs, RPNEvaluationIndexUsefulnessState rhs)
 {
-    MergeTreeIndexVersion version;
-    const char* extension;
+    if (lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE || rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE)
+    {
+        // short circuit
+        return RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::TRUE || rhs == RPNEvaluationIndexUsefulnessState::TRUE)
+    {
+        return RPNEvaluationIndexUsefulnessState::TRUE;
+    }
+    else if (lhs == RPNEvaluationIndexUsefulnessState::FALSE || rhs == RPNEvaluationIndexUsefulnessState::FALSE)
+    {
+        return RPNEvaluationIndexUsefulnessState::FALSE;
+    }
+    chassert(lhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE && rhs == RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+    return RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE;
+}
+}
 
-    explicit operator bool() const { return version != 0; }
-};
+class ActionsDAG;
+class Block;
+struct MergeTreeWriterSettings;
+struct SelectQueryInfo;
+struct MergeTreeDataPartChecksums;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
 
 /// Stores some info about a single block of data.
 struct IMergeTreeIndexGranule
@@ -43,26 +93,47 @@ struct IMergeTreeIndexGranule
     /// Serialize always last version.
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
 
+    /// Serialize with multiple streams.
+    /// By analogy with ISerialization::serializeBinaryBulkWithMultipleStreams.
+    virtual void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const;
+
     /// Version of the index to deserialize:
     ///
     /// - 2 -- minmax index for proper Nullable support,
     /// - 1 -- everything else.
     ///
     /// Implementation is responsible for version check,
-    /// and throw LOGICAL_ERROR in case of unsupported version.
+    /// and throws LOGICAL_ERROR in case of unsupported version.
     ///
     /// See also:
-    /// - IMergeTreeIndex::getSerializedFileExtension()
+    /// - IMergeTreeIndex::getSubstreams()
     /// - IMergeTreeIndex::getDeserializedFormat()
     /// - MergeTreeDataMergerMutator::collectFilesToSkip()
     /// - MergeTreeDataMergerMutator::collectFilesForRenames()
     virtual void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
 
+    /// Deserialize with multiple streams.
+    /// By analogy with ISerialization::deserializeBinaryBulkWithMultipleStreams.
+    virtual void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state);
+
     virtual bool empty() const = 0;
+
+    /// The in-memory size of the granule. Not expected to be 100% accurate.
+    virtual size_t memoryUsageBytes() const = 0;
 };
 
 using MergeTreeIndexGranulePtr = std::shared_ptr<IMergeTreeIndexGranule>;
 using MergeTreeIndexGranules = std::vector<MergeTreeIndexGranulePtr>;
+
+
+/// Stores many granules at once in a more optimal form, allowing bulk filtering.
+struct IMergeTreeIndexBulkGranules
+{
+    virtual ~IMergeTreeIndexBulkGranules() = default;
+    virtual void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) = 0;
+};
+
+using MergeTreeIndexBulkGranulesPtr = std::shared_ptr<IMergeTreeIndexBulkGranules>;
 
 
 /// Aggregates info about a single block of data.
@@ -92,13 +163,83 @@ public:
     virtual bool alwaysUnknownOrTrue() const = 0;
 
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const = 0;
+
+    using FilteredGranules = std::vector<size_t>;
+    virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
+    }
+
+    /// Special method for vector similarity indexes:
+    /// Returns the N nearest neighbors of a reference vector in the index granule.
+    /// The nearest neighbors are returned as row positions.
+    /// If VectorSearchParameters::return_distances = true, then the distances are returned as well.
+    virtual NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr /*granule*/) const
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "calculateApproximateNearestNeighbors is not implemented for non-vector-similarity indexes");
+    }
+
+    template <typename RPNElement>
+    bool rpnEvaluatesAlwaysUnknownOrTrue(
+        const std::vector<RPNElement> & rpn, const std::unordered_set<typename RPNElement::Function> & matchingFunctions) const
+    {
+        std::vector<Internal::RPNEvaluationIndexUsefulnessState> rpn_stack;
+        rpn_stack.reserve(rpn.size() - 1);
+
+        for (const auto & element : rpn)
+        {
+            if (element.function == RPNElement::ALWAYS_TRUE)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::ALWAYS_TRUE);
+            }
+            else if (element.function == RPNElement::ALWAYS_FALSE)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::ALWAYS_FALSE);
+            }
+            else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+            {
+                rpn_stack.emplace_back(Internal::RPNEvaluationIndexUsefulnessState::FALSE);
+            }
+            else if (matchingFunctions.contains(element.function))
+            {
+                rpn_stack.push_back(Internal::RPNEvaluationIndexUsefulnessState::TRUE);
+            }
+            else if (element.function == RPNElement::FUNCTION_NOT)
+            {
+                // do nothing
+            }
+            else if (element.function == RPNElement::FUNCTION_AND)
+            {
+                auto lhs = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto rhs = rpn_stack.back();
+                rpn_stack.back() = evalAndRpnIndexStates(lhs, rhs);
+            }
+            else if (element.function == RPNElement::FUNCTION_OR)
+            {
+                auto lhs = rpn_stack.back();
+                rpn_stack.pop_back();
+                auto rhs = rpn_stack.back();
+                rpn_stack.back() = evalOrRpnIndexStates(lhs, rhs);
+            }
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in RPNElement");
+        }
+
+        chassert(rpn_stack.size() == 1);
+        /*
+         * In case the result is `ALWAYS_TRUE`, it means we don't need any indices at all, it might be a constant result.
+         * Thus, we only check against the `TRUE` to determine the usefulness of the index condition.
+         */
+        return rpn_stack.front() != Internal::RPNEvaluationIndexUsefulnessState::TRUE;
+    }
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
-using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 struct IMergeTreeIndex;
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
+
 
 /// IndexCondition that checks several indexes at the same time.
 class IMergeTreeIndexMergedCondition
@@ -120,7 +261,6 @@ protected:
 };
 
 using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedCondition>;
 
 
 struct IMergeTreeIndex
@@ -138,38 +278,44 @@ struct IMergeTreeIndex
 
     virtual bool isMergeable() const { return false; }
 
-    /// Returns extension for serialization.
+    /// Returns substreams for serialization.
     /// Reimplement if you want new index format.
     ///
-    /// NOTE: In case getSerializedFileExtension() is reimplemented,
+    /// NOTE: In case getSubstreams() is reimplemented,
     /// getDeserializedFormat() should be reimplemented too,
-    /// and check all previous extensions too
+    /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
-    virtual const char* getSerializedFileExtension() const { return ".idx"; }
+    virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
-    /// Returns extension for deserialization.
-    ///
-    /// Return pair<extension, version>.
-    virtual MergeTreeIndexFormat getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
-    {
-        if (data_part_storage.exists(relative_path_prefix + ".idx"))
-            return {1, ".idx"};
-        return {0 /*unknown*/, ""};
-    }
+    /// Returns substreams and version for deserialization.
+    virtual MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const;
 
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
+    /// A more optimal filtering method
+    virtual bool supportsBulkFiltering() const { return false; }
+    virtual bool supportsReadingOnParallelReplicas() const { return false; }
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregatorForPart(const GinIndexStorePtr & /*store*/, const MergeTreeWriterSettings & settings) const
+    virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
-        return createIndexAggregator(settings);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
-    virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const = 0;
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
-    virtual bool isVectorSearch() const { return false; }
+    virtual MergeTreeIndexConditionPtr createIndexCondition(
+        const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
+
+    /// The vector similarity index overrides this method
+    virtual MergeTreeIndexConditionPtr createIndexCondition(
+        const ActionsDAG::Node * /*predicate*/, ContextPtr /*context*/,
+        const std::optional<VectorSearchParameters> & /*parameters*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "createIndexCondition with vector search parameters is not implemented for index of type {}", index.type);
+    }
+
+    virtual bool isVectorSimilarityIndex() const { return false; }
 
     virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondition(
         const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/, ContextPtr /*context*/) const
@@ -178,7 +324,7 @@ struct IMergeTreeIndex
             "MergedCondition is not implemented for index of type {}", index.type);
     }
 
-    Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
+    Names getColumnsRequiredForIndexCalc() const;
 
     const IndexDescription & index;
 };
@@ -186,6 +332,18 @@ struct IMergeTreeIndex
 using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
 using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
+struct MergeTreeIndexWithCondition
+{
+    MergeTreeIndexPtr index;
+    MergeTreeIndexConditionPtr condition;
+
+    MergeTreeIndexWithCondition(MergeTreeIndexPtr index_, MergeTreeIndexConditionPtr condition_)
+        : index(std::move(index_)), condition(std::move(condition_))
+    {
+    }
+
+    MergeTreeIndexWithCondition() = default;
+};
 
 class MergeTreeIndexFactory : private boost::noncopyable
 {
@@ -221,26 +379,24 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach);
 MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
 void setIndexValidator(const IndexDescription & index, bool attach);
 
+MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
+
 MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
 void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
-
-MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
-void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
 void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
-#ifdef ENABLE_ANNOY
-MergeTreeIndexPtr annoyIndexCreator(const IndexDescription & index);
-void annoyIndexValidator(const IndexDescription & index, bool attach);
+#if USE_USEARCH
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-#ifdef ENABLE_USEARCH
-MergeTreeIndexPtr usearchIndexCreator(const IndexDescription& index);
-void usearchIndexValidator(const IndexDescription& index, bool attach);
-#endif
+MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
+void ginIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr invertedIndexCreator(const IndexDescription& index);
-void invertedIndexValidator(const IndexDescription& index, bool attach);
+MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
+void textIndexValidator(const IndexDescription & index, bool attach);
 
 }

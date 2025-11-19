@@ -17,18 +17,18 @@
 #include <boost/math/distributions/normal.hpp>
 
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
-}
-
 namespace DB
 {
 
 struct Settings;
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
+}
 
 namespace
 {
@@ -39,7 +39,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
      *the probability of X being greater than Y is equal to the probability of Y being greater than X".
      *Or "the distribution F of first sample equals to the distribution G of second sample".
      *Then alternative for this hypothesis (H1) is "two-sided"(F != G), "less"(F < G), "greater" (F > G). */
-    enum class Alternative
+    enum class Alternative : uint8_t
     {
         TwoSided,
         Less,
@@ -69,7 +69,11 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
 
         /// The distribution of U-statistic under null hypothesis H0  is symmetric with respect to meanrank.
         const Float64 meanrank = n1 * n2 /2. + 0.5 * continuity_correction;
-        const Float64 sd = std::sqrt(tie_correction * n1 * n2 * (n1 + n2 + 1) / 12.0);
+
+        /// Handle the case when tie_correction is close to zero (all values are identical)
+        Float64 sd = 0.0;
+        if (std::abs(tie_correction) > std::numeric_limits<Float64>::epsilon())
+            sd = std::sqrt(tie_correction * n1 * n2 * (n1 + n2 + 1) / 12.0);
 
         Float64 u = 0;
         if (alternative == Alternative::TwoSided)
@@ -80,7 +84,12 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
         else if (alternative == Alternative::Greater)
             u = u2;
 
-        Float64 z = (u - meanrank) / sd;
+        /// If the standard deviation is close to zero (all values are identical),
+        /// z will be 0, which leads to p-value = 0.5 for one-sided tests
+        /// and p-value = 1.0 for two-sided tests
+        Float64 z = 0.0;
+        if (sd > std::numeric_limits<Float64>::epsilon())
+            z = (u - meanrank) / sd;
 
         if (unlikely(!std::isfinite(z)))
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
@@ -114,7 +123,7 @@ private:
             {
                 if (ind < first.size())
                     return first[ind];
-                return second[ind % first.size()];
+                return second[ind - first.size()];
             }
 
             size_t size() const
@@ -141,7 +150,7 @@ public:
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
         if (params.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Aggregate function {} require two parameter or less", getName());
+            throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} require two parameter or less", getName());
 
         if (params.empty())
         {
@@ -152,7 +161,7 @@ public:
         if (params[0].getType() != Field::Types::String)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require first parameter to be a String", getName());
 
-        const auto & param = params[0].get<String>();
+        const auto & param = params[0].safeGet<String>();
         if (param == "two-sided")
             alternative = Alternative::TwoSided;
         else if (param == "less")
@@ -169,7 +178,7 @@ public:
         if (params[1].getType() != Field::Types::UInt64)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} require second parameter to be a UInt64", getName());
 
-        continuity_correction = static_cast<bool>(params[1].get<UInt64>());
+        continuity_correction = static_cast<bool>(params[1].safeGet<UInt64>());
     }
 
     String getName() const override
@@ -205,35 +214,35 @@ public:
         UInt8 is_second = columns[1]->getUInt(row_num);
 
         if (is_second)
-            this->data(place).addY(value, arena);
+            data(place).addY(value, arena);
         else
-            this->data(place).addX(value, arena);
+            data(place).addX(value, arena);
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        auto & a = this->data(place);
-        const auto & b = this->data(rhs);
+        auto & a = data(place);
+        const auto & b = data(rhs);
 
         a.merge(b, arena);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        this->data(place).write(buf);
+        data(place).write(buf);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        this->data(place).read(buf, arena);
+        data(place).read(buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (!this->data(place).size_x || !this->data(place).size_y)
+        if (!data(place).size_x || !data(place).size_y)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} require both samples to be non empty", getName());
 
-        auto [u_statistic, p_value] = this->data(place).getResult(alternative, continuity_correction);
+        auto [u_statistic, p_value] = data(place).getResult(alternative, continuity_correction);
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));

@@ -1,25 +1,42 @@
 #!/usr/bin/env python3
-
 import json
 import logging
 import os
+import platform
 import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, List, Optional, Union
 
-# isort: off
 import requests
 
-# isort: on
+from ci_config import CI
+from ci_definitions import BuildNames
+from env_helper import REPO_COPY
 
-import get_robot_token as grt  # we need an updated ROBOT_TOKEN
-from ci_config import CI_CONFIG
+try:
+    # A work around for scripts using this downloading module without required deps
+    import get_robot_token as grt  # we need an updated ROBOT_TOKEN
+except ImportError:
+
+    class grt:  # type: ignore
+        ROBOT_TOKEN = None
+
+        @staticmethod
+        def get_best_robot_token() -> str:
+            return ""
+
 
 DOWNLOAD_RETRIES_COUNT = 5
 
+logger = logging.getLogger(__name__)
+
 
 class DownloadException(Exception):
+    pass
+
+
+class APIException(Exception):
     pass
 
 
@@ -29,7 +46,7 @@ def get_with_retries(
     sleep: int = 3,
     **kwargs: Any,
 ) -> requests.Response:
-    logging.info(
+    logger.info(
         "Getting URL with %i tries and sleep %i in between: %s", retries, sleep, url
     )
     exc = Exception("A placeholder to satisfy typing and avoid nesting")
@@ -41,7 +58,7 @@ def get_with_retries(
             return response
         except Exception as e:
             if i + 1 < retries:
-                logging.info("Exception '%s' while getting, retry %i", e, i + 1)
+                logger.info("Exception '%s' while getting, retry %i", e, i + 1)
                 time.sleep(sleep)
 
             exc = e
@@ -62,15 +79,10 @@ def get_gh_api(
     """
 
     def set_auth_header():
-        if "headers" in kwargs:
-            if "Authorization" not in kwargs["headers"]:
-                kwargs["headers"][
-                    "Authorization"
-                ] = f"Bearer {grt.get_best_robot_token()}"
-        else:
-            kwargs["headers"] = {
-                "Authorization": f"Bearer {grt.get_best_robot_token()}"
-            }
+        headers = kwargs.get("headers", {})
+        if "Authorization" not in headers:
+            headers["Authorization"] = f"Bearer {grt.get_best_robot_token()}"
+        kwargs["headers"] = headers
 
     if grt.ROBOT_TOKEN is not None:
         set_auth_header()
@@ -95,7 +107,7 @@ def get_gh_api(
             )
             try_auth = e.response.status_code == 404
             if (ratelimit_exceeded or try_auth) and not token_is_set:
-                logging.warning(
+                logger.warning(
                     "Received rate limit exception, setting the auth header and retry"
                 )
                 set_auth_header()
@@ -106,39 +118,69 @@ def get_gh_api(
             exc = e
 
         if try_cnt < retries:
-            logging.info("Exception '%s' while getting, retry %i", exc, try_cnt)
+            logger.info("Exception '%s' while getting, retry %i", exc, try_cnt)
             time.sleep(sleep)
 
-    raise exc
+    raise APIException(f"Unable to request data from GH API: {url}") from exc
 
 
-def get_build_name_for_check(check_name: str) -> str:
-    return CI_CONFIG.test_configs[check_name].required_build
+BUILD_TO_REPORT = {
+    BuildNames.PACKAGE_RELEASE: "artifact_report_build_amd_release.json",
+    BuildNames.PACKAGE_ASAN: "artifact_report_build_amd_asan.json",
+    BuildNames.PACKAGE_UBSAN: "artifact_report_build_amd_ubsan.json",
+    BuildNames.PACKAGE_TSAN: "artifact_report_build_amd_tsan.json",
+    BuildNames.PACKAGE_MSAN: "artifact_report_build_amd_msan.json",
+    BuildNames.PACKAGE_DEBUG: "artifact_report_build_amd_debug.json",
+    BuildNames.PACKAGE_AARCH64: "artifact_report_build_arm_release.json",
+    BuildNames.PACKAGE_AARCH64_ASAN: "artifact_report_build_arm_asan.json",
+    BuildNames.PACKAGE_RELEASE_COVERAGE: "artifact_report_build_arm_coverage.json",
+    BuildNames.BINARY_RELEASE: "artifact_report_build_amd_binary.json",
+    BuildNames.BINARY_TIDY: "artifact_report_build_amd_tidy.json",
+    BuildNames.BINARY_DARWIN: "artifact_report_build_amd_darwin.json",
+    BuildNames.BINARY_AARCH64: "artifact_report_build_arm_binary.json",
+    BuildNames.BINARY_AARCH64_V80COMPAT: "artifact_report_build_arm_v80compat.json",
+    BuildNames.BINARY_FREEBSD: "artifact_report_build_amd_freebsd.json",
+    BuildNames.BINARY_DARWIN_AARCH64: "artifact_report_build_arm_darwin.json",
+    BuildNames.BINARY_PPC64LE: "artifact_report_build_ppc64le.json",
+    BuildNames.BINARY_AMD64_COMPAT: "artifact_report_build_amd_compat.json",
+    BuildNames.BINARY_AMD64_MUSL: "artifact_report_build_amd_musl.json",
+    BuildNames.BINARY_RISCV64: "artifact_report_build_riscv64.json",
+    BuildNames.BINARY_S390X: "artifact_report_build_s390x.json",
+    BuildNames.BINARY_LOONGARCH64: "artifact_report_build_loongarch.json",
+    BuildNames.FUZZERS: "artifact_report_build_fuzzers.json",
+}
 
 
 def read_build_urls(build_name: str, reports_path: Union[Path, str]) -> List[str]:
+    artifact_report = Path(REPO_COPY) / "ci" / "tmp" / BUILD_TO_REPORT[build_name]
+    if artifact_report.is_file():
+        with open(artifact_report, "r", encoding="utf-8") as f:
+            return json.load(f)["build_urls"]  # type: ignore
     for root, _, files in os.walk(reports_path):
+        logging.info("Got files list: %s", str(files))
         for file in files:
             if file.endswith(f"_{build_name}.json"):
-                logging.info("Found build report json %s for %s", file, build_name)
+                logger.info("Found build report json %s for %s", file, build_name)
                 with open(
                     os.path.join(root, file), "r", encoding="utf-8"
                 ) as file_handler:
                     build_report = json.load(file_handler)
+                    if not build_report["build_urls"]:
+                        logger.warning("empty build_urls in report: %s: {build_report}")
                     return build_report["build_urls"]  # type: ignore
 
-    logging.info("A build report is not found for %s", build_name)
+    logger.warning("A build report is not found for %s", build_name)
     return []
 
 
 def download_build_with_progress(url: str, path: Path) -> None:
-    logging.info("Downloading from %s to temp path %s", url, path)
+    logger.info("Downloading from %s to temp path %s", url, path)
     for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
             response = get_with_retries(url, retries=1, stream=True)
             total_length = int(response.headers.get("content-length", 0))
             if path.is_file() and total_length and path.stat().st_size == total_length:
-                logging.info(
+                logger.info(
                     "The file %s already exists and have a proper size %s",
                     path,
                     total_length,
@@ -147,14 +189,14 @@ def download_build_with_progress(url: str, path: Path) -> None:
 
             with open(path, "wb") as f:
                 if total_length == 0:
-                    logging.info(
+                    logger.info(
                         "No content-length, will download file without progress"
                     )
                     f.write(response.content)
                 else:
                     dl = 0
 
-                    logging.info("Content length is %ld bytes", total_length)
+                    logger.info("Content length is %ld bytes", total_length)
                     for data in response.iter_content(chunk_size=4096):
                         dl += len(data)
                         f.write(data)
@@ -169,8 +211,8 @@ def download_build_with_progress(url: str, path: Path) -> None:
         except Exception as e:
             if sys.stdout.isatty():
                 sys.stdout.write("\n")
-            if os.path.exists(path):
-                os.remove(path)
+            if path.exists():
+                path.unlink()
 
             if i + 1 < DOWNLOAD_RETRIES_COUNT:
                 time.sleep(3)
@@ -181,7 +223,7 @@ def download_build_with_progress(url: str, path: Path) -> None:
 
     if sys.stdout.isatty():
         sys.stdout.write("\n")
-    logging.info("Downloading finished")
+    logger.info("Downloading finished")
 
 
 def download_builds(
@@ -190,7 +232,7 @@ def download_builds(
     for url in build_urls:
         if filter_fn(url):
             fname = os.path.basename(url.replace("%2B", "+").replace("%20", " "))
-            logging.info("Will download %s to %s", fname, result_path)
+            logger.info("Will download %s to %s", fname, result_path)
             download_build_with_progress(url, result_path / fname)
 
 
@@ -200,9 +242,15 @@ def download_builds_filter(
     result_path: Path,
     filter_fn: Callable[[str], bool] = lambda _: True,
 ) -> None:
-    build_name = get_build_name_for_check(check_name)
-    urls = read_build_urls(build_name, reports_path)
-    logging.info("The build report for %s contains the next URLs: %s", build_name, urls)
+    if (Path(reports_path) / "artifact_report.json").is_file():
+        with open(
+            Path(reports_path) / "artifact_report.json", "r", encoding="utf-8"
+        ) as f:
+            urls = json.load(f)["build_urls"]  # type: ignore
+    else:
+        build_name = CI.get_required_build_name(check_name)
+        urls = read_build_urls(build_name, reports_path)
+    logger.info("The build report for %s contains the next URLs: %s", check_name, urls)
 
     if not urls:
         raise DownloadException("No build URLs found")
@@ -234,12 +282,32 @@ def download_clickhouse_binary(
     )
 
 
+def download_clickhouse_master(result_path: Path, full: bool = False) -> None:
+    if platform.system() not in ("Linux", "Darwin"):
+        raise DownloadException(
+            f"Unsupported platform {platform.system()} for downloading ClickHouse master build"
+        )
+    arch = "amd64"
+    if platform.system() == "Darwin":
+        arch = "macos"
+    if platform.machine() in ("aarch64", "arm64"):
+        arch = "aarch64"
+        if platform.system() == "Darwin":
+            arch = "macos-aarch64"
+
+    url = (
+        f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{arch}/clickhouse"
+        f"{'-full' if full else ''}"
+    )
+    download_build_with_progress(url, result_path / "clickhouse")
+
+
 def get_clickhouse_binary_url(
     check_name: str, reports_path: Union[Path, str]
 ) -> Optional[str]:
-    build_name = get_build_name_for_check(check_name)
+    build_name = CI.get_required_build_name(check_name)
     urls = read_build_urls(build_name, reports_path)
-    logging.info("The build report for %s contains the next URLs: %s", build_name, urls)
+    logger.info("The build report for %s contains the next URLs: %s", build_name, urls)
     for url in urls:
         check_url = url
         if "?" in check_url:

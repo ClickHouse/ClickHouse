@@ -1,8 +1,11 @@
 #pragma once
+
+#include <Core/Block_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Interpreters/Cache/QueryCache.h> /// nested classes such as QC::Writer can't be fwd declared
+#include <Interpreters/Context_fwd.h>
+
 #include <functional>
 
 namespace DB
@@ -36,6 +39,9 @@ class ReadProgressCallback;
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
+class QueryResultCacheWriter;
+
+class SourceFromChunks;
 
 class QueryPipeline
 {
@@ -96,6 +102,7 @@ public:
 
     /// Only for pushing and pulling.
     Block getHeader() const;
+    SharedHeader getSharedHeader() const;
 
     size_t getNumThreads() const { return num_threads; }
     void setNumThreads(size_t num_threads_) { num_threads = num_threads_; }
@@ -108,9 +115,9 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer);
-    void finalizeWriteInQueryCache();
-    void readFromQueryCache(
+    void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
+    void finalizeWriteInQueryResultCache();
+    void readFromQueryResultCache(
         std::unique_ptr<SourceFromChunks> source,
         std::unique_ptr<SourceFromChunks> source_totals,
         std::unique_ptr<SourceFromChunks> source_extremes);
@@ -130,15 +137,17 @@ public:
     std::unique_ptr<ReadProgressCallback> getReadProgressCallback() const;
 
     /// Add processors and resources from other pipeline. Other pipeline should be completed.
-    void addCompletedPipeline(QueryPipeline other);
+    void addCompletedPipeline(QueryPipeline && other);
+    void addCompletedPipeline(const QueryPipeline & other);
 
     const Processors & getProcessors() const { return *processors; }
 
     /// For pulling pipeline, convert structure to expected.
     /// Trash, need to remove later.
-    void convertStructureTo(const ColumnsWithTypeAndName & columns);
+    void convertStructureTo(const ColumnsWithTypeAndName & columns, const ContextPtr & context);
 
     void reset();
+    void cancel() noexcept;
 
 private:
     QueryPlanResourceHolder resources;

@@ -6,21 +6,29 @@
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3>
             <disk_s3_other_bucket>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root2/data/disks/disk_s3/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_other_bucket>
             <disk_s3_plain>
                 <type>s3_plain</type>
                 <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
                 <access_key_id>minio</access_key_id>
-                <secret_access_key>minio123</secret_access_key>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <readonly>true</readonly>
             </disk_s3_plain>
+            <disk_s3_plain_rewritable>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain_rewritable/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+            </disk_s3_plain_rewritable>
             <disk_s3_cache>
                 <type>cache</type>
                 <disk>disk_s3</disk>
@@ -37,6 +45,20 @@
                     </main>
                 </volumes>
             </policy_s3>
+            <policy_s3_plain>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain</disk>
+                    </main>
+                </volumes>
+            </policy_s3_plain>
+            <policy_s3_plain_rewritable>
+                <volumes>
+                    <main>
+                        <disk>disk_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </policy_s3_plain_rewritable>
             <policy_s3_other_bucket>
                 <volumes>
                     <main>
@@ -57,6 +79,7 @@
         <allowed_disk>default</allowed_disk>
         <allowed_disk>disk_s3</allowed_disk>
         <allowed_disk>disk_s3_plain</allowed_disk>
+        <allowed_disk>disk_s3_plain_rewritable</allowed_disk>
         <allowed_disk>disk_s3_cache</allowed_disk>
         <allowed_disk>disk_s3_other_bucket</allowed_disk>
     </backups>

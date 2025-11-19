@@ -2,6 +2,7 @@
 #include <Interpreters/TextLog.h>
 
 #include <Common/ClickHouseRevision.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -44,7 +45,7 @@ ColumnsDescription TextLogElement::getColumnsDescription()
 
         {"level", std::move(priority_datatype), "Entry level. Possible values: 1 or 'Fatal', 2 or 'Critical', 3 or 'Error', 4 or 'Warning', 5 or 'Notice', 6 or 'Information', 7 or 'Debug', 8 or 'Trace'."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
-        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (i.e. DDLWorker)."},
+        {"logger_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Name of the logger (e.g., DDLWorker)."},
         {"message", std::make_shared<DataTypeString>(), "The message itself."},
 
         {"revision", std::make_shared<DataTypeUInt32>(), "ClickHouse revision."},
@@ -53,6 +54,16 @@ ColumnsDescription TextLogElement::getColumnsDescription()
         {"source_line", std::make_shared<DataTypeUInt64>(), "Source line from which the logging was done."},
 
         {"message_format_string", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "A format string that was used to format the message."},
+        {"value1", std::make_shared<DataTypeString>(), "Argument 1 that was used to format the message."},
+        {"value2", std::make_shared<DataTypeString>(), "Argument 2 that was used to format the message."},
+        {"value3", std::make_shared<DataTypeString>(), "Argument 3 that was used to format the message."},
+        {"value4", std::make_shared<DataTypeString>(), "Argument 4 that was used to format the message."},
+        {"value5", std::make_shared<DataTypeString>(), "Argument 5 that was used to format the message."},
+        {"value6", std::make_shared<DataTypeString>(), "Argument 6 that was used to format the message."},
+        {"value7", std::make_shared<DataTypeString>(), "Argument 7 that was used to format the message."},
+        {"value8", std::make_shared<DataTypeString>(), "Argument 8 that was used to format the message."},
+        {"value9", std::make_shared<DataTypeString>(), "Argument 9 that was used to format the message."},
+        {"value10", std::make_shared<DataTypeString>(), "Argument 10 that was used to format the message."},
     };
 }
 
@@ -65,7 +76,8 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
 
-    columns[i++]->insertData(thread_name.data(), thread_name.size());
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insert(thread_id);
 
     columns[i++]->insert(level);
@@ -79,6 +91,16 @@ void TextLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(source_line);
 
     columns[i++]->insert(message_format_string);
+    columns[i++]->insert(value1);
+    columns[i++]->insert(value2);
+    columns[i++]->insert(value3);
+    columns[i++]->insert(value4);
+    columns[i++]->insert(value5);
+    columns[i++]->insert(value6);
+    columns[i++]->insert(value7);
+    columns[i++]->insert(value8);
+    columns[i++]->insert(value9);
+    columns[i++]->insert(value10);
 }
 
 TextLog::TextLog(ContextPtr context_,

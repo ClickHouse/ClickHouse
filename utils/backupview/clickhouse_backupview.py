@@ -2,13 +2,13 @@
 
 import bisect
 import os.path
-import xml.etree.ElementTree as ET
-from urllib.parse import urlparse
 import shutil
-
+import xml.etree.ElementTree as ET
 import zipfile  # For reading backups from zip archives
-import boto3  # For reading backups from S3
+from urllib.parse import urlparse
 
+import boto3  # For reading backups from S3
+import botocore
 
 ## Examples:
 ## from backupview import open_backup
@@ -747,7 +747,7 @@ class Backup:
         paths = []
         if self.dir_exists(f"/shards/{shard}/replicas/{replica}/metadata/"):
             paths.append(f"/shards/{shard}/replicas/{replica}/")
-        if self.dir_exists(f"/shards/{shard}metadata/"):
+        if self.dir_exists(f"/shards/{shard}/metadata/"):
             paths.append(f"/shards/{shard}/")
         if self.dir_exists(f"/replicas/{replica}/metadata/"):
             paths.append(f"/replicas/{replica}/")

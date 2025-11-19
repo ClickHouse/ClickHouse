@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <mutex>
 
-#include <Interpreters/Set.h>
+#include <Interpreters/SetWithState.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -13,6 +13,8 @@
 #include <base/types.h>
 
 #include <Poco/String.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -39,7 +41,7 @@ Columns getColumnsByIndices(const Chunk & chunk, const std::vector<size_t> & ind
     const Columns & all_cols = chunk.getColumns();
     for (const auto & index : indices)
     {
-        auto col = recursiveRemoveSparse(all_cols.at(index));
+        auto col = removeSpecialRepresentations(all_cols.at(index));
         columns.push_back(std::move(col));
     }
 
@@ -56,7 +58,7 @@ ColumnsWithTypeAndName getColumnsByIndices(const Block & sample_block, const Chu
 }
 
 CreatingSetsOnTheFlyTransform::CreatingSetsOnTheFlyTransform(
-    const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
+    SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))
@@ -130,7 +132,7 @@ void CreatingSetsOnTheFlyTransform::transform(Chunk & chunk)
     }
 }
 
-FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_)
+FilterBySetOnTheFlyTransform::FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_)
     : ISimpleTransform(header_, header_, true)
     , column_names(column_names_)
     , key_column_indices(getColumnIndices(inputs.front().getHeader(), column_names))

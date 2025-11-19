@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/PODArray.h>
-#include <Compression/LZ4_decompress_faster.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/BufferBase.h>
 
@@ -9,6 +8,7 @@
 namespace DB
 {
 
+class Exception;
 class ReadBuffer;
 
 /** Basic functionality for implementation of
@@ -21,6 +21,7 @@ protected:
 
     /// If 'compressed_in' buffer has whole compressed block - then use it. Otherwise copy parts of data to 'own_compressed_buffer'.
     PODArray<char> own_compressed_buffer;
+    bool own_compressed_buffer_header_init = false; // true if own_compressed_buffer header was initialized
     /// Points to memory, holding compressed block.
     char * compressed_buffer = nullptr;
 
@@ -64,6 +65,9 @@ protected:
     /// It is more efficient for compression codec NONE but not suitable if you want to decompress into specific location.
     void decompress(BufferBase::Buffer & to, size_t size_decompressed, size_t size_compressed_without_checksum);
 
+    /// Adds diagnostics to the error message.
+    void addDiagnostics(Exception & e) const;
+
     /// Flush all asynchronous decompress request.
     void flushAsynchronousDecompressRequests() const;
 
@@ -87,7 +91,8 @@ public:
     }
 
     /// Some compressed read buffer can do useful seek operation
-    virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */) {}
+    virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
+    virtual off_t getPosition() const;
 
     CompressionCodecPtr codec;
 };

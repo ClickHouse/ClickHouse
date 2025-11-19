@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -38,8 +39,10 @@ protected:
 
 public:
     ISimpleTransform(Block input_header_, Block output_header_, bool skip_empty_chunks_);
+    ISimpleTransform(SharedHeader input_header_, SharedHeader output_header_, bool skip_empty_chunks_);
 
     virtual void transform(Chunk &) = 0;
+    virtual void transform(std::exception_ptr &) {}
 
     Status prepare() override;
     void work() override;

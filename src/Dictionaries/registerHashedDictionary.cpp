@@ -1,12 +1,17 @@
+#include <Core/Settings.h>
 #include <Dictionaries/HashedDictionary.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
 #include <Dictionaries/ClickHouseDictionarySource.h>
-
 #include <Interpreters/Context.h>
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool dictionary_use_async_executor;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -27,7 +32,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
     {
         if (dictionary_key_type == DictionaryKeyType::Simple && dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed dictionary");
-        else if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
+        if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -52,11 +57,11 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         if (preallocate)
             LOG_WARNING(getLogger("HashedDictionary"), "'prellocate' attribute is obsolete, consider looking at 'shards'");
 
-        Int64 shards = config.getInt(config_prefix + dictionary_layout_prefix + ".shards", 1);
+        Int64 shards = config.getInt64(config_prefix + dictionary_layout_prefix + ".shards", 1);
         if (shards <= 0 || shards > 128)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARDS parameter should be within [1, 128]", full_name);
 
-        Int64 shard_load_queue_backlog = config.getInt(config_prefix + dictionary_layout_prefix + ".shard_load_queue_backlog", 10000);
+        Int64 shard_load_queue_backlog = config.getInt64(config_prefix + dictionary_layout_prefix + ".shard_load_queue_backlog", 10000);
         if (shard_load_queue_backlog <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,"{}: SHARD_LOAD_QUEUE_BACKLOG parameter should be greater then zero", full_name);
 
@@ -68,7 +73,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const auto & settings = context->getSettingsRef();
 
         const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get());
-        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings.dictionary_use_async_executor;
+        bool use_async_executor = clickhouse_source && clickhouse_source->isLocal() && settings[Setting::dictionary_use_async_executor];
 
         HashedDictionaryConfiguration configuration{
             static_cast<UInt64>(shards),
@@ -77,7 +82,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             require_nonempty,
             dict_lifetime,
             use_async_executor,
-            std::chrono::seconds(settings.max_execution_time.totalSeconds()),
+            std::chrono::seconds(settings[Setting::max_execution_time].totalSeconds()),
         };
 
         if (source_ptr->hasUpdateField() && shards > 1)
@@ -89,34 +94,31 @@ void registerDictionaryHashed(DictionaryFactory & factory)
             {
                 if (shards > 1)
                     return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true, false>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
             }
-            else
-            {
-                if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            }
+
+            if (shards > 1)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, true>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false, false>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
         }
-        else
+
+        if (sparse)
         {
-            if (sparse)
-            {
-                if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            }
-            else
-            {
-                if (shards > 1)
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-                else
-                    return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
-            }
+            if (shards > 1)
+                return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, true>>(
+                    dict_id, dict_struct, std::move(source_ptr), configuration);
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true, false>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
         }
+
+        if (shards > 1)
+            return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, true>>(
+                dict_id, dict_struct, std::move(source_ptr), configuration);
+        return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false, false>>(
+            dict_id, dict_struct, std::move(source_ptr), configuration);
     };
 
     factory.registerLayout("hashed",

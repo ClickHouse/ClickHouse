@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/BlockNameMap.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/BSONTypes.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -51,7 +51,7 @@ class BSONEachRowRowInputFormat final : public IRowInputFormat
 {
 public:
     BSONEachRowRowInputFormat(
-        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+        ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BSONEachRowRowInputFormat"; }
     void resetParser() override;
@@ -88,10 +88,10 @@ private:
     /// for row like {..., "non-nullable column name" : null, ...}
 
     /// Hash table match `field name -> position in the block`.
-    Block::NameMap name_map;
+    BlockNameMap name_map;
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
-    std::vector<Block::NameMap::const_iterator> prev_positions;
+    std::vector<BlockNameMap::const_iterator> prev_positions;
 
     DataTypes types;
 

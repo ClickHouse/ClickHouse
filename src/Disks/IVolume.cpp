@@ -1,6 +1,6 @@
-#include "IVolume.h"
+#include <Disks/IVolume.h>
 
-#include <Common/StringUtils/StringUtils.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 
 #include <memory>
@@ -64,4 +64,8 @@ std::optional<UInt64> IVolume::getMaxUnreservedFreeSpace() const
     return res;
 }
 
+bool IVolume::isReadOnly() const
+{
+    return std::all_of(disks.begin(), disks.end(), [](const auto & disk) { return disk->isReadOnly(); });
+}
 }

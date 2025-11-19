@@ -4,11 +4,12 @@
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
 #include <Disks/IO/IOUringReader.h>
+#include <Disks/IO/getIOUringReader.h>
 #include <Disks/IO/ThreadPoolReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
-#include <IO/SynchronousReader.h>
 #include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/Context.h>
 #include "config.h"
 
 namespace ProfileEvents
@@ -71,6 +72,11 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         }
     }
 
+    auto get_prefetches_log = [&]()
+    {
+        return settings.enable_filesystem_read_prefetches_log ? Context::getGlobalContextInstance()->getFilesystemReadPrefetchesLog() : nullptr;
+    };
+
     auto create = [&](size_t buffer_size, size_t buffer_alignment, int actual_flags)
     {
         std::unique_ptr<ReadBufferFromFileBase> res;
@@ -100,14 +106,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
         else if (settings.local_fs_method == LocalFSReadMethod::io_uring)
         {
 #if USE_LIBURING
-            auto global_context = Context::getGlobalContextInstance();
-            if (!global_context)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain io_uring reader (global context not initialized)");
-
-            auto & reader = global_context->getIOURingReader();
-            if (!reader.isSupported())
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "io_uring is not supported by this system");
-
+            auto & reader = getIOUringReaderOrThrow();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader,
                 settings.priority,
@@ -117,7 +116,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 existing_memory,
                 buffer_alignment,
                 file_size,
-                settings.local_throttler);
+                settings.local_throttler,
+                get_prefetches_log());
 #else
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Read method io_uring is only supported in Linux");
 #endif
@@ -134,7 +134,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 existing_memory,
                 buffer_alignment,
                 file_size,
-                settings.local_throttler);
+                settings.local_throttler,
+                get_prefetches_log());
         }
         else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
@@ -148,7 +149,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
                 existing_memory,
                 buffer_alignment,
                 file_size,
-                settings.local_throttler);
+                settings.local_throttler,
+                get_prefetches_log());
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown read method");

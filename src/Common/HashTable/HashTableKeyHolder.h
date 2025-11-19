@@ -50,7 +50,7 @@
   * After the call to keyHolderPersistKey(), must return the persistent key.
   */
 template <typename Key>
-inline Key & ALWAYS_INLINE keyHolderGetKey(Key && key) { return key; }
+inline Key & ALWAYS_INLINE keyHolderGetKey(Key && key) { return key; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
 /**
   * Make the key persistent. keyHolderGetKey() must return the persistent key
@@ -76,7 +76,15 @@ struct ArenaKeyHolder
 {
     StringRef key;
     Arena & pool;
+    /// When key is not held by any external instance, then it is held by this unique_ptr.
+    std::unique_ptr<char[]> holder;
 
+    ArenaKeyHolder(const StringRef & key_, Arena & pool_, std::unique_ptr<char[]> holder_ = {})
+        : key(key_)
+        , pool(pool_)
+        , holder(std::move(holder_))
+    {
+    }
 };
 
 }

@@ -1,7 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-
+#include <DataTypes/IDataType.h>
 
 namespace DB
 {
@@ -27,6 +29,8 @@ public:
     /// the function will add a default value to this column.
     void addDefaults(MutableColumns & columns, size_t row_num) const;
 
+    const NamesAndTypesList & getNamesAndTypes() const;
+
 private:
     void setNestedGroups(std::unordered_map<std::string_view, std::vector<size_t>> && nested_groups, size_t num_columns);
 
@@ -35,6 +39,7 @@ private:
         std::shared_ptr<std::vector<size_t>> nested_group;
     };
     std::vector<ColumnInfo> column_infos;
+    NamesAndTypesList names_and_types;
 };
 
 }

@@ -40,16 +40,18 @@ public:
     }
 
     bool executeStep() override;
+    void cancel() noexcept override;
+
     void onCompleted() override;
     StorageID getStorageID() const override;
     Priority getPriority() const override { return priority; }
     String getQueryId() const override { return getStorageID().getShortName() + "::" + merge_mutate_entry->future_part->name; }
 
 private:
-
     void prepare();
+    void finish();
 
-    enum class State
+    enum class State : uint8_t
     {
         NEED_PREPARE,
         NEED_EXECUTE,
