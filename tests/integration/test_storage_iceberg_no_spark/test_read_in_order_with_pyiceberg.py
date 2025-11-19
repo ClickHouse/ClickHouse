@@ -109,6 +109,7 @@ def test_sort_order(started_cluster_iceberg_no_spark):
 
     partition_spec = PartitionSpec()
 
+    # NOTE pyiceberg ignore sort order when writing data, so writes data unsorted
     sort_order = SortOrder(SortField(source_id=4, transform=IdentityTransform()))
     table = create_table(catalog, root_namespace, "test", schema, partition_spec, sort_order)
 
@@ -131,6 +132,7 @@ def test_sort_order(started_cluster_iceberg_no_spark):
     create_clickhouse_iceberg_database(started_cluster_iceberg_no_spark, instance, CATALOG_NAME)
     print(instance.query(f"SHOW TABLES FROM {CATALOG_NAME};"))
 
+    # NOTE Read in order optimization shouldn't work because data is not sorted
     result = instance.query(f"SELECT string_col FROM {CATALOG_NAME}.`{root_namespace}.test` ORDER BY string_col SETTINGS optimize_read_in_order=0").strip().split("\n")
     assert result == list(sorted(result))
 
