@@ -1,5 +1,7 @@
 -- Tests for skip index with predicate conditions containing AND and OR.
 
+SET parallel_replicas_local_plan = 1; -- test verifies EXPLAIN output
+
 DROP TABLE IF EXISTS tab1;
 
 CREATE TABLE tab1
