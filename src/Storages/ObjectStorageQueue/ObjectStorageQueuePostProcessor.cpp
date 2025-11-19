@@ -122,7 +122,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             default:
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
-                    "after processing move not allowed for storage type {}, only Azure and S3 supported",
+                    "After processing move not allowed for storage type {}, only Azure and S3 supported",
                     type);
         }
     }
@@ -131,7 +131,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE
         const String & tag_key = settings.after_processing_tag_key;
         const String & tag_value = settings.after_processing_tag_value;
-        LOG_INFO(log, "executing TAG action in ObjectStorage Queue commit stage, {} = {}", tag_key, tag_value);
+        LOG_INFO(log, "Executing TAG action in ObjectStorage Queue commit stage, {} = {}", tag_key, tag_value);
         try
         {
             doWithRetries([&]{
@@ -148,13 +148,18 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
             );
         }
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTaggedObjects, objects.size());
+#else
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported after_processing action for object storage type {}",
+            type);
 #endif
     }
     else if (after_processing_action != ObjectStorageQueueAction::KEEP)
     {
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "unsupported after_processing action {}",
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unsupported after_processing action {}",
             actionToString(after_processing_action));
     }
 
@@ -248,13 +253,13 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
                 {
                     doWithRetries([&]{
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
-                        LOG_TRACE(log, "copying object {} to {}", object_from.remote_path, object_to.remote_path);
+                        LOG_TRACE(log, "Copying object {} to {}", object_from.remote_path, object_to.remote_path);
                         object_storage->copyObject(
                             object_from,
                             object_to,
                             read_settings,
                             write_settings);
-                        LOG_INFO(log, "removing object {}", object_from.remote_path);
+                        LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
                     ++moved_objects;
@@ -300,7 +305,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     {
         if (move_uri.empty() || move_access_key_id.empty() || move_secret_access_key.empty())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "not enough settings to move S3 objects");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough settings to move S3 objects");
         }
 
         if (auto * s3_storage = dynamic_cast<S3ObjectStorage * >(object_storage.get()); s3_storage != nullptr)
@@ -319,7 +324,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                 move_uri,
                 *s3_settings.get(),
                 contextPtr,
-                /* for_disk_s3 */ true
+                /* for_disk_s3 */ false
             );
             auto dst_uri = S3::URI(move_uri);
             auto read_settings = getReadSettings();
@@ -341,7 +346,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             object_from.remote_path);
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
 
-                        LOG_INFO(log, "copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
+                        LOG_INFO(log, "Copying {} ({} Bytes) to bucket {}", object_from.remote_path, object_size, dst_uri.bucket);
                         copyS3File(
                             src_client,
                             /*src_bucket=*/ src_bucket,
@@ -360,7 +365,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             }
                             /*object_metadata=*/);
 
-                        LOG_INFO(log, "removing object {}", object_from.remote_path);
+                        LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
                     moved_objects += 1;
@@ -379,7 +384,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "underlying storage is not S3");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Underlying storage is not S3");
         }
     }
     else if (!move_prefix.empty())
@@ -388,10 +393,10 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "no settings to move S3 objects");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No settings to move S3 objects");
     }
 #else
-    (void) objects;
+    UNUSED(objects);
 #endif
 }
 
@@ -406,7 +411,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     {
         if (move_connection_string.empty() || move_container.empty())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "not enough settings to move Azure blobs");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not enough settings to move Azure blobs");
         }
 
         if (auto * azure_storage = dynamic_cast<AzureObjectStorage * >(object_storage.get()); azure_storage != nullptr)
@@ -439,7 +444,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             IObjectStorage::getThreadPoolWriter(),
                             "ObjStorQueue_move_azure");
 
-                        LOG_INFO(log, "copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
+                        LOG_INFO(log, "Copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
                         copyAzureBlobStorageFile(
                             src_client,
                             dst_client,
@@ -454,7 +459,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             std::optional<ObjectAttributes>(),
                             scheduler
                         );
-                        LOG_INFO(log, "removing object {}", object_from.remote_path);
+                        LOG_INFO(log, "Removing object {}", object_from.remote_path);
                         object_storage->removeObjectIfExists(object_from);
                     });
                     moved_objects += 1;
@@ -473,7 +478,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
         }
         else
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "underlying storage is not Azure");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Underlying storage is not Azure");
         }
     }
     else if (!move_prefix.empty())
@@ -482,10 +487,10 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "no settings to move Azure blobs");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "No settings to move Azure blobs");
     }
 #else
-    (void) objects;
+    UNUSED(objects);
 #endif
 }
 

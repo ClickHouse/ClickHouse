@@ -335,7 +335,7 @@ static void setAzureBlobTag(
     {
         auto blob_client = client_ptr->GetBlobClient(blob_name);
         auto get_response = blob_client.GetTags();
-        auto& tags = get_response.Value;
+        auto & tags = get_response.Value;
         const auto tag_iter = tags.find(tag_key);
         if (tag_iter != tags.end() && tag_iter->second == tag_value)
         {

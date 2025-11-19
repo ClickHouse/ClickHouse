@@ -166,12 +166,12 @@ namespace
                 if (!move_uri || !move_access_key_id || !move_secret_access_key)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
+                        "Move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
                 }
                 if (move_connection_string || move_container)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "unexpected Azure settings when S3 settings are provided:{}{}",
+                        "Unexpected Azure settings when S3 settings are provided:{}{}",
                         move_connection_string ? " move_connection_string" : "",
                         move_container ? " move_container" : "");
                 }
@@ -181,13 +181,13 @@ namespace
                 if (!move_connection_string || !move_container)
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "move to Azure container requires all of settings: move_connection_string, move_container");
+                        "Move to Azure container requires all of settings: move_connection_string, move_container");
                 }
             }
             else if (!move_prefix)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "move of processed objects requires specifying target bucket/container or prefix");
+                        "Move of processed objects requires specifying target bucket/container or prefix");
             }
         }
         if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::TAG)
