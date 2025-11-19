@@ -453,8 +453,10 @@ std::string_view Dwarf::getSection(const char * name) const
     if (!elf_section)
         return {};
 
-    if (elf_section->header.flags & SectionHeaderFlag::COMPRESSED)
+#ifdef SHF_COMPRESSED
+    if (elf_section->header.sh_flags & SHF_COMPRESSED)
         return {};
+#endif
 
     return { elf_section->begin(), elf_section->size()};
 }

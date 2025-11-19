@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import csv
 import logging
 import os
@@ -7,10 +9,13 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
+from build_download_helper import download_all_deb_packages
 from ci_utils import Shell
+from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image, pull_image
-from env_helper import REPO_COPY
+from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
+from pr_info import PRInfo
 from report import ERROR, JobReport, TestResults, read_test_results
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
@@ -51,6 +56,7 @@ def get_run_command(
     repo_tests_path: Path,
     server_log_path: Path,
     additional_envs: List[str],
+    ci_logs_args: str,
     image: DockerImage,
     upgrade_check: bool,
 ) -> str:
@@ -68,6 +74,7 @@ def get_run_command(
         "--privileged "
         # a static link, don't use S3_URL or S3_DOWNLOAD
         "-e S3_URL='https://s3.amazonaws.com/clickhouse-datasets' "
+        f"{ci_logs_args}"
         "--tmpfs /tmp/clickhouse "
         f"--volume={build_path}:/package_folder "
         f"--volume={result_path}:/test_output "
@@ -136,8 +143,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         handler.setFormatter(SensitiveFormatter(handler.formatter._fmt))  # type: ignore
 
     stopwatch = Stopwatch()
+    temp_path = Path(TEMP_PATH)
+    reports_path = Path(REPORT_PATH)
+    temp_path.mkdir(parents=True, exist_ok=True)
     repo_path = Path(REPO_COPY)
-    temp_path = repo_path / "ci/tmp"
     repo_tests_path = repo_path / "tests"
 
     check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
@@ -145,9 +154,19 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         check_name
     ), "Check name must be provided as an input arg or in CHECK_NAME env"
 
-    packages_path = temp_path
+    pr_info = PRInfo()
 
-    docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
+    packages_path = temp_path / "packages"
+    packages_path.mkdir(parents=True, exist_ok=True)
+
+    if check_name.startswith("amd_") or check_name.startswith("arm_"):
+        # this is praktika based CI
+        print("Copy input *.deb artifacts")
+        assert Shell.check(f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True)
+        docker_image = pull_image(get_docker_image("clickhouse/stateful-test"))
+    else:
+        download_all_deb_packages(check_name, reports_path, packages_path)
+        docker_image = pull_image(get_docker_image("clickhouse/stress-test"))
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)
@@ -156,6 +175,10 @@ def run_stress_test(upgrade_check: bool = False) -> None:
     result_path.mkdir(parents=True, exist_ok=True)
 
     run_log_path = temp_path / "run.log"
+    ci_logs_credentials = CiLogsCredentials(temp_path / "export-logs-config.sh")
+    ci_logs_args = ci_logs_credentials.get_docker_arguments(
+        pr_info, stopwatch.start_time_str, check_name
+    )
 
     additional_envs = get_additional_envs(check_name)
 
@@ -165,6 +188,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
         repo_tests_path,
         server_log_path,
         additional_envs,
+        ci_logs_args,
         docker_image,
         upgrade_check,
     )
@@ -178,6 +202,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+    ci_logs_credentials.clean_ci_logs_from_credentials(run_log_path)
 
     state, description, test_results, additional_logs = process_results(
         result_path, server_log_path, run_log_path

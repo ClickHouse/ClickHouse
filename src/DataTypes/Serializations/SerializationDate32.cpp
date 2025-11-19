@@ -83,26 +83,19 @@ void SerializationDate32::serializeTextJSON(const IColumn & column, size_t row_n
     writeChar('"', ostr);
 }
 
-void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & format_settings) const
+void SerializationDate32::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (!checkChar('"', istr))
-    {
-        SerializationNumber<Int32>::deserializeTextJSON(column, istr, format_settings);
-        return;
-    }
     ExtendedDayNum x;
+    assertChar('"', istr);
     readDateText(x, istr, time_zone);
     assertChar('"', istr);
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
 }
 
-bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & format_settings) const
+bool SerializationDate32::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    if (!checkChar('"', istr))
-        return SerializationNumber<Int32>::tryDeserializeTextJSON(column, istr, format_settings);
-
     ExtendedDayNum x;
-    if (!tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
+    if (!checkChar('"', istr) || !tryReadDateText(x, istr, time_zone) || !checkChar('"', istr))
         return false;
     assert_cast<ColumnInt32 &>(column).getData().push_back(x);
     return true;

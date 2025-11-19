@@ -4,12 +4,11 @@ description: 'Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1))
 sidebar_position: 115
 slug: /sql-reference/aggregate-functions/reference/categoricalinformationvalue
 title: 'categoricalInformationValue'
-doc_type: 'reference'
 ---
 
 Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
 
-```sql
+``` sql
 categoricalInformationValue(category1, category2, ..., tag)
 ```
 

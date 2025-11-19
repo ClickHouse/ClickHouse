@@ -1,20 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
 
-# Some CMakeLists.txt in contrib/ are not being good citizens and change cmake cache variables
-# globally. This policy prevents such *cache* variable assignments from altering *normal* variables
-# that we've set.
-#
-# Example: suppose our root CMakeLists.txt assigns a normal variable:
-#   set(CMAKE_CXX_STANDARD 23)
-# then llvm-project assigns cache variable with the same name:
-#   set(CMAKE_CXX_STANDARD 17 CACHE STRING "...")
-# The latter assignment doesn't affect the normal variable, so llvm-project effectively uses C++23.
-#
-# Without this policy, the behavior is nonlocal and brittle: if the cache variable doesn't exists,
-# the normal variable is unset; otherwise it's left alone. So the effective value would depend e.g.
-# on the order in which contrib/ libraries are traversed.
-set (CMAKE_POLICY_DEFAULT_CMP0126 NEW)
-
 project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
@@ -49,6 +34,8 @@ endmacro ()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1) # Write compile_commands.json
 set(CMAKE_LINK_DEPENDS_NO_SHARED 1) # Do not relink all depended targets on .so
+set(CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+set(CMAKE_DEBUG_POSTFIX "d" CACHE STRING "Generate debug library name with a postfix.")    # To be consistent with CMakeLists from contrib libs.
 
 # Enable the ability to organize targets into hierarchies of "folders" for capable GUI-based IDEs.
 # For more info see https://cmake.org/cmake/help/latest/prop_gbl/USE_FOLDERS.html
@@ -59,9 +46,39 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init")
 endif ()
 
+# Take care to add prlimit in command line before ccache, or else ccache thinks that
+# prlimit is compiler, and clang++ is its input file, and refuses to work with
+# multiple inputs, e.g in ccache log:
+# [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
+#
+# [2021-03-31T18:06:32.656704 36900] Multiple input files: /usr/bin/clang++-11 and ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
+#
+# Another way would be to use --ccache-skip option before clang++-11 to make
+# ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    enable_heavy_build_check_if_needed()
+    # set DATA (since RSS does not work since 2.6.x+) to 5G
+    set (RLIMIT_DATA 5000000000)
+    # set VIRT (RLIMIT_AS) to 10G (DATA*2)
+    set (RLIMIT_AS 10000000000)
+    # set CPU time limit to 1000 seconds
+    set (RLIMIT_CPU 1000)
+
+    # Sanitizers are too heavy. Some architectures too.
+    if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
+        # Twice as large
+        set (RLIMIT_DATA 10000000000)
+        set (RLIMIT_AS 20000000000)
+        set (RLIMIT_CPU 2000)
+    endif()
+
+    # For some files currently building RISCV64/LOONGARCH64 might be too slow.
+    # TODO: Improve compilation times per file
+    if (ARCH_RISCV64 OR ARCH_LOONGARCH64)
+        set (RLIMIT_CPU 1800)
+    endif()
+
+    set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
@@ -79,6 +96,9 @@ option (ENABLE_BUZZHOUSE "Enable BuzzHouse fuzzer on the client" OFF)
 option (ENABLE_FUZZER_TEST "Build testing fuzzers in order to test libFuzzer functionality" OFF)
 
 if (ENABLE_FUZZING)
+    # Also set WITH_COVERAGE=1 for better fuzzing process
+    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
+    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
@@ -186,6 +206,11 @@ option(OMIT_HEAVY_DEBUG_SYMBOLS
     ${OMIT_HEAVY_DEBUG_SYMBOLS_DEFAULT})
 
 option(BUILD_STANDALONE_KEEPER "Build keeper as small standalone binary" OFF)
+if (NOT BUILD_STANDALONE_KEEPER)
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" ON)
+else ()
+    option(CREATE_KEEPER_SYMLINK "Create symlink for clickhouse-keeper to main server binary" OFF)
+endif ()
 
 # Create BuildID when using lld. For other linkers it is created by default.
 # (NOTE: LINKER_NAME can be either path or name, and in different variants)
@@ -205,14 +230,11 @@ else ()
 endif ()
 
 # Optionally split binaries and debug symbols.
-option(DISABLE_ALL_DEBUG_SYMBOLS "Disable debug symbols, independently of which build type is used" OFF)
 option(SPLIT_DEBUG_SYMBOLS "Split binaries and debug symbols" OFF)
 if (SPLIT_DEBUG_SYMBOLS)
     message(STATUS "Will split binaries and debug symbols")
     set(SPLIT_DEBUG_SYMBOLS_DIR "stripped" CACHE STRING "A separate directory for stripped information")
 endif()
-
-option(BUILD_STRIPPED_BINARY "Build stripped binary (clickhouse-stripped)" OFF)
 
 cmake_host_system_information(RESULT AVAILABLE_PHYSICAL_MEMORY QUERY AVAILABLE_PHYSICAL_MEMORY) # Not available under freebsd
 
@@ -282,8 +304,9 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # See https://reviews.llvm.org/D112921
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsized-deallocation")
 
-# falign-functions=64 prevents from random performance regressions with the code change. Thus, providing more stable benchmarks.
-set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64")
+# falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
+# benchmarks.
+set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 
 if (ARCH_AMD64)
     # align branches within a 32-Byte boundary to avoid the potential performance loss when code layout change,
@@ -296,9 +319,6 @@ endif()
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
 set (DEBUG_INFO_FLAGS "-g")
-if (DISABLE_ALL_DEBUG_SYMBOLS)
-    set (DEBUG_INFO_FLAGS "-g0")
-endif()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
 option(DISABLE_OMIT_FRAME_POINTER "Disable omit frame pointer compiler optimization" OFF)
@@ -355,15 +375,6 @@ elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
 endif ()
 
-if(COMPILER_PIPE)
-    set(MAX_COMPILER_MEMORY 2500)
-else()
-    set(MAX_COMPILER_MEMORY 1500)
-endif()
-set(MAX_LINKER_MEMORY 5000)
-include(cmake/limit_jobs.cmake)
-
-
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
@@ -381,9 +392,18 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
+else()
+    link_libraries(global-group)
 endif ()
-link_libraries(global-group)
-target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
+
+option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
+# We use mmap for allocations more heavily in debug builds,
+# but GWP-ASan also wants to use mmap frequently,
+# and due to a large number of memory mappings,
+# it does not work together well.
+if ((NOT OS_LINUX AND NOT OS_ANDROID) OR (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG") OR SANITIZE)
+    set(ENABLE_GWP_ASAN OFF)
+endif ()
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
 
@@ -440,6 +460,8 @@ if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENAB
     set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+else ()
+    message (WARNING "ClickHouse is built as PIE, system.trace_log will contain invalid addresses after server restart.")
 endif ()
 
 if (ENABLE_TESTS)
@@ -485,32 +507,13 @@ macro (clickhouse_add_executable target)
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
 
-    # Wrap the malloc/free and other C-style functions with our own ones
-    # to inject memory tracking mechanism into them.
-    # Sanitizers have their own way of intercepting the
-    # allocations and deallocations, so we skip this step for them.
-    if (NOT (SANITIZE OR SANITIZE_COVERAGE OR OS_DARWIN OR OS_FREEBSD))
-        target_link_options(${target} PRIVATE
-            "LINKER:--wrap=malloc"
-            "LINKER:--wrap=free"
-            "LINKER:--wrap=calloc"
-            "LINKER:--wrap=realloc"
-            "LINKER:--wrap=aligned_alloc"
-            "LINKER:--wrap=posix_memalign"
-            "LINKER:--wrap=valloc"
-            "LINKER:--wrap=memalign"
-            "LINKER:--wrap=reallocarray"
-        )
-        if (NOT USE_MUSL)
-            target_link_options(${target} PRIVATE
-                "LINKER:--wrap=pvalloc"
-            )
-        endif()
-    endif()
-
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        target_link_libraries (${target} PUBLIC clickhouse_new_delete)
+        # Disabled if memory tracking is disabled
+        if (TARGET clickhouse_new_delete)
+            # operator::new/delete for executables (MemoryTracker stuff)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
+        endif()
 
         # In case of static jemalloc, because zone_register() is located in zone.c and
         # is never used outside (it is declared as constructor) it is omitted
@@ -582,9 +585,6 @@ option(CHECK_LARGE_OBJECT_SIZES "Check that there are no large object files afte
 
 add_subdirectory (base)
 add_subdirectory (src)
-if (LEXER_STANDALONE_BUILD)
-    add_subdirectory(tests/lexer)
-endif ()
 add_subdirectory (programs)
 add_subdirectory (utils)
 
@@ -622,11 +622,9 @@ endif()
 
 include (cmake/sanitize_targets.cmake)
 
-if (COMPILER_CACHE STREQUAL "chcache" AND CHCACHE_EXECUTABLE_PATH STREQUAL "")
-    message(STATUS "Adding chcache as dependency to all other targets")
+if (COMPILER_CACHE STREQUAL "chcache")
     get_all_targets(all_targets)
-    set(chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
-
+    set (chcache_targets _cargo-build_chcache cargo-build_chcache cargo-prebuild_chcache)
     foreach(target ${all_targets})
         if (target IN_LIST chcache_targets)
             continue()

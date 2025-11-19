@@ -22,40 +22,39 @@ $CLICKHOUSE_CLIENT -m -q "
 
 function delete_user()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do 
         $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS test_user_02242" ||:
-        sleep 0.$RANDOM;
+        sleep 0.$RANDOM; 
     done
 }
 
 function create_and_login_user()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do 
         $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
         $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE user == 'test_user_02242'" > /dev/null ||:
-        sleep 0.$RANDOM;
+        sleep 0.$RANDOM; 
     done
 }
 
 function set_role()
 {
-    local TIMELIMIT=$((SECONDS+TIMEOUT))
-    while [ $SECONDS -lt "$TIMELIMIT" ]
-    do
+    while true; do 
         $CLICKHOUSE_CLIENT -q "SET DEFAULT ROLE test_role_02242 TO test_user_02242" ||:
-        sleep 0.$RANDOM;
+        sleep 0.$RANDOM; 
     done
 }
 
+export -f delete_user
+export -f create_and_login_user
+export -f set_role
+
 TIMEOUT=10
 
-create_and_login_user 2> /dev/null &
-delete_user 2> /dev/null &
-set_role 2> /dev/null &
+
+timeout $TIMEOUT bash -c create_and_login_user 2> /dev/null &
+timeout $TIMEOUT bash -c delete_user 2> /dev/null &
+timeout $TIMEOUT bash -c set_role 2> /dev/null &
 
 wait
 
