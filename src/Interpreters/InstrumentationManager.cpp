@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <print>
 #include <thread>
+#include <random>
 #include <ranges>
 #include <stack>
 #include <unistd.h>
