@@ -23,6 +23,7 @@ public:
         NamesAndTypesList columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         DeserializationPrefixesCache * deserialization_prefixes_cache_,

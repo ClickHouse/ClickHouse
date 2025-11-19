@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <base/sleep.h>
+#include <Common/setThreadName.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
@@ -564,8 +565,8 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     return VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 }
 
-void MergeTreeDataSelectExecutor::filterPartsByPartition(
-    RangesInDataParts & parts,
+RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
+    const RangesInDataParts & parts,
     const std::optional<PartitionPruner> & partition_pruner,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const std::optional<std::unordered_set<String>> & part_values,
@@ -576,6 +577,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
     LoggerPtr log,
     ReadFromMergeTree::IndexStats & index_stats)
 {
+    RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
     DataTypes minmax_columns_types;
 
@@ -599,7 +601,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
 
     PartFilterCounters part_filter_counters;
     if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
-        selectPartsToReadWithUUIDFilter(
+        res = selectPartsToReadWithUUIDFilter(
             parts,
             part_values,
             data.getPinnedPartUUIDs(),
@@ -611,7 +613,7 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             part_filter_counters,
             log);
     else
-        selectPartsToRead(
+        res = selectPartsToRead(
             parts,
             part_values,
             minmax_idx_condition,
@@ -648,6 +650,8 @@ void MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_parts_after = part_filter_counters.num_parts_after_partition_pruner,
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
+
+    return res;
 }
 
 RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
@@ -969,7 +973,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
+                        ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
 
                         process_part(part_index);
                     },
@@ -1092,6 +1096,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1100,7 +1105,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || !settings[Setting::allow_experimental_analyzer]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
-            || select_query_info.isFinal())
+            || select_query_info.isFinal()
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
@@ -1280,7 +1286,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 
     std::optional<ReadFromMergeTree::Indexes> indexes;
     return ReadFromMergeTree::selectRangesToRead(
-        std::move(parts),
+        parts,
         mutations_snapshot,
         std::nullopt,
         metadata_snapshot,
@@ -1297,7 +1303,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
-    RangesInDataParts parts,
+    RangesInDataPartsPtr parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const Names & column_names_to_return,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1316,7 +1322,10 @@ QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(
         if (merge_tree_select_result_ptr->parts_with_ranges.empty())
             return {};
     }
-    else if (parts.empty())
+    /// If merge_tree_enable_remove_parts_from_snapshot_optimization is true it nukes our list of parts
+    else if (!parts)
+        return {};
+    else if (parts->empty())
         return {};
 
     return std::make_unique<ReadFromMergeTree>(
@@ -2022,8 +2031,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     return res;
 }
 
-void MergeTreeDataSelectExecutor::selectPartsToRead(
-    RangesInDataParts & parts,
+RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
+    const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     const std::optional<KeyCondition> & minmax_idx_condition,
     const DataTypes & minmax_columns_types,
@@ -2032,10 +2041,9 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
     PartFilterCounters & counters,
     QueryStatusPtr query_status)
 {
-    RangesInDataParts prev_parts;
-    std::swap(prev_parts, parts);
+    RangesInDataParts res_parts;
 
-    for (const auto & prev_part : prev_parts)
+    for (const auto & prev_part : parts)
     {
         const auto & part_or_projection = prev_part.data_part;
 
@@ -2077,12 +2085,13 @@ void MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_parts_after_partition_pruner += 1;
         counters.num_granules_after_partition_pruner += num_granules;
 
-        parts.push_back(prev_part);
+        res_parts.push_back(prev_part);
     }
+    return res_parts;
 }
 
-void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    RangesInDataParts & parts,
+RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
+    const RangesInDataParts & parts,
     const std::optional<std::unordered_set<String>> & part_values,
     MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
     const std::optional<KeyCondition> & minmax_idx_condition,
@@ -2095,15 +2104,12 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 {
     /// process_parts prepare parts that have to be read for the query,
     /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&](RangesInDataParts & selected_parts) -> bool
+    auto select_parts = [&](const RangesInDataParts & in_parts, RangesInDataParts & selected_parts) -> bool
     {
         auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
         std::unordered_set<UUID> temp_part_uuids;
 
-        RangesInDataParts prev_parts;
-        std::swap(prev_parts, selected_parts);
-
-        for (const auto & prev_part : prev_parts)
+        for (const auto & prev_part : in_parts)
         {
             const auto & part_or_projection = prev_part.data_part;
             const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
@@ -2173,7 +2179,8 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
     };
 
     /// Process parts that have to be read for a query.
-    auto needs_retry = !select_parts(parts);
+    RangesInDataParts filtered_parts = {};
+    auto needs_retry = !select_parts(parts, filtered_parts);
 
     /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
     /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
@@ -2183,10 +2190,15 @@ void MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 
         counters = PartFilterCounters();
 
+        auto initial_filtered_parts = filtered_parts;
+        filtered_parts = {};
+
         /// Second attempt didn't help, throw an exception
-        if (!select_parts(parts))
+        if (!select_parts(initial_filtered_parts, filtered_parts))
             throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
     }
+
+    return filtered_parts;
 }
 
 }

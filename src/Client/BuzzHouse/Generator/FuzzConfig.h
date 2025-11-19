@@ -261,13 +261,13 @@ public:
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, compare_success_results = false, measure_performance = false,
          allow_infinite_tables = false, compare_explains = false, allow_memory_tables = true, allow_client_restarts = false,
          enable_fault_injection_settings = false, enable_force_settings = false, allow_hardcoded_inserts = true,
-         allow_async_requests = false;
+         allow_async_requests = false, truncate_output = false, allow_transactions = true, enable_overflow_settings = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, flush_log_wait_time = 1000,
              type_mask = std::numeric_limits<uint64_t>::max(), engine_mask = std::numeric_limits<uint64_t>::max();
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, port = 9000, secure_port = 9440, http_port = 8123, http_secure_port = 8443,
              use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
-             max_string_length = 1009;
+             max_string_length = 1009, max_parallel_queries = 5, max_number_alters = 4;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",

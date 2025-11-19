@@ -123,7 +123,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
     aj->set_left(rg.nextBool());
     const uint32_t nccols = std::min<uint32_t>(
         UINT32_C(3), (rg.nextRandomUInt32() % (available_cols.empty() ? 3 : static_cast<uint32_t>(available_cols.size()))) + 1);
-    const uint32_t nclauses = std::min<uint32_t>(this->fc.max_width - this->width, nccols);
+    const uint32_t nclauses = std::max<uint32_t>(1, std::min<uint32_t>(this->fc.max_width - this->width, nccols));
 
     chassert(nclauses);
     for (uint32_t i = 0; i < nclauses; i++)
@@ -404,7 +404,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         else if (t.isGenerateRandomEngine())
         {
             GenerateRandomFunc * gfunc = tfunc->mutable_grandom();
-            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             structure = gfunc->mutable_structure();
@@ -696,6 +696,7 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         const auto & next_cte = rg.pickValueRandomlyFromMap(rg.pickValueRandomlyFromMap(this->ctes));
 
+        chassert(!next_cte.cols.empty());
         tof->mutable_est()->mutable_table()->set_table(next_cte.name);
         chassert(!next_cte.cols.empty());
         for (const auto & entry : next_cte.cols)
@@ -1021,7 +1022,7 @@ bool StatementGenerator::joinedTableOrFunction(
             grf ? grf->mutable_structure() : tf->mutable_nullf());
         if (grf)
         {
-            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             grf->set_random_seed(rg.nextRandomUInt64());
@@ -1642,7 +1643,7 @@ uint32_t StatementGenerator::generateFromStatement(RandomGenerator & rg, const u
 
         this->depth++;
         this->width++;
-        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 3)
+        if (rg.nextSmallNumber() < 3)
         {
             generateArrayJoin(rg, jcc->mutable_arr());
         }
@@ -1935,11 +1936,20 @@ void StatementGenerator::generateLimitExpr(RandomGenerator & rg, Expr * expr)
 {
     if (this->depth >= this->fc.max_depth || rg.nextSmallNumber() < 8)
     {
-        static const std::vector<int32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
-        int32_t nlimit = rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomInt32();
+        String buf = rg.nextSmallNumber() < 3 ? "-" : "";
 
-        nlimit *= rg.nextSmallNumber() < 3 ? -1 : 1;
-        expr->mutable_lit_val()->mutable_int_lit()->set_int_lit(nlimit);
+        if (rg.nextSmallNumber() < 8)
+        {
+            static const std::vector<uint32_t> & limitValues = {0, 0, 1, 1, 1, 1, 2, 2, 5, 5, 10, 50, 100};
+            buf += std::to_string(rg.nextSmallNumber() < 9 ? rg.pickRandomly(limitValues) : rg.nextRandomUInt32());
+        }
+        else
+        {
+            std::uniform_int_distribution<uint32_t> frange(1, 999);
+
+            buf += fmt::format("0.{}", frange(rg.generator));
+        }
+        expr->mutable_lit_val()->set_no_quote_str(std::move(buf));
     }
     else
     {
@@ -2215,7 +2225,7 @@ void StatementGenerator::generateSelect(
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
-        if (rg.nextMediumNumber() < 99)
+        if (!this->allow_not_deterministic || !this->levels[this->current_level].inside_aggregate || rg.nextMediumNumber() < 99)
         {
             this->depth++;
             for (uint32_t i = 0; i < ncols; i++)
@@ -2280,12 +2290,14 @@ void StatementGenerator::generateTopSelect(
     this->levels[this->current_level] = QueryLevel(this->current_level);
     generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
     this->levels.clear();
-    if (rg.nextSmallNumber() < 3)
+    if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();
         const std::filesystem::path & qfile = fc.client_file_path / "file.data";
 
-        ts->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+        ts->set_format(
+            fc.truncate_output ? OutFormat::OUT_Null
+                               : (static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
         sif->set_path(qfile.generic_string());
         if (rg.nextSmallNumber() < 10)
         {
