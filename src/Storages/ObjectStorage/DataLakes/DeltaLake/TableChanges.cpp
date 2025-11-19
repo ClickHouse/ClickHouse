@@ -16,7 +16,6 @@
 namespace DB::ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
-    extern const int DUPLICATE_COLUMN;
     extern const int BAD_ARGUMENTS;
 }
 

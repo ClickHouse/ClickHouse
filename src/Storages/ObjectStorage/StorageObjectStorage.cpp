@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
