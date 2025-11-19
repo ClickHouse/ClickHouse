@@ -13,6 +13,7 @@
 #include <Common/Scheduler/Nodes/FairAllocation.h>
 #include <Common/Scheduler/Nodes/FairPolicy.h>
 #include <Common/Scheduler/Nodes/FifoQueue.h>
+#include <Common/Scheduler/Nodes/PriorityAllocation.h>
 #include <Common/Scheduler/Nodes/PriorityPolicy.h>
 #include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
@@ -172,11 +173,9 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
 
     static NodePtr makePriorityPolicy(EventQueue & event_queue_)
     {
-        // TODO(serxa): PriorityAllocation
-        // NodePtr result = std::make_shared<PriorityAllocation>(event_queue_, SchedulerNodeInfo{});
-        // result->basename = "prio";
-        // return result;
-        UNUSED(event_queue_); return nullptr;
+        NodePtr result = std::make_shared<PriorityAllocation>(event_queue_, SchedulerNodeInfo{});
+        result->basename = "prio";
+        return result;
     }
 
     static bool hasSemaphore(const WorkloadSettings & settings_, CostUnit unit)
@@ -616,9 +615,13 @@ public:
     {
         this->info.setPriority(new_settings.priority);
         this->info.setWeight(new_settings.weight);
+        propagateUpdateSchedulingSettings();
         if (auto new_child = impl.updateSchedulingSettings(this->event_queue, new_settings))
             reparent(new_child, this);
     }
+
+    /// Sharing-mode specific implementation of scheduling settings propagation
+    virtual void propagateUpdateSchedulingSettings() = 0;
 
     const WorkloadSettings & getSettings() const final
     {
@@ -777,6 +780,12 @@ private:
                 castParent().activateChild(*this);
     }
 
+    void propagateUpdateSchedulingSettings() override
+    {
+        // No-op for time-shared workloads.
+        // Weights and priorities are used by dequeueRequest() directly and are not stored.
+    }
+
     TimeSharedNodePtr child; // An immediate child (actually the root of the whole subtree)
     bool child_active = false;
 };
@@ -867,6 +876,17 @@ private:
     {
         chassert(child);
         return child->selectAllocationToKill();
+    }
+
+    void propagateUpdateSchedulingSettings() override
+    {
+        if (parent)
+        {
+            // If parent is FairAllocation we need to propagate the weight change to update the key
+            propagate(Update()
+                .setIncrease(increase)
+                .setDecrease(decrease));
+        }
     }
 
     SpaceSharedNodePtr child; // An immediate child (actually the root of the whole subtree)
