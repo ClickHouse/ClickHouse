@@ -415,7 +415,7 @@ ManifestFileContent::ManifestFileContent(
                     break;
             }
         }
-        std::optional<Int32> sort_order_id = std::nullopt;
+        std::optional<Int32> sort_order_id;
         if (manifest_file_deserializer.hasPath(c_data_file_sort_order_id))
         {
              auto sort_order_id_value = manifest_file_deserializer.getValueFromRowByName(i, c_data_file_sort_order_id);
