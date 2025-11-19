@@ -125,10 +125,11 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
         name);
 }
 
+template <bool for_like_pattern>
 class ExecutableFunctionTokens : public IExecutableFunction
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = for_like_pattern ? "tokensForLikePattern" : "tokens";
 
     explicit ExecutableFunctionTokens(std::shared_ptr<const ITokenExtractor> token_extractor_)
         : token_extractor(std::move(token_extractor_))
@@ -193,12 +194,31 @@ private:
         {
             std::string_view input = column_input.getDataAt(i).toView();
 
-            forEachToken(extractor, input.data(), input.size(), [&](const char * token_start, size_t token_len)
+            if constexpr (for_like_pattern)
             {
-                column_result.insertData(token_start, token_len);
-                ++tokens_count;
-                return false;
-            });
+                size_t cur = 0;
+                size_t length = input.size();
+                String token;
+
+                while (cur < length && extractor.nextInStringLike(input.data(), length, &cur, token))
+                {
+                    column_result.insertData(token.data(), token.size());
+                    ++tokens_count;
+                }
+            }
+            else
+            {
+                forEachToken(
+                    extractor,
+                    input.data(),
+                    input.size(),
+                    [&](const char * token_start, size_t token_len)
+                    {
+                        column_result.insertData(token_start, token_len);
+                        ++tokens_count;
+                        return false;
+                    });
+            }
 
             offsets_data[i] = tokens_count;
         }
@@ -207,10 +227,11 @@ private:
     std::shared_ptr<const ITokenExtractor> token_extractor;
 };
 
+template <bool for_like_pattern>
 class FunctionBaseTokens : public IFunctionBase
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = for_like_pattern ? "tokensForLikePattern" : "tokens";
 
     FunctionBaseTokens(std::shared_ptr<const ITokenExtractor> token_extractor_, DataTypes argument_types_, DataTypePtr result_type_)
         : token_extractor(std::move(token_extractor_))
@@ -226,7 +247,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionTokens>(token_extractor);
+        return std::make_unique<ExecutableFunctionTokens<for_like_pattern>>(token_extractor);
     }
 
 private:
@@ -235,10 +256,11 @@ private:
     DataTypePtr result_type;
 };
 
+template <bool for_like_pattern>
 class FunctionTokensOverloadResolver : public IFunctionOverloadResolver
 {
 public:
-    static constexpr auto name = "tokens";
+    static constexpr auto name = for_like_pattern ? "tokensForLikePattern" : "tokens";
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -296,7 +318,7 @@ public:
     {
         auto token_extractor = createTokenizer(arguments, getName());
         DataTypes argument_types{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })};
-        return std::make_shared<FunctionBaseTokens>(std::move(token_extractor), std::move(argument_types), return_type);
+        return std::make_shared<FunctionBaseTokens<for_like_pattern>>(std::move(token_extractor), std::move(argument_types), return_type);
     }
 };
 
@@ -317,7 +339,8 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
         {"value", "The input string.", {"String", "FixedString"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
         {"ngrams", "Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
-        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
+        {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}},
+        {"stop_words", "Only relevant if argument `tokenizer` is `standard`: An optional parameter which defines the stop words. If not set explicitly, defaults to `['，', '。', '！', '？', '；', '：', '、', '“', '”', '‘', '’']`.", {"const Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
     FunctionDocumentation::Examples examples = {
@@ -340,6 +363,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionTokensOverloadResolver>(documentation);
+    factory.registerFunction<FunctionTokensOverloadResolver<false>>(documentation);
+    factory.registerFunction<FunctionTokensOverloadResolver<true>>(); /// tokensForLikePattern is mainly for debugging/testing
 }
 }

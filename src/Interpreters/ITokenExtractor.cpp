@@ -34,19 +34,17 @@ bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return code_points == n;
 }
 
-bool NgramTokenExtractor::nextInStringLike(
-    const char * data, size_t length, size_t * pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
-    *token_length = 0;
+    token.clear();
+
     size_t code_points = 0;
     bool escaped = false;
     for (size_t i = *pos; i < length;)
     {
-        if (code_points == 0)
-            *token_start = i;
-
         if (escaped && (data[i] == '%' || data[i] == '_' || data[i] == '\\'))
         {
+            token += data[i];
             ++code_points;
             escaped = false;
             ++i;
@@ -54,6 +52,7 @@ bool NgramTokenExtractor::nextInStringLike(
         else if (!escaped && (data[i] == '%' || data[i] == '_'))
         {
             /// This token is too small, go to the next.
+            token.clear();
             code_points = 0;
             escaped = false;
             *pos = ++i;
@@ -66,6 +65,8 @@ bool NgramTokenExtractor::nextInStringLike(
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
+            for (size_t j = 0; j < sz; ++j)
+                token += data[i + j];
             i += sz;
             ++code_points;
             escaped = false;
@@ -73,7 +74,6 @@ bool NgramTokenExtractor::nextInStringLike(
 
         if (code_points == n)
         {
-            *token_length = i - *token_start;
             *pos += UTF8::seqLength(static_cast<UInt8>(data[*pos]));
             return true;
         }
@@ -108,20 +108,16 @@ bool DefaultTokenExtractor::nextInString(
     return *token_length > 0;
 }
 
-bool DefaultTokenExtractor::nextInStringLike(
-    const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool DefaultTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
-    *token_length = 0;
+    token.clear();
     bool bad_token = false; // % or _ before token
     bool escaped = false;
     while (*pos < length)
     {
-        if (*token_length == 0)
-            *token_start = *pos;
-
         if (!escaped && (data[*pos] == '%' || data[*pos] == '_'))
         {
-            *token_length = 0;
+            token.clear();
             bad_token = true;
             ++*pos;
         }
@@ -132,10 +128,10 @@ bool DefaultTokenExtractor::nextInStringLike(
         }
         else if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
-            if (!bad_token && *token_length != 0)
+            if (!bad_token && !token.empty())
                 return true;
 
-            *token_length = 0;
+            token.clear();
             bad_token = false;
             escaped = false;
             ++*pos;
@@ -143,13 +139,16 @@ bool DefaultTokenExtractor::nextInStringLike(
         else
         {
             const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*pos]));
-            *token_length += sz;
-            *pos += sz;
+            for (size_t j = 0; j < sz; ++j)
+            {
+                token += data[*pos];
+                ++*pos;
+            }
             escaped = false;
         }
     }
 
-    return !bad_token && *token_length != 0;
+    return !bad_token && !token.empty();
 }
 
 void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
@@ -228,8 +227,7 @@ bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return true;
 }
 
-bool SplitTokenExtractor::nextInStringLike(
-    const char * /*data*/, size_t /*length*/, size_t * /*pos*/, size_t * /* token_start */, size_t * /* token_length */) const
+bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*pos*/, String & /* token */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
@@ -246,8 +244,7 @@ bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size
     return false;
 }
 
-bool NoOpTokenExtractor::nextInStringLike(
-    const char * /*data*/, size_t /*length*/, size_t * /*pos*/, size_t * /* token_start */, size_t * /* token_length */) const
+bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*pos*/, String & /* token */) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NoOpTokenExtractor::nextInStringLike is not implemented");
 }
@@ -283,8 +280,7 @@ bool SparseGramTokenExtractor::nextInString(
     return true;
 }
 
-bool SparseGramTokenExtractor::nextInStringLike(
-    const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     if (std::tie(data, length) != std::tie(previous_data, previous_len))
     {
@@ -293,7 +289,8 @@ bool SparseGramTokenExtractor::nextInStringLike(
         sparse_grams_iterator.set(data, data + length);
     }
 
-    *token_length = 0;
+    token.clear();
+
     while (true)
     {
         Pos next_begin;
@@ -305,7 +302,6 @@ bool SparseGramTokenExtractor::nextInStringLike(
             return false;
         }
         bool match_substring = true;
-        size_t local_len = 0;
         for (size_t i = next_begin - data; i < static_cast<size_t>(next_end - data);)
         {
             /// Escaped sequences are not supported by sparse grams tokenizers.
@@ -313,22 +309,21 @@ bool SparseGramTokenExtractor::nextInStringLike(
             /// because it changes the split into sparse grams. We don't want to do that now.
             if (data[i] == '%' || data[i] == '_' || data[i] == '\\')
             {
-                local_len = 0;
+                token.clear();
                 match_substring = false;
                 break;
             }
             else
             {
                 const size_t sz = UTF8::seqLength(static_cast<UInt8>(data[i]));
-                local_len += sz;
+                for (size_t j = 0; j < sz; ++j)
+                    token.push_back(data[i + j]);
                 i += sz;
             }
         }
         if (match_substring)
         {
-            *token_start = next_begin - data;
-            *token_length = local_len;
-            *pos = *token_start;
+            *pos = next_begin - data;
             return true;
         }
     }
@@ -337,50 +332,11 @@ bool SparseGramTokenExtractor::nextInStringLike(
 bool StandardTokenExtractor::nextInString(
     const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
-    return nextInStringImpl<false>(data, length, pos, token_start, token_length);
-}
-
-bool StandardTokenExtractor::nextInStringLike(
-    const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
-{
-    return nextInStringImpl<true>(data, length, pos, token_start, token_length);
-}
-
-template <bool is_like_pattern>
-bool StandardTokenExtractor::nextInStringImpl(
-    const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
-{
     *token_length = 0;
-    [[maybe_unused]] bool bad_token = false; // For LIKE: % or _ before token makes it invalid
-    [[maybe_unused]] bool escaped = false;   // For LIKE: track escape state
-
     while (*pos < length)
     {
         *token_start = *pos;
         char c = data[*pos];
-
-        /// =============================================
-        /// LIKE pattern: handle wildcards and escapes
-        /// =============================================
-        if constexpr (is_like_pattern)
-        {
-            /// Wildcard % or _ before token invalidates it
-            if (!escaped && (c == '%' || c == '_'))
-            {
-                *token_length = 0;
-                bad_token = true;
-                ++(*pos);
-                continue;
-            }
-
-            /// Escape character
-            if (!escaped && c == '\\')
-            {
-                escaped = true;
-                ++(*pos);
-                continue;
-            }
-        }
 
         /// =======================
         /// 1. ASCII fast path
@@ -400,25 +356,14 @@ bool StandardTokenExtractor::nextInStringImpl(
                     ++(*pos);
                     ++(*token_length);
                     ++token_alnum_count;
-                    if constexpr (is_like_pattern)
-                        escaped = false;
                     continue;
                 }
 
                 /// 1b. Underscore
                 if (cur == '_')
                 {
-                    /// In LIKE pattern, unescaped _ is wildcard
-                    if constexpr (is_like_pattern)
-                    {
-                        if (!escaped)
-                            break;
-                    }
-
                     ++(*pos);
                     ++(*token_length);
-                    if constexpr (is_like_pattern)
-                        escaped = false;
                     continue;
                 }
 
@@ -434,8 +379,6 @@ bool StandardTokenExtractor::nextInStringImpl(
                 {
                     ++(*pos);
                     ++(*token_length);
-                    if constexpr (is_like_pattern)
-                        escaped = false;
                     continue;
                 }
 
@@ -446,8 +389,6 @@ bool StandardTokenExtractor::nextInStringImpl(
                 {
                     ++(*pos);
                     ++(*token_length);
-                    if constexpr (is_like_pattern)
-                        escaped = false;
                     continue;
                 }
 
@@ -458,24 +399,11 @@ bool StandardTokenExtractor::nextInStringImpl(
             /// Token must contain at least one alphanumeric character
             if (token_alnum_count > 0)
             {
-                /// In LIKE mode, bad_token invalidates the result
-                if constexpr (is_like_pattern)
-                {
-                    if (bad_token)
-                    {
-                        *token_length = 0;
-                        bad_token = false;
-                        continue;
-                    }
-                }
-
                 /// Check if token is a stop word
                 std::string_view token_view(data + *token_start, *token_length);
                 if (stop_words.contains(token_view))
                 {
                     *token_length = 0;
-                    if constexpr (is_like_pattern)
-                        bad_token = false;
                     continue;
                 }
                 return true;
@@ -483,8 +411,6 @@ bool StandardTokenExtractor::nextInStringImpl(
 
             /// Invalid token (underscore only), continue searching
             *token_length = 0;
-            if constexpr (is_like_pattern)
-                bad_token = false;
             continue;
         }
 
@@ -494,11 +420,6 @@ bool StandardTokenExtractor::nextInStringImpl(
         if (isASCII(c))
         {
             ++(*pos);
-            if constexpr (is_like_pattern)
-            {
-                bad_token = false;
-                escaped = false;
-            }
             continue;
         }
 
@@ -520,33 +441,176 @@ bool StandardTokenExtractor::nextInStringImpl(
         if (stop_words.contains(utf8_char))
         {
             *pos += char_len;
-            if constexpr (is_like_pattern)
-            {
-                bad_token = false;
-                escaped = false;
-            }
             continue;
-        }
-
-        /// 3b. Chinese character or other Unicode: single-character token
-        /// In LIKE mode, check if preceded by wildcard
-        if constexpr (is_like_pattern)
-        {
-            if (bad_token)
-            {
-                *pos += char_len;
-                bad_token = false;
-                escaped = false;
-                continue;
-            }
         }
 
         *token_start = *pos;
         *token_length = char_len;
         *pos += char_len;
 
-        if constexpr (is_like_pattern)
+        return true;
+    }
+
+    return false;
+}
+
+bool StandardTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * __restrict pos, String & token) const
+{
+    token.clear();
+    size_t token_start;
+    std::optional<size_t> last_glob_pos;
+    bool escaped = false; /// Whether current char is an escaped char
+    while (*pos < length)
+    {
+        token_start = *pos;
+        char c = data[*pos];
+
+        if (c == '\\' && !escaped)
+        {
+            if (*pos + 1 >= length)
+                break;
+            ++(*pos);
+            c = data[*pos];
+            escaped = true;
+        }
+
+        /// =======================
+        /// 1. ASCII fast path
+        /// =======================
+        if (isAlphaNumericASCII(c) || (c == '_' && escaped))
+        {
+            size_t token_alnum_count = 0;
+            token.clear();
+
+            while (*pos < length)
+            {
+                char cur = data[*pos];
+                if (cur == '\\' && !escaped)
+                {
+                    if (*pos + 1 >= length)
+                        break;
+                    ++(*pos);
+                    cur = data[*pos];
+                    escaped = true;
+                }
+
+                /// 1a. ASCII letter or digit
+                if (isAlphaNumericASCII(cur))
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    ++token_alnum_count;
+                    continue;
+                }
+
+                /// 1b. Underscore
+                if (cur == '_' && escaped)
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Wildcard
+                if (cur == '_' || (cur == '%' && !escaped))
+                {
+                    last_glob_pos = *pos;
+                    ++(*pos);
+                    break;
+                }
+
+                /// Check if next character exists
+                if (*pos + 1 >= length)
+                    break;
+
+                char next_c = data[*pos + 1];
+                if (next_c == '\\')
+                {
+                    if (*pos + 2 >= length)
+                        break;
+                    next_c = data[*pos + 2];
+                }
+                char prev_c = token.empty() ? '\0' : token.back();
+
+                /// 1c. Colon: connects letters only
+                if (cur == ':' && isAlphaASCII(prev_c) && isAlphaASCII(next_c))
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// 1d. Dot or single quote: connects letter-letter or digit-digit
+                if ((cur == '.' || cur == '\'') &&
+                    ((isAlphaASCII(prev_c) && isAlphaASCII(next_c)) ||
+                     (isNumericASCII(prev_c) && isNumericASCII(next_c))))
+                {
+                    ++(*pos);
+                    escaped = false;
+                    token.push_back(cur);
+                    continue;
+                }
+
+                /// Token ends
+                break;
+            }
+
+            /// Token must contain at least one alphanumeric character
+            if (token_alnum_count > 0 && (!last_glob_pos || (*last_glob_pos + 1 != *pos && *last_glob_pos + 1 != token_start)))
+            {
+                /// Check if token is a stop word
+                if (stop_words.contains(token))
+                    continue;
+
+                if (escaped)
+                    --(*pos);
+                return true;
+            }
+
+            /// Invalid token, continue searching
+            continue;
+        }
+
+        /// =======================
+        /// 2. ASCII non-alphanumeric: skip
+        /// =======================
+        if (isASCII(c))
+        {
+            if (!escaped && (c == '_' || c == '%'))
+                last_glob_pos = *pos;
+
+            ++(*pos);
             escaped = false;
+            continue;
+        }
+
+        /// =======================
+        /// 3. Unicode character handling
+        /// =======================
+        size_t char_len = UTF8::seqLength(static_cast<UInt8>(c));
+
+        /// Prevent out-of-bounds
+        if (*pos + char_len > length)
+        {
+            ++(*pos);
+            escaped = false;
+            continue;
+        }
+
+        token = {data + *pos, char_len};
+
+        /// 3a. Stop words (Chinese punctuation, etc.): skip
+        if (stop_words.contains(token))
+        {
+            *pos += char_len;
+            escaped = false;
+            continue;
+        }
+
+        *pos += char_len;
         return true;
     }
 

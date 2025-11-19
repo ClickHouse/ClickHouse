@@ -23,6 +23,22 @@ select tokens('taichi张三丰in the house', 'standard');
 select tokens('错误，503', 'standard'); -- default stop words contains common full-width separators
 select tokens('错误and 503', 'standard', ['and']);
 
+SELECT tokensForLikePattern('%abc', 'standard');            -- wildcard before token
+SELECT tokensForLikePattern('abc%', 'standard');            -- token before wildcard
+SELECT tokensForLikePattern('a_b%c_d', 'standard');         -- wildcard in between
+SELECT tokensForLikePattern('a\%b a\_c', 'standard');       -- escaped % and _ included as normal chars
+SELECT tokensForLikePattern('a\_b%c', 'standard');          -- mix escaped _ and unescaped %
+SELECT tokensForLikePattern('a\_b\%c', 'standard');         -- all escaped wildcards
+SELECT tokensForLikePattern('_a c%', 'standard');           -- leading and trailing wildcards
+
+SELECT tokensForLikePattern($$a:b%cd\_e.f'g$$, 'standard'); -- mix colon, dot, single quote, wildcard, escaped _
+SELECT tokensForLikePattern('%%__abc', 'standard');         -- multiple leading wildcards
+SELECT tokensForLikePattern('', 'standard');                -- empty string
+SELECT tokensForLikePattern('%%__', 'standard');            -- only wildcards
+SELECT tokensForLikePattern('你', 'standard');              -- single Unicode char
+SELECT tokensForLikePattern('abc你好', 'standard');         -- ASCII then Unicode
+SELECT tokensForLikePattern('，。你好', 'standard');        -- punctuation stop words skipped
+SELECT tokensForLikePattern('你好%世界', 'standard');       -- Unicode token with wildcards
 
 set allow_experimental_full_text_index = 1;
 
