@@ -1138,8 +1138,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
-            if (!ok && (buf.eof() || *buf.position() != '.'))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters))
                 return ReturnType(false);
         }
     }
