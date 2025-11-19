@@ -79,7 +79,6 @@ def run_fuzz_job(check_name: str):
         fatal_log,
         workspace_path / "stderr.log",
         server_log,
-        workspace_path / "fuzzer_out.sql",
         fuzzer_log,
         dmesg_log,
     ]

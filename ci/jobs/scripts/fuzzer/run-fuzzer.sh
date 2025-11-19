@@ -322,9 +322,11 @@ function fuzz
         # BuzzHouse exception, it means a query oracle failed, or
         # an unwanted exception was found
         task_exit_code=$fuzzer_exit_code
-        echo "FAIL" > status.txt
         if ! rg --text -o 'DB::Exception: Found disallowed error code' fuzzer.log > description.txt; then
+            echo "ERROR" > status.txt
             echo "BuzzHouse fuzzer exception not found, fuzzer issue?" > description.txt
+        else
+            echo "FAIL" > status.txt
         fi
     elif [ "$fuzzer_exit_code" == "137" ]
     then
