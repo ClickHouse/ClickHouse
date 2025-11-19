@@ -218,7 +218,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
         && remerge_is_useful
         && max_bytes_before_remerge
-        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (sum_rows_in_blocks > limit*1.5)))
+        && sum_bytes_in_blocks > max_bytes_before_remerge) || (threshold_tracker && (sum_rows_in_blocks > limit * 1.5)))
     {
         remerge();
     }

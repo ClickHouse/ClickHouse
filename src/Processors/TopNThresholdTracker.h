@@ -77,7 +77,7 @@ struct TopNThresholdTracker
 private:
     Field threshold;
     mutable SharedMutex mutex;
-    bool is_set{false};
+    std::atomic<bool> is_set{false};
     int direction{0};
 };
 
