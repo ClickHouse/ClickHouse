@@ -38,6 +38,7 @@ namespace ProfileEvents
     extern const Event KeeperCommitWaitElapsedMicroseconds;
     extern const Event KeeperBatchMaxCount;
     extern const Event KeeperBatchMaxTotalSize;
+    extern const Event KeeperRequestRejectedDueToSoftMemoryLimitCount;
 }
 
 using namespace std::chrono_literals;
@@ -70,6 +71,7 @@ namespace
 bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
 {
     if (request->getOpNum() == Coordination::OpNum::Create
+        || request->getOpNum() == Coordination::OpNum::Create2
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -85,6 +87,7 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                case Coordination::OpNum::Create2:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
@@ -128,7 +131,7 @@ KeeperDispatcher::KeeperDispatcher()
 
 void KeeperDispatcher::requestThread()
 {
-    setThreadName("KeeperReqT");
+    DB::setThreadName(ThreadName::KEEPER_REQUEST);
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
@@ -165,6 +168,7 @@ void KeeperDispatcher::requestThread()
                 Int64 mem_soft_limit = keeper_context->getKeeperMemorySoftLimit();
                 if (configuration_and_settings->standalone_keeper && isExceedingMemorySoftLimit() && checkIfRequestIncreaseMem(request.request))
                 {
+                    ProfileEvents::increment(ProfileEvents::KeeperRequestRejectedDueToSoftMemoryLimitCount, 1);
                     LOG_WARNING(
                         log,
                         "Processing requests refused because of max_memory_usage_soft_limit {}, the total allocated memory is {}, RSS is {}, request type "
@@ -173,7 +177,7 @@ void KeeperDispatcher::requestThread()
                         ReadableSize(total_memory_tracker.get()),
                         ReadableSize(total_memory_tracker.getRSS()),
                         request.request->getOpNum());
-                    addErrorResponses({request}, Coordination::Error::ZCONNECTIONLOSS);
+                    addErrorResponses({request}, Coordination::Error::ZOUTOFMEMORY);
                     continue;
                 }
 
@@ -264,7 +268,7 @@ void KeeperDispatcher::requestThread()
                     if (current_batch_bytes_size == max_batch_bytes_size)
                         ProfileEvents::increment(ProfileEvents::KeeperBatchMaxTotalSize, 1);
 
-                    LOG_TRACE(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
+                    LOG_TEST(log, "Processing requests batch, size: {}, bytes: {}", current_batch.size(), current_batch_bytes_size);
 
                     auto result = server->putRequestBatch(current_batch);
 
@@ -331,7 +335,8 @@ void KeeperDispatcher::requestThread()
 
 void KeeperDispatcher::responseThread()
 {
-    setThreadName("KeeperRspT");
+    DB::setThreadName(ThreadName::KEEPER_RESPONSE);
+
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     while (!shutdown_called)
     {
@@ -346,7 +351,7 @@ void KeeperDispatcher::responseThread()
 
             try
             {
-                 setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
+                setResponse(response_for_session.session_id, response_for_session.response, response_for_session.request);
             }
             catch (...)
             {
@@ -358,7 +363,8 @@ void KeeperDispatcher::responseThread()
 
 void KeeperDispatcher::snapshotThread()
 {
-    setThreadName("KeeperSnpT");
+    DB::setThreadName(ThreadName::KEEPER_SNAPSHOT);
+
     const auto & shutdown_called = keeper_context->isShutdownCalled();
     CreateSnapshotTask task;
     while (snapshots_queue.pop(task))
@@ -745,6 +751,7 @@ void KeeperDispatcher::addErrorResponses(const KeeperRequestsForSessions & reque
         response->xid = request_for_session.request->xid;
         response->zxid = 0;
         response->error = error;
+        response->enqueue_ts = std::chrono::steady_clock::now();
         if (!responses_queue.push(DB::KeeperResponseForSession{request_for_session.session_id, response}))
             throw Exception(ErrorCodes::SYSTEM_ERROR,
                 "Could not push error response xid {} zxid {} error message {} to responses queue",
@@ -803,8 +810,11 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
                   const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr /*request*/)
         {
             if (response->getOpNum() != Coordination::OpNum::SessionID)
+            {
                 promise->set_exception(std::make_exception_ptr(Exception(
                     ErrorCodes::LOGICAL_ERROR, "Incorrect response of type {} instead of SessionID response", response->getOpNum())));
+                return;
+            }
 
             auto session_id_response = dynamic_cast<const Coordination::ZooKeeperSessionIDResponse &>(*response);
             if (session_id_response.internal_id != internal_id)
@@ -814,11 +824,15 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
                     "Incorrect response with internal id {} instead of {}",
                     session_id_response.internal_id,
                     internal_id)));
+                return;
             }
 
             if (response->error != Coordination::Error::ZOK)
+            {
                 promise->set_exception(
                     std::make_exception_ptr(zkutil::KeeperException::fromMessage(response->error, "SessionID request failed with error")));
+                return;
+            }
 
             promise->set_value(session_id_response.session_id);
         };
@@ -1017,7 +1031,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 void KeeperDispatcher::cleanResources()
 {
 #if USE_JEMALLOC
-    purgeJemallocArenas();
+    Jemalloc::purgeArenas();
 #endif
 }
 

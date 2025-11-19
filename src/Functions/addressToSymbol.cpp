@@ -8,7 +8,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -95,7 +94,90 @@ public:
 
 REGISTER_FUNCTION(AddressToSymbol)
 {
-    factory.registerFunction<FunctionAddressToSymbol>();
+    FunctionDocumentation::Description description = R"(
+Converts virtual memory address inside the ClickHouse server process to a symbol from ClickHouse's object files.
+    )";
+    FunctionDocumentation::Syntax syntax = "addressToSymbol(address_of_binary_instruction)";
+    FunctionDocumentation::Arguments arguments = {
+        {"address_of_binary_instruction", "Address of instruction in a running process.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the symbol from ClickHouse object files or an empty string, if the address is not valid.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Selecting the first string from the `trace_log` system table",
+        R"(
+SET allow_introspection_functions=1;
+SELECT * FROM system.trace_log LIMIT 1 \G;
+        )",
+        R"(
+-- The `trace` field contains the stack trace at the moment of sampling.
+Row 1:
+──────
+event_date:    2019-11-20
+event_time:    2019-11-20 16:57:59
+revision:      54429
+timer_type:    Real
+thread_number: 48
+query_id:      724028bf-f550-45aa-910d-2af6212b94ac
+trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
+        )"
+    },
+    {
+        "Getting a symbol for a single address",
+        R"(
+SET allow_introspection_functions=1;
+SELECT addressToSymbol(94138803686098) \G;
+        )",
+        R"(
+Row 1:
+──────
+addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
+        )"
+    },
+    {
+        "Applying the function to the whole stack trace",
+        R"(
+SET allow_introspection_functions=1;
+
+-- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
+-- The result of this processing is shown in the trace_symbols column of output.
+
+SELECT
+    arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
+FROM system.trace_log
+LIMIT 1
+\G
+        )",
+        R"(
+Row 1:
+──────
+trace_symbols: _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
+_ZNK2DB10Aggregator21executeWithoutKeyImplERPcmPNS0_28AggregateFunctionInstructionEPNS_5ArenaE
+_ZN2DB10Aggregator14executeOnBlockESt6vectorIN3COWINS_7IColumnEE13immutable_ptrIS3_EESaIS6_EEmRNS_22AggregatedDataVariantsERS1_IPKS3_SaISC_EERS1_ISE_SaISE_EERb
+_ZN2DB10Aggregator14executeOnBlockERKNS_5BlockERNS_22AggregatedDataVariantsERSt6vectorIPKNS_7IColumnESaIS9_EERS6_ISB_SaISB_EERb
+_ZN2DB10Aggregator7executeERKSt10shared_ptrINS_17IBlockInputStreamEERNS_22AggregatedDataVariantsE
+_ZN2DB27AggregatingBlockInputStream8readImplEv
+_ZN2DB17IBlockInputStream4readEv
+_ZN2DB26ExpressionBlockInputStream8readImplEv
+_ZN2DB17IBlockInputStream4readEv
+_ZN2DB26ExpressionBlockInputStream8readImplEv
+_ZN2DB17IBlockInputStream4readEv
+_ZN2DB28AsynchronousBlockInputStream9calculateEv
+_ZNSt17_Function_handlerIFvvEZN2DB28AsynchronousBlockInputStream4nextEvEUlvE_E9_M_invokeERKSt9_Any_data
+_ZN14ThreadPoolImplI20ThreadFromGlobalPoolE6workerESt14_List_iteratorIS0_E
+_ZZN20ThreadFromGlobalPoolC4IZN14ThreadPoolImplIS_E12scheduleImplIvEET_St8functionIFvvEEiSt8optionalImEEUlvE1_JEEEOS4_DpOT0_ENKUlvE_clEv
+_ZN14ThreadPoolImplISt6threadE6workerESt14_List_iteratorIS0_E
+execute_native_thread_routine
+start_thread
+clone
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Introspection;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionAddressToSymbol>(documentation);
 }
 
 }

@@ -4,11 +4,11 @@
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <IO/Operators_pcg_random.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -456,7 +456,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
         const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
-        StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
+        StringRef value = column.serializeAggregationStateValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
         node->size = value.size;
@@ -464,7 +464,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertFromArena(data()); }
+    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertAggregationStateValueFromArena(data()); }
 };
 
 template <typename Node, bool has_sampler>
@@ -676,17 +676,16 @@ public:
     {
         UInt64 elems;
         readVarUInt(elems, buf);
-
-        if (unlikely(elems == 0))
-            return;
-
         checkArraySize(elems, max_elems);
 
-        auto & value = data(place).value;
+        if (likely(elems > 0))
+        {
+            auto & value = data(place).value;
 
-        value.resize_exact(elems, arena);
-        for (UInt64 i = 0; i < elems; ++i)
-            value[i] = Node::read(buf, arena);
+            value.resize_exact(elems, arena);
+            for (UInt64 i = 0; i < elems; ++i)
+                value[i] = Node::read(buf, arena);
+        }
 
         if constexpr (Trait::last)
             readBinaryLittleEndian(data(place).total_values, buf);
@@ -785,7 +784,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[0].safeGet<Int64>() <= 0) ||
             (type == Field::Types::UInt64 && parameters[0].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
@@ -821,7 +820,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
         if (type != Field::Types::Int64 && type != Field::Types::UInt64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 
-        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() < 0) ||
+        if ((type == Field::Types::Int64 && parameters[i].safeGet<Int64>() <= 0) ||
                 (type == Field::Types::UInt64 && parameters[i].safeGet<UInt64>() == 0))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter for aggregate function {} should be positive number", name);
 

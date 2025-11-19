@@ -3,7 +3,6 @@
 
 #include <Common/HashTable/HashTable.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>
@@ -162,7 +161,18 @@ using FunctionArrayCompact = FunctionArrayMapped<ArrayCompactImpl, NameArrayComp
 
 REGISTER_FUNCTION(ArrayCompact)
 {
-    factory.registerFunction<FunctionArrayCompact>();
+    FunctionDocumentation::Description description = "Removes consecutive duplicate elements from an array, including `null` values. The order of values in the resulting array is determined by the order in the source array.";
+    FunctionDocumentation::Syntax syntax = "arrayCompact(arr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"arr", "An array to remove duplicates from.", {"Array(T)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array without duplicate values", {"Array(T)"}};
+    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayCompact([1, 1, nan, nan, 2, 3, 3, 3]);", "[1,nan,2,3]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionArrayCompact>(documentation);
 }
 
 }

@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Core/QueryLogElementType.h>
-#include <Interpreters/Cache/QueryCacheUsage.h>
+#include <Interpreters/Cache/QueryResultCacheUsage.h>
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
@@ -81,6 +81,8 @@ struct QueryLogElement
     std::unordered_set<String> used_functions;
     std::unordered_set<String> used_storages;
     std::unordered_set<String> used_table_functions;
+    std::unordered_set<String> used_executable_user_defined_functions;
+    std::unordered_set<String> used_sql_user_defined_functions;
     std::set<String> used_row_policies;
     std::unordered_set<String> used_privileges;
     std::unordered_set<String> missing_privileges;
@@ -101,9 +103,11 @@ struct QueryLogElement
     std::shared_ptr<AsyncReadCounters> async_read_counters;
     std::shared_ptr<Settings> query_settings;
 
+    bool is_internal;
+
     TransactionID tid;
 
-    QueryCacheUsage query_cache_usage = QueryCacheUsage::Unknown;
+    QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::Unknown;
 
     static std::string name() { return "QueryLog"; }
 

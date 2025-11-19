@@ -36,6 +36,18 @@ SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
 
 using namespace DB;
 
+WatchCallbackPtrOrEventPtr IKeeper::createWatchFromRawCallback(const String & id, const WatchCallbackCreator & creator)
+{
+    std::lock_guard lock(watches_mutex);
+    auto it = watches_by_id.find(id);
+    if (it == watches_by_id.end())
+    {
+        WatchCallbackPtrOrEventPtr watch(std::make_shared<WatchCallback>(creator()));
+        watches_by_id.emplace(id, watch);
+        return watch;
+    }
+    return it->second;
+}
 
 static void addRootPath(String & path, const String & root_path)
 {
@@ -80,6 +92,7 @@ const char * errorMessage(Error code)
         case Error::ZOPERATIONTIMEOUT:        return "Operation timeout";
         case Error::ZBADARGUMENTS:            return "Bad arguments";
         case Error::ZINVALIDSTATE:            return "Invalid zhandle state";
+        case Error::ZOUTOFMEMORY:             return "Out of Memory";
         case Error::ZAPIERROR:                return "API error";
         case Error::ZNONODE:                  return "No node";
         case Error::ZNOAUTH:                  return "Not authenticated";
@@ -106,7 +119,9 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZCONNECTIONLOSS
         || zk_return_code == Error::ZMARSHALLINGERROR
         || zk_return_code == Error::ZOPERATIONTIMEOUT
-        || zk_return_code == Error::ZNOTREADONLY;
+        || zk_return_code == Error::ZNOTREADONLY
+        || zk_return_code == Error::ZOUTOFMEMORY
+        || zk_return_code == Error::ZNOAUTH;
 }
 
 bool isUserError(Error zk_return_code)

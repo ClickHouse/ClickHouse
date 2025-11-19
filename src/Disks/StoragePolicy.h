@@ -53,13 +53,13 @@ public:
     const String & getName() const override{ return name; }
 
     /// Returns valid reservation or nullptr
-    ReservationPtr reserve(UInt64 bytes) const override;
+    ReservationPtrOrError reserve(UInt64 bytes) const override;
 
     /// Reserves space on any volume or throws
     ReservationPtr reserveAndCheck(UInt64 bytes) const override;
 
     /// Reserves space on any volume with index > min_volume_index or returns nullptr
-    ReservationPtr reserve(UInt64 bytes, size_t min_volume_index) const override;
+    ReservationPtrOrError reserve(UInt64 bytes, size_t min_volume_index) const override;
 
     /// Find volume index, which contains disk
     std::optional<size_t> tryGetVolumeIndexByDiskName(const String & disk_name) const override;
@@ -81,6 +81,9 @@ public:
 
     /// Checks if storage policy can be replaced by another one.
     void checkCompatibleWith(const StoragePolicyPtr & new_storage_policy) const override;
+
+    /// If the policy allows table partition operations (move, replace) with the other storage policy.
+    bool isCompatibleForPartitionOps(const StoragePolicyPtr & other) const override;
 
     /// Check if we have any volume with stopped merges
     bool hasAnyVolumeWithDisabledMerges() const override;

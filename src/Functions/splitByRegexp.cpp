@@ -6,9 +6,9 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/Regexps.h>
 #include <Common/StringUtils.h>
-#include <base/map.h>
 #include <Common/assert_cast.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -172,7 +172,9 @@ public:
         if (patternIsTrivialChar(arguments))
             return FunctionFactory::instance().getImpl("splitByChar", context)->build(arguments);
         return std::make_unique<FunctionToFunctionBaseAdaptor>(
-            split_by_regexp, collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
+            split_by_regexp,
+            DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
+            return_type);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -210,7 +212,52 @@ private:
 
 REGISTER_FUNCTION(SplitByRegexp)
 {
-    factory.registerFunction<SplitByRegexpOverloadResolver>();
+    FunctionDocumentation::Description description = R"(
+Splits a string which is separated by the provided regular expression into an array of substrings.
+If the provided regular expression is empty, it will split the string into an array of single characters.
+If no match is found for the regular expression, the string won't be split.
+
+Empty substrings may be selected when:
+- a non-empty regular expression match occurs at the beginning or end of the string
+- there are multiple consecutive non-empty regular expression matches
+- the original string string is empty while the regular expression is not empty.
+
+:::note
+Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "splitByRegexp(regexp, s[, max_substrings])";
+    FunctionDocumentation::Arguments arguments = {
+        {"regexp", "Regular expression. Constant.", {"String", "FixedString"}},
+        {"s", "The string to split.", {"String"}},
+        {"max_substrings", "Optional. When `max_substrings > 0`, the returned substrings will be no more than `max_substrings`, otherwise the function will return as many substrings as possible. Default value: `0`.", {"Int64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the selected substrings of `s`.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT splitByRegexp('\\\\d+', 'a12bc23de345f');",
+        R"(
+┌─splitByRegex⋯c23de345f')─┐
+│ ['a12bc23de345f']        │
+└──────────────────────────┘
+        )"
+    },
+    {
+        "Empty regexp",
+        "SELECT splitByRegexp('', 'abcde');",
+        R"(
+┌─splitByRegexp('', 'abcde')─┐
+│ ['a','b','c','d','e']      │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSplitting;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<SplitByRegexpOverloadResolver>(documentation);
 }
 
 }

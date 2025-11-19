@@ -40,10 +40,10 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 
 void ASTDropAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "")
+    ostr
                   << "DROP " << AccessEntityTypeInfo::get(type).name
                   << (if_exists ? " IF EXISTS" : "")
-                  << (settings.hilite ? hilite_none : "");
+                 ;
 
     if (type == AccessEntityType::ROW_POLICY)
     {
@@ -54,8 +54,8 @@ void ASTDropAccessEntityQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
         formatNames(names, ostr);
 
     if (!storage_name.empty())
-        ostr << (settings.hilite ? hilite_keyword : "")
-                      << " FROM " << (settings.hilite ? hilite_none : "")
+        ostr
+                      << " FROM "
                       << backQuoteIfNeed(storage_name);
 
     formatOnCluster(ostr, settings);

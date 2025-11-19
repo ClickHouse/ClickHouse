@@ -1,10 +1,12 @@
 import concurrent
-
 import pytest
+import uuid
+import time
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.corrupt_part_data_on_disk import corrupt_part_data_on_disk
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -44,6 +46,77 @@ def remove_part_from_disk(node, table, part_name):
         ["bash", "-c", "rm -r {p}/*".format(p=part_path)], privileged=True
     )
 
+# TODO: move to the end and fix https://github.com/ClickHouse/ClickHouse/issues/87916
+def test_check_all_tables(started_cluster):
+    def _create_table(database, table, engine=None):
+        if engine is None:
+            engine = "MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id SETTINGS min_bytes_for_wide_part=0"
+
+        node1.query(
+            f"CREATE TABLE {database}.{table} (date Date, id UInt32, value Int32) ENGINE = {engine}"
+        )
+        node1.query(
+            f"INSERT INTO {database}.{table} VALUES (toDate('2019-02-01'), 1, 10), (toDate('2019-02-01'), 2, 12)"
+        )
+        node1.query(f"SYSTEM STOP MERGES {database}.{table}")
+
+    for database in ["db1", "db2", "db3"]:
+        node1.query(f"CREATE DATABASE {database}")
+        for table in ["table1", "table2"]:
+            _create_table(database, table)
+
+    remove_checksums_on_disk(node1, "db1", "table2", "201902_1_1_0")
+
+    # These tables should not be checked
+    _create_table("db1", "table_memory", "Memory()")
+    _create_table("db1", "table_log", "TinyLog()")
+
+    node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+
+        check_future = executor.submit(
+            lambda: node1.query(
+                "CHECK ALL TABLES",
+                settings={"check_query_single_value_result": 0, "max_threads": 16},
+            )
+        )
+
+        futures.append(executor.submit(lambda: node1.query("DROP TABLE db3.table2")))
+        futures.append(executor.submit(lambda: node1.query("DROP DATABASE db2")))
+
+        for future in concurrent.futures.as_completed(futures):
+            future.result()
+
+        check_result = check_future.result()
+
+    # Do not check databases created in other tests
+    check_result = [
+        res.split("\t")
+        for res in check_result.split("\n")
+        if res and not res.startswith("default")
+    ]
+
+    checked_tables = {f"{res[0]}.{res[1]}" for res in check_result}
+    assert all(
+        table in checked_tables for table in ["db1.table1", "db1.table2", "db3.table1"]
+    ), checked_tables
+
+    for check_result_row in check_result:
+        assert len(check_result_row) == 5, check_result_row
+
+        db, table, part, flag, message = check_result_row
+        if db == "db1" and table == "table2" and part == "201902_1_1_0":
+            assert flag == "1"
+            assert message == "Checksums recounted and written to disk."
+        else:
+            assert flag == "1"
+            assert message == ""
+
+    for database in ["db1", "db3"]:
+        node1.query(f"DROP DATABASE {database} SYNC")
+    node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
 
 @pytest.mark.parametrize("merge_tree_settings", [""])
 def test_check_normal_table_corruption(started_cluster, merge_tree_settings):
@@ -137,6 +210,7 @@ def test_check_replicated_table_simple(
     for node in [node1, node2]:
         node.query("DROP TABLE IF EXISTS replicated_mt SYNC")
 
+    for node in [node1, node2]:
         node.query(
             """
         CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
@@ -234,6 +308,7 @@ def test_check_replicated_table_corruption(
     for node in [node1, node2]:
         node.query_with_retry("DROP TABLE IF EXISTS replicated_mt_1 SYNC")
 
+    for node in [node1, node2]:
         node.query_with_retry(
             """
         CREATE TABLE replicated_mt_1(date Date, id UInt32, value Int32)
@@ -295,70 +370,63 @@ def test_check_replicated_table_corruption(
     ) == "{}\t1\t\n".format(part_name)
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
 
+@pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
+def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
+    part_count = 100
+    table_name = f"replicated_check_{engine}"
+    node1.query(
+        f"""
+            CREATE TABLE {table_name}(id UInt32, value Int32)
+            ENGINE = {engine}('/clickhouse/tables/{{database}}/{table_name}', '{node1.name}')
+            PARTITION BY id
+            ORDER BY tuple()
+            AS SELECT number, number FROM numbers({part_count})
+        """
+    )
 
-def test_check_all_tables(started_cluster):
-    def _create_table(database, table, engine=None):
-        if engine is None:
-            engine = "MergeTree() PARTITION BY toYYYYMM(date) ORDER BY id SETTINGS min_bytes_for_wide_part=0"
+    query_id = uuid.uuid4().hex
 
-        node1.query(
-            f"CREATE TABLE {database}.{table} (date Date, id UInt32, value Int32) ENGINE = {engine}"
+    def wait_check_table_and_restart_keeper():
+        assert_eq_with_retry(
+            node1,
+            f"SELECT query_id FROM system.processes WHERE query_id = '{query_id}'",
+            query_id,
         )
-        node1.query(
-            f"INSERT INTO {database}.{table} VALUES (toDate('2019-02-01'), 1, 10), (toDate('2019-02-01'), 2, 12)"
+
+        cluster.kill_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
+        err = node1.query_and_get_error(
+            f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=0"
         )
-        node1.query(f"SYSTEM STOP MERGES {database}.{table}")
+        assert err != ""
+        cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
 
-    for database in ["db1", "db2", "db3"]:
-        node1.query(f"CREATE DATABASE {database}")
-        for table in ["table1", "table2"]:
-            _create_table(database, table)
-
-    remove_checksums_on_disk(node1, "db1", "table2", "201902_1_1_0")
-
-    # These tables should not be checked
-    _create_table("db1", "table_memory", "Memory()")
-    _create_table("db1", "table_log", "TinyLog()")
+        # Wait for keeper reconnection
+        node1.query(
+            f"INSERT INTO {table_name} SELECT number, number FROM numbers(10) SETTINGS insert_keeper_max_retries=100"
+        )
 
     node1.query("SYSTEM ENABLE FAILPOINT check_table_query_delay_for_part")
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = []
-
-        check_future = executor.submit(
-            lambda: node1.query(
-                "CHECK ALL TABLES",
-                settings={"check_query_single_value_result": 0, "max_threads": 16},
-            )
+    def run_check_table_and_measure_time():
+        start_time = time.time()
+        result = node1.query(
+            f"CHECK TABLE {table_name} SETTINGS max_threads=1", query_id=query_id
         )
+        end_time = time.time()
+        assert result == "0\n"  # 0 means error
+        avg_sleep = 0.5
+        # The process should have stopped before checking all parts
+        assert end_time - start_time < (part_count * avg_sleep)
+        node1.contains_in_log("reason: DB::Exception: Table shutdown was called")
 
-        futures.append(executor.submit(lambda: node1.query("DROP TABLE db3.table2")))
-        futures.append(executor.submit(lambda: node1.query("DROP DATABASE db2")))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [
+            executor.submit(run_check_table_and_measure_time),
+            executor.submit(wait_check_table_and_restart_keeper),
+        ]
 
         for future in concurrent.futures.as_completed(futures):
             future.result()
 
-        check_result = check_future.result()
-
-    # Do not check databases created in other tests
-    check_result = [
-        res.split("\t")
-        for res in check_result.split("\n")
-        if res and not res.startswith("default")
-    ]
-
-    checked_tables = {f"{res[0]}.{res[1]}" for res in check_result}
-    assert all(
-        table in checked_tables for table in ["db1.table1", "db1.table2", "db3.table1"]
-    ), checked_tables
-
-    for check_result_row in check_result:
-        assert len(check_result_row) == 5, check_result_row
-
-        db, table, part, flag, message = check_result_row
-        if db == "db1" and table == "table2" and part == "201902_1_1_0":
-            assert flag == "1"
-            assert message == "Checksums recounted and written to disk."
-        else:
-            assert flag == "1"
-            assert message == ""
+    node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+    node1.query(f"DROP TABLE {table_name} SYNC")

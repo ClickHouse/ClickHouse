@@ -41,17 +41,19 @@ function run_query()
         --optimize_use_projections 1
         --force_optimize_projection 1
         --log_processors_profiles 1
+        --parallel_replicas_local_plan 1
+        --parallel_replicas_support_projection 1
         --query_id "$query_id"
     )
     $CLICKHOUSE_CLIENT "${opts[@]}" "$@" -q "$query"
 
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS processors_profile_log"
 
     echo "Used processors:"
     $CLICKHOUSE_CLIENT --param_query_id "$query_id" -q "SELECT DISTINCT name FROM system.processors_profile_log WHERE query_id = {query_id:String} AND name LIKE 'Aggregating%'"
 }
 
 run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=0"
-run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=1"
+run_query "SELECT k1, k2, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order=1, enable_parallel_replicas=0"
 run_query "SELECT k1, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k3 ORDER BY k1, k3 SETTINGS optimize_aggregation_in_order=0"
-run_query "SELECT k1, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k3 ORDER BY k1, k3 SETTINGS optimize_aggregation_in_order=1"
+run_query "SELECT k1, k3, sum(value) v FROM in_order_agg_01710 GROUP BY k1, k3 ORDER BY k1, k3 SETTINGS optimize_aggregation_in_order=1, enable_parallel_replicas=0"

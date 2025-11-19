@@ -1,50 +1,32 @@
 import concurrent
-import os.path
 import time
 from random import randint, random
+from typing import List
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.test_tools import TSV, assert_eq_with_retry
+
+from .concurrency_helper import (
+    add_nodes_to_cluster,
+    create_test_table,
+    generate_cluster_def,
+)
 
 cluster = ClickHouseCluster(__file__)
 
 num_nodes = 10
 
 
-def generate_cluster_def():
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/cluster_for_concurrency_test.xml",
-    )
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write("<clickhouse>\n\t<remote_servers>\n\t\t<cluster>\n\t\t\t<shard>\n")
-        for i in range(num_nodes):
-            f.write(
-                f"\t\t\t\t<replica>\n\t\t\t\t\t<host>node{i}</host>\n\t\t\t\t\t<port>9000</port>\n\t\t\t\t</replica>\n"
-            )
-        f.write("\t\t\t</shard>\n\t\t</cluster>\n\t</remote_servers>\n</clickhouse>")
-    return path
-
-
-main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
+main_configs = [
+    "configs/backups_disk.xml",
+    generate_cluster_def(__file__, num_nodes),
+]
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
-nodes = []
-for i in range(num_nodes):
-    nodes.append(
-        cluster.add_instance(
-            f"node{i}",
-            main_configs=main_configs,
-            user_configs=user_configs,
-            external_dirs=["/backups/"],
-            macros={"replica": f"node{i}", "shard": "shard1"},
-            with_zookeeper=True,
-        )
-    )
+nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs)
 
 node0 = nodes[0]
 
@@ -70,21 +52,16 @@ def drop_after_test():
 backup_id_counter = 0
 
 
+def create_and_fill_table() -> None:
+    create_test_table(node0)
+    for i, node in enumerate(nodes):
+        node.query(f"INSERT INTO tbl VALUES ({i})")
+
+
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
     return f"Disk('backups', '{backup_id_counter}')"
-
-
-def create_and_fill_table():
-    node0.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x Int32"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY tuple()"
-    )
-    for i in range(num_nodes):
-        nodes[i].query(f"INSERT INTO tbl VALUES ({i})")
 
 
 expected_sum = num_nodes * (num_nodes - 1) // 2
@@ -121,10 +98,12 @@ def test_concurrent_backups_on_same_node():
 
     ids_list = "[" + ", ".join([f"'{id}'" for id in ids]) + "]"
 
+    # Wait until all the concurrent BACKUP commands have finished.
     assert_eq_with_retry(
         node0,
         f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id IN {ids_list}",
         "",
+        retry_count=100,
     )
 
     assert node0.query(
@@ -154,11 +133,13 @@ def test_concurrent_backups_on_different_nodes():
         )
         ids.append(id)
 
+    # Wait until all the concurrent BACKUP commands have finished.
     for i in range(num_concurrent_backups):
         assert_eq_with_retry(
             nodes[i],
             f"SELECT status FROM system.backups WHERE status == 'CREATING_BACKUP' AND id = '{ids[i]}'",
             "",
+            retry_count=100,
         )
 
     for i in range(num_concurrent_backups):

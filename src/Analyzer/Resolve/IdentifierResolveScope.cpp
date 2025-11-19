@@ -27,16 +27,23 @@ IdentifierResolveScope::IdentifierResolveScope(QueryTreeNodePtr scope_node_, Ide
         subquery_depth = parent_scope->subquery_depth;
         context = parent_scope->context;
         projection_mask_map = parent_scope->projection_mask_map;
+        global_with_aliases = parent_scope->global_with_aliases;
     }
     else
         projection_mask_map = std::make_shared<std::map<IQueryTreeNode::Hash, size_t>>();
 
     if (auto * union_node = scope_node->as<UnionNode>())
     {
+        if (parent_scope && parent_scope->context)
+            union_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
+
         context = union_node->getContext();
     }
     else if (auto * query_node = scope_node->as<QueryNode>())
     {
+        if (parent_scope && parent_scope->context)
+            query_node->getMutableContext()->setDistributed(parent_scope->context->isDistributed());
+
         context = query_node->getContext();
         group_by_use_nulls = context->getSettingsRef()[Setting::group_by_use_nulls]
             && (query_node->isGroupByWithGroupingSets() || query_node->isGroupByWithRollup() || query_node->isGroupByWithCube());

@@ -1,0 +1,471 @@
+-- { echoOn }
+
+EXPLAIN PLAN actions = 1
+SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.uid Int16 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         INPUT : 3 -> __table1.u2.uid Int16 : 3
+         INPUT : 4 -> __table1.u2.name String : 4
+         INPUT : 5 -> __table1.u2.age Int16 : 5
+         ALIAS __table1.uid :: 0 -> uid Int16 : 6
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
+         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+Positions: 6 0 1 2 3 4
+  Sorting (Sorting for ORDER BY)
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+    Expression ((Before ORDER BY + (Projection + )))
+    Actions: INPUT : 0 -> __table2.uid Int16 : 0
+             INPUT : 1 -> __table2.name String : 1
+             INPUT : 2 -> __table2.age Int16 : 2
+             INPUT : 3 -> __table3.uid Int16 : 3
+             INPUT : 4 -> __table3.name String : 4
+             INPUT : 5 -> __table3.age Int16 : 5
+             ALIAS __table2.uid :: 0 -> uid Int16 : 6
+             ALIAS __table2.name :: 1 -> name String : 0
+             ALIAS __table2.age :: 2 -> age Int16 : 1
+             ALIAS __table3.uid :: 3 -> u2.uid Int16 : 2
+             ALIAS __table3.name :: 4 -> u2.name String : 3
+             ALIAS __table3.age :: 5 -> u2.age Int16 : 4
+             ALIAS uid :: 6 -> __table1.uid Int16 : 5
+             ALIAS name :: 0 -> __table1.name String : 6
+             ALIAS age :: 1 -> __table1.age Int16 : 0
+             ALIAS u2.uid :: 2 -> __table1.u2.uid Int16 : 1
+             ALIAS u2.name :: 3 -> __table1.u2.name String : 2
+             ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+    Positions: 5 6 0 1 2 3
+      Expression (Post Join Actions)
+      Actions: INPUT :: 0 -> __table2.uid Int16 : 0
+               INPUT :: 1 -> __table2.name String : 1
+               INPUT :: 2 -> __table2.age Int16 : 2
+               INPUT :: 3 -> __table3.uid Int16 : 3
+               INPUT :: 4 -> __table3.name String : 4
+               INPUT :: 5 -> __table3.age Int16 : 5
+      Positions: 0 1 2 3 4 5
+        Join
+        Type: INNER
+        Strictness: ALL
+        Algorithm: ConcurrentHashJoin
+        Clauses: [(__table2.age) = (__table3.age)]
+          Expression (Left Pre Join Actions)
+          Actions: INPUT :: 0 -> __table2.age Int16 : 0
+                   INPUT :: 1 -> __table2.uid Int16 : 1
+                   INPUT :: 2 -> __table2.name String : 2
+          Positions: 0 1 2
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> uid Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     INPUT : 2 -> age Int16 : 2
+                     ALIAS uid :: 0 -> __table2.uid Int16 : 3
+                     ALIAS name :: 1 -> __table2.name String : 0
+                     ALIAS age :: 2 -> __table2.age Int16 : 1
+            Positions: 3 0 1
+              ReadFromMergeTree (default.users)
+              ReadType: Default
+              Parts: 3
+              Granules: 3
+          Expression (Right Pre Join Actions)
+          Actions: INPUT :: 0 -> __table3.age Int16 : 0
+                   INPUT :: 1 -> __table3.uid Int16 : 1
+                   INPUT :: 2 -> __table3.name String : 2
+          Positions: 0 1 2
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> uid Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     INPUT : 2 -> age Int16 : 2
+                     ALIAS uid :: 0 -> __table3.uid Int16 : 3
+                     ALIAS name :: 1 -> __table3.name String : 0
+                     ALIAS age :: 2 -> __table3.age Int16 : 1
+            Positions: 3 0 1
+              ReadFromMergeTree (default.users)
+              ReadType: Default
+              Parts: 3
+              Granules: 3
+SELECT * FROM (SELECT * FROM users u1 INNER JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+1231	John	33	1231	John	33
+6666	Ksenia	48	6666	Ksenia	48
+8888	Alice	50	8888	Alice	50
+EXPLAIN PLAN actions = 1
+SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL;
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.uid Int16 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         INPUT : 3 -> __table1.u2.uid Int16 : 3
+         INPUT : 4 -> __table1.u2.name String : 4
+         INPUT : 5 -> __table1.u2.age Int16 : 5
+         ALIAS __table1.uid :: 0 -> uid Int16 : 6
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
+         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+Positions: 6 0 1 2 3 4
+  Sorting (Sorting for ORDER BY)
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+    Expression ((Before ORDER BY + (Projection + )))
+    Actions: INPUT : 0 -> __table2.uid Int16 : 0
+             INPUT : 1 -> __table2.name String : 1
+             INPUT : 2 -> __table2.age Int16 : 2
+             INPUT : 3 -> __table3.uid Int16 : 3
+             INPUT : 4 -> __table3.name String : 4
+             INPUT : 5 -> __table3.age Int16 : 5
+             ALIAS __table2.uid :: 0 -> uid Int16 : 6
+             ALIAS __table2.name :: 1 -> name String : 0
+             ALIAS __table2.age :: 2 -> age Int16 : 1
+             ALIAS __table3.uid :: 3 -> u2.uid Int16 : 2
+             ALIAS __table3.name :: 4 -> u2.name String : 3
+             ALIAS __table3.age :: 5 -> u2.age Int16 : 4
+             ALIAS uid :: 6 -> __table1.uid Int16 : 5
+             ALIAS name :: 0 -> __table1.name String : 6
+             ALIAS age :: 1 -> __table1.age Int16 : 0
+             ALIAS u2.uid :: 2 -> __table1.u2.uid Int16 : 1
+             ALIAS u2.name :: 3 -> __table1.u2.name String : 2
+             ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+    Positions: 5 6 0 1 2 3
+      Expression (Post Join Actions)
+      Actions: INPUT :: 0 -> __table2.uid Int16 : 0
+               INPUT :: 1 -> __table2.name String : 1
+               INPUT :: 2 -> __table2.age Int16 : 2
+               INPUT :: 3 -> __table3.uid Int16 : 3
+               INPUT :: 4 -> __table3.name String : 4
+               INPUT :: 5 -> __table3.age Int16 : 5
+      Positions: 0 1 2 3 4 5
+        Join
+        Type: INNER
+        Strictness: ALL
+        Algorithm: ConcurrentHashJoin
+        Clauses: [(__table2.age) = (__table3.age)]
+          Expression (Left Pre Join Actions)
+          Actions: INPUT :: 0 -> __table2.age Int16 : 0
+                   INPUT :: 1 -> __table2.uid Int16 : 1
+                   INPUT :: 2 -> __table2.name String : 2
+          Positions: 0 1 2
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> uid Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     INPUT : 2 -> age Int16 : 2
+                     ALIAS uid :: 0 -> __table2.uid Int16 : 3
+                     ALIAS name :: 1 -> __table2.name String : 0
+                     ALIAS age :: 2 -> __table2.age Int16 : 1
+            Positions: 3 0 1
+              ReadFromMergeTree (default.users)
+              ReadType: Default
+              Parts: 3
+              Granules: 3
+          Expression (Right Pre Join Actions)
+          Actions: INPUT :: 0 -> __table3.age Int16 : 0
+                   INPUT :: 1 -> __table3.uid Int16 : 1
+                   INPUT :: 2 -> __table3.name String : 2
+          Positions: 0 1 2
+            Expression (Change column names to column identifiers)
+            Actions: INPUT : 0 -> uid Int16 : 0
+                     INPUT : 1 -> name String : 1
+                     INPUT : 2 -> age Int16 : 2
+                     ALIAS uid :: 0 -> __table3.uid Int16 : 3
+                     ALIAS name :: 1 -> __table3.name String : 0
+                     ALIAS age :: 2 -> __table3.age Int16 : 1
+            Positions: 3 0 1
+              ReadFromMergeTree (default.users)
+              ReadType: Default
+              Parts: 3
+              Granules: 3
+SELECT * FROM (SELECT * FROM users u1 CROSS JOIN users u2) WHERE age = u2.age ORDER BY ALL;
+1231	John	33	1231	John	33
+6666	Ksenia	48	6666	Ksenia	48
+8888	Alice	50	8888	Alice	50
+EXPLAIN PLAN actions = 1
+SELECT * FROM (SELECT * FROM users u1 SEMI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.uid Int16 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         INPUT : 3 -> __table1.u2.uid Int16 : 3
+         INPUT : 4 -> __table1.u2.name String : 4
+         INPUT : 5 -> __table1.u2.age Int16 : 5
+         ALIAS __table1.uid :: 0 -> uid Int16 : 6
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
+         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+Positions: 6 0 1 2 3 4
+  Sorting (Sorting for ORDER BY)
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+    Expression ((Before ORDER BY + Projection))
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT :: 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table1.u2.uid Int16 : 3
+             INPUT :: 4 -> __table1.u2.name String : 4
+             INPUT :: 5 -> __table1.u2.age Int16 : 5
+    Positions: 0 1 2 3 4 5
+      Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+      Filter column: equals(__table1.age, __table1.u2.age) (removed)
+      Actions: INPUT : 0 -> __table2.uid Int16 : 0
+               INPUT : 1 -> __table2.name String : 1
+               INPUT : 2 -> __table2.age Int16 : 2
+               INPUT : 3 -> __table3.uid Int16 : 3
+               INPUT : 4 -> __table3.name String : 4
+               INPUT : 5 -> __table3.age Int16 : 5
+               ALIAS __table2.uid :: 0 -> uid Int16 : 6
+               ALIAS __table2.name :: 1 -> name String : 0
+               ALIAS __table2.age : 2 -> age Int16 : 1
+               ALIAS __table3.uid :: 3 -> u2.uid Int16 : 7
+               ALIAS __table3.name :: 4 -> u2.name String : 3
+               ALIAS __table3.age : 5 -> u2.age Int16 : 4
+               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.u2.age) UInt8 : 8
+               ALIAS uid :: 6 -> __table1.uid Int16 : 5
+               ALIAS name :: 0 -> __table1.name String : 6
+               ALIAS age :: 1 -> __table1.age Int16 : 0
+               ALIAS u2.uid :: 7 -> __table1.u2.uid Int16 : 1
+               ALIAS u2.name :: 3 -> __table1.u2.name String : 7
+               ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+      Positions: 8 5 6 0 1 7 3
+        Expression (Post Join Actions)
+        Actions: INPUT :: 0 -> __table2.uid Int16 : 0
+                 INPUT :: 1 -> __table2.name String : 1
+                 INPUT :: 2 -> __table2.age Int16 : 2
+                 INPUT :: 3 -> __table3.uid Int16 : 3
+                 INPUT :: 4 -> __table3.name String : 4
+                 INPUT :: 5 -> __table3.age Int16 : 5
+        Positions: 0 1 2 3 4 5
+          Join
+          Type: LEFT
+          Strictness: SEMI
+          Algorithm: ConcurrentHashJoin
+          Clauses: [(__lhs_const) = (__rhs_const)]
+            Expression (Left Pre Join Actions)
+            Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0
+                     INPUT :: 0 -> __table2.uid Int16 : 1
+                     INPUT :: 1 -> __table2.name String : 2
+                     INPUT :: 2 -> __table2.age Int16 : 3
+            Positions: 0 1 2 3
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> uid Int16 : 0
+                       INPUT : 1 -> name String : 1
+                       INPUT : 2 -> age Int16 : 2
+                       ALIAS uid :: 0 -> __table2.uid Int16 : 3
+                       ALIAS name :: 1 -> __table2.name String : 0
+                       ALIAS age :: 2 -> __table2.age Int16 : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.users)
+                ReadType: Default
+                Parts: 3
+                Granules: 3
+            Expression (Right Pre Join Actions)
+            Actions: COLUMN Const(UInt8) -> __rhs_const UInt8 : 0
+                     INPUT :: 0 -> __table3.uid Int16 : 1
+                     INPUT :: 1 -> __table3.name String : 2
+                     INPUT :: 2 -> __table3.age Int16 : 3
+            Positions: 0 1 2 3
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> uid Int16 : 0
+                       INPUT : 1 -> name String : 1
+                       INPUT : 2 -> age Int16 : 2
+                       ALIAS uid :: 0 -> __table3.uid Int16 : 3
+                       ALIAS name :: 1 -> __table3.name String : 0
+                       ALIAS age :: 2 -> __table3.age Int16 : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.users)
+                ReadType: Default
+                Parts: 3
+                Granules: 3
+EXPLAIN PLAN actions = 1
+SELECT * FROM (SELECT * FROM users u1 FULL JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.uid Int16 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         INPUT : 3 -> __table1.u2.uid Int16 : 3
+         INPUT : 4 -> __table1.u2.name String : 4
+         INPUT : 5 -> __table1.u2.age Int16 : 5
+         ALIAS __table1.uid :: 0 -> uid Int16 : 6
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
+         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+Positions: 6 0 1 2 3 4
+  Sorting (Sorting for ORDER BY)
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+    Expression ((Before ORDER BY + Projection))
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT :: 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table1.u2.uid Int16 : 3
+             INPUT :: 4 -> __table1.u2.name String : 4
+             INPUT :: 5 -> __table1.u2.age Int16 : 5
+    Positions: 0 1 2 3 4 5
+      Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+      Filter column: equals(__table1.age, __table1.u2.age) (removed)
+      Actions: INPUT : 0 -> __table2.uid Int16 : 0
+               INPUT : 1 -> __table2.name String : 1
+               INPUT : 2 -> __table2.age Int16 : 2
+               INPUT : 3 -> __table3.uid Int16 : 3
+               INPUT : 4 -> __table3.name String : 4
+               INPUT : 5 -> __table3.age Int16 : 5
+               ALIAS __table2.uid :: 0 -> uid Int16 : 6
+               ALIAS __table2.name :: 1 -> name String : 0
+               ALIAS __table2.age : 2 -> age Int16 : 1
+               ALIAS __table3.uid :: 3 -> u2.uid Int16 : 7
+               ALIAS __table3.name :: 4 -> u2.name String : 3
+               ALIAS __table3.age : 5 -> u2.age Int16 : 4
+               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.u2.age) UInt8 : 8
+               ALIAS uid :: 6 -> __table1.uid Int16 : 5
+               ALIAS name :: 0 -> __table1.name String : 6
+               ALIAS age :: 1 -> __table1.age Int16 : 0
+               ALIAS u2.uid :: 7 -> __table1.u2.uid Int16 : 1
+               ALIAS u2.name :: 3 -> __table1.u2.name String : 7
+               ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+      Positions: 8 5 6 0 1 7 3
+        Expression (Post Join Actions)
+        Actions: INPUT :: 0 -> __table2.uid Int16 : 0
+                 INPUT :: 1 -> __table2.name String : 1
+                 INPUT :: 2 -> __table2.age Int16 : 2
+                 INPUT :: 3 -> __table3.uid Int16 : 3
+                 INPUT :: 4 -> __table3.name String : 4
+                 INPUT :: 5 -> __table3.age Int16 : 5
+        Positions: 0 1 2 3 4 5
+          Join
+          Type: FULL
+          Strictness: ALL
+          Algorithm: ConcurrentHashJoin
+          Clauses: [(__lhs_const) = (__rhs_const)]
+            Expression (Left Pre Join Actions)
+            Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0
+                     INPUT :: 0 -> __table2.uid Int16 : 1
+                     INPUT :: 1 -> __table2.name String : 2
+                     INPUT :: 2 -> __table2.age Int16 : 3
+            Positions: 0 1 2 3
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> uid Int16 : 0
+                       INPUT : 1 -> name String : 1
+                       INPUT : 2 -> age Int16 : 2
+                       ALIAS uid :: 0 -> __table2.uid Int16 : 3
+                       ALIAS name :: 1 -> __table2.name String : 0
+                       ALIAS age :: 2 -> __table2.age Int16 : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.users)
+                ReadType: Default
+                Parts: 3
+                Granules: 3
+            Expression (Right Pre Join Actions)
+            Actions: COLUMN Const(UInt8) -> __rhs_const UInt8 : 0
+                     INPUT :: 0 -> __table3.uid Int16 : 1
+                     INPUT :: 1 -> __table3.name String : 2
+                     INPUT :: 2 -> __table3.age Int16 : 3
+            Positions: 0 1 2 3
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> uid Int16 : 0
+                       INPUT : 1 -> name String : 1
+                       INPUT : 2 -> age Int16 : 2
+                       ALIAS uid :: 0 -> __table3.uid Int16 : 3
+                       ALIAS name :: 1 -> __table3.name String : 0
+                       ALIAS age :: 2 -> __table3.age Int16 : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.users)
+                ReadType: Default
+                Parts: 3
+                Granules: 3
+EXPLAIN PLAN actions = 1
+SELECT * FROM (SELECT * FROM users u1 ANTI JOIN users u2 ON 1) WHERE age = u2.age ORDER BY ALL;
+Expression (Project names)
+Actions: INPUT : 0 -> __table1.uid Int16 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         INPUT : 3 -> __table1.u2.uid Int16 : 3
+         INPUT : 4 -> __table1.u2.name String : 4
+         INPUT : 5 -> __table1.u2.age Int16 : 5
+         ALIAS __table1.uid :: 0 -> uid Int16 : 6
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+         ALIAS __table1.u2.uid :: 3 -> u2.uid Int16 : 2
+         ALIAS __table1.u2.name :: 4 -> u2.name String : 3
+         ALIAS __table1.u2.age :: 5 -> u2.age Int16 : 4
+Positions: 6 0 1 2 3 4
+  Sorting (Sorting for ORDER BY)
+  Sort description: __table1.uid ASC, __table1.name ASC, __table1.age ASC, __table1.u2.uid ASC, __table1.u2.name ASC, __table1.u2.age ASC
+    Expression ((Before ORDER BY + Projection))
+    Actions: INPUT :: 0 -> __table1.uid Int16 : 0
+             INPUT :: 1 -> __table1.name String : 1
+             INPUT :: 2 -> __table1.age Int16 : 2
+             INPUT :: 3 -> __table1.u2.uid Int16 : 3
+             INPUT :: 4 -> __table1.u2.name String : 4
+             INPUT :: 5 -> __table1.u2.age Int16 : 5
+    Positions: 0 1 2 3 4 5
+      Filter ((WHERE + (Change column names to column identifiers + (Project names + Projection))))
+      Filter column: equals(__table1.age, __table1.u2.age) (removed)
+      Actions: INPUT : 0 -> __table2.uid Int16 : 0
+               INPUT : 1 -> __table2.name String : 1
+               INPUT : 2 -> __table2.age Int16 : 2
+               INPUT : 3 -> __table3.uid Int16 : 3
+               INPUT : 4 -> __table3.name String : 4
+               INPUT : 5 -> __table3.age Int16 : 5
+               ALIAS __table2.uid :: 0 -> uid Int16 : 6
+               ALIAS __table2.name :: 1 -> name String : 0
+               ALIAS __table2.age : 2 -> age Int16 : 1
+               ALIAS __table3.uid :: 3 -> u2.uid Int16 : 7
+               ALIAS __table3.name :: 4 -> u2.name String : 3
+               ALIAS __table3.age : 5 -> u2.age Int16 : 4
+               FUNCTION equals(__table2.age :: 2, __table3.age :: 5) -> equals(__table1.age, __table1.u2.age) UInt8 : 8
+               ALIAS uid :: 6 -> __table1.uid Int16 : 5
+               ALIAS name :: 0 -> __table1.name String : 6
+               ALIAS age :: 1 -> __table1.age Int16 : 0
+               ALIAS u2.uid :: 7 -> __table1.u2.uid Int16 : 1
+               ALIAS u2.name :: 3 -> __table1.u2.name String : 7
+               ALIAS u2.age :: 4 -> __table1.u2.age Int16 : 3
+      Positions: 8 5 6 0 1 7 3
+        Expression (Post Join Actions)
+        Actions: INPUT :: 0 -> __table2.uid Int16 : 0
+                 INPUT :: 1 -> __table2.name String : 1
+                 INPUT :: 2 -> __table2.age Int16 : 2
+                 INPUT :: 3 -> __table3.uid Int16 : 3
+                 INPUT :: 4 -> __table3.name String : 4
+                 INPUT :: 5 -> __table3.age Int16 : 5
+        Positions: 0 1 2 3 4 5
+          Join
+          Type: LEFT
+          Strictness: ANTI
+          Algorithm: ConcurrentHashJoin
+          Clauses: [(__lhs_const) = (__rhs_const)]
+            Expression (Left Pre Join Actions)
+            Actions: COLUMN Const(UInt8) -> __lhs_const UInt8 : 0
+                     INPUT :: 0 -> __table2.uid Int16 : 1
+                     INPUT :: 1 -> __table2.name String : 2
+                     INPUT :: 2 -> __table2.age Int16 : 3
+            Positions: 0 1 2 3
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> uid Int16 : 0
+                       INPUT : 1 -> name String : 1
+                       INPUT : 2 -> age Int16 : 2
+                       ALIAS uid :: 0 -> __table2.uid Int16 : 3
+                       ALIAS name :: 1 -> __table2.name String : 0
+                       ALIAS age :: 2 -> __table2.age Int16 : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.users)
+                ReadType: Default
+                Parts: 3
+                Granules: 3
+            Expression (Right Pre Join Actions)
+            Actions: COLUMN Const(UInt8) -> __rhs_const UInt8 : 0
+                     INPUT :: 0 -> __table3.uid Int16 : 1
+                     INPUT :: 1 -> __table3.name String : 2
+                     INPUT :: 2 -> __table3.age Int16 : 3
+            Positions: 0 1 2 3
+              Expression (Change column names to column identifiers)
+              Actions: INPUT : 0 -> uid Int16 : 0
+                       INPUT : 1 -> name String : 1
+                       INPUT : 2 -> age Int16 : 2
+                       ALIAS uid :: 0 -> __table3.uid Int16 : 3
+                       ALIAS name :: 1 -> __table3.name String : 0
+                       ALIAS age :: 2 -> __table3.age Int16 : 1
+              Positions: 3 0 1
+                ReadFromMergeTree (default.users)
+                ReadType: Default
+                Parts: 3
+                Granules: 3

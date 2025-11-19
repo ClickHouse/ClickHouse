@@ -13,7 +13,8 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include "registerTableFunctions.h"
+#include <Interpreters/Context.h>
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -46,7 +47,7 @@ public:
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "ViewIfPermitted"; }
+    const char * getStorageEngineName() const override { return "View"; }
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
@@ -114,7 +115,7 @@ StoragePtr TableFunctionViewIfPermitted::executeImpl(
 
 bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const ColumnsDescription & else_columns) const
 {
-    Block sample_block;
+    SharedHeader sample_block;
 
     try
     {
@@ -136,7 +137,7 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
     }
 
     /// We check that columns match only if permitted (otherwise we could reveal the structure to an user who must not know it).
-    ColumnsDescription columns{sample_block.getNamesAndTypesList()};
+    ColumnsDescription columns{sample_block->getNamesAndTypesList()};
     if (columns != else_columns)
     {
         throw Exception(
@@ -144,8 +145,8 @@ bool TableFunctionViewIfPermitted::isPermitted(const ContextPtr & context, const
             "Table function '{}' requires a SELECT query with the result columns matching a table function after 'ELSE'. "
             "Currently the result columns of the SELECT query are {}, and the table function after 'ELSE' gives {}",
             getName(),
-            columns.toString(),
-            else_columns.toString());
+            columns.toString(true),
+            else_columns.toString(true));
     }
 
     return true;

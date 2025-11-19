@@ -9,7 +9,7 @@
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -408,7 +408,52 @@ public:
 
 REGISTER_FUNCTION(BitSlice)
 {
-    factory.registerFunction<FunctionBitSlice>();
+    FunctionDocumentation::Description description = "Returns a substring starting with the bit from the 'offset' index that is 'length' bits long.";
+    FunctionDocumentation::Syntax syntax = "bitSlice(s, offset[, length])";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "The String or Fixed String to slice.", {"String", "FixedString"}},
+        {"offset", R"(
+Returns the starting bit position (1-based indexing).
+- Positive values: count from the beginning of the string.
+- Negative values: count from the end of the string.
+
+        )", {"(U)Int8/16/32/64", "Float*"}},
+        {"length", R"(
+Optional. The number of bits to extract.
+- Positive values: extract `length` bits.
+- Negative values: extract from the offset to `(string_length - |length|)`.
+- Omitted: extract from offset to end of string.
+- If length is not a multiple of 8, the result is padded with zeros on the right.
+        )", {"(U)Int8/16/32/64", "Float*"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a string containing the extracted bits, represented as a binary sequence. The result is always padded to byte boundaries (multiples of 8 bits)", {"String"}};
+    FunctionDocumentation::Examples examples = {{"Usage example",
+        R"(
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 8));
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 2));
+SELECT bin('Hello'), bin(bitSlice('Hello', 1, 9));
+SELECT bin('Hello'), bin(bitSlice('Hello', -4, 8));
+        )",
+        R"(
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 8))─┐
+│ 0100100001100101011011000110110001101111 │ 01001000                     │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 2))─┐
+│ 0100100001100101011011000110110001101111 │ 01000000                     │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', 1, 9))─┐
+│ 0100100001100101011011000110110001101111 │ 0100100000000000             │
+└──────────────────────────────────────────┴──────────────────────────────┘
+┌─bin('Hello')─────────────────────────────┬─bin(bitSlice('Hello', -4, 8))─┐
+│ 0100100001100101011011000110110001101111 │ 11110000                      │
+└──────────────────────────────────────────┴───────────────────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitSlice>(documentation);
 }
 
 

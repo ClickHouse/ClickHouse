@@ -25,7 +25,7 @@ static ITransformingStep::Traits getTraits()
 }
 
 LimitByStep::LimitByStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     size_t group_length_, size_t group_offset_, Names columns_)
     : ITransformingStep(input_header_, input_header_, getTraits())
     , group_length(group_length_)
@@ -39,12 +39,12 @@ void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
     });
 }
 
@@ -111,6 +111,11 @@ std::unique_ptr<IQueryPlanStep> LimitByStep::deserialize(Deserialization & ctx)
         readStringBinary(column, ctx.in);
 
     return std::make_unique<LimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
+}
+
+void LimitByStep::applyOrder(SortDescription sort_description)
+{
+    in_order = sort_description.hasPrefix(columns);
 }
 
 void registerLimitByStep(QueryPlanStepRegistry & registry)

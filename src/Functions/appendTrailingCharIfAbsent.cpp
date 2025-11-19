@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <base/range.h>
 #include <Common/assert_cast.h>
 
 
@@ -70,10 +69,12 @@ private:
         if (!checkColumnConst<ColumnString>(column_char.get()))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function {} must be a constant string", getName());
 
-        String trailing_char_str = assert_cast<const ColumnConst &>(*column_char).getValue<String>();
+        StringRef trailing_char_str = column_char->getDataAt(0);
 
-        if (trailing_char_str.size() != 1)
+        if (trailing_char_str.size != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must be a one-character string", getName());
+
+        UInt8 trailing_char = static_cast<UInt8>(trailing_char_str.data[0]);
 
         if (const auto * col = checkAndGetColumn<ColumnString>(column.get()))
         {
@@ -88,20 +89,19 @@ private:
             dst_data.resize(src_data.size() + input_rows_count);
             dst_offsets.resize(input_rows_count);
 
-            ColumnString::Offset src_offset{};
-            ColumnString::Offset dst_offset{};
+            ColumnString::Offset src_offset = 0;
+            ColumnString::Offset dst_offset = 0;
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto src_length = src_offsets[i] - src_offset;
                 memcpySmallAllowReadWriteOverflow15(&dst_data[dst_offset], &src_data[src_offset], src_length);
-                src_offset = src_offsets[i];
+                src_offset += src_length;
                 dst_offset += src_length;
 
-                if (src_length > 1 && dst_data[dst_offset - 2] != static_cast<UInt8>(trailing_char_str.front()))
+                if (src_length > 0 && src_data[src_offset - 1] != trailing_char)
                 {
-                    dst_data[dst_offset - 1] = trailing_char_str.front();
-                    dst_data[dst_offset] = 0;
+                    dst_data[dst_offset] = trailing_char;
                     ++dst_offset;
                 }
 
@@ -120,7 +120,31 @@ private:
 
 REGISTER_FUNCTION(AppendTrailingCharIfAbsent)
 {
-    factory.registerFunction<FunctionAppendTrailingCharIfAbsent>();
+    FunctionDocumentation::Description description = R"(
+Appends character `c` to string `s` if `s` is non-empty and does not end with character `c`.
+)";
+    FunctionDocumentation::Syntax syntax = "appendTrailingCharIfAbsent(s, c)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}},
+        {"c", "Character to append if absent.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns string `s` with character `c` appended if `s` does not end with `c`.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT appendTrailingCharIfAbsent('https://example.com', '/');",
+        R"(
+┌─appendTraili⋯.com', '/')─┐
+│ https://example.com/     │
+└──────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionAppendTrailingCharIfAbsent>(documentation);
 }
 
 }

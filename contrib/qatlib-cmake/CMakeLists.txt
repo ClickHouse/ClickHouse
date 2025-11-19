@@ -1,6 +1,5 @@
 # Intel® QuickAssist Technology Library (QATlib).
 
-message(STATUS "Intel QATlib ON")
 set(LIBQAT_ROOT_DIR "${ClickHouse_SOURCE_DIR}/contrib/qatlib")
 set(LIBQAT_DIR "${LIBQAT_ROOT_DIR}/quickassist/lookaside/access_layer/src")
 set(LIBOSAL_DIR "${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src")
@@ -54,7 +53,7 @@ target_include_directories(_osal PRIVATE
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/include
     ${LIBQAT_ROOT_DIR}/quickassist/utilities/osal/src/linux/user_space/include
     ${OPENSSL_DIR}/include
-    ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/linux_x86_64/include
+    ${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include
     ${ClickHouse_SOURCE_DIR}/contrib/qatlib-cmake/include)
 
 target_compile_definitions(_osal PRIVATE -DOSAL_ENSURE_ON -DUSE_OPENSSL)

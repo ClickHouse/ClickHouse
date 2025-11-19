@@ -2,7 +2,7 @@ JSON
 String
 {"v":null,"variantElement(v, 'String')":null}
 {"v":"string","variantElement(v, 'String')":"string"}
-{"v":"42","variantElement(v, 'String')":null}
+{"v":42,"variantElement(v, 'String')":null}
 FixedString
 {"v":null,"variantElement(v, 'FixedString(4)')":null}
 {"v":"string","variantElement(v, 'FixedString(4)')":null}
@@ -16,50 +16,50 @@ Integers
 {"v":"string","variantElement(v, 'Int8')":null}
 {"v":-1,"variantElement(v, 'Int8')":-1}
 {"v":0,"variantElement(v, 'Int8')":0}
-{"v":"10000000000","variantElement(v, 'Int8')":null}
+{"v":10000000000,"variantElement(v, 'Int8')":null}
 {"v":null,"variantElement(v, 'UInt8')":null}
 {"v":"string","variantElement(v, 'UInt8')":null}
-{"v":"-1","variantElement(v, 'UInt8')":null}
+{"v":-1,"variantElement(v, 'UInt8')":null}
 {"v":0,"variantElement(v, 'UInt8')":0}
-{"v":"10000000000","variantElement(v, 'UInt8')":null}
+{"v":10000000000,"variantElement(v, 'UInt8')":null}
 {"v":null,"variantElement(v, 'Int16')":null}
 {"v":"string","variantElement(v, 'Int16')":null}
 {"v":-1,"variantElement(v, 'Int16')":-1}
 {"v":0,"variantElement(v, 'Int16')":0}
-{"v":"10000000000","variantElement(v, 'Int16')":null}
+{"v":10000000000,"variantElement(v, 'Int16')":null}
 {"v":null,"variantElement(v, 'UInt16')":null}
 {"v":"string","variantElement(v, 'UInt16')":null}
-{"v":"-1","variantElement(v, 'UInt16')":null}
+{"v":-1,"variantElement(v, 'UInt16')":null}
 {"v":0,"variantElement(v, 'UInt16')":0}
-{"v":"10000000000","variantElement(v, 'UInt16')":null}
+{"v":10000000000,"variantElement(v, 'UInt16')":null}
 {"v":null,"variantElement(v, 'Int32')":null}
 {"v":"string","variantElement(v, 'Int32')":null}
 {"v":-1,"variantElement(v, 'Int32')":-1}
 {"v":0,"variantElement(v, 'Int32')":0}
-{"v":"10000000000","variantElement(v, 'Int32')":null}
+{"v":10000000000,"variantElement(v, 'Int32')":null}
 {"v":null,"variantElement(v, 'UInt32')":null}
 {"v":"string","variantElement(v, 'UInt32')":null}
-{"v":"-1","variantElement(v, 'UInt32')":null}
+{"v":-1,"variantElement(v, 'UInt32')":null}
 {"v":0,"variantElement(v, 'UInt32')":0}
-{"v":"10000000000","variantElement(v, 'UInt32')":null}
+{"v":10000000000,"variantElement(v, 'UInt32')":null}
 {"v":null,"variantElement(v, 'Int64')":null}
 {"v":"string","variantElement(v, 'Int64')":null}
-{"v":"-1","variantElement(v, 'Int64')":"-1"}
-{"v":"0","variantElement(v, 'Int64')":"0"}
-{"v":"10000000000000000000000","variantElement(v, 'Int64')":null}
+{"v":-1,"variantElement(v, 'Int64')":-1}
+{"v":0,"variantElement(v, 'Int64')":0}
+{"v":10000000000000000000000,"variantElement(v, 'Int64')":null}
 {"v":null,"variantElement(v, 'UInt64')":null}
 {"v":"string","variantElement(v, 'UInt64')":null}
-{"v":"-1","variantElement(v, 'UInt64')":null}
-{"v":"0","variantElement(v, 'UInt64')":"0"}
-{"v":"10000000000000000000000","variantElement(v, 'UInt64')":null}
+{"v":-1,"variantElement(v, 'UInt64')":null}
+{"v":0,"variantElement(v, 'UInt64')":0}
+{"v":10000000000000000000000,"variantElement(v, 'UInt64')":null}
 {"v":null,"variantElement(v, 'Int128')":null}
 {"v":"string","variantElement(v, 'Int128')":null}
-{"v":"-1","variantElement(v, 'Int128')":"-1"}
-{"v":"0","variantElement(v, 'Int128')":"0"}
+{"v":-1,"variantElement(v, 'Int128')":-1}
+{"v":0,"variantElement(v, 'Int128')":0}
 {"v":null,"variantElement(v, 'UInt128')":null}
 {"v":"string","variantElement(v, 'UInt128')":null}
-{"v":"-1","variantElement(v, 'UInt128')":null}
-{"v":"0","variantElement(v, 'UInt128')":"0"}
+{"v":-1,"variantElement(v, 'UInt128')":null}
+{"v":0,"variantElement(v, 'UInt128')":0}
 Floats
 {"v":null,"variantElement(v, 'Float32')":null}
 {"v":"string","variantElement(v, 'Float32')":null}
@@ -122,13 +122,13 @@ Enum
 Map
 {"v":null,"variantElement(v, 'Map(String, UInt64)')":{}}
 {"v":"string","variantElement(v, 'Map(String, UInt64)')":{}}
-{"v":{"a":"42","b":"43","c":"0"},"variantElement(v, 'Map(String, UInt64)')":{"a":"42","b":"43","c":"0"}}
+{"v":{"a":42,"b":43,"c":0},"variantElement(v, 'Map(String, UInt64)')":{"a":42,"b":43,"c":0}}
 {"v":"{\"c\" : 44, \"d\" : [1,2,3]}","variantElement(v, 'Map(String, UInt64)')":{}}
 Tuple
-{"v":null,"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"0","b":"0"}}
-{"v":"string","variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"0","b":"0"}}
-{"v":{"a":"42","b":"0"},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"42","b":"0"}}
-{"v":{"a":"44","b":"0"},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":"44","b":"0"}}
+{"v":null,"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":0,"b":0}}
+{"v":"string","variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":0,"b":0}}
+{"v":{"a":42,"b":0},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":42,"b":0}}
+{"v":{"a":44,"b":0},"variantElement(v, 'Tuple(a UInt64, b UInt64)')":{"a":44,"b":0}}
 \N	(0,0)
 string	(0,0)
 (42,0)	(42,0)
@@ -136,16 +136,16 @@ string	(0,0)
 Array
 {"v":null,"variantElement(v, 'Array(UInt64)')":[]}
 {"v":"string","variantElement(v, 'Array(UInt64)')":[]}
-{"v":["1","2","3"],"variantElement(v, 'Array(UInt64)')":["1","2","3"]}
-{"v":["0","0","0"],"variantElement(v, 'Array(UInt64)')":["0","0","0"]}
+{"v":[1,2,3],"variantElement(v, 'Array(UInt64)')":[1,2,3]}
+{"v":[0,0,0],"variantElement(v, 'Array(UInt64)')":[0,0,0]}
 {"v":"[1, 2, \"hello\"]","variantElement(v, 'Array(UInt64)')":[]}
 LowCardinality
 {"v":null,"variantElement(v, 'LowCardinality(String)')":null}
 {"v":"string","variantElement(v, 'LowCardinality(String)')":"string"}
-{"v":"42","variantElement(v, 'LowCardinality(String)')":null}
+{"v":42,"variantElement(v, 'LowCardinality(String)')":null}
 {"v":null,"variantElement(v, 'Array(LowCardinality(Nullable(String)))')":[]}
 {"v":["string",null],"variantElement(v, 'Array(LowCardinality(Nullable(String)))')":["string",null]}
-{"v":"42","variantElement(v, 'Array(LowCardinality(Nullable(String)))')":[]}
+{"v":42,"variantElement(v, 'Array(LowCardinality(Nullable(String)))')":[]}
 Nullable
 {"v":null,"variantElement(v, 'Array(Nullable(String))')":[]}
 {"v":"string","variantElement(v, 'Array(Nullable(String))')":[]}
@@ -164,7 +164,7 @@ FixedString
 "abcd","abcd"
 Bool
 \N,\N
-"Truee",\N
+"truee",\N
 true,true
 Integers
 \N,\N
@@ -336,7 +336,7 @@ string	\N
 abcd	abcd
 Bool
 \N	\N
-Truee	\N
+truee	\N
 true	true
 Integers
 \N	\N

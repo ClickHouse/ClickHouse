@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -42,6 +43,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>
+#include <iostream>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
@@ -1237,10 +1239,10 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help")
-        || !options.count("seed")
-        || !options.count("input-format")
-        || !options.count("output-format"))
+    if (options.contains("help")
+        || !options.contains("seed")
+        || !options.contains("input-format")
+        || !options.contains("output-format"))
     {
         std::cout << documentation << "\n"
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
@@ -1250,7 +1252,7 @@ try
         return 0;
     }
 
-    if (options.count("save") && options.count("load"))
+    if (options.contains("save") && options.contains("load"))
     {
         std::cerr << "The options --save and --load cannot be used together.\n";
         return 1;
@@ -1260,7 +1262,7 @@ try
 
     std::string structure;
 
-    if (options.count("structure"))
+    if (options.contains("structure"))
         structure = options["structure"].as<std::string>();
 
     std::string input_format = options["input-format"].as<std::string>();
@@ -1269,13 +1271,13 @@ try
     std::string load_from_file;
     std::string save_into_file;
 
-    if (options.count("load"))
+    if (options.contains("load"))
         load_from_file = options["load"].as<std::string>();
-    else if (options.count("save"))
+    else if (options.contains("save"))
         save_into_file = options["save"].as<std::string>();
 
     UInt64 limit = 0;
-    if (options.count("limit"))
+    if (options.contains("limit"))
         limit = options["limit"].as<UInt64>();
 
     bool silent = options["silent"].as<bool>();
@@ -1429,7 +1431,7 @@ try
         model_file_out.finalize();
     }
 
-    if (!options.count("limit"))
+    if (!options.contains("limit"))
         limit = source_rows;
 
     /// Generation step
@@ -1446,7 +1448,7 @@ try
 
         if (processed_rows + source_rows > limit)
         {
-            pipe.addSimpleTransform([&](const Block & cur_header)
+            pipe.addSimpleTransform([&](const SharedHeader & cur_header)
             {
                 return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
             });

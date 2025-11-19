@@ -1,0 +1,40 @@
+Expression (Project names)
+  ReadFromCluster
+Expression (Project names)
+  ReadFromCluster
+CreatingSets (Create sets before main query execution)
+  Expression ((Project names + Projection))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromObjectStorage
+Expression ((Project names + Projection))
+  Aggregating
+    Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+      ReadFromObjectStorage
+Expression ((Project names + Projection))
+  Expression (Post Join Actions)
+    Join
+      Expression (Left Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromSystemNumbers
+      Expression (Right Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromObjectStorage
+Expression ((Project names + Projection))
+  Expression (Post Join Actions)
+    Join
+      Expression (Left Pre Join Actions)
+        Expression (Change column names to column identifiers)
+          ReadFromSystemNumbers
+      Expression (Right Pre Join Actions)
+        Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+          ReadFromObjectStorage
+4
+4
+4
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromURL
+Expression ((Project names + (Projection + Change column names to column identifiers)))
+  ReadFromObjectStorage
+4
+4
+4

@@ -1,8 +1,8 @@
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/range/algorithm/copy.hpp>
+#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -165,7 +165,7 @@ void GrantedRoles::makeIntersection(const GrantedRoles & other)
 
     boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id) // NOLINT
     {
-        return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
+        return !other.roles_with_admin_option.contains(id);
     });
 }
 

@@ -30,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "
 
     SELECT * FROM t_async_insert_native_1 ORDER BY id;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT status, rows, data_kind, format
     FROM system.asynchronous_insert_log

@@ -1,8 +1,12 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/cramersv
+description: 'The result of the `cramersV` function ranges from 0 (corresponding to
+  no association between the variables) to 1 and can reach 1 only when each value
+  is completely determined by the other. It may be viewed as the association between
+  two variables as a percentage of their maximum possible variation.'
 sidebar_position: 127
-title: "cramersV"
-description: "The result of the `cramersV` function ranges from 0 (corresponding to no association between the variables) to 1 and can reach 1 only when each value is completely determined by the other. It may be viewed as the association between two variables as a percentage of their maximum possible variation."
+slug: /sql-reference/aggregate-functions/reference/cramersv
+title: 'cramersV'
+doc_type: 'reference'
 ---
 
 # cramersV
@@ -15,7 +19,7 @@ For a bias corrected version of Cramer's V see: [cramersVBiasCorrected](./cramer
 
 **Syntax**
 
-``` sql
+```sql
 cramersV(column1, column2)
 ```
 
@@ -36,7 +40,7 @@ The following two columns being compared below have no association with each oth
 
 Query:
 
-``` sql
+```sql
 SELECT
     cramersV(a, b)
 FROM
@@ -66,7 +70,7 @@ FROM
     (
         SELECT
             number % 10 AS a,
-            number % 5 AS b
+            if(number % 12 = 0, (number + 1) % 5, number % 5) AS b
         FROM
             numbers(150)
     );
@@ -76,6 +80,6 @@ Result:
 
 ```response
 ┌─────cramersV(a, b)─┐
-│ 0.8944271909999159 │
+│ 0.9066801892162646 │
 └────────────────────┘
 ```

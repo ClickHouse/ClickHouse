@@ -122,7 +122,8 @@ See https://clang.llvm.org/docs/SanitizerCoverage.html for more information.
 )",
             .examples{
                 {"functions", "SELECT DISTINCT demangle(addressToSymbol(arrayJoin(coverageCurrent())))", ""}},
-            .category{"Introspection"}
+            .introduced_in = {23, 11},
+            .category = FunctionDocumentation::Category::Introspection
         });
 
     factory.registerFunction("coverageCumulative", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::Cumulative); },
@@ -138,7 +139,8 @@ In contrast to `coverageCurrent` it cannot be reset with the `SYSTEM RESET COVER
 
 See the `coverageCurrent` function for the details.
 )",
-            .category{"Introspection"}
+            .introduced_in = {23, 11},
+            .category = FunctionDocumentation::Category::Introspection
         });
 
     factory.registerFunction("coverageAll", [](ContextPtr){ return std::make_shared<FunctionCoverage>(Kind::All); },
@@ -154,7 +156,8 @@ You can use this function, and the `coverage` function to compare and calculate 
 
 See the `coverageCurrent` function for the details.
 )",
-            .category{"Introspection"}
+            .introduced_in = {23, 11},
+            .category = FunctionDocumentation::Category::Introspection
         });
 }
 

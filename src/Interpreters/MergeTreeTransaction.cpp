@@ -5,6 +5,8 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 
@@ -125,6 +127,8 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
         {
             transaction_context.part_name = covered->name;
             covered->version.lockRemovalTID(tid, transaction_context);
+            if (covered->wasInvolvedInTransaction())
+                covered->appendRemovalTIDToVersionMetadata();
         }
     }
 }
@@ -367,7 +371,7 @@ String MergeTreeTransaction::dumpDescription() const
 
     for (const auto & part : removing_parts)
     {
-        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn);
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
         chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }

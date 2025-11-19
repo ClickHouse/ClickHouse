@@ -50,6 +50,8 @@ class Foundation_API NotificationQueue
 ///   4. destroy the notification queue.
 {
 public:
+    using NfQueue = std::deque<Notification::Ptr>;
+
     NotificationQueue();
     /// Creates the NotificationQueue.
 
@@ -124,6 +126,8 @@ public:
     void clear();
     /// Removes all notifications from the queue.
 
+    NfQueue getCurrentQueueAndClear();
+
     bool hasIdleThreads() const;
     /// Returns true if the queue has at least one thread waiting
     /// for a notification.
@@ -136,7 +140,6 @@ protected:
     Notification::Ptr dequeueOne();
 
 private:
-    typedef std::deque<Notification::Ptr> NfQueue;
     struct WaitInfo
     {
         Notification::Ptr pNf;

@@ -8,8 +8,6 @@
 #include <parquet/file_reader.h>
 #include <parquet/properties.h>
 
-#include "ParquetColumnReader.h"
-
 namespace DB
 {
 
@@ -25,6 +23,7 @@ public:
         std::shared_ptr<::arrow::io::RandomAccessFile> arrow_file,
         const FormatSettings & format_settings,
         std::vector<int> row_groups_indices_,
+        const std::optional<std::vector<Int32>> & column_indices_,
         std::shared_ptr<parquet::FileMetaData> metadata = nullptr);
 
     Chunk readChunk();

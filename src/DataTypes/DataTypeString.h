@@ -38,7 +38,10 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool canBeInsideLowCardinality() const override { return true; }
 
+    void updateHashImpl(SipHash &) const override {}
+
     SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
 };
 
 }

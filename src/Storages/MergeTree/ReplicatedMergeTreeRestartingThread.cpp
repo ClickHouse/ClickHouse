@@ -59,7 +59,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
 
 void ReplicatedMergeTreeRestartingThread::start(bool schedule)
 {
-    LOG_TRACE(log, "Starting the restating thread, schedule: {}", schedule);
+    LOG_TRACE(log, "Starting the restarting thread, schedule: {}", schedule);
     if (schedule)
         task->activateAndSchedule();
     else

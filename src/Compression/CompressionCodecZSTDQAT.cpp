@@ -31,6 +31,11 @@ public:
 
     explicit CompressionCodecZSTDQAT(int level_);
 
+    String getDescription() const override
+    {
+        return "Requires hardware support for QuickAssist Technology (QAT) hardware; provides accelerated compression tasks.";
+    }
+
 protected:
     bool isZstdQat() const override { return true; }
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -51,7 +56,7 @@ UInt32 CompressionCodecZSTDQAT::doCompressData(const char * source, UInt32 sourc
         if (qat_state == QZSTD_OK)
             LOG_DEBUG(log, "Initialization of hardware-assissted ZSTD_QAT codec successful");
         else
-            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state);
+            LOG_WARNING(log, "Initialization of hardware-assisted ZSTD_QAT codec failed, falling back to software ZSTD codec -> status: {}", qat_state.load());
     }
 
     ZSTD_CCtx * cctx = ZSTD_createCCtx();

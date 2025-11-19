@@ -3,6 +3,9 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/FormatFactory.h>
@@ -12,7 +15,6 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -43,7 +45,7 @@ namespace
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     ReadBuffer & in_,
     const Params & params_,
     bool with_names_,
@@ -55,7 +57,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -79,7 +81,7 @@ CSVRowInputFormat::CSVRowInputFormat(
 }
 
 CSVRowInputFormat::CSVRowInputFormat(
-    const Block & header_,
+    SharedHeader header_,
     std::shared_ptr<PeekableReadBuffer> in_,
     const Params & params_,
     bool with_names_,
@@ -502,7 +504,7 @@ void registerInputFormatCSV(FormatFactory & factory)
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
-            return std::make_shared<CSVRowInputFormat>(sample, buf, std::move(params), with_names, with_types, settings);
+            return std::make_shared<CSVRowInputFormat>(std::make_shared<const Block>(sample), buf, std::move(params), with_names, with_types, settings);
         });
     };
 

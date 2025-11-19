@@ -72,13 +72,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexHypothesis::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleHypothesis>(index.name);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexHypothesis::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorHypothesis>(index.name, index.sample_block.getNames().front());
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
-    const ActionsDAG *, ContextPtr) const
+    const ActionsDAG::Node *, ContextPtr) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not supported");
 }

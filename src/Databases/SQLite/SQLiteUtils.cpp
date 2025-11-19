@@ -1,7 +1,8 @@
-#include "SQLiteUtils.h"
+#include <Databases/SQLite/SQLiteUtils.h>
 
 #if USE_SQLITE
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

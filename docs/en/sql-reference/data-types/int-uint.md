@@ -1,8 +1,11 @@
 ---
-slug: /sql-reference/data-types/int-uint
+description: 'Documentation for signed and unsigned integer data types in ClickHouse,
+  ranging from 8-bit to 256-bit'
+sidebar_label: 'Int | UInt'
 sidebar_position: 2
-sidebar_label: Int | UInt
-title: Int | UInt Types
+slug: /sql-reference/data-types/int-uint
+title: 'Int | UInt Types'
+doc_type: 'reference'
 ---
 
 ClickHouse offers a number of fixed-length integers, 
@@ -53,4 +56,3 @@ Unsigned integer types have the following aliases:
 | `UInt16` | `SMALLINT UNSIGNED`                                      |
 | `UInt32` | `MEDIUMINT UNSIGNED`, `INT UNSIGNED`, `INTEGER UNSIGNED` |
 | `UInt64` | `UNSIGNED`, `BIGINT UNSIGNED`, `BIT`, `SET`              |
-

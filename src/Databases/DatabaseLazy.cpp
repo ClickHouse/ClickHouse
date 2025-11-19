@@ -53,8 +53,9 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 void DatabaseLazy::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel /*mode*/)
 {
+    auto db_disk = getDisk();
     iterateMetadataFiles(
-        [this, &local_context](const String & file_name)
+        [this, &local_context, db_disk](const String & file_name)
         {
             const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
 
@@ -122,7 +123,8 @@ time_t DatabaseLazy::getObjectMetadataModificationTime(const String & table_name
 void DatabaseLazy::alterTable(
     ContextPtr /* context */,
     const StorageID & /*table_id*/,
-    const StorageInMemoryMetadata & /* metadata */)
+    const StorageInMemoryMetadata & /* metadata */,
+    const bool /*validate_new_create_query*/)
 {
     clearExpiredTables();
     throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ALTER query is not supported for Lazy database.");
@@ -132,7 +134,7 @@ bool DatabaseLazy::isTableExist(const String & table_name) const
 {
     SCOPE_EXIT_MEMORY_SAFE({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
-    return tables_cache.find(table_name) != tables_cache.end();
+    return tables_cache.contains(table_name);
 }
 
 StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
@@ -154,7 +156,16 @@ StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
         }
     }
 
-    return loadTable(table_name);
+    try
+    {
+        return loadTable(table_name);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+        throw;
+    }
 }
 
 DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
@@ -265,13 +276,13 @@ StoragePtr DatabaseLazy::loadTable(const String & table_name) const
     LOG_DEBUG(log, "Load table {} to cache.", backQuote(table_name));
 
     const String table_metadata_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + ".sql");
-
+    auto db_disk = getDisk();
     try
     {
         StoragePtr table;
         auto context_copy = Context::createCopy(context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, getContext(), table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, getContext(), db_disk, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/ false);
         if (ast)
         {
             const auto & ast_create = ast->as<const ASTCreateQuery &>();
@@ -326,7 +337,7 @@ try
 
         if (!it->second.table || isSharedPtrUnique(it->second.table))
         {
-            LOG_DEBUG(log, "Drop table {} from cache.", backQuote(it->first));
+            LOG_DEBUG(log, "Removing table {} from cache.", backQuote(it->first));
             it->second.table.reset();
             expired_tables.erase(it->second.expiration_iterator);
             it->second.expiration_iterator = cache_expiration_queue.end();

@@ -1,19 +1,18 @@
 #pragma once
+
 #include <Core/Types.h>
 #include <Common/DateLUT.h>
 
-class DateLUTImpl;
 
 /** Mixin-class that manages timezone info for timezone-aware DateTime implementations
- *
- * Must be used as a (second) base for class implementing IDateType/ISerialization-interface.
- */
+  * Could be used as a (second) base for a class implementing IDateType/ISerialization-interface.
+  */
 class TimezoneMixin
 {
 public:
     TimezoneMixin(const TimezoneMixin &) = default;
 
-    explicit TimezoneMixin(const String & time_zone_name = "")
+    explicit TimezoneMixin(std::string_view time_zone_name = "")
         : has_explicit_time_zone(!time_zone_name.empty())
         , time_zone(DateLUT::instance(time_zone_name))
         , utc_time_zone(DateLUT::instance("UTC"))

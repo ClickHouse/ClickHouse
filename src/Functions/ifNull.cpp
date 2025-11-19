@@ -91,7 +91,31 @@ private:
 
 REGISTER_FUNCTION(IfNull)
 {
-    factory.registerFunction<FunctionIfNull>({}, FunctionFactory::Case::Insensitive);
+    FunctionDocumentation::Description description = R"(
+Returns an alternative value if the first argument is `NULL`.
+    )";
+    FunctionDocumentation::Syntax syntax = "ifNull(x, alt)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The value to check for `NULL`.", {"Any"}},
+        {"alt", "The value that the function returns if `x` is `NULL`.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of `x` if it is not `NULL`, otherwise `alt`.", {"Any"}};
+    FunctionDocumentation::Examples examples = {
+        {"Usage example",
+         R"(
+SELECT ifNull('a', 'b'), ifNull(NULL, 'b');
+        )",
+         R"(
+┌─ifNull('a', 'b')─┬─ifNull(NULL, 'b')─┐
+│ a                │ b                 │
+└──────────────────┴───────────────────┘
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in{1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Null;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionIfNull>(documentation, FunctionFactory::Case::Insensitive);
 }
 
 }

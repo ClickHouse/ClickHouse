@@ -8,39 +8,49 @@
 
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
+set(RUSTFLAGS_CPU)
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
+    list(APPEND RUSTFLAGS_CPU "-C" "target-feature=native")
+
+    macro(GET_CPU_FEATURES TEST_FEATURE_RESULT)
+       execute_process(
+            COMMAND sh -c "clang -E - -march=native -###"
+            INPUT_FILE /dev/null
+            OUTPUT_QUIET
+            ERROR_VARIABLE ${TEST_FEATURE_RESULT})
+    endmacro()
+
+    macro(TEST_CPU_FEATURE TEST_FEATURE_RESULT feat flag)
+        if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
+            set(${flag} ON)
+        else ()
+            set(${flag} OFF)
+        endif ()
+    endmacro()
 
     # Populate the ENABLE_ option flags. This is required for the build of some third-party dependencies, specifically snappy, which
     # (somewhat weirdly) expects the relative SNAPPY_HAVE_ preprocessor variables to be populated, in addition to the microarchitecture
     # feature flags being enabled in the compiler. This fixes the ARCH_NATIVE flag by automatically populating the ENABLE_ option flags
     # according to the current CPU's capabilities, detected using clang.
     if (ARCH_AMD64)
-        execute_process(
-            COMMAND sh -c "clang -E - -march=native -###"
-            INPUT_FILE /dev/null
-            OUTPUT_QUIET
-            ERROR_VARIABLE TEST_FEATURE_RESULT)
+        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
 
-        macro(TEST_AMD64_FEATURE TEST_FEATURE_RESULT feat flag)
-            if (${TEST_FEATURE_RESULT} MATCHES "\"\\+${feat}\"")
-                set(${flag} ON)
-            else ()
-                set(${flag} OFF)
-            endif ()
-        endmacro()
-
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
-        TEST_AMD64_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} ssse3 ENABLE_SSSE3)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.1 ENABLE_SSE41)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} sse4.2 ENABLE_SSE42)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} vpclmulqdq ENABLE_PCLMULQDQ)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} popcnt ENABLE_POPCNT)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx ENABLE_AVX)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx2 ENABLE_AVX2)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx512f ENABLE_AVX512)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} avx512vbmi ENABLE_AVX512_VBMI)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi ENABLE_BMI)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} bmi2 ENABLE_BMI2)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
+    elseif (ARCH_AARCH64)
+        GET_CPU_FEATURES (TEST_FEATURE_RESULT)
+        TEST_CPU_FEATURE (${TEST_FEATURE_RESULT} aes ENABLE_AES)
     endif ()
 
 elseif (ARCH_AARCH64)
@@ -56,6 +66,7 @@ elseif (ARCH_AARCH64)
         # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
         # support it.
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc,-neon")
     else ()
         # ARMv8.2 is quite ancient but the lowest common denominator supported by both Graviton 2 and 3 processors [1, 10]. In particular, it
         # includes LSE (made mandatory with ARMv8.1) which provides nice speedups without having to fall back to compat flag
@@ -87,6 +98,8 @@ elseif (ARCH_AARCH64)
         # [9]  https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
         # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
+        # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16")
     endif ()
 
     # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
@@ -94,12 +107,12 @@ elseif (ARCH_AARCH64)
     # SIGILL). Even if they could run, the build machine wouldn't be able to run the ClickHouse binary. In that case, suggest to run the
     # build with the compat profile.
     if (OS_LINUX AND CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)" AND NOT NO_ARMV81_OR_HIGHER)
-        # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick some obvious flags contained in the modern but not in the
+        # CPU features in /proc/cpuinfo and compiler flags don't align :( ... pick an obvious flag contained in the modern but not in the
         # legacy profile (full Graviton 3 /proc/cpuinfo is "fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm
         # jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 sve asimdfhm dit uscat ilrcpc flagm ssbs paca pacg dcpodp svei8mm svebf16 i8mm
         # bf16 dgh rng")
         execute_process(
-            COMMAND grep -P "^(?=.*atomic)(?=.*ssbs)" /proc/cpuinfo
+            COMMAND grep -P "^(?=.*atomic)" /proc/cpuinfo
             OUTPUT_VARIABLE FLAGS)
         if (NOT FLAGS)
             MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")
@@ -112,8 +125,10 @@ elseif (ARCH_PPC64LE)
     option (POWER9 "Build for Power 9 CPU and above" 0)
     if(POWER9)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power9 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+power9-altivec")
     else ()
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -maltivec -mcpu=power8 -D__SSE2__=1 -DNO_WARN_X86_INTRINSICS")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+power8-altivec")
     endif ()
 
 elseif (ARCH_AMD64)
@@ -169,48 +184,60 @@ elseif (ARCH_AMD64)
 
     if (ENABLE_SSSE3)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mssse3")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+ssse3")
     endif ()
 
     if (ENABLE_SSE41)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.1")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+sse4.1")
     endif ()
 
     if (ENABLE_SSE42)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -msse4.2")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+sse4.2")
     endif ()
 
     if (ENABLE_PCLMULQDQ)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpclmul")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+pclmulqdq")
     endif ()
 
     if (ENABLE_BMI)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+bmi1")
     endif ()
 
     if (ENABLE_POPCNT)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mpopcnt")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+popcnt")
     endif ()
 
     if (ENABLE_AVX)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx")
     endif ()
 
     if (ENABLE_AVX2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx2")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx2")
         if (ENABLE_BMI2)
             set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbmi2")
+            list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+bmi2")
         endif ()
     endif ()
 
     if (ENABLE_AVX512)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512f -mavx512bw -mavx512vl")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx512f,+avx512bw,+avx512vl")
         if (ENABLE_AVX512_VBMI)
             set (COMPILER_FLAGS "${COMPILER_FLAGS} -mavx512vbmi")
+            list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+avx512vbmi")
         endif ()
     endif ()
 
     if (ENABLE_AVX512_FOR_SPEC_OP)
         set (X86_INTRINSICS_FLAGS "-mbmi -mavx512f -mavx512bw -mavx512vl -mprefer-vector-width=256")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+bmi1,+avx512f,+avx512bw,+avx512vl,+prefer-256-bit")
     endif ()
 
 else ()

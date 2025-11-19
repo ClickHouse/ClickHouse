@@ -29,14 +29,29 @@ using FunctionFirstLine = FunctionStringToString<ExtractSubstringImpl<FirstLine>
 
 REGISTER_FUNCTION(FirstLine)
 {
-    factory.registerFunction<FunctionFirstLine>(FunctionDocumentation{
-        .description = "Returns first line of a multi-line string.",
-        .syntax = "firstLine(string)",
-        .arguments = {{.name = "string", .description = "The string to process."}},
-        .returned_value = {"The first line of the string or the whole string if there is no line separators."},
-        .examples = {
-            {.name = "Return first line", .query = "firstLine('Hello\\nWorld')", .result = "'Hello'"},
-            {.name = "Return whole string", .query = "firstLine('Hello World')", .result = "'Hello World'"},
-        }});
+    FunctionDocumentation::Description description = R"(
+Returns the first line of a multi-line string.
+)";
+    FunctionDocumentation::Syntax syntax = "firstLine(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the first line of the input string or the whole string if there are no line separators.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(SELECT firstLine('foo\\nbar\\nbaz'))",
+        R"(
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFirstLine>(documentation);
 }
 }

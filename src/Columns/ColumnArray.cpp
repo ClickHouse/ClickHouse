@@ -1,7 +1,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -10,6 +9,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
+#include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -17,8 +17,7 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
-#include <base/unaligned.h>
-#include <base/sort.h>
+#include <IO/Operators.h>
 #include <cstring> // memcpy
 
 
@@ -150,26 +149,27 @@ void ColumnArray::get(size_t n, Field & res) const
         res_arr.push_back(getData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
+DataTypePtr ColumnArray::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     size_t offset = offsetAt(n);
     size_t size = sizeAt(n);
 
-    String value_name {"["};
+    if (options.notFull(name_buf))
+        name_buf << "[";
     DataTypes element_types;
     element_types.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
     {
-        const auto & [value, type] = getData().getValueNameAndType(offset + i);
+        if (options.notFull(name_buf) && i > 0)
+            name_buf << ", ";
+        const auto & type = getData().getValueNameAndTypeImpl(name_buf, offset + i, options);
         element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
     }
-    value_name += "]";
+    if (options.notFull(name_buf))
+        name_buf << "]";
 
-    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
+    return std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types));
 }
 
 StringRef ColumnArray::getDataAt(size_t n) const
@@ -204,13 +204,11 @@ bool ColumnArray::isDefaultAt(size_t n) const
 
 void ColumnArray::insertData(const char * pos, size_t length)
 {
-    /** Similarly - only for arrays of fixed length values.
-      */
+    /// Similarly - only for arrays of fixed length values.
     if (!data->isFixedAndContiguous())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertData is not supported for {}", getName());
 
     size_t field_size = data->sizeOfValueIfFixed();
-
     size_t elems = 0;
 
     if (length)
@@ -248,6 +246,27 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 }
 
 
+StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t array_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    char * pos = arena.allocContinue(sizeof(array_size), begin);
+    memcpy(pos, &array_size, sizeof(array_size));
+
+    StringRef res(pos, sizeof(array_size));
+
+    for (size_t i = 0; i < array_size; ++i)
+    {
+        auto value_ref = getData().serializeAggregationStateValueIntoArena(offset + i, arena, begin);
+        res.data = value_ref.data - res.size;
+        res.size += value_ref.size;
+    }
+
+    return res;
+}
+
+
 char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
 {
     size_t array_size = sizeAt(n);
@@ -260,6 +279,25 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
     return memory;
 }
 
+std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
+{
+    const auto & offsets_data = getOffsets();
+
+    size_t pos = offsets_data[n - 1];
+    size_t end = offsets_data[n];
+
+    size_t res = sizeof(offsets_data[0]);
+    for (; pos < end; ++pos)
+    {
+        auto element_size = getData().getSerializedValueSize(pos);
+        if (!element_size)
+            return std::nullopt;
+        res += *element_size;
+    }
+
+    return res;
+}
+
 
 const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 {
@@ -268,6 +306,18 @@ const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
 
     for (size_t i = 0; i < array_size; ++i)
         pos = getData().deserializeAndInsertFromArena(pos);
+
+    getOffsets().push_back(getOffsets().back() + array_size);
+    return pos;
+}
+
+const char * ColumnArray::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+{
+    size_t array_size = unalignedLoad<size_t>(pos);
+    pos += sizeof(array_size);
+
+    for (size_t i = 0; i < array_size; ++i)
+        pos = getData().deserializeAndInsertAggregationStateValueFromArena(pos);
 
     getOffsets().push_back(getOffsets().back() + array_size);
     return pos;
@@ -497,7 +547,7 @@ size_t ColumnArray::capacity() const
     return getOffsets().capacity();
 }
 
-void ColumnArray::prepareForSquashing(const Columns & source_columns)
+void ColumnArray::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     size_t new_size = size();
     Columns source_data_columns;
@@ -509,8 +559,8 @@ void ColumnArray::prepareForSquashing(const Columns & source_columns)
         source_data_columns.push_back(source_array_column.getDataPtr());
     }
 
-    getOffsets().reserve_exact(new_size);
-    data->prepareForSquashing(source_data_columns);
+    getOffsets().reserve_exact(new_size * factor);
+    data->prepareForSquashing(source_data_columns, factor);
 }
 
 void ColumnArray::shrinkToFit()
@@ -1210,7 +1260,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
         size_t size_to_replicate = replicate_offsets[i] - prev_replicate_offset;
         /// The number of strings in the array.
         size_t value_size = src_offsets[i] - prev_src_offset;
-        /// Number of characters in strings of the array, including zero bytes.
+        /// Number of characters in strings of the array.
         size_t sum_chars_size = src_string_offsets[prev_src_offset + value_size - 1] - prev_src_string_offset;  /// -1th index is Ok, see PaddedPODArray.
 
         for (size_t j = 0; j < size_to_replicate; ++j)
@@ -1221,7 +1271,7 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
             size_t prev_src_string_offset_local = prev_src_string_offset;
             for (size_t k = 0; k < value_size; ++k)
             {
-                /// Size of single string.
+                /// Size of a single string.
                 size_t chars_size = src_string_offsets[k + prev_src_offset] - prev_src_string_offset_local;
 
                 current_res_string_offset += chars_size;
@@ -1365,14 +1415,19 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 
-    data->takeDynamicStructureFromSourceColumns(nested_source_columns);
+    data->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
+}
+
+void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
+{
+    data->takeDynamicStructureFromColumn(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 }
 
 }

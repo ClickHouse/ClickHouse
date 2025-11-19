@@ -99,7 +99,32 @@ public:
 
 REGISTER_FUNCTION(H3EdgeLengthKm)
 {
-    factory.registerFunction<FunctionH3EdgeLengthKm>();
+    FunctionDocumentation::Description description = R"(
+Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3Indexing/) hexagon edge in kilometers.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3EdgeLengthKm(resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the average length of an [H3](#h3-index) hexagon edge in kilometers.",
+        {"Float64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get edge length for maximum resolution",
+            "SELECT h3EdgeLengthKm(15) AS edgeLengthKm",
+            R"(
+┌─edgeLengthKm─┐
+│  0.000509713 │
+└──────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3EdgeLengthKm>(documentation);
 }
 
 }

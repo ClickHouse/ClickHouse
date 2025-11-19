@@ -53,12 +53,15 @@ public:
     explicit operator bool() const { return !isEmpty(); }
     bool contains(const AccessFlags & other) const { return (flags & other.flags) == other.flags; }
     bool isGlobalWithParameter() const;
+    bool validateParameter(String & parameter, std::function<void(const char *)> add_to_expected) const;
     enum ParameterType
     {
         NONE,
+        SOURCE,
         TABLE_ENGINE,
         NAMED_COLLECTION,
         USER_NAME,
+        DEFINER,
     };
     ParameterType getParameterType() const;
     std::unordered_map<ParameterType, AccessFlags> splitIntoParameterTypes() const;
@@ -108,8 +111,14 @@ public:
     /// Returns all the flags related to a user.
     static AccessFlags allUserNameFlags();
 
+    /// Returns all the flags related to a definer.
+    static AccessFlags allDefinerFlags();
+
     /// Returns all the flags related to a table engine.
     static AccessFlags allTableEngineFlags();
+
+    /// Returns all the flags related to a source.
+    static AccessFlags allSourceFlags();
 
     /// Returns all the flags which could be granted on the global level.
     /// The same as allFlags().

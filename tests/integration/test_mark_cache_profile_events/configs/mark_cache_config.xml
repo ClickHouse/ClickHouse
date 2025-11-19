@@ -1,0 +1,14 @@
+<clickhouse>
+
+    <mark_cache_size>124</mark_cache_size>
+    <merge_tree>
+        <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+    </merge_tree>
+
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+
+</clickhouse>

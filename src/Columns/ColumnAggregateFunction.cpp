@@ -1,6 +1,7 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -299,7 +300,7 @@ void ColumnAggregateFunction::doInsertRangeFrom(const IColumn & from, size_t sta
 
         size_t old_size = data.size();
         data.resize(old_size + length);
-        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));
+        memcpy(data.data() + old_size, &from_concrete.data[start], length * sizeof(data[0]));  // NOLINT(bugprone-bitwise-pointer-cast)
     }
 }
 
@@ -474,17 +475,16 @@ void ColumnAggregateFunction::get(size_t n, Field & res) const
     res = operator[](n);
 }
 
-std::pair<String, DataTypePtr> ColumnAggregateFunction::getValueNameAndType(size_t n) const
+DataTypePtr ColumnAggregateFunction::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
-    String state;
+    if (options.notFull(name_buf))
     {
         WriteBufferFromOwnString buffer;
         func->serialize(data[n], buffer, version);
-        WriteBufferFromString wb(state);
-        writeQuoted(buffer.str(), wb);
+        writeQuoted(buffer.str(), name_buf);
     }
 
-    return {state, DataTypeFactory::instance().get(type_string)};
+    return DataTypeFactory::instance().get(type_string);
 }
 
 StringRef ColumnAggregateFunction::getDataAt(size_t n) const
@@ -674,7 +674,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
     return res;
 }
 
-MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
+MutableColumns ColumnAggregateFunction::scatter(size_t num_columns, const IColumn::Selector & selector) const
 {
     /// Columns with scattered values will point to this column as the owner of values.
     MutableColumns columns(num_columns);

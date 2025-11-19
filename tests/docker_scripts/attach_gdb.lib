@@ -2,8 +2,24 @@
 
 # shellcheck source=./utils.lib
 source /repo/tests/docker_scripts/utils.lib
-# shellcheck disable=SC1091
-source /basic_helpers.sh
+
+function run_with_retry()
+{
+    local retries="$1" && shift
+
+    local retry=0
+    until [ "$retry" -ge "$retries" ]; do
+        if "$@"; then
+            return
+        else
+            retry=$((retry + 1))
+            sleep 5
+        fi
+    done
+
+    echo "Command '$*' failed after $retries retries, exiting" >&2
+    return 1
+}
 
 function attach_gdb_to_clickhouse()
 {

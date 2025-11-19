@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/statements/watch
+description: 'Documentation for WATCH Statement'
+sidebar_label: 'WATCH'
 sidebar_position: 53
-sidebar_label: WATCH
+slug: /sql-reference/statements/watch
+title: 'WATCH Statement'
+doc_type: 'reference'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';

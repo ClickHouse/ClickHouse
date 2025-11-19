@@ -10,7 +10,7 @@ class LimitStep : public ITransformingStep
 {
 public:
     LimitStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         size_t limit_, size_t offset_,
         bool always_read_till_end_ = false, /// Read all data even if limit is reached. Needed for totals.
         bool with_ties_ = false, /// Limit with ties.
@@ -23,6 +23,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    size_t getLimit() const { return limit; }
+
     size_t getLimitForSorting() const
     {
         if (limit > std::numeric_limits<UInt64>::max() - offset)
@@ -34,8 +36,11 @@ public:
     bool withTies() const { return with_ties; }
 
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
+    bool hasCorrelatedExpressions() const override { return false; }
 
 private:
     void updateOutputHeader() override

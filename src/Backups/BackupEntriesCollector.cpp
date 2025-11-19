@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>
@@ -19,6 +18,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/setThreadName.h>
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/intExp2.h>
@@ -46,6 +46,9 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
+
+    /// Cloud only
+    extern const SettingsBool cloud_mode;
 }
 
 namespace ErrorCodes
@@ -113,7 +116,10 @@ BackupEntriesCollector::BackupEntriesCollector(
           context->getConfigRef().getUInt64("backups.min_sleep_before_next_attempt_to_collect_metadata", 100))
     , max_sleep_before_next_attempt_to_collect_metadata(
           context->getConfigRef().getUInt64("backups.max_sleep_before_next_attempt_to_collect_metadata", 5000))
-    , compare_collected_metadata(context->getConfigRef().getBool("backups.compare_collected_metadata", true))
+    , compare_collected_metadata(
+        context->getConfigRef().getBool("backups.compare_collected_metadata",
+                                        !context->getSettingsRef()[Setting::cloud_mode])) /// Collected metadata shouldn't be compared by default in our Cloud
+                                                                                          /// (because in the Cloud only Replicated databases are used)
     , log(getLogger("BackupEntriesCollector"))
     , zookeeper_retries_info(
           context->getSettingsRef()[Setting::backup_restore_keeper_max_retries],
@@ -392,7 +398,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases())
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true}))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -673,9 +679,9 @@ bool BackupEntriesCollector::compareWithPrevious(String & mismatch_description)
     tables_metadata.reserve(table_infos.size());
 
     for (const auto & [database_name, database_info] : database_infos)
-        databases_metadata.emplace_back(database_name, database_info.create_database_query ? serializeAST(*database_info.create_database_query) : "");
+        databases_metadata.emplace_back(database_name, database_info.create_database_query ? database_info.create_database_query->formatWithSecretsOneLine() : "");
     for (const auto & [table_name, table_info] : table_infos)
-        tables_metadata.emplace_back(table_name, serializeAST(*table_info.create_table_query));
+        tables_metadata.emplace_back(table_name, table_info.create_table_query->formatWithSecretsOneLine());
 
     /// We need to sort the lists to make the comparison below correct.
     ::sort(databases_metadata.begin(), databases_metadata.end());
@@ -763,7 +769,7 @@ void BackupEntriesCollector::makeBackupEntriesForDatabasesDefs()
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = database_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
@@ -781,7 +787,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         renameDatabaseAndTableNameInCreateQuery(new_create_query, renaming_map, context->getGlobalContext());
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
-        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(serializeAST(*new_create_query)));
+        backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
     }
 }
 
@@ -790,7 +796,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesData()
     if (backup_settings.structure_only)
         return;
 
-    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, "BackupCollect");
+    ThreadPoolCallbackRunnerLocal<void> runner(threadpool, ThreadName::BACKUP_COLLECTOR);
     for (const auto & table_name : table_infos | boost::adaptors::map_keys)
     {
         runner([&]()

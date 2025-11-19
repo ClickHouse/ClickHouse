@@ -1,7 +1,8 @@
-#include "MaterializedPostgreSQLConsumer.h"
+#include <Storages/PostgreSQL/MaterializedPostgreSQLConsumer.h>
 
-#include "StorageMaterializedPostgreSQL.h"
+#include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/logger_useful.h>
 #include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
@@ -692,6 +693,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     auto storage = storage_data.storage;
 
                     auto insert_context = Context::createCopy(context);
+                    insert_context->makeQueryContext();
                     insert_context->setInternalQuery(true);
 
                     auto insert = std::make_shared<ASTInsertQuery>();
@@ -707,7 +709,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                         /* async_isnert */ false);
                     auto io = interpreter.execute();
                     auto input = std::make_shared<SourceFromSingleChunk>(
-                        result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
+                        std::make_shared<const Block>(result_rows.cloneEmpty()), Chunk(result_rows.getColumns(), result_rows.rows()));
 
                     assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
                     io.pipeline.complete(Pipe(std::move(input)));

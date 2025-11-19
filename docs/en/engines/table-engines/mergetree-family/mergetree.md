@@ -1,15 +1,17 @@
 ---
-slug: /engines/table-engines/mergetree-family/mergetree
+description: '`MergeTree`-family table engines are designed for high data ingest rates
+  and huge data volumes.'
+sidebar_label: 'MergeTree'
 sidebar_position: 11
-sidebar_label:  MergeTree
-title: "MergeTree"
-description: "`MergeTree`-family table engines are designed for high data ingest rates and huge data volumes."
+slug: /engines/table-engines/mergetree-family/mergetree
+title: 'MergeTree table engine'
+doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# MergeTree
+# MergeTree table engine
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
 
@@ -22,17 +24,17 @@ Main features of `MergeTree`-family table engines.
 
 - Tables can be partitioned using an arbitrary partition expression. Partition pruning ensures partitions are omitted from reading when the query allows it.
 
-- Data can be replicated across multiple cluster nodes for high availability, failover, and zero downtime upgrades. See [Data replication](/docs/engines/table-engines/mergetree-family/replication.md).
+- Data can be replicated across multiple cluster nodes for high availability, failover, and zero downtime upgrades. See [Data replication](/engines/table-engines/mergetree-family/replication.md).
 
 - `MergeTree` table engines support various statistics kinds and sampling methods to help query optimization.
 
 :::note
-Despite a similar name, the [Merge](/docs/engines/table-engines/special/merge.md/#merge) engine is different from `*MergeTree` engines.
+Despite a similar name, the [Merge](/engines/table-engines/special/merge) engine is different from `*MergeTree` engines.
 :::
 
-## Creating Tables {#table_engine-mergetree-creating-a-table}
+## Creating tables {#table_engine-mergetree-creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
@@ -55,15 +57,15 @@ ORDER BY expr
 [SETTINGS name = value, ...]
 ```
 
-For a detailed description of the parameters, see the [CREATE TABLE](/docs/sql-reference/statements/create/table.md) statement
+For a detailed description of the parameters, see the [CREATE TABLE](/sql-reference/statements/create/table.md) statement
 
-### Query Clauses {#mergetree-query-clauses}
+### Query clauses {#mergetree-query-clauses}
 
 #### ENGINE {#engine}
 
 `ENGINE` — Name and parameters of the engine. `ENGINE = MergeTree()`. The `MergeTree` engine has no parameters.
 
-#### ORDER_BY {#order_by}
+#### ORDER BY {#order_by}
 
 `ORDER BY` — The sorting key.
 
@@ -72,13 +74,13 @@ A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID 
 If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
-Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY tuple()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
+Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
 
 #### PARTITION BY {#partition-by}
 
-`PARTITION BY` — The [partitioning key](/docs/engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
+`PARTITION BY` — The [partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key.md). Optional. In most cases, you don't need a partition key, and if you do need to partition, generally you do not need a partition key more granular than by month. Partitioning does not speed up queries (in contrast to the ORDER BY expression). You should never use too granular partitioning. Don't partition your data by client identifiers or names (instead, make client identifier or name the first column in the ORDER BY expression).
 
-For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/docs/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
+For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](/sql-reference/data-types/date.md). The partition names here have the `"YYYYMM"` format.
 
 #### PRIMARY KEY {#primary-key}
 
@@ -104,7 +106,6 @@ Expression must result in a `Date` or `DateTime`, e.g. `TTL date + INTERVAL 1 DA
 
 Type of the rule `DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'|GROUP BY` specifies an action to be done with the part if the expression is satisfied (reaches current time): removal of expired rows, moving a part (if expression is satisfied for all rows in a part) to specified disk (`TO DISK 'xxx'`) or to volume (`TO VOLUME 'xxx'`), or aggregating values in expired rows. Default type of the rule is removal (`DELETE`). List of multiple rules can be specified, but there should be no more than one `DELETE` rule.
 
-
 For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 #### SETTINGS {#settings}
@@ -113,13 +114,13 @@ See [MergeTree Settings](../../../operations/settings/merge-tree-settings.md).
 
 **Example of Sections Setting**
 
-``` sql
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](/docs/sql-reference/statements/select/sample.md/#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](/sql-reference/statements/select/sample) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 The `index_granularity` setting can be omitted because 8192 is the default value.
 
@@ -131,7 +132,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -142,21 +143,21 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **MergeTree() Parameters**
 
-- `date-column` — The name of a column of the [Date](/docs/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
+- `date-column` — The name of a column of the [Date](/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — An expression for sampling.
-- `(primary, key)` — Primary key. Type: [Tuple()](/docs/sql-reference/data-types/tuple.md)
+- `(primary, key)` — Primary key. Type: [Tuple()](/sql-reference/data-types/tuple.md)
 - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
-``` sql
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
 The `MergeTree` engine is configured in the same way as in the example above for the main engine configuration method.
 </details>
 
-## Data Storage {#mergetree-data-storage}
+## Data storage {#mergetree-data-storage}
 
 A table consists of data parts sorted by primary key.
 
@@ -176,12 +177,14 @@ The granule size is restricted by the `index_granularity` and `index_granularity
 
 Take the `(CounterID, Date)` primary key as an example. In this case, the sorting and index can be illustrated as follows:
 
-      Whole data:     [---------------------------------------------]
-      CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
-      Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
-      Marks:           |      |      |      |      |      |      |      |      |      |      |
-                      a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
-      Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
+```text
+Whole data:     [---------------------------------------------]
+CounterID:      [aaaaaaaaaaaaaaaaaabbbbcdeeeeeeeeeeeeefgggggggghhhhhhhhhiiiiiiiiikllllllll]
+Date:           [1111111222222233331233211111222222333211111112122222223111112223311122333]
+Marks:           |      |      |      |      |      |      |      |      |      |      |
+                a,1    a,2    a,3    b,3    e,2    e,3    g,1    h,2    i,1    i,3    l,3
+Marks numbers:   0      1      2      3      4      5      6      7      8      9      10
+```
 
 If the data query specifies:
 
@@ -197,9 +200,9 @@ Sparse indexes allow you to work with a very large number of table rows, because
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/docs/operations/settings/merge-tree-settings/#allow_nullable_key) setting. The [NULLS_LAST](/docs/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/operations/settings/merge-tree-settings/#allow_nullable_key) setting. The [NULLS_LAST](/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
-### Selecting a Primary Key {#selecting-a-primary-key}
+### Selecting a primary key {#selecting-a-primary-key}
 
 The number of columns in the primary key is not explicitly limited. Depending on the data structure, you can include more or fewer columns in the primary key. This may:
 
@@ -207,35 +210,35 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     If the primary key is `(a, b)`, then adding another column `c` will improve the performance if the following conditions are met:
 
-    - There are queries with a condition on column `c`.
-    - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
+  - There are queries with a condition on column `c`.
+  - Long data ranges (several times longer than the `index_granularity`) with identical values for `(a, b)` are common. In other words, when adding another column allows you to skip quite long data ranges.
 
 - Improve data compression.
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when merging data parts in the [CollapsingMergeTree](/docs/engines/table-engines/mergetree-family/collapsingmergetree.md/#table_engine-collapsingmergetree) and [SummingMergeTree](/docs/engines/table-engines/mergetree-family/summingmergetree.md) engines.
+- Provide additional logic when merging data parts in the [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree) and [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/docs/operations/settings/settings.md/#max-insert-threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/operations/settings/settings#max_insert_threads).
 
-To select data in the initial order, use [single-threaded](/docs/operations/settings/settings.md/#max_threads) `SELECT` queries.
+To select data in the initial order, use [single-threaded](/operations/settings/settings.md/#max_threads) `SELECT` queries.
 
-### Choosing a Primary Key that Differs from the Sorting Key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
+### Choosing a primary key that differs from the sorting key {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
 It is possible to specify a primary key (an expression with values that are written in the index file for each mark) that is different from the sorting key (an expression for sorting the rows in data parts). In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
 
-This feature is helpful when using the [SummingMergeTree](/docs/engines/table-engines/mergetree-family/summingmergetree.md) and
-[AggregatingMergeTree](/docs/engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
+This feature is helpful when using the [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) and
+[AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree.md) table engines. In a common case when using these engines, the table has two types of columns: *dimensions* and *measures*. Typical queries aggregate values of measure columns with arbitrary `GROUP BY` and filtering by dimensions. Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key, it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns and this list must be frequently updated with newly added dimensions.
 
 In this case it makes sense to leave only a few columns in the primary key that will provide efficient range scans and add the remaining dimension columns to the sorting key tuple.
 
-[ALTER](/docs/sql-reference/statements/alter/index.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
+[ALTER](/sql-reference/statements/alter/index.md) of the sorting key is a lightweight operation because when a new column is simultaneously added to the table and to the sorting key, existing data parts do not need to be changed. Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column, the data is sorted by both the old and new sorting keys at the moment of table modification.
 
-### Use of Indexes and Partitions in Queries {#use-of-indexes-and-partitions-in-queries}
+### Use of indexes and partitions in queries {#use-of-indexes-and-partitions-in-queries}
 
 For `SELECT` queries, ClickHouse analyzes whether an index can be used. An index can be used if the `WHERE/PREWHERE` clause has an expression (as one of the conjunction elements, or entirely) that represents an equality or inequality comparison operation, or if it has `IN` or `LIKE` with a fixed prefix on columns or expressions that are in the primary key or partitioning key, or on certain partially repetitive functions of these columns, or logical relationships of these expressions.
 
@@ -251,7 +254,7 @@ SETTINGS index_granularity=8192
 
 In this case, in queries:
 
-``` sql
+```sql
 SELECT count() FROM table
 WHERE EventDate = toDate(now())
 AND CounterID = 34
@@ -273,15 +276,15 @@ The queries above show that the index is used even for complex expressions. Read
 
 In the example below, the index can't be used.
 
-``` sql
+```sql
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](/docs/operations/settings/settings.md/#force_index_by_date) and [force_primary_key](/docs/operations/settings/settings.md/#force-primary-key).
+To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](/operations/settings/settings.md/#force_index_by_date) and [force_primary_key](/operations/settings/settings#force_primary_key).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
-### Use of Index for Partially-monotonic Primary Keys {#use-of-index-for-partially-monotonic-primary-keys}
+### Use of index for partially-monotonic primary keys {#use-of-index-for-partially-monotonic-primary-keys}
 
 Consider, for example, the days of the month. They form a [monotonic sequence](https://en.wikipedia.org/wiki/Monotonic_function) for one month, but not monotonic for more extended periods. This is a partially-monotonic sequence. If a user creates the table with partially-monotonic primary key, ClickHouse creates a sparse index as usual. When a user selects data from this kind of table, ClickHouse analyzes the query conditions. If the user wants to get data between two marks of the index and both these marks fall within one month, ClickHouse can use the index in this particular case because it can calculate the distance between the parameters of a query and index marks.
 
@@ -289,11 +292,11 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indexes {#table_engine-mergetree-data_skipping-indexes}
+### Data skipping indexes {#table_engine-mergetree-data_skipping-indexes}
 
 The index declaration is in the columns section of the `CREATE` query.
 
-``` sql
+```sql
 INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
 ```
 
@@ -305,7 +308,7 @@ The `GRANULARITY` clause can be omitted, the default value of `granularity_value
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     u64 UInt64,
@@ -321,7 +324,7 @@ CREATE TABLE table_name
 
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
-``` sql
+```sql
 SELECT count() FROM table WHERE u64 == 10;
 SELECT count() FROM table WHERE u64 * i32 >= 1234
 SELECT count() FROM table WHERE u64 * length(s) == 1234
@@ -343,40 +346,87 @@ INDEX nested_1_index col.nested_col1 TYPE bloom_filter
 INDEX nested_2_index col.nested_col2 TYPE bloom_filter
 ```
 
-### Available Types of Indices {#available-types-of-indices}
+### Skip Index Types {#skip-index-types}
 
-#### MinMax {#minmax}
+The `MergeTree` table engine supports the following types of skip indexes.
+For more information on how skip indexes can be used for performance optimization
+see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexes).
 
-Stores extremes of the specified expression (if the expression is `tuple`, then it stores extremes for each element of `tuple`), uses stored info for skipping blocks of data like the primary key.
+- [`MinMax`](#minmax) index
+- [`Set`](#set) index
+- [`bloom_filter`](#bloom-filter) index
+- [`ngrambf_v1`](#n-gram-bloom-filter) index
+- [`tokenbf_v1`](#token-bloom-filter) index
 
-Syntax: `minmax`
+#### MinMax skip index {#minmax}
+
+For each index granule, the minimum and maximum values of an expression are stored.
+(If the expression is of type `tuple`, it stores the minimum and maximum for each tuple element.)
+
+```text title="Syntax"
+minmax
+```
 
 #### Set {#set}
 
-Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
+For each index granule at most `max_rows` many unique values of the specified expression are stored.
+`max_rows = 0` means "store all unique values".
 
-Syntax: `set(max_rows)`
+```text title="Syntax"
+set(max_rows)
+```
 
-#### Bloom Filter {#bloom-filter}
+#### Bloom filter {#bloom-filter}
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns. An optional `false_positive` parameter with possible values between 0 and 1 specifies the probability of receiving a false positive response from the filter. Default value: 0.025. Supported data types: `Int*`, `UInt*`, `Float*`, `Enum`, `Date`, `DateTime`, `String`, `FixedString`, `Array`, `LowCardinality`, `Nullable`, `UUID` and `Map`. For the `Map` data type, the client can specify if the index should be created for keys or values using [mapKeys](/docs/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [mapValues](/docs/sql-reference/functions/tuple-map-functions.md/#mapvalues) function.
+For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the specified columns.
 
-Syntax: `bloom_filter([false_positive])`
+```text title="Syntax"
+bloom_filter([false_positive_rate])
+```
 
-#### N-gram Bloom Filter {#n-gram-bloom-filter}
+The `false_positive_rate` parameter can take on a value between 0 and 1 (by default: `0.025`) and specifies the probability of generating a positive (which increases the amount of data to be read).
 
-Stores a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) that contains all n-grams from a block of data. Only works with datatypes: [String](/docs/sql-reference/data-types/string.md), [FixedString](/docs/sql-reference/data-types/fixedstring.md) and [Map](/docs/sql-reference/data-types/map.md). Can be used for optimization of `EQUALS`, `LIKE` and `IN` expressions.
+The following data types are supported:
+- `(U)Int*`
+- `Float*`
+- `Enum`
+- `Date`
+- `DateTime`
+- `String`
+- `FixedString`
+- `Array`
+- `LowCardinality`
+- `Nullable`
+- `UUID`
+- `Map`
 
-Syntax: `ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+:::note Map data type: specifying index creation with keys or values
+For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapkeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapvalues) functions.
+:::
 
-- `n` — ngram size,
-- `size_of_bloom_filter_in_bytes` — Bloom filter size in bytes (you can use large values here, for example, 256 or 512, because it can be compressed well).
-- `number_of_hash_functions` — The number of hash functions used in the Bloom filter.
-- `random_seed` — The seed for Bloom filter hash functions.
+#### N-gram bloom filter {#n-gram-bloom-filter}
 
-Users can create [UDF](/docs/sql-reference/statements/create/function.md) to estimate the parameters set of `ngrambf_v1`. Query statements are as follows:
+For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
 
-```sql
+```text title="Syntax"
+ngrambf_v1(n, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
+```
+
+| Parameter                       | Description |
+|---------------------------------|-------------|
+| `n`                             | ngram size  |
+| `size_of_bloom_filter_in_bytes` | Bloom filter size in bytes. You can use a large value here, for example, `256` or `512`, because it can be compressed well).|
+|`number_of_hash_functions`       |The number of hash functions used in the bloom filter.|
+|`random_seed` |Seed for the bloom filter hash functions.|
+
+This index only works with the following data types:
+- [`String`](/sql-reference/data-types/string.md)
+- [`FixedString`](/sql-reference/data-types/fixedstring.md)
+- [`Map`](/sql-reference/data-types/map.md)
+
+To estimate the parameters of `ngrambf_v1`, you can use the following [User Defined Functions (UDFs)](/sql-reference/statements/create/function.md).
+
+```sql title="UDFs for ngrambf_v1"
 CREATE FUNCTION bfEstimateFunctions [ON CLUSTER cluster]
 AS
 (total_number_of_all_grams, size_of_bloom_filter_in_bits) -> round((size_of_bloom_filter_in_bits / total_number_of_all_grams) * log(2));
@@ -392,15 +442,18 @@ AS
 CREATE FUNCTION bfEstimateGramNumber [ON CLUSTER cluster]
 AS
 (number_of_hash_functions, probability_of_false_positives, size_of_bloom_filter_in_bytes) -> ceil(size_of_bloom_filter_in_bytes / (-number_of_hash_functions / log(1 - exp(log(probability_of_false_positives) / number_of_hash_functions))))
-
 ```
-To use those functions,we need to specify two parameter at least.
-For example, if there 4300 ngrams in the granule and we expect false positives to be less than 0.0001. The other parameters can be estimated by executing following queries:
 
+To use these functions, you need to specify at least two parameters:
+- `total_number_of_all_grams`
+- `probability_of_false_positives`
+
+For example, there are `4300` ngrams in the granule and you expect false positives to be less than `0.0001`.
+The other parameters can then be estimated by executing the following queries:
 
 ```sql
 --- estimate number of bits in the filter
-SELECT bfEstimateBmSize(4300, 0.0001) / 8 as size_of_bloom_filter_in_bytes;
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_of_bloom_filter_in_bytes;
 
 ┌─size_of_bloom_filter_in_bytes─┐
 │                         10304 │
@@ -412,89 +465,103 @@ SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) as number_of_ha
 ┌─number_of_hash_functions─┐
 │                       13 │
 └──────────────────────────┘
-
 ```
-Of course, you can also use those functions to estimate parameters by other conditions.
-The functions refer to the content [here](https://hur.st/bloomfilter).
 
+Of course, you can also use those functions to estimate parameters for other conditions.
+The functions above refer to the bloom filter calculator [here](https://hur.st/bloomfilter).
 
-#### Token Bloom Filter {#token-bloom-filter}
+#### Token bloom filter {#token-bloom-filter}
 
-The same as `ngrambf_v1`, but stores tokens instead of ngrams. Tokens are sequences separated by non-alphanumeric characters.
+The token bloom filter is the same as `ngrambf_v1`, but stores tokens (sequences separated by non-alphanumeric characters) instead of ngrams.
 
-Syntax: `tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)`
+```text title="Syntax"
+tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
+```
 
-#### Special-purpose {#special-purpose}
+#### Sparse grams bloom filter {#sparse-grams-bloom-filter}
 
-- An experimental index to support approximate nearest neighbor search. See [here](annindexes.md) for details.
-- An experimental full-text index to support full-text search. See [here](invertedindexes.md) for details.
+The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.
 
-### Functions Support {#functions-support}
+```text title="Syntax"
+sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
+```
+
+### Text index {#text}
+
+Supports full-text search, see [here](invertedindexes.md) for details.
+
+#### Vector similarity {#vector-similarity}
+
+Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
+
+### Functions support {#functions-support}
 
 Conditions in the `WHERE` clause contains calls of the functions that operate with columns. If the column is a part of an index, ClickHouse tries to use this index when performing the functions. ClickHouse supports different subsets of functions for using indexes.
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | full_text |
-|------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|-----------|
-| [equals (=, ==)](/docs/sql-reference/functions/comparison-functions.md/#equals)                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [notEquals(!=, &lt;&gt;)](/docs/sql-reference/functions/comparison-functions.md/#notequals)             | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [like](/docs/sql-reference/functions/string-search-functions.md/#like)                                  | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
-| [notLike](/docs/sql-reference/functions/string-search-functions.md/#notlike)                            | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
-| [match](/docs/sql-reference/functions/string-search-functions.md/#match)                                | ✗           | ✗      | ✔          | ✔          | ✗            | ✔         |
-| [startsWith](/docs/sql-reference/functions/string-functions.md/#startswith)                             | ✔           | ✔      | ✔          | ✔          | ✗            | ✔         |
-| [endsWith](/docs/sql-reference/functions/string-functions.md/#endswith)                                 | ✗           | ✗      | ✔          | ✔          | ✗            | ✔         |
-| [multiSearchAny](/docs/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔         |
-| [in](/docs/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [notIn](/docs/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [less (`<`)](/docs/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greater (`>`)](/docs/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [lessOrEquals (`<=`)](/docs/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greaterOrEquals (`>=`)](/docs/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [empty](/docs/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [notEmpty](/docs/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [has](/docs/sql-reference/functions/array-functions/#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
-| [hasAny](/docs/sql-reference/functions/array-functions/#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| [hasAll](/docs/sql-reference/functions/array-functions/#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗         |
-| hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
-| hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
-| hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
-| hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
+| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | text | sparse_grams |
+|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|------|------|
+| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    | ✔    |
+| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    | ✔    |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    | ✔    |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    | ✔    |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    | ✔    |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔    | ✔    |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔    | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗    | ✗    |
+| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    | ✔    |
+| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔    | ✔    |
+| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    | ✗    |
+| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    | ✗    |
+| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    | ✗    |
+| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    | ✗    |
+| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗    | ✗    |
+| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✗    | ✔    |
+| [has](/sql-reference/functions/array-functions#has)                                                                            | ✗           | ✗      | ✔          | ✔          | ✔            | ✔    | ✔    |
+| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    | ✔    |
+| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✗    | ✔    |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    | ✗    |
+| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✔    | ✗    |
+| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗    | ✗    |
+| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    | ✗    |
+| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    | ✗    |
+| [mapContains](/sql-reference/functions/tuple-map-functions#mapcontains)                                                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✔    | ✗    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 :::note
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
 
 - Can be optimized:
-    - `s LIKE '%test%'`
-    - `NOT s NOT LIKE '%test%'`
-    - `s = 1`
-    - `NOT s != 1`
-    - `startsWith(s, 'test')`
+  - `s LIKE '%test%'`
+  - `NOT s NOT LIKE '%test%'`
+  - `s = 1`
+  - `NOT s != 1`
+  - `startsWith(s, 'test')`
 - Can not be optimized:
-    - `NOT s LIKE '%test%'`
-    - `s NOT LIKE '%test%'`
-    - `NOT s = 1`
-    - `s != 1`
-    - `NOT startsWith(s, 'test')`
+  - `NOT s LIKE '%test%'`
+  - `s NOT LIKE '%test%'`
+  - `NOT s = 1`
+  - `s != 1`
+  - `NOT startsWith(s, 'test')`
 :::
-
 
 ## Projections {#projections}
-Projections are like [materialized views](/docs/sql-reference/statements/create/view.md/#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 :::note
-When you are implementing projections you should also consider the [force_optimize_projection](/docs/operations/settings/settings.md/#force-optimize-projection) setting.
+When you are implementing projections you should also consider the [force_optimize_projection](/operations/settings/settings#force_optimize_projection) setting.
 :::
 
-Projections are not supported in the `SELECT` statements with the [FINAL](/docs/sql-reference/statements/select/from.md/#select-from-final) modifier.
+Projections are not supported in the `SELECT` statements with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
-### Projection Query {#projection-query}
+### Projection query {#projection-query}
 A projection query is what defines a projection. It implicitly selects data from the parent table.
 **Syntax**
 
@@ -502,42 +569,42 @@ A projection query is what defines a projection. It implicitly selects data from
 SELECT <column list expr> [GROUP BY] <group keys expr> [ORDER BY] <expr>
 ```
 
-Projections can be modified or dropped with the [ALTER](/docs/sql-reference/statements/alter/projection.md) statement.
+Projections can be modified or dropped with the [ALTER](/sql-reference/statements/alter/projection.md) statement.
 
-### Projection Storage {#projection-storage}
+### Projection storage {#projection-storage}
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
 
-### Query Analysis {#projection-query-analysis}
+### Query analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.
 2. Select the best feasible match, which contains the least granules to read.
 3. The query pipeline which uses projections will be different from the one that uses the original parts. If the projection is absent in some parts, we can add the pipeline to "project" it on the fly.
 
-## Concurrent Data Access {#concurrent-data-access}
+## Concurrent data access {#concurrent-data-access}
 
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
 
 Reading from a table is automatically parallelized.
 
-## TTL for Columns and Tables {#table_engine-mergetree-ttl}
+## TTL for columns and tables {#table_engine-mergetree-ttl}
 
 Determines the lifetime of values.
 
 The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
-Expressions must evaluate to [Date](/docs/sql-reference/data-types/date.md) or [DateTime](/docs/sql-reference/data-types/datetime.md) data type.
+Expressions must evaluate to [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md), [DateTime](/sql-reference/data-types/datetime.md) or [DateTime64](/sql-reference/data-types/datetime64.md) data type.
 
 **Syntax**
 
 Setting time-to-live for a column:
 
-``` sql
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/docs/sql-reference/operators/index.md#operators-datetime) operators, for example:
+To define `interval`, use [time interval](/sql-reference/operators#operators-for-working-with-dates-and-times) operators, for example:
 
-``` sql
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
@@ -552,7 +619,7 @@ The `TTL` clause can't be used for key columns.
 
 #### Creating a table with `TTL`: {#creating-a-table-with-ttl}
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     d DateTime,
@@ -567,7 +634,7 @@ ORDER BY d;
 
 #### Adding TTL to a column of an existing table {#adding-ttl-to-a-column-of-an-existing-table}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
@@ -575,7 +642,7 @@ ALTER TABLE tab
 
 #### Altering TTL of the column {#altering-ttl-of-the-column}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
@@ -585,7 +652,7 @@ ALTER TABLE tab
 
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
 
-``` sql
+```sql
 TTL expr
     [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
     [WHERE conditions]
@@ -601,7 +668,7 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 - `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
-``` sql
+```sql
 TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 ```
 
@@ -613,7 +680,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 
 #### Creating a table with `TTL`: {#creating-a-table-with-ttl-1}
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     d DateTime,
@@ -629,14 +696,14 @@ TTL d + INTERVAL 1 MONTH DELETE,
 
 #### Altering `TTL` of the table: {#altering-ttl-of-the-table}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
 Creating a table, where the rows are expired after one month. The expired rows where dates are Mondays are deleted:
 
-``` sql
+```sql
 CREATE TABLE table_with_where
 (
     d DateTime,
@@ -665,7 +732,7 @@ SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
-``` sql
+```sql
 CREATE TABLE table_for_aggregation
 (
     d DateTime,
@@ -679,46 +746,46 @@ ORDER BY (k1, k2)
 TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 ```
 
-### Removing Expired Data {#mergetree-removing-expired-data}
+### Removing expired data {#mergetree-removing-expired-data}
 
 Data with an expired `TTL` is removed when ClickHouse merges data parts.
 
 When ClickHouse detects that data is expired, it performs an off-schedule merge. To control the frequency of such merges, you can set `merge_with_ttl_timeout`. If the value is too low, it will perform many off-schedule merges that may consume a lot of resources.
 
-If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](/docs/sql-reference/statements/optimize.md) query before `SELECT`.
+If you perform the `SELECT` query between merges, you may get expired data. To avoid it, use the [OPTIMIZE](/sql-reference/statements/optimize.md) query before `SELECT`.
 
 **See Also**
 
-- [ttl_only_drop_parts](/docs/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
+- [ttl_only_drop_parts](/operations/settings/merge-tree-settings#ttl_only_drop_parts) setting
 
 ## Disk types {#disk-types}
 
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
-- [`gcs` for GCS](/docs/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](/docs/engines/table-engines/integrations/azureBlobStorage#table_engine-mergetree-azure-blob-storage)
-- [`hdfs` for HDFS](/docs/engines/table-engines/integrations/hdfs)
-- [`web` for read-only from web](/docs/operations/storing-data#web-storage)
-- [`cache` for local caching](/docs/operations/storing-data#using-local-cache)
-- [`s3_plain` for backups to S3](/docs/operations/backup#backuprestore-using-an-s3-disk)
-- [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/docs/operations/storing-data.md#s3-plain-rewritable-storage)
+- [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
+- [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
+- [`web` for read-only from web](/operations/storing-data#web-storage)
+- [`cache` for local caching](/operations/storing-data#using-local-cache)
+- [`s3_plain` for backups to S3](/operations/backup#backuprestore-using-an-s3-disk)
+- [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/operations/storing-data.md#s3-plain-rewritable-storage)
 
-## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
+## Using multiple block devices for data storage {#table_engine-mergetree-multiple-volumes}
 
 ### Introduction {#introduction}
 
 `MergeTree` family table engines can store data on multiple block devices. For example, it can be useful when the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (for example, NVMe SSDs or in memory), while the "cold" data - on relatively slow ones (for example, HDD).
 
-Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/docs/sql-reference/statements/alter/partition.md/#alter_move-partition) queries.
+Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/sql-reference/statements/alter/partition) queries.
 
 ### Terms {#terms}
 
 - Disk — Block device mounted to the filesystem.
-- Default disk — Disk that stores the path specified in the [path](/docs/operations/server-configuration-parameters/settings.md/#path) server setting.
+- Default disk — Disk that stores the path specified in the [path](/operations/server-configuration-parameters/settings.md/#path) server setting.
 - Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 - Storage policy — Set of volumes and the rules for moving data between them.
 
-The names given to the described entities can be found in the system tables, [system.storage_policies](/docs/operations/system-tables/storage_policies.md/#system_tables-storage_policies) and [system.disks](/docs/operations/system-tables/disks.md/#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
+The names given to the described entities can be found in the system tables, [system.storage_policies](/operations/system-tables/storage_policies) and [system.disks](/operations/system-tables/disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -727,12 +794,12 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
 for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
-See [dynamic storage](/docs/operations/storing-data#dynamic-configuration) for more details.
+See [dynamic storage](/operations/storing-data#dynamic-configuration) for more details.
 :::
 
 Configuration structure:
 
-``` xml
+```xml
 <storage_configuration>
     <disks>
         <disk_name_1> <!-- disk name -->
@@ -764,7 +831,7 @@ The order of the disk definition is not important.
 
 Storage policies configuration markup:
 
-``` xml
+```xml
 <storage_configuration>
     ...
     <policies>
@@ -811,7 +878,7 @@ Tags:
 
 Configuration examples:
 
-``` xml
+```xml
 <storage_configuration>
     ...
     <policies>
@@ -862,7 +929,7 @@ Once a volume is overfilled, data are moved to the next one. The order of disk e
 
 When creating a table, one can apply one of the configured storage policies to it:
 
-``` sql
+```sql
 CREATE TABLE table_with_non_default_policy (
     EventDate Date,
     OrderID UInt64,
@@ -877,16 +944,16 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 The `default` storage policy implies using only one volume, which consists of only one disk given in `<path>`.
 You could change storage policy after table creation with [ALTER TABLE ... MODIFY SETTING] query, new policy should include all old disks and volumes with same names.
 
-The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/docs/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
+The number of threads performing background moves of data parts can be changed by [background_move_pool_size](/operations/server-configuration-parameters/settings.md/#background_move_pool_size) setting.
 
 ### Details {#details}
 
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 - As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/docs/sql-reference/statements/alter/index.md#alter-mutations).
+- During background merges and [mutations](/sql-reference/statements/alter#mutations).
 - When downloading from another replica.
-- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/docs/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
+- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -896,25 +963,25 @@ In all these cases except for mutations and partition freezing, a part is stored
 Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones.
 
 In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
-Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/docs/operations/system-tables/part_log.md/#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](/docs/operations/system-tables/parts.md) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/operations/system-tables/part_log) (field `type = MOVE_PART`) and [system.parts](/operations/system-tables/parts.md) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
 
-User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/docs/sql-reference/statements/alter/partition.md/#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
+User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/sql-reference/statements/alter/partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
 
 Moving data does not interfere with data replication. Therefore, different storage policies can be specified for the same table on different replicas.
 
 After the completion of background merges and mutations, old parts are removed only after a certain amount of time (`old_parts_lifetime`).
 During this time, they are not moved to other volumes or disks. Therefore, until the parts are finally removed, they are still taken into account for evaluation of the occupied disk space.
 
-User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/docs/operations/settings/merge-tree-settings.md/#min-bytes-to-rebalance-partition-over-jbod) setting.
+User can assign new big parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way using the [min_bytes_to_rebalance_partition_over_jbod](/operations/settings/merge-tree-settings.md/#min_bytes_to_rebalance_partition_over_jbod) setting.
 
-## Using External Storage for Data Storage {#table_engine-mergetree-s3}
+## Using external storage for data storage {#table_engine-mergetree-s3}
 
-[MergeTree](/docs/engines/table-engines/mergetree-family/mergetree.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly. See [configuring external storage options](/docs/operations/storing-data.md/#configuring-external-storage) for more details.
+[MergeTree](/engines/table-engines/mergetree-family/mergetree.md) family table engines can store data to `S3`, `AzureBlobStorage`, `HDFS` using a disk with types `s3`, `azure_blob_storage`, `hdfs` accordingly. See [configuring external storage options](/operations/storing-data.md/#configuring-external-storage) for more details.
 
 Example for [S3](https://aws.amazon.com/s3/) as external storage using a disk with type `s3`.
 
 Configuration markup:
-``` xml
+```xml
 <storage_configuration>
     ...
     <disks>
@@ -953,30 +1020,36 @@ Configuration markup:
 </storage_configuration>
 ```
 
-Also see [configuring external storage options](/docs/operations/storing-data.md/#configuring-external-storage).
+Also see [configuring external storage options](/operations/storing-data.md/#configuring-external-storage).
 
 :::note cache configuration
-ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/docs/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
+ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [using local cache](/operations/storing-data.md/#using-local-cache) if you are using one of those versions.
 :::
 
-## Virtual Columns {#virtual-columns}
+## Virtual columns {#virtual-columns}
 
 - `_part` — Name of a part.
 - `_part_index` — Sequential index of the part in the query result.
+- `_part_starting_offset` — Cumulative starting row of the part in the query result.
+- `_part_offset` — Number of row in the part.
+- `_part_granule_offset` — Number of granule in the part.
 - `_partition_id` — Name of a partition.
 - `_part_uuid` — Unique part identifier (if enabled MergeTree setting `assign_part_uuids`).
+- `_part_data_version` — Data version of part (either min block number or mutation version).
 - `_partition_value` — Values (a tuple) of a `partition by` expression.
 - `_sample_factor` — Sample factor (from the query).
-- `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
+- `_block_number` — Original number of block for row that was assigned at insert, persisted on merges when setting `enable_block_number_column` is enabled.
+- `_block_offset` — Original number of row in block that was assigned at insert, persisted on merges when setting `enable_block_offset_column` is enabled.
+- `_disk_name` — Disk name used for the storage.
 
-## Column Statistics {#column-statistics}
+## Column statistics {#column-statistics}
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     a Int64 STATISTICS(TDigest, Uniq),
@@ -996,7 +1069,7 @@ ALTER TABLE tab DROP STATISTICS a;
 These lightweight statistics aggregate information about distribution of values in columns. Statistics are stored in every part and updated when every insert comes.
 They can be used for prewhere optimization only if we enable `set allow_statistics_optimize = 1`.
 
-### Available Types of Column Statistics {#available-types-of-column-statistics}
+### Available types of column statistics {#available-types-of-column-statistics}
 
 - `MinMax`
 
@@ -1022,8 +1095,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
     Syntax `countmin`
 
-
-### Supported Data Types {#supported-data-types}
+### Supported data types {#supported-data-types}
 
 |           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
 |-----------|----------------------------------------------------|-----------------------|
@@ -1032,8 +1104,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 | TDigest   | ✔                                                  | ✗                     |
 | Uniq      | ✔                                                  | ✔                     |
 
-
-### Supported Operations {#supported-operations}
+### Supported operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
 |-----------|-----------------------|------------------------------|
@@ -1042,8 +1113,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 | TDigest   | ✗                     | ✔                            |
 | Uniq      | ✔                     | ✗                            |
 
-
-## Column-level Settings {#column-level-settings}
+## Column-level settings {#column-level-settings}
 
 Certain MergeTree settings can be overridden at column level:
 
@@ -1062,7 +1132,7 @@ ENGINE = MergeTree
 ORDER BY id
 ```
 
-Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/docs/sql-reference/statements/alter/column.md), for example:
+Column-level settings can be modified or removed using [ALTER MODIFY COLUMN](/sql-reference/statements/alter/column.md), for example:
 
 - Remove `SETTINGS` from column declaration:
 

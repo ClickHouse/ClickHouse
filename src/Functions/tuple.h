@@ -5,7 +5,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/isUnquotedIdentifier.h>
 
 namespace DB
@@ -66,7 +66,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         if (arguments.empty())
-            return ColumnTuple::create(input_rows_count);
+            return DataTypeTuple({}).createColumnConstWithDefaultValue(input_rows_count);
 
         size_t tuple_size = arguments.size();
         Columns tuple_columns(tuple_size);

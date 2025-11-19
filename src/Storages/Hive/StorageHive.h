@@ -7,7 +7,7 @@
 #include <Poco/URI.h>
 #include <ThriftHiveMetastore.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Storages/IStorage.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
@@ -39,6 +39,8 @@ public:
         ContextPtr context_);
 
     String getName() const override { return "Hive"; }
+
+    bool isExternalDatabase() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
 

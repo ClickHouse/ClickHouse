@@ -47,6 +47,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -119,7 +120,13 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
         collectSets(expression, *planner_context);
 
-        auto actions = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/{},
+            planner_context,
+            empty_correlated_columns_set);
+        correlated_subtrees.assertEmpty("in constant expression without query context");
 
         if (actions.getOutputs().size() != 1)
         {
@@ -731,7 +738,7 @@ namespace
         const ActionsDAG::NodeRawConstPtrs & target_expr,
         ConjunctionMap && conjunction)
     {
-        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1, /* throw_on_error= */ false);
+        auto columns = ActionsDAG::evaluatePartialResult(conjunction, target_expr, /* input_rows_count= */ 1);
         for (const auto & column : columns)
             if (!column.column)
                 return {};
@@ -746,10 +753,13 @@ std::optional<ConstantVariants> evaluateExpressionOverConstantCondition(
     const ContextPtr & context,
     size_t max_elements)
 {
-    auto inverted_dag = KeyCondition::cloneASTWithInversionPushDown({predicate}, context);
-    auto matches = matchTrees(expr, inverted_dag, false);
+    if (!predicate)
+        return {};
 
-    auto predicates = analyze(inverted_dag.getOutputs().at(0), matches, context, max_elements);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    auto matches = matchTrees(expr, *filter_dag.dag, false);
+
+    auto predicates = analyze(filter_dag.predicate, matches, context, max_elements);
 
     if (!predicates)
         return {};

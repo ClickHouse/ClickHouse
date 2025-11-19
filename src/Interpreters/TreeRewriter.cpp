@@ -44,12 +44,10 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <IO/WriteHelpers.h>
@@ -288,7 +286,7 @@ struct ExistsExpressionData
 
         auto new_subquery = std::make_shared<ASTSubquery>(std::move(select_with_union_query));
 
-        auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        auto function = makeASTOperator("in", std::make_shared<ASTLiteral>(1u), new_subquery);
         func = *function;
     }
 };
@@ -367,11 +365,14 @@ void renameDuplicatedColumns(const ASTSelectQuery * select_query)
     for (auto & expr : elements)
     {
         auto name = expr->getAliasOrColumnName();
-
         if (!assigned_column_names.insert(name).second)
         {
+            /// We can't rename with aliases if it doesn't support alias (e.g. asterisk)
+            if (!dynamic_cast<ASTWithAlias *>(expr.get()))
+                continue;
+
             size_t i = 1;
-            while (all_column_names.end() != all_column_names.find(name + "_" + toString(i)))
+            while (all_column_names.contains(name + "_" + toString(i)))
                 ++i;
 
             name = name + "_" + toString(i);
@@ -724,7 +725,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         if (any_keys_empty)
             throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                 "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
-                                queryToString(table_join.on_expression), TableJoin::formatClauses(analyzed_join.getClauses()));
+                                table_join.on_expression->formatForErrorMessage(), TableJoin::formatClauses(analyzed_join.getClauses()));
 
         if (is_asof)
         {
@@ -1011,7 +1012,6 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
     if (storage)
     {
         auto options = GetColumnsOptions(add_special ? GetColumnsOptions::All : GetColumnsOptions::AllPhysical);
-        options.withExtendedObjects();
         options.withSubcolumns(storage->supportsSubcolumns());
 
         auto columns_from_storage = storage_snapshot->getColumns(options);
@@ -1170,11 +1170,17 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     if (storage_snapshot)
     {
         const auto & virtuals = storage_snapshot->virtual_columns;
+        const auto & common_virtual_columns = IStorage::getCommonVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
             if (auto column = virtuals->tryGet(*it))
             {
                 source_columns.push_back(*column);
+                it = unknown_required_source_columns.erase(it);
+            }
+            else if (auto common_column = common_virtual_columns.tryGet(*it))
+            {
+                source_columns.push_back(*common_column);
                 it = unknown_required_source_columns.erase(it);
             }
             else
@@ -1185,33 +1191,6 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
 
         has_virtual_shard_num
             = is_remote_storage && storage->isVirtualColumn("_shard_num", storage_snapshot->metadata) && virtuals->has("_shard_num");
-    }
-
-    /// Collect missed object subcolumns
-    if (!unknown_required_source_columns.empty())
-    {
-        for (const NameAndTypePair & pair : source_columns_ordinary)
-        {
-            for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
-            {
-                size_t object_pos = it->find('.');
-                if (object_pos != std::string::npos)
-                {
-                    String object_name = it->substr(0, object_pos);
-                    if (pair.name == object_name && pair.type->getTypeId() == TypeIndex::ObjectDeprecated)
-                    {
-                        const auto * object_type = typeid_cast<const DataTypeObjectDeprecated *>(pair.type.get());
-                        if (object_type->getSchemaFormat() == "json" && object_type->hasNullableSubcolumns())
-                        {
-                            missed_subcolumns.insert(*it);
-                            it = unknown_required_source_columns.erase(it);
-                            continue;
-                        }
-                    }
-                }
-                ++it;
-            }
-        }
     }
 
     /// Check for subcolumns in unknown required columns.
@@ -1245,7 +1224,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while processing: '" << queryToString(query) << "'";
+        ss << " while processing: '" << query->formatWithSecretsOneLine() << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())
@@ -1389,6 +1368,11 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     // expand ORDER BY ALL
     if (settings[Setting::enable_order_by_all] && select_query->order_by_all)
         expandOrderByAll(select_query, tables_with_columns);
+
+    if (select_query->limit_by_all)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LIMIT BY ALL is not supported with the old planner");
+    }
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -1651,7 +1635,7 @@ void TreeRewriter::normalize(
     }
 
     /// Common subexpression elimination. Rewrite rules.
-    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, settings, allow_self_aliases, is_create_parameterized_view);
+    QueryNormalizer::Data normalizer_data(aliases, source_columns_set, ignore_alias, QueryNormalizer::ExtractedSettings(settings), allow_self_aliases, is_create_parameterized_view);
     QueryNormalizer(normalizer_data).visit(query);
 
     optimizeGroupingSets(query);

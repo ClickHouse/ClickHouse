@@ -18,3 +18,6 @@ git config submodule."contrib/postgres".update '!../sparse-checkout/update-postg
 git config submodule."contrib/libxml2".update '!../sparse-checkout/update-libxml2.sh'
 git config submodule."contrib/brotli".update '!../sparse-checkout/update-brotli.sh'
 git config submodule."contrib/google-cloud-cpp".update '!../sparse-checkout/update-google-cloud-cpp.sh'
+git config submodule."contrib/nlohmann-json".update '!../sparse-checkout/update-nlohmann-json.sh'
+git config submodule."contrib/crc32c".update '!../sparse-checkout/update-crc32c.sh'
+git config submodule."contrib/antlr4-cpp-runtime".update '!../sparse-checkout/update-antlr4-cpp-runtime.sh'

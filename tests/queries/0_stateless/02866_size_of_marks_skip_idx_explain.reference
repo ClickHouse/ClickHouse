@@ -12,6 +12,7 @@ Expression ((Project names + Projection))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 1/2
+      Ranges: 1
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_skip_idx)
@@ -26,3 +27,4 @@ Expression ((Project names + Projection))
         Description: minmax GRANULARITY 1
         Parts: 1/1
         Granules: 2/2
+      Ranges: 1

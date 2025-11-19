@@ -1,6 +1,6 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadHelpers.h>
-#include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
@@ -86,16 +86,26 @@ Strings HudiMetadata::getDataFilesImpl() const
     return result;
 }
 
-HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_)
+HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_)
     : WithContext(context_), object_storage(object_storage_), configuration(configuration_)
 {
 }
 
-Strings HudiMetadata::getDataFiles() const
+Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
 {
     if (data_files.empty())
         data_files = getDataFilesImpl();
     return data_files;
+}
+
+ObjectIterator HudiMetadata::iterate(
+    const ActionsDAG * filter_dag,
+    FileProgressCallback callback,
+    size_t /* list_batch_size */,
+    StorageMetadataPtr /* storage_metadata_snapshot*/,
+    ContextPtr /* context  */) const
+{
+    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
 }
 
 }

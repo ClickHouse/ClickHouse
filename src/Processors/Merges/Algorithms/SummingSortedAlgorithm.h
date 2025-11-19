@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 
@@ -16,14 +17,19 @@ class SummingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
 public:
     SummingSortedAlgorithm(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
         /// List of partition key columns. They have to be excluded.
-        const Names & partition_key_columns,
+        const Names & partition_and_sorting_required_columns,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes);
+        size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_,
+        const String & sum_function_name,
+        const String & sum_function_map_name,
+        bool remove_default_values,
+        bool aggregate_all_columns);
 
     const char * getName() const override { return "SummingSortedAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -44,6 +50,11 @@ public:
         ColumnsDefinition(); /// Is needed because destructor is defined.
         ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
         ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
+
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+        size_t arena_size = 0;
 
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
@@ -67,7 +78,7 @@ public:
         using MergedData::insertRow;
 
     public:
-        SummingMergedData(UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, ColumnsDefinition & def_);
+        SummingMergedData(UInt64 max_block_size_rows, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_, ColumnsDefinition & def_);
 
         void initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs) override;
 
@@ -82,14 +93,11 @@ public:
     private:
         ColumnsDefinition & def;
 
-        /// Memory pool for SimpleAggregateFunction
-        /// (only when allocates_memory_in_arena == true).
-        std::unique_ptr<Arena> arena;
-        size_t arena_size = 0;
-
         bool is_group_started = false;
 
         Row current_row;
+        /// Some types like Dynamic/JSON doesn't work well with Fields, for them we save values in IColumn.
+        std::vector<ColumnPtr> current_row_columns;
         bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
         void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);

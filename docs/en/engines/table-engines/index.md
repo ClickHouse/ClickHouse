@@ -1,11 +1,14 @@
 ---
+description: 'Documentation for Table Engines'
 slug: /engines/table-engines/
-toc_folder_title: Table Engines
+toc_folder_title: 'Table Engines'
 toc_priority: 26
-toc_title: Introduction
+toc_title: 'Introduction'
+title: 'Table Engines'
+doc_type: 'reference'
 ---
 
-# Table Engines
+# Table engines
 
 The table engine (type of table) determines:
 
@@ -16,23 +19,24 @@ The table engine (type of table) determines:
 - Whether multithread request execution is possible.
 - Data replication parameters.
 
-## Engine Families {#engine-families}
+## Engine families {#engine-families}
 
 ### MergeTree {#mergetree}
 
-The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated\*](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) versions of engines), partitioning, secondary data-skipping indexes, and other features not supported in other engines.
+The most universal and functional table engines for high-load tasks. The property shared by these engines is quick data insertion with subsequent background data processing. `MergeTree` family engines support data replication (with [Replicated\*](/engines/table-engines/mergetree-family/replication) versions of engines), partitioning, secondary data-skipping indexes, and other features not supported in other engines.
 
 Engines in the family:
 
 | MergeTree Engines                                                                                                                         |
 |-------------------------------------------------------------------------------------------------------------------------------------------|
-| [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#mergetree)                                                          |
-| [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md#replacingmergetree)                               |
-| [SummingMergeTree](../../engines/table-engines/mergetree-family/summingmergetree.md#summingmergetree)                                     |
-| [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md#aggregatingmergetree)                         |
-| [CollapsingMergeTree](../../engines/table-engines/mergetree-family/collapsingmergetree.md#table_engine-collapsingmergetree)               |
-| [VersionedCollapsingMergeTree](../../engines/table-engines/mergetree-family/versionedcollapsingmergetree.md#versionedcollapsingmergetree) |
-| [GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree)                                  |
+| [MergeTree](/engines/table-engines/mergetree-family/mergetree)                                                          |
+| [ReplacingMergeTree](/engines/table-engines/mergetree-family/replacingmergetree)                               |
+| [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree)                                     |
+| [AggregatingMergeTree](/engines/table-engines/mergetree-family/aggregatingmergetree)                         |
+| [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree)               |
+| [VersionedCollapsingMergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
+| [GraphiteMergeTree](/engines/table-engines/mergetree-family/graphitemergetree)                                  |
+| [CoalescingMergeTree](/engines/table-engines/mergetree-family/coalescingmergetree)                                     |
 
 ### Log {#log}
 
@@ -42,11 +46,11 @@ Engines in the family:
 
 | Log Engines                                                                |
 |----------------------------------------------------------------------------|
-| [TinyLog](../../engines/table-engines/log-family/tinylog.md#tinylog)       |
-| [StripeLog](../../engines/table-engines/log-family/stripelog.md#stripelog) |
-| [Log](../../engines/table-engines/log-family/log.md#log)                   |
+| [TinyLog](/engines/table-engines/log-family/tinylog)       |
+| [StripeLog](/engines/table-engines/log-family/stripelog) |
+| [Log](/engines/table-engines/log-family/log)                   |
 
-### Integration Engines {#integration-engines}
+### Integration engines {#integration-engines}
 
 Engines for communicating with other data storage and processing systems.
 
@@ -68,31 +72,43 @@ Engines in the family:
 | [S3Queue](../../engines/table-engines/integrations/s3queue.md)                  |
 | [TimeSeries](../../engines/table-engines/integrations/time-series.md)           |
 
-### Special Engines {#special-engines}
+### Special engines {#special-engines}
 
 Engines in the family:
 
-| Special Engines                                                               |
-|-------------------------------------------------------------------------------|
-| [Distributed](../../engines/table-engines/special/distributed.md#distributed) |
-| [Dictionary](../../engines/table-engines/special/dictionary.md#dictionary)    |
-| [Merge](../../engines/table-engines/special/merge.md#merge)                   |
-| [File](../../engines/table-engines/special/file.md#file)                      |
-| [Null](../../engines/table-engines/special/null.md#null)                      |
-| [Set](../../engines/table-engines/special/set.md#set)                         |
-| [Join](../../engines/table-engines/special/join.md#join)                      |
-| [URL](../../engines/table-engines/special/url.md#table_engines-url)           |
-| [View](../../engines/table-engines/special/view.md#table_engines-view)        |
-| [Memory](../../engines/table-engines/special/memory.md#memory)                |
-| [Buffer](../../engines/table-engines/special/buffer.md#buffer)                |
-| [KeeperMap](../../engines/table-engines/special/keepermap.md)                 |
+| Special Engines                                               |
+|---------------------------------------------------------------|
+| [Distributed](/engines/table-engines/special/distributed)     |
+| [Dictionary](/engines/table-engines/special/dictionary)       |
+| [Merge](/engines/table-engines/special/merge)                 |
+| [Executable](/engines/table-engines/special/executable)       |
+| [File](/engines/table-engines/special/file)                   |
+| [Null](/engines/table-engines/special/null)                   |
+| [Set](/engines/table-engines/special/set)                     |
+| [Join](/engines/table-engines/special/join)                   |
+| [URL](/engines/table-engines/special/url)                     |
+| [View](/engines/table-engines/special/view)                   |
+| [Memory](/engines/table-engines/special/memory)               |
+| [Buffer](/engines/table-engines/special/buffer)               |
+| [External Data](/engines/table-engines/special/external-data) |
+| [GenerateRandom](/engines/table-engines/special/generate)     |
+| [KeeperMap](/engines/table-engines/special/keeper-map)        |
+| [FileLog](/engines/table-engines/special/filelog)                                                   |
 
-## Virtual Columns {#table_engines-virtual_columns}
+## Virtual columns {#table_engines-virtual_columns}
 
-Virtual column is an integral table engine attribute that is defined in the engine source code.
+A virtual column is an integral table engine attribute that is defined in the engine source code.
 
-You shouldn't specify virtual columns in the `CREATE TABLE` query and you can't see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can't insert data into virtual columns.
+You shouldn't specify virtual columns in the `CREATE TABLE` query, and you can't see them in `SHOW CREATE TABLE` and `DESCRIBE TABLE` query results. Virtual columns are also read-only, so you can't insert data into virtual columns.
 
 To select data from a virtual column, you must specify its name in the `SELECT` query. `SELECT *` does not return values from virtual columns.
 
 If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
+
+- `_table` — Contains the name of the table from which data was read. Type: [String](../../sql-reference/data-types/string.md).
+
+    Regardless of the table engine being used, each table includes a universal virtual column named `_table`.
+
+    When querying a table with the merge table engine, you can set the constant conditions on `_table` in the `WHERE/PREWHERE` clause (for example, `WHERE _table='xyz'`). In this case the read operation is performed only for that tables where the condition on `_table` is satisfied, so the `_table` column acts as an index.
+
+    When using queries formatted like `SELECT ... FROM (... UNION ALL ...)`, we can determine which actual table the returned rows originate from by specifying the `_table` column.
