@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/types.h>
@@ -24,17 +23,7 @@ struct ObjectStorageQueueTableMetadata
     const String columns;
     const String mode;
     const String last_processed_path;
-    const UInt32 after_processing_retries;
-    const String after_processing_move_uri;
-    const String after_processing_move_prefix;
-    const String after_processing_move_access_key_id;
-    const String after_processing_move_secret_access_key;
-    const String after_processing_move_connection_string;
-    const String after_processing_move_container;
-    const String after_processing_tag_key;
-    const String after_processing_tag_value;
     /// Changeable settings.
-    std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
     std::atomic<UInt64> processing_threads_num;
     std::atomic<bool> parallel_inserts;
@@ -54,16 +43,6 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
-        , after_processing_retries(other.after_processing_retries)
-        , after_processing_move_uri(other.after_processing_move_uri)
-        , after_processing_move_prefix(other.after_processing_move_prefix)
-        , after_processing_move_access_key_id(other.after_processing_move_access_key_id)
-        , after_processing_move_secret_access_key(other.after_processing_move_secret_access_key)
-        , after_processing_move_connection_string(other.after_processing_move_connection_string)
-        , after_processing_move_container(other.after_processing_move_container)
-        , after_processing_tag_key(other.after_processing_tag_key)
-        , after_processing_tag_value(other.after_processing_tag_value)
-        , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
         , parallel_inserts(other.parallel_inserts.load())
@@ -75,7 +54,6 @@ struct ObjectStorageQueueTableMetadata
 
     void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other)
     {
-        after_processing = other.after_processing.load();
         loading_retries = other.loading_retries.load();
         processing_threads_num = other.processing_threads_num.load();
         tracked_files_limit = other.tracked_files_limit.load();
@@ -85,9 +63,6 @@ struct ObjectStorageQueueTableMetadata
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
 
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
-
-    static ObjectStorageQueueAction actionFromString(const std::string & action);
-    static std::string actionToString(ObjectStorageQueueAction action);
 
     String toString() const;
 
@@ -106,16 +81,6 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
-            "after_processing_retries",
-            "after_processing_move_uri",
-            "after_processing_move_prefix",
-            "after_processing_move_access_key_id",
-            "after_processing_move_secret_access_key",
-            "after_processing_move_connection_string",
-            "after_processing_move_container",
-            "after_processing_tag_key",
-            "after_processing_tag_value",
-            "after_processing",
             "loading_retries",
             "processing_threads_num",
             "parallel_inserts",

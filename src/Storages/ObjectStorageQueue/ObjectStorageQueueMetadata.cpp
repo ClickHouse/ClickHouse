@@ -340,17 +340,6 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
             }
             new_table_metadata.loading_retries = value;
         }
-        else if (change.name == "after_processing")
-        {
-            const auto value = ObjectStorageQueueTableMetadata::actionFromString(change.value.safeGet<String>());
-            if (table_metadata.after_processing == value)
-            {
-                LOG_TRACE(log, "Setting `after_processing` already equals {}. "
-                        "Will do nothing", value);
-                continue;
-            }
-            new_table_metadata.after_processing = value;
-        }
         else if (change.name == "tracked_files_limit")
         {
             const auto value = change.value.safeGet<UInt64>();

@@ -43,23 +43,51 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+ObjectStorageQueueAction ObjectStorageQueuePostProcessor::actionFromString(const std::string & action)
+{
+    if (action == "keep")
+        return ObjectStorageQueueAction::KEEP;
+    if (action == "delete")
+        return ObjectStorageQueueAction::DELETE;
+    if (action == "move")
+        return ObjectStorageQueueAction::MOVE;
+    if (action == "tag")
+        return ObjectStorageQueueAction::TAG;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
+}
+
+std::string ObjectStorageQueuePostProcessor::actionToString(ObjectStorageQueueAction action)
+{
+    switch (action)
+    {
+        case ObjectStorageQueueAction::DELETE:
+            return "delete";
+        case ObjectStorageQueueAction::KEEP:
+            return "keep";
+        case ObjectStorageQueueAction::MOVE:
+            return "move";
+        case ObjectStorageQueueAction::TAG:
+            return "tag";
+    }
+}
+
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     String engine_name_,
-    const ObjectStorageQueueTableMetadata & table_metadata_)
+    AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , engine_name(engine_name_)
-    , table_metadata(table_metadata_)
+    , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
 void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) const
 {
-    const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
+    const ObjectStorageQueueAction after_processing_action = settings.after_processing;
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
         /// We do need to apply after-processing action before committing requests to keeper.
@@ -101,8 +129,8 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
     else if (after_processing_action == ObjectStorageQueueAction::TAG)
     {
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE
-        const String & tag_key = table_metadata.after_processing_tag_key;
-        const String & tag_value = table_metadata.after_processing_tag_value;
+        const String & tag_key = settings.after_processing_tag_key;
+        const String & tag_value = settings.after_processing_tag_value;
         LOG_INFO(log, "executing TAG action in ObjectStorage Queue commit stage, {} = {}", tag_key, tag_value);
         try
         {
@@ -127,7 +155,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "unsupported after_processing action {}",
-            ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
+            actionToString(after_processing_action));
     }
 
 }
@@ -139,7 +167,7 @@ static constexpr size_t post_process_max_inflight_object_moves = 20;
 void ObjectStorageQueuePostProcessor::doWithRetries(std::function<void()> action) const
 {
     size_t backoff_ms = post_process_initial_backoff_ms;
-    size_t retries = table_metadata.after_processing_retries;
+    size_t retries = settings.after_processing_retries;
 
     for (size_t try_no = 0; try_no <= retries; ++try_no)
     {
@@ -263,10 +291,10 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
 void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & objects) const
 {
 #if USE_AWS_S3
-    const String & move_uri = table_metadata.after_processing_move_uri;
-    const String & move_access_key_id = table_metadata.after_processing_move_access_key_id;
-    const String & move_secret_access_key = table_metadata.after_processing_move_secret_access_key;
-    const String & move_prefix = table_metadata.after_processing_move_prefix;
+    const String & move_uri = settings.after_processing_move_uri;
+    const String & move_access_key_id = settings.after_processing_move_access_key_id;
+    const String & move_secret_access_key = settings.after_processing_move_secret_access_key;
+    const String & move_prefix = settings.after_processing_move_prefix;
 
     if (!move_uri.empty() || !move_access_key_id.empty() || !move_secret_access_key.empty())
     {
@@ -278,18 +306,18 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
         if (auto * s3_storage = dynamic_cast<S3ObjectStorage * >(object_storage.get()); s3_storage != nullptr)
         {
             auto src_client = s3_storage->getS3StorageClient();
-            auto settings = std::make_unique<S3Settings>();
+            auto s3_settings = std::make_unique<S3Settings>();
             auto contextPtr = getContext();
-            settings->loadFromConfig(
+            s3_settings->loadFromConfig(
                 contextPtr->getConfigRef(),
                 /* config_prefix */ "s3",
                 contextPtr->getSettingsRef()
             );
-            settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
-            settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
+            s3_settings->auth_settings[S3AuthSetting::access_key_id] = move_access_key_id;
+            s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
-                *settings.get(),
+                *s3_settings.get(),
                 contextPtr,
                 /* for_disk_s3 */ true
             );
@@ -323,7 +351,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
                             /*dest_s3_client=*/ dst_client,
                             /*dest_bucket=*/ dst_uri.bucket,
                             /*dest_key=*/ object_to.remote_path,
-                            /*settings=*/ settings->request_settings,
+                            /*settings=*/ s3_settings->request_settings,
                             /*read_settings=*/ read_settings_to_use,
                             BlobStorageLogWriter::create(getName()),
                             scheduler,
@@ -370,9 +398,9 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
 void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objects) const
 {
 #if USE_AZURE_BLOB_STORAGE
-    const String & move_connection_string = table_metadata.after_processing_move_connection_string;
-    const String & move_container = table_metadata.after_processing_move_container;
-    const String & move_prefix = table_metadata.after_processing_move_prefix;
+    const String & move_connection_string = settings.after_processing_move_connection_string;
+    const String & move_container = settings.after_processing_move_container;
+    const String & move_prefix = settings.after_processing_move_prefix;
 
     if (!move_connection_string.empty() || !move_container.empty())
     {
@@ -404,7 +432,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         auto properties = blobClient.GetProperties().Value;
                         auto blob_size = properties.BlobSize;
                         auto object_to = applyMovePrefixIfPresent(object_from, move_prefix);
-                        auto settings = azure_storage->getSettings();
+                        auto request_settings = azure_storage->getSettings();
                         auto read_settings = getReadSettings();
                         const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
                         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
@@ -421,7 +449,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                             blob_size,
                             move_container,
                             /* dest_blob */ object_to.remote_path,
-                            settings,
+                            request_settings,
                             read_settings,
                             std::optional<ObjectAttributes>(),
                             scheduler
