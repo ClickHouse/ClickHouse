@@ -105,7 +105,7 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_DATA={
+            WORKFLOW_STATUS_DATA={
                 Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
                     "outputs": {
                         "data": json.dumps(
@@ -757,7 +757,7 @@ class Runner:
                 workflow, job, pr=pr, sha=sha, branch=branch
             )
 
-        if res and (not local_run or pr or sha or branch):
+        if res and (not local_run or ((pr or branch) and sha)):
             res = False
             print(f"=== Pre run script [{job.name}], workflow [{workflow.name}] ===")
             try:

@@ -315,8 +315,8 @@ private:
 };
 
 
-/** dateDiff('unit', t1, t2, [timezone])
-  * age('unit', t1, t2, [timezone])
+/** dateDiff('unit', t1, t2[, timezone])
+  * age('unit', t1, t2[, timezone])
   * t1 and t2 can be Date, Date32, DateTime or DateTime64
   *
   * If timezone is specified, it is applied to both arguments.
@@ -475,7 +475,7 @@ Note that this behavior is different from that of function `toWeek()` in which w
 For an alternative to `dateDiff`, see function [`age`](#age).
     )";
     FunctionDocumentation::Syntax syntax = R"(
-dateDiff(unit, startdate, enddate, [timezone])
+dateDiff(unit, startdate, enddate[, timezone])
     )";
     FunctionDocumentation::Arguments arguments =
     {
@@ -603,7 +603,7 @@ For example, the difference between 2021-12-29 and 2022-01-01 is 3 days for the 
 For an alternative to age, see function [`dateDiff`](#dateDiff).
     )";
     FunctionDocumentation::Syntax syntax = R"(
-age('unit', startdate, enddate, [timezone])
+age('unit', startdate, enddate[, timezone])
     )";
     FunctionDocumentation::Arguments arguments =
     {
