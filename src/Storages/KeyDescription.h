@@ -45,7 +45,7 @@ struct KeyDescription
     /// but added to expression_list_ast and all its derivatives.
     std::optional<String> additional_column;
 
-    /// ID of this specific order by key, make sense for enginers which allow to change sorting key
+    /// ID of this specific order by key, make sense for engines which allow to change sorting key
     /// for example Iceberg.
     std::optional<Int32> sort_order_id;
 
