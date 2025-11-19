@@ -302,6 +302,7 @@ SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 #### `has` {#functions-example-has}
 
 Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
+This function also takes advantage of the [Direct Read](#direct-read) optimization.
 
 Example:
 
@@ -448,7 +449,7 @@ Direct read is controlled by two settings:
 Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
 
 **Supported functions**
-The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
+The direct read optimization supports functions `hasToken`, `hasAllTokens` and `hasAnyTokens` for text columns and `has` for Array(String) and Array(FixedString) columns.
 These functions can also be combined by AND, OR, and NOT operators.
 The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
