@@ -445,6 +445,12 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
             system_context->clearTextIndexPostingsCache();
             break;
+        case Type::DROP_TEXT_INDEX_CACHES:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
+            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexHeaderCache();
+            system_context->clearTextIndexPostingsCache();
+            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -567,7 +573,13 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_DISK_METADATA_CACHE:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+
+            auto metadata = getContext()->getDisk(query.disk)->getMetadataStorage();
+            if (metadata)
+                metadata->dropCache();
+
+            break;
         }
         case Type::DROP_PAGE_CACHE:
         {
@@ -1874,6 +1886,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
         case Type::DROP_TEXT_INDEX_HEADER_CACHE:
         case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::DROP_TEXT_INDEX_CACHES:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:

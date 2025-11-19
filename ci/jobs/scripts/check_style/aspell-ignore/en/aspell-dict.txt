@@ -1401,6 +1401,8 @@ argMax
 argMin
 argmax
 argmin
+argAndMax
+argAndMin
 arrayAUC
 arrayAUCPR
 arrayAll

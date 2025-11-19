@@ -52,7 +52,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 
-#include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
 #include <base/types.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -1270,10 +1269,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_settings)
 {
-    bool current_do_not_execute = disable_constant_folding;
-    disable_constant_folding = false;
-    SCOPE_EXIT({ disable_constant_folding = current_do_not_execute; });
-
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
     bool already_in_resolve_process = false;
@@ -2804,9 +2799,6 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
             if (!resolved_identifier_node)
             {
-                if (disable_constant_folding)
-                    break;
-
                 std::string message_clarification;
                 if (allow_lambda_expression)
                     message_clarification = std::string(" or ") + toStringLowercase(IdentifierLookupContext::FUNCTION);
