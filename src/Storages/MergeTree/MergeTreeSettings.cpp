@@ -1745,6 +1745,44 @@ namespace ErrorCodes
     When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
+    Enables writing attributes into virtual parts and committing blocks in keeper
+    )", BETA) \
+    DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
+    Activates rescheduling of coordinated merges tasks. It can be useful even when
+    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
+    statistics and help with cold start.
+    )", BETA) \
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
+    Enables coordinated merges strategy
+    )", BETA) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
+    Number of merge entries that coordinator should prepare and distribute across workers
+    )", BETA) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    How often merge coordinator should sync with zookeeper to take fresh metadata
+    )", BETA) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
+    Number of merges that coordinator can request from MergerMutator at once
+    )", BETA) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    Time between runs of merge coordinator election thread
+    )", BETA) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    Minimum time between runs of merge coordinator thread
+    )", BETA) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    Maximum time between runs of merge coordinator thread
+    )", BETA) \
+    DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
+    Time changing factor for delay of coordinator thread
+    )", BETA) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
+    )", BETA) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    Time between runs of merge worker thread
+    )", BETA) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -1845,44 +1883,6 @@ namespace ErrorCodes
     )", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
-    Enables writing attributes into virtual parts and committing blocks in keeper
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
-    Activates rescheduling of coordinated merges tasks. It can be useful even when
-    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
-    statistics and help with cold start.
-    )", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
-    Enables coordinated merges strategy
-    )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
-    Number of merge entries that coordinator should prepare and distribute across workers
-    )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
-    How often merge coordinator should sync with zookeeper to take fresh metadata
-    )", EXPERIMENTAL) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
-    Number of merges that coordinator can request from MergerMutator at once
-    )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
-    Time between runs of merge coordinator election thread
-    )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
-    Minimum time between runs of merge coordinator thread
-    )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
-    Maximum time between runs of merge coordinator thread
-    )", EXPERIMENTAL) \
-    DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
-    Time changing factor for delay of coordinator thread
-    )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
-    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
-    )", EXPERIMENTAL) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
-    Time between runs of merge worker thread
     )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch

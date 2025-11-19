@@ -2212,6 +2212,33 @@ struct ConvertImpl
                 {
                     vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
                 }
+                else if constexpr (std::is_same_v<FromDataType, DataTypeTime64> && std::is_same_v<ToDataType, DataTypeTime64>)
+                {
+                    // Handle Time64 to Time64 conversions with different scales
+                    if (col_from->getScale() != col_to->getScale())
+                    {
+                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                        {
+                            ToFieldType result;
+                            bool convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
+                            if (convert_result)
+                                vec_to[i] = result;
+                            else
+                            {
+                                vec_to[i] = static_cast<ToFieldType>(0);
+                                (*vec_null_map_to)[i] = true;
+                            }
+                        }
+                        else
+                        {
+                            vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
+                        }
+                    }
+                    else
+                    {
+                        vec_to[i] = vec_from[i];
+                    }
+                }
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)

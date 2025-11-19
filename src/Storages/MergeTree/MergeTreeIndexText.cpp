@@ -796,7 +796,7 @@ size_t MergeTreeIndexGranuleTextWritable::memoryUsageBytes() const
     return sizeof(*this)
         + bloom_filter.getFilterSizeBytes()
         /// can ignore the sizeof(PostingListBuilder) here since it is just references to tokens_map
-        + tokens_and_postings.capacity() * sizeof(std::pair<StringRef, PostingListBuilder *>)
+        + tokens_and_postings.capacity() * sizeof(SortedTokensAndPostings::value_type)
         + tokens_map.getBufferSizeInBytes()
         + posting_lists_size
         + arena->allocatedBytes();
@@ -995,7 +995,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
     return std::make_shared<MergeTreeIndexGranuleText>(params);
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator(const MergeTreeWriterSettings & /*settings*/) const
+MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, token_extractor.get(), preprocessor);
 }
@@ -1299,20 +1299,20 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
         if (min_length > max_length)
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Incorrect params of {} tokenizer: minimal length ({}) cannot be larger than maximal length ({})",
+                "Incorrect params of {} tokenizer: minimal length {} cannot be larger than maximal length {}",
                 tokenizer, min_length, max_length);
         }
         if (min_cutoff_length.has_value() && min_cutoff_length.value() < min_length)
         {
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Incorrect params of {} tokenizer: minimal cutoff length ({}) cannot be smaller than minimal length ({})",
+                "Incorrect params of {} tokenizer: minimal cutoff length {} cannot be smaller than minimal length {}",
                 tokenizer, min_length, min_cutoff_length.value());
         }
         if (min_cutoff_length.has_value() && min_cutoff_length.value() > max_length)
         {
             throw Exception(
                 ErrorCodes::INCORRECT_QUERY,
-                "Incorrect params of {} tokenizer: minimal cutoff length ({}) cannot be larger than maximal length ({})",
+                "Incorrect params of {} tokenizer: minimal cutoff length {} cannot be larger than maximal length {}",
                 tokenizer, min_cutoff_length.value(), max_length);
         }
     }

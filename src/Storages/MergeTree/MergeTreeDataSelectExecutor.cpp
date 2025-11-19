@@ -1099,6 +1099,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1107,7 +1108,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || !settings[Setting::allow_experimental_analyzer]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
-            || select_query_info.isFinal())
+            || select_query_info.isFinal()
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
