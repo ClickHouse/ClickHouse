@@ -1,9 +1,10 @@
 #include <Storages/MergeTree/MergeTreeIndexHypothesisMergedCondition.h>
 
+#include <Core/Settings.h>
 #include <Storages/MergeTree/MergeTreeIndexHypothesis.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ComparisonGraph.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -12,6 +13,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
+#include <Analyzer/Passes/CNF.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -20,6 +22,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 class MergeTreeIndexhypothesisMergedCondition::IIndexImpl
@@ -49,20 +56,20 @@ auto convertToCNF(QueryTreeNodePtr expression, const ContextPtr & context, const
     return Analyzer::CNF::toCNF(expression, context);
 }
 
-Analyzer::CNF::AtomicFormula cloneAtomAndPushNot(const Analyzer::CNF::AtomicFormula & atom, const ContextPtr & context)
+Analyzer::CNFAtomicFormula cloneAtomAndPushNot(const Analyzer::CNFAtomicFormula & atom, const ContextPtr & context)
 {
-    Analyzer::CNF::AtomicFormula new_atom{atom.negative, atom.node_with_hash.node->clone()};
+    Analyzer::CNFAtomicFormula new_atom{atom.negative, atom.node_with_hash.node->clone()};
     return Analyzer::CNF::pushNotIntoFunction(new_atom, context);
 }
 
-CNFQuery::AtomicFormula cloneAtomAndPushNot(const CNFQuery::AtomicFormula & atom, const ContextPtr &)
+CNFQueryAtomicFormula cloneAtomAndPushNot(const CNFQueryAtomicFormula & atom, const ContextPtr &)
 {
-    CNFQuery::AtomicFormula new_atom {atom.negative, atom.ast->clone()};
+    CNFQueryAtomicFormula new_atom {atom.negative, atom.ast->clone()};
     pushNotIn(new_atom);
     return new_atom;
 }
 
-const std::string * functionName(const CNFQuery::AtomicFormula & atom)
+const std::string * functionName(const CNFQueryAtomicFormula & atom)
 {
     const auto * func = atom.ast->as<ASTFunction>();
 
@@ -72,7 +79,7 @@ const std::string * functionName(const CNFQuery::AtomicFormula & atom)
     return nullptr;
 }
 
-const std::string * functionName(const Analyzer::CNF::AtomicFormula & atom)
+const std::string * functionName(const Analyzer::CNFAtomicFormula & atom)
 {
     const auto * function = atom.node_with_hash.node->as<FunctionNode>();
 
@@ -82,22 +89,22 @@ const std::string * functionName(const Analyzer::CNF::AtomicFormula & atom)
     return nullptr;
 }
 
-bool isFunction(const CNFQuery::AtomicFormula & atom)
+bool isFunction(const CNFQueryAtomicFormula & atom)
 {
     return atom.ast->as<ASTFunction>() != nullptr;
 }
 
-bool isFunction(const Analyzer::CNF::AtomicFormula & atom)
+bool isFunction(const Analyzer::CNFAtomicFormula & atom)
 {
     return atom.node_with_hash.node->as<FunctionNode>() != nullptr;
 }
 
-const auto & functionArguments(const CNFQuery::AtomicFormula & atom)
+const auto & functionArguments(const CNFQueryAtomicFormula & atom)
 {
     return atom.ast->as<ASTFunction &>().arguments->children;
 }
 
-const auto & functionArguments(const Analyzer::CNF::AtomicFormula & atom)
+const auto & functionArguments(const Analyzer::CNFAtomicFormula & atom)
 {
     return atom.node_with_hash.node->as<FunctionNode &>().getArguments().getNodes();
 }
@@ -128,6 +135,43 @@ QueryTreeNodePtr buildFilterNode(QueryTreeNodePtr query_tree, ContextPtr context
     return filter_node;
 }
 
+ASTPtr buildFilterNode(const ASTPtr & select_query, ASTs additional_filters)
+{
+    auto & select_query_typed = select_query->as<ASTSelectQuery &>();
+
+    ASTs filters;
+    if (select_query_typed.where())
+        filters.push_back(select_query_typed.where());
+
+    if (select_query_typed.prewhere())
+        filters.push_back(select_query_typed.prewhere());
+
+    filters.insert(filters.end(), additional_filters.begin(), additional_filters.end());
+
+    if (filters.empty())
+        return nullptr;
+
+    ASTPtr filter_node;
+
+    if (filters.size() == 1)
+    {
+        filter_node = filters.front();
+    }
+    else
+    {
+        auto function = std::make_shared<ASTFunction>();
+
+        function->name = "and";
+        function->arguments = std::make_shared<ASTExpressionList>();
+        function->children.push_back(function->arguments);
+        function->arguments->children = std::move(filters);
+
+        filter_node = std::move(function);
+    }
+
+    return filter_node;
+}
+
 template <typename Node>
 class IndexImpl : public MergeTreeIndexhypothesisMergedCondition::IIndexImpl
 {
@@ -139,7 +183,7 @@ public:
         auto filter_node = [&]
         {
             if constexpr (is_ast)
-                return buildFilterNode(query_info.query);
+                return buildFilterNode(query_info.query, query_info.filter_asts);
             else
                 return buildFilterNode(query_info.query_tree, context);
         }();
@@ -385,7 +429,7 @@ MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition
     const SelectQueryInfo & query_info, const ConstraintsDescription & constraints, size_t granularity_, ContextPtr context)
     : IMergeTreeIndexMergedCondition(granularity_)
 {
-    if (context->getSettingsRef().allow_experimental_analyzer)
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
         impl = std::make_unique<IndexImpl<QueryTreeNodePtr>>(query_info, constraints, std::move(context));
     else
         impl = std::make_unique<IndexImpl<ASTPtr>>(query_info, constraints, std::move(context));

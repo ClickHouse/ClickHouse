@@ -1882,7 +1882,6 @@ static void buildIndexes(
                 = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
             if (inserted)
             {
-                auto [it, inserted] = merged.emplace(Key{index_helper->index.type, index_helper->getGranularity()}, skip_indexes.merged_indices.size());
                 if (inserted)
                 {
                     skip_indexes.merged_indices.emplace_back();

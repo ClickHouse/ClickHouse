@@ -263,7 +263,7 @@ const std::vector<std::vector<Analyzer::CNFAtomicFormula>> & ConstraintsDescript
     return cnf_constraints;
 }
 
-const std::vector<Analyzer::CNF::AtomicFormula> & ConstraintsDescription::QueryTreeData::getAtomicConstraintData() const
+const std::vector<Analyzer::CNFAtomicFormula> & ConstraintsDescription::QueryTreeData::getAtomicConstraintData() const
 {
     return atomic_constraints_data;
 }
