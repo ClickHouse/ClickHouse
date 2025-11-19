@@ -2612,7 +2612,7 @@ def test_archive(started_cluster):
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
     if "25.3" not in node_old.query("SELECT version()"):
-        node_old.restart_with_original_version()
+        node_old.restart_with_original_version(clear_data_dir=True)
 
     assert (
         "false"
@@ -2922,7 +2922,7 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
     query_id = f"{table_name}_query_6"
     node_old = started_cluster.instances["dummy_old"]
     if "25.3" not in node_old.query("SELECT version()"):
-        node_old.restart_with_original_version()
+        node_old.restart_with_original_version(clear_data_dir=True)
 
     node_old.query(
         f"""
