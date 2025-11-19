@@ -35,7 +35,7 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
 
     # HACK This is terribly ugly hack, because of the issue:https://github.com/apache/iceberg/issues/13634
-    # Iceberg sort order looks relativy new feature. There are no writer implementations which support it properly.
+    # Iceberg sort order looks relatively new feature. There are no writer implementations which support it properly.
     # For example pyiceberg doesn't support it at all, you can specify sort order, but data will be written unsorted.
     # Spark implementation supports it, i.e. write sorted data, but doesn't write proper sort_order_id in manifest files (always write 0).
     # Here we manually modify metadata file to set actual sort order to id 0.
