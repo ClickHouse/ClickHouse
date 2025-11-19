@@ -85,7 +85,8 @@ NamesAndTypesList extractHivePartitionColumnsFromPath(
         }
         else
         {
-            if (const auto type = tryInferDataTypeByEscapingRule(value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
+            if (const auto type = tryInferDataTypeByEscapingRule(
+                    value, format_settings ? *format_settings : getFormatSettings(context), FormatSettings::EscapingRule::Raw))
             {
                 if (type->canBeInsideLowCardinality() && isStringOrFixedString(type))
                 {

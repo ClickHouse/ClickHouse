@@ -80,7 +80,7 @@ NameSet getVirtualNamesForFileLikeStorage();
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
-    const std::optional<FormatSettings> & format_settings_ = std::nullopt,
+    const std::optional<FormatSettings> & format_settings = std::nullopt,
     const std::string & path = "");
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(

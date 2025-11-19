@@ -51,6 +51,11 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStora
     std::optional<FormatSettings> format_settings,
     ContextPtr context);
 
+NamesAndTypesList extractHivePartitionColumnsFromPath(
+    const ColumnsDescription & storage_columns,
+    const std::string & sample_path,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context);
 }
 
 }

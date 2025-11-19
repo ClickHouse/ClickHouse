@@ -167,7 +167,7 @@ NameSet getVirtualNamesForFileLikeStorage()
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
-    const std::optional<FormatSettings> & format_settings_,
+    const std::optional<FormatSettings> & format_settings,
     const std::string & path)
 {
     VirtualColumnsDescription desc;
@@ -187,20 +187,9 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
 
     if (!path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
     {
-        const auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-        const auto hive_partitions_keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-
-        for (const auto & [key, value] : hive_partitions_keys_and_values)
-        {
-            auto type = tryInferDataTypeByEscapingRule(std::string(value), format_settings, FormatSettings::EscapingRule::Raw, nullptr);
-            if (!type)
-                type = std::make_shared<DataTypeString>();
-
-            if (type->canBeInsideLowCardinality())
-                add_virtual({std::string(key), std::make_shared<DataTypeLowCardinality>(type)});
-            else
-                add_virtual({std::string(key), type});
-        }
+        auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
+        for (const auto & column : hive_columns)
+            add_virtual(column);
     }
 
     return desc;
