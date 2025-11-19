@@ -33,7 +33,7 @@ public:
     static ExpressionActions parseExpression(const IndexDescription & index, const String & expression);
 private:
     ExpressionActions expression;
-    DataTypePtr column_type;
+    DataTypePtr processing_type;
     String column_name;
 };
 
