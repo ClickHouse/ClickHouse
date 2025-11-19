@@ -9,7 +9,7 @@ on:
     branches: ['master']
 
 jobs:
-  build:
+  build_praktika:
     runs-on: [self-hosted, test]
 
     steps:
