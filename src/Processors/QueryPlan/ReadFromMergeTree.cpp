@@ -316,7 +316,7 @@ void ReadFromMergeTree::AnalysisResult::checkLimits(const Settings & settings, c
 }
 
 ReadFromMergeTree::ReadFromMergeTree(
-    RangesInDataParts parts_,
+    RangesInDataPartsPtr parts_,
     MergeTreeData::MutationsSnapshotPtr mutations_,
     Names all_column_names_,
     const MergeTreeData & data_,
@@ -402,7 +402,8 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
 {
     const bool enable_parallel_reading = true;
     return std::make_unique<ReadFromMergeTree>(
-        getParts(),
+        /// Optimized version of getParts() to avoid extra copy
+        analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
         all_column_names,
         data,
@@ -1997,7 +1998,7 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
-    RangesInDataParts parts,
+    const RangesInDataParts & parts,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const StorageMetadataPtr & metadata_snapshot,
@@ -2013,6 +2014,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool is_parallel_reading_from_replicas_)
 {
     AnalysisResult result;
+    RangesInDataParts res_parts;
     const auto & settings = context_->getSettingsRef();
 
     size_t total_parts = parts.size();
@@ -2073,7 +2075,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool add_index_stat_row_for_pk_expand = false;
 
     {
-        MergeTreeDataSelectExecutor::filterPartsByPartition(
+        res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
             parts,
             indexes->partition_pruner,
             indexes->minmax_idx_condition,
@@ -2088,7 +2090,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         result.sampling = MergeTreeDataSelectExecutor::getSampling(
             query_info_,
             metadata_snapshot->getColumns().getAllPhysical(),
-            parts,
+            res_parts,
             indexes->key_condition,
             data,
             metadata_snapshot,
@@ -2098,15 +2100,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (result.sampling.read_nothing)
             return std::make_shared<AnalysisResult>(std::move(result));
 
-        for (const auto & part : parts)
+        for (const auto & part : res_parts)
             total_marks_pk += part.data_part->index_granularity->getMarksCountWithoutFinal();
-        parts_before_pk = parts.size();
+        parts_before_pk = res_parts.size();
 
-        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(parts, query_info_, vector_search_parameters, context_, log);
+        MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(res_parts, query_info_, vector_search_parameters, mutations_snapshot, context_, log);
 
         auto reader_settings = MergeTreeReaderSettings::create(context_, *data.getSettings(), query_info_);
         result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(
-            parts,
+            res_parts,
             metadata_snapshot,
             mutations_snapshot,
             context_,
@@ -2144,10 +2146,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             RangesInDataParts remaining;
 
-            auto it_parts = parts.begin();
+            auto it_parts = res_parts.begin();
             auto it_result = result.parts_with_ranges.begin();
 
-            while (it_parts != parts.end())
+            while (it_parts != res_parts.end())
             {
                 if (it_result != result.parts_with_ranges.end() && it_parts->part_index_in_query == it_result->part_index_in_query)
                 {
@@ -3373,7 +3375,6 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
         storage_snapshot->storage,
         storage_snapshot->metadata,
         std::move(new_virtual_columns),
-        storage_snapshot->object_columns,
         std::move(storage_snapshot->data));
 
     if (output_header != nullptr)

@@ -92,6 +92,7 @@ class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMe
 {
 private:
     std::filesystem::path path;
+    StoredObject object;
     InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 
@@ -99,7 +100,7 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
-        const std::string & path, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_);
+        const std::string & path, const StoredObject & object_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_);
 
     void execute() override;
     void undo() override;
@@ -110,6 +111,7 @@ class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : p
 private:
     std::filesystem::path path;
     std::filesystem::path remote_path;
+    std::optional<FileRemoteInfo> file_remote_info;
     InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 
@@ -162,6 +164,8 @@ private:
     std::filesystem::path remote_path_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
+    std::optional<FileRemoteInfo> file_from_remote_info;
+    std::optional<FileRemoteInfo> file_to_remote_info;
     InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
 

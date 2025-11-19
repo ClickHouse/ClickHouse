@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/HashTable/HashTable.h>
+#include <array>
 
 
 /** Two-level hash table.
@@ -87,6 +88,11 @@ public:
     using ConstLookupResult = typename Impl::ConstLookupResult;
 
     Impl impls[NUM_BUCKETS];
+
+    /// Cached prefix sums of bucket capacities in cells to speed up offsetInternal
+    /// bucket_cells_prefix[b] = sum_{i=0..b-1} impls[i].getBufferSizeInCells()
+    mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
+    mutable std::once_flag bucket_prefix_once;
 
 
     TwoLevelHashTable() = default;
@@ -229,6 +235,19 @@ public:
         return res;
     }
 
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const Cell & cell)
+    {
+        auto hash_value = cell.getHash(*this);
+
+        std::pair<LookupResult, bool> res;
+        emplace(cell.getKey(), res.first, res.second, hash_value);
+
+        if (res.second)
+            res.first->setMapped(cell.getValue());
+
+        return res;
+    }
+
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
     {
@@ -359,9 +378,18 @@ public:
         const size_t buck = getBucketFromHash(ptr->getHash(*this));
         if (ptr->isZero(impls[buck]))
             return 0;
-        size_t res = 0;
-        for (UInt32 i = 0; i < buck; ++i)
-            res += impls[i].getBufferSizeInCells();
-        return res + (ptr - impls[buck].buf) + 1;
+
+        // Lazily compute prefix sums across buckets once; subsequent calls are O(1).
+        std::call_once(bucket_prefix_once, [this]()
+        {
+            size_t run = 0;
+            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
+            {
+                bucket_cells_prefix[i] = run;
+                run += impls[i].getBufferSizeInCells();
+            }
+        });
+
+        return bucket_cells_prefix[buck] + (ptr - impls[buck].buf) + 1;
     }
 };

@@ -1,4 +1,5 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Common/setThreadName.h>
 #include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
@@ -118,7 +119,7 @@ public:
             CurrentMetrics::ObjectStorageS3Threads,
             CurrentMetrics::ObjectStorageS3ThreadsActive,
             CurrentMetrics::ObjectStorageS3ThreadsScheduled,
-            "ListObjectS3")
+            ThreadName::S3_LIST_POOL)
         , client(client_)
         , request(std::make_unique<S3::ListObjectsV2Request>())
         , with_tags(with_tags_)
@@ -242,7 +243,7 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 
     ThreadPoolCallbackRunnerUnsafe<void> scheduler;
     if (write_settings.s3_allow_parallel_part_upload)
-        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "VFSWrite");
+        scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     if (blob_storage_log)
@@ -493,7 +494,7 @@ void S3ObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
         auto current_client = dest_s3->client.get();
         auto settings_ptr = s3_settings.get();
         auto size = S3::getObjectSize(*client.get(), uri.bucket, object_from.remote_path, {});
-        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+        auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
         const auto read_settings_to_use = patchSettings(read_settings);
 
         try
@@ -539,7 +540,7 @@ void S3ObjectStorage::copyObject( // NOLINT
     auto current_client = client.get();
     auto settings_ptr = s3_settings.get();
     auto size = S3::getObjectSize(*current_client, uri.bucket, object_from.remote_path, {});
-    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), "S3ObjStor_copy");
+    auto scheduler = threadPoolCallbackRunnerUnsafe<void>(getThreadPoolWriter(), ThreadName::S3_COPY_POOL);
     const auto read_settings_to_use = patchSettings(read_settings);
 
     copyS3File(

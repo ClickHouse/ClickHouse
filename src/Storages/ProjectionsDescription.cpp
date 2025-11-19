@@ -348,7 +348,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
     ASTPtr partition_columns,
     const Names & minmax_columns,
-    const ASTs & primary_key_asts,
+    const KeyDescription & primary_key,
     ContextPtr query_context)
 {
     ProjectionDescription result;
@@ -360,10 +360,20 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
         select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
     }
+
+    auto primary_key_asts = primary_key.expression_list_ast->children;
     if (!primary_key_asts.empty())
     {
-        select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
-        select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
+        if (!primary_key.reverse_flags.empty() && primary_key.reverse_flags[0])
+        {
+            select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
+            select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
+        }
+        else
+        {
+            select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
+            select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
+        }
     }
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
