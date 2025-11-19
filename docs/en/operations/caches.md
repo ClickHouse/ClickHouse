@@ -22,10 +22,11 @@ The main cache types are:
 There are also a host of additional cache types:
 
 - DNS cache.
-- [Regexp](../interfaces/formats.md#data-format-regexp) cache.
+- [Regexp](/interfaces/formats/Regexp) cache.
 - Compiled expressions cache.
 - [Vector similarity index](../engines/table-engines/mergetree-family/annindexes.md) cache.
-- [Avro format](../interfaces/formats.md#data-format-avro) schemas cache.
+- [Text index](../engines/table-engines/mergetree-family/invertedindexes.md#tuning-the-text-index) cache.
+- [Avro format](/interfaces/formats/Avro) schemas cache.
 - [Dictionaries](../sql-reference/dictionaries/index.md) data cache.
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.

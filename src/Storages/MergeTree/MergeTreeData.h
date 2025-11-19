@@ -502,7 +502,6 @@ public:
 
     bool supportsTTL() const override { return true; }
 
-    bool supportsDynamicSubcolumnsDeprecated() const override { return true; }
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSparseSerialization() const override { return true; }
 
@@ -582,6 +581,9 @@ public:
     /// and mutations required to be applied at the moment of the start of query.
     struct SnapshotData : public StorageSnapshot::Data
     {
+        /// Hold a reference to the storage since the snapshot cache in query context
+        /// may outlive the storage and delay destruction of data parts.
+        ConstStoragePtr storage;
         RangesInDataParts parts;
         MutationsSnapshotPtr mutations_snapshot;
     };
@@ -1013,10 +1015,6 @@ public:
         return column_sizes;
     }
 
-    /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getConcreteObjectColumns(
-        const DataPartsVector & parts, const ColumnsDescription & storage_columns);
-
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         /// Always keep locks order parts_lock -> sizes_lock
@@ -1072,7 +1070,7 @@ public:
         return storage_settings.get();
     }
 
-    StorageMetadataPtr getInMemoryMetadataPtr() const override;
+    StorageMetadataPtr getInMemoryMetadataPtr(bool bypass_metadata_cache = false) const override; /// NOLINT
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1424,11 +1422,6 @@ protected:
     /// It is like truncate, drop/detach partition
     mutable std::mutex operation_with_data_parts_mutex;
 
-    /// Current description of columns of data type Object.
-    /// It changes only when set of parts is changed and is
-    /// protected by @data_parts_mutex.
-    ColumnsDescription object_columns;
-
     /// Serialization info accumulated among all active parts.
     /// It changes only when set of parts is changed and is
     /// protected by @data_parts_mutex.
@@ -1476,10 +1469,6 @@ protected:
     {
         return data_parts_by_info.equal_range(PartitionID(partition_id), LessDataPart());
     }
-
-    /// Creates description of columns of data type Object from the range of data parts.
-    static ColumnsDescription getConcreteObjectColumns(
-        boost::iterator_range<DataPartIteratorByStateAndInfo> range, const ColumnsDescription & storage_columns);
 
     std::optional<UInt64> totalRowsByPartitionPredicateImpl(
         const ActionsDAG & filter_actions_dag, ContextPtr context, const RangesInDataParts & parts) const;
@@ -1649,9 +1638,6 @@ protected:
     /// Attaches restored parts to the storage.
     virtual void attachRestoredParts(MutableDataPartsVector && parts) = 0;
 
-    void resetObjectColumnsFromActiveParts(const DataPartsLock & lock);
-    void updateObjectColumns(const DataPartPtr & part, const DataPartsLock & lock);
-
     void resetSerializationHints(const DataPartsLock & lock);
 
     template <typename AddedParts, typename RemovedParts>
@@ -1767,6 +1753,13 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_parts_task;
 
+    BackgroundSchedulePoolTaskHolder refresh_stats_task;
+
+    mutable std::mutex stats_mutex;
+    ConditionSelectivityEstimatorPtr cached_estimator;
+
+    void refreshStatistics(UInt64 interval_seconds);
+
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);
 
@@ -1786,14 +1779,13 @@ private:
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, DataPartsLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, DataPartsLock & lock) const;
-    void checkPartDynamicColumns(MutableDataPartPtr & part, DataPartsLock & lock) const;
 
     /// Preparing itself to be committed in memory: fill some fields inside part, add it to data_parts_indexes
     /// in precommitted state and to transaction
     ///
     /// @param need_rename - rename the part
     /// @param rename_in_transaction - if set, the rename will be done as part of transaction (without holding DataPartsLock), otherwise inplace (when it does not make sense).
-    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, bool need_rename, bool rename_in_transaction = false);
+    void preparePartForCommit(MutableDataPartPtr & part, Transaction & out_transaction, DataPartsLock & lock, bool need_rename, bool rename_in_transaction = false);
 
     /// Low-level method for preparing parts for commit (in-memory).
     /// FIXME Merge MergeTreeTransaction and Transaction
@@ -1916,6 +1908,8 @@ private:
     ///   on disks that are not a part of storage policy of the table).
     /// Sometimes it is better to bypass a disk e.g. to avoid interactions with a remote storage
     bool isDiskEligibleForOrphanedPartsSearch(DiskPtr disk) const;
+
+    ConditionSelectivityEstimatorPtr cached_selectivity_estimator;
 };
 
 /// RAII struct to record big parts that are submerging or emerging.

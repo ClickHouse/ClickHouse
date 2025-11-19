@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsUInt64 temporary_files_buffer_size;
     extern const SettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const SettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
@@ -61,6 +62,7 @@ namespace Setting
 
     extern const SettingsBool allow_dynamic_type_in_join_keys;
     extern const SettingsBool use_join_disjunctions_push_down;
+    extern const SettingsBool enable_lazy_columns_replication;
 }
 
 namespace QueryPlanSerializationSetting
@@ -90,6 +92,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_rows;
     extern const QueryPlanSerializationSettingsUInt64 max_joined_block_size_bytes;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsUInt64 temporary_files_buffer_size;
     extern const QueryPlanSerializationSettingsUInt64 join_output_by_rowlist_perkey_rows_threshold;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_minimum_perkey_rows;
     extern const QueryPlanSerializationSettingsUInt64 join_to_sort_maximum_table_rows;
@@ -101,6 +104,7 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsBool allow_dynamic_type_in_join_keys;
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
+    extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings)
@@ -139,6 +143,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
     parallel_hash_join_threshold = query_settings[Setting::parallel_hash_join_threshold];
 
     temporary_files_codec = query_settings[Setting::temporary_files_codec];
+    temporary_files_buffer_size = query_settings[Setting::temporary_files_buffer_size];
     join_output_by_rowlist_perkey_rows_threshold = query_settings[Setting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = query_settings[Setting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = query_settings[Setting::join_to_sort_maximum_table_rows];
@@ -146,6 +151,7 @@ JoinSettings::JoinSettings(const Settings & query_settings)
 
     allow_dynamic_type_in_join_keys = query_settings[Setting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
+    enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -179,6 +185,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     max_joined_block_size_rows = settings[QueryPlanSerializationSetting::max_joined_block_size_rows];
     max_joined_block_size_bytes = settings[QueryPlanSerializationSetting::max_joined_block_size_bytes];
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
+    temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
     join_output_by_rowlist_perkey_rows_threshold = settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold];
     join_to_sort_minimum_perkey_rows = settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows];
     join_to_sort_maximum_table_rows = settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows];
@@ -190,6 +197,8 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 
     allow_dynamic_type_in_join_keys = settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys];
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
+    enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
+
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -223,6 +232,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::max_joined_block_size_rows] = max_joined_block_size_rows;
     settings[QueryPlanSerializationSetting::max_joined_block_size_bytes] = max_joined_block_size_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
     settings[QueryPlanSerializationSetting::join_output_by_rowlist_perkey_rows_threshold] = join_output_by_rowlist_perkey_rows_threshold;
     settings[QueryPlanSerializationSetting::join_to_sort_minimum_perkey_rows] = join_to_sort_minimum_perkey_rows;
     settings[QueryPlanSerializationSetting::join_to_sort_maximum_table_rows] = join_to_sort_maximum_table_rows;
@@ -234,6 +244,8 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 
     settings[QueryPlanSerializationSetting::allow_dynamic_type_in_join_keys] = allow_dynamic_type_in_join_keys;
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
+    settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
+
 }
 
 String toString(const JoinActionRef & node)

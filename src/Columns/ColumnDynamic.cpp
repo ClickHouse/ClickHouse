@@ -307,12 +307,12 @@ void ColumnDynamic::get(size_t n, Field & res) const
     type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
-std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) const
+DataTypePtr ColumnDynamic::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & variant_col = getVariantColumn();
     /// Check if value is not in shared variant.
     if (variant_col.globalDiscriminatorAt(n) != getSharedVariantDiscriminator())
-        return variant_col.getValueNameAndType(n);
+        return variant_col.getValueNameAndTypeImpl(name_buf, n, options);
 
     /// We should deserialize value from shared variant.
     const auto & shared_variant = getSharedVariant();
@@ -321,7 +321,7 @@ std::pair<String, DataTypePtr> ColumnDynamic::getValueNameAndType(size_t n) cons
     auto type = decodeDataType(buf);
     const auto col = type->createColumn();
     type->getDefaultSerialization()->deserializeBinary(*col, buf, getFormatSettings());
-    return col->getValueNameAndType(0);
+    return col->getValueNameAndTypeImpl(name_buf, 0, options);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -1256,7 +1256,7 @@ bool ColumnDynamic::dynamicStructureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFromSourceColumns should be called only on empty Dynamic column");
@@ -1329,8 +1329,8 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     DataTypePtr result_variant_type;
     Statistics new_statistics(Statistics::Source::MERGE);
-    /// Reset max_dynamic_types to global_max_dynamic_types.
-    max_dynamic_types = global_max_dynamic_types;
+    /// Reset max_dynamic_types to global_max_dynamic_types or max_dynamic_subcolumns if set.
+    max_dynamic_types = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_types) : global_max_dynamic_types;
     /// Check if the number of all dynamic types exceeds the limit.
     if (!canAddNewVariants(0, all_variants.size()))
     {
@@ -1402,7 +1402,7 @@ void ColumnDynamic::takeDynamicStructureFromSourceColumns(const Columns & source
 
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnDynamic::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

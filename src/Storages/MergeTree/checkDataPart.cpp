@@ -252,7 +252,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
                 if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
                     return;
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
                 if (!stream_name)
                     throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,

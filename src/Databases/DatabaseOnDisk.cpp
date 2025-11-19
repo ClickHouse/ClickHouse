@@ -927,9 +927,9 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     default_db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }
 
-void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command)
+void DatabaseOnDisk::alterDatabaseComment(const AlterCommand & command, ContextPtr query_context)
 {
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
+    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command, query_context);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
