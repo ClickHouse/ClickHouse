@@ -435,8 +435,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
         /// because we have to match the specific key to the value and therefore execute a real filter.
-        if (read_mode == TextIndexDirectReadMode::Exact)
-            read_mode = getHintOrNoneMode();
+        read_mode = getHintOrNoneMode();
     }
 
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
@@ -616,6 +615,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
+    /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
+    /// It can be an arbitrary function that returns 0 for the default value of the map value type.
+    /// It is true because `arrayElement` return default value if key doesn't exist in the map,
+    /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
+
     const auto * dag_node = function_node.getDAGNode();
     if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
         return false;
@@ -637,6 +641,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     std::vector<const ActionsDAG::Node *> stack;
     stack.push_back(outputs.front());
 
+    /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -671,11 +676,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
+    /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
     ExpressionActions actions(std::move(subdag));
     actions.execute(block);
     const auto & result_column = block.getByName(output_column_name).column;
 
+    /// If the function returns true for the empty map, we cannot use index.
     if (result_column->getBool(0))
         return false;
 
@@ -685,12 +692,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     return true;
 }
 
-/**
-  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
-  * The expected data is either form of Array(String) or Array(FixedString).
-  */
 bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
 {
+    /// Here we check whether we can use index defined for `mapValues(m)`
+    /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
+    /// If index can be used, than we can analyze the index as for scalar string column
+    /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
+
     if (!index_column_node.isFunction())
         return false;
 

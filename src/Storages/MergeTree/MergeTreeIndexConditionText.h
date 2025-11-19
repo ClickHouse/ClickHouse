@@ -24,8 +24,11 @@ enum class TextSearchMode : uint8_t
 
 enum class TextIndexDirectReadMode : uint8_t
 {
+    /// Do not use direct read.
     None,
+    /// Use direct read and remove the original condition.
     Exact,
+    /// Use direct read and add a hint to the original condition.
     Hint,
 };
 

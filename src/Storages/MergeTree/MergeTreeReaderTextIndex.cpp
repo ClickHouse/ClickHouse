@@ -272,10 +272,19 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
     if (query.tokens.empty())
         return 0;
 
+    /// Here we assume that tokens are independent and their distribution is uniform.
     switch (query.search_mode)
     {
         case TextSearchMode::All:
         {
+            /// Estimate the cardinality of the intersection of the tokens.
+            /// Assume each set Ai has known size |Ai|, and all sets are chosen
+            /// independently and uniformly at random from the universe E of size N.
+            /// Then, for any particular element, the probability that it appears in set Ai is pi = |Ai|/N.
+            /// The probability that a particular element is in all n sets is pn = p1 * p2 * ... * pn.
+            /// The the expected cardinality of the intersection is:
+            /// N * pn = N * (|A1| * |A2| * ... * |An| / N) = |A1| * |A2| * ... * |An| / N^(n-1).
+
             double cardinality = 1.0;
 
             for (const auto & token : query.tokens)
@@ -292,6 +301,14 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
         }
         case TextSearchMode::Any:
         {
+            /// Estimate the cardinality of the union of the tokens.
+            /// The same as above the probability that a particular element appears in set Ai is pi = |Ai|/N
+            /// The probability that element is not in set Ai is 1 - pi
+            /// The probability that element is in none of the n sets is (1 - p1) * (1 - p2) * ... * (1 - pn).
+            /// The probability that element is at least in one of the n sets is 1 - (1 - p1) * (1 - p2) * ... * (1 - pn).
+            /// Then, the expected cardinality of the union is:
+            /// N * (1 - (1 - |A1|/N) * (1 - |A2|/N) * ... * (1 - |An|/N))
+
             double cardinality = 1.0;
 
             for (const auto & token : query.tokens)
@@ -335,7 +352,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
         }
         else if (search_query->read_mode == TextIndexDirectReadMode::Hint)
         {
-            static constexpr double SELECTIVITY_THRESHOLD = 0.25;
+            static constexpr double SELECTIVITY_THRESHOLD = 0.2;
             size_t num_rows_in_granule = getNumRowsInGranule(index_mark);
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_granule);
 

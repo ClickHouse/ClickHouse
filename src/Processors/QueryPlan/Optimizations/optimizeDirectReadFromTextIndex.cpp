@@ -249,6 +249,8 @@ private:
 
         NodeReplacement replacement;
 
+        /// If we have only one condition with exact search, we can use
+        /// only virtual column and remove the original condition.
         if (selected_conditions.size() == 1 && has_exact_search)
         {
             const auto & condition = selected_conditions.front();
@@ -257,6 +259,7 @@ private:
             return replacement;
         }
 
+        /// Otherwise, combine all conditions with the AND function.
         ActionsDAG::NodeRawConstPtrs children;
         auto function_builder = FunctionFactory::instance().get("and", context);
 
