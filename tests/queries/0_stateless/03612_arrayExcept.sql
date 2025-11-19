@@ -71,11 +71,11 @@ select '-------';
 SELECT arraySort(arrayExcept([2, 2, 3, 3], [2]));
 select '-------';
 -- Empty arrays
-SELECT arraySort(arrayExcept([1, 2], []));
+SELECT arraySort(arrayExcept([1, 2], CAST([], 'Array(Int32)')));
 select '-------';
-SELECT arraySort(arrayExcept([], [1, 2]));
+SELECT arraySort(arrayExcept(CAST([], 'Array(Int32)'), [1, 2]));
 select '-------';
-SELECT arraySort(arrayExcept([], []));
+SELECT arraySort(arrayExcept(CAST([], 'Array(Int32)'), CAST([], 'Array(Int32)')));
 select '-------';
 -- Single element
 SELECT arraySort(arrayExcept([1], [2]));
