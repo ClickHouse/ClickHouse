@@ -4,7 +4,7 @@ from pyiceberg.catalog import load_catalog
 from helpers.config_cluster import minio_secret_key, minio_access_key
 import uuid
 import pyarrow as pa
-from datetime import date, timedelta, time, datetime
+from datetime import date, timedelta
 from pyiceberg.schema import Schema, NestedField
 import random
 from pyiceberg.types import (
