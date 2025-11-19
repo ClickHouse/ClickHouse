@@ -90,7 +90,7 @@ private:
         String cluster_secret;
 
         /// For dynamic clusters, index+1 in multicluster_discovery_paths where cluster was found
-        /// 0 for static ckusters
+        /// 0 for static clusters
         size_t zk_root_index;
 
         ClusterInfo(const String & name_,
@@ -184,6 +184,7 @@ private:
 
         Stopwatch watch;
         mutable std::atomic_bool need_update;
+        Coordination::WatchCallbackPtr watch_callback;
 
         MulticlusterDiscovery(const String & zk_name_,
                               const String & zk_path_,
@@ -197,9 +198,8 @@ private:
             , username(username_)
             , password(password_)
             , cluster_secret(cluster_secret_)
-        {
-            need_update = true;
-        }
+            , need_update(true)
+        {}
 
         String getFullPath() const { return zk_name + ":" + zk_path; }
     };

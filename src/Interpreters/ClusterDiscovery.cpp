@@ -82,6 +82,16 @@ public:
         cv.notify_one();
     }
 
+    /// Just notify the condition variable.
+    void set()
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        if (stop_flag)
+            return;
+        any_need_update = true;
+        cv.notify_one();
+    }
+
     void remove(const T & key)
     {
         std::unique_lock<std::mutex> lk(mu);
@@ -222,6 +232,17 @@ ClusterDiscovery::ClusterDiscovery(
             {
                 my_clusters_to_update->set(cluster_name);
             });
+
+    for (auto & path : *multicluster_discovery_paths)
+    {
+        path->watch_callback = std::make_shared<Coordination::WatchCallback>(
+            [path, my_flag = clusters_to_update](auto)
+            {
+                path->need_update = true;
+                my_flag->set();
+            }
+        );
+    }
 }
 
 /// List node in zookeper for cluster
@@ -441,6 +462,7 @@ void ClusterDiscovery::removeCluster(const String & name)
         cluster_impls.erase(name);
     }
     clusters_to_update->remove(name);
+    get_nodes_callbacks.erase(name);
     LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
 }
 
@@ -483,12 +505,6 @@ void ClusterDiscovery::initialUpdate()
 
         zk->createAncestors(path->zk_path);
         zk->createIfNotExists(path->zk_path, "");
-
-        auto watch_callback = zk->createWatchFromRawCallback(fmt::format("ClusterDiscovery({})", path->zk_path), [&] -> Coordination::WatchCallback
-        {
-            return [path](auto) { path->need_update = true; };
-        });
-        zk->getChildrenWatch(path->zk_path, nullptr, watch_callback);
     }
 
     findDynamicClusters(clusters_info);
@@ -540,19 +556,21 @@ void ClusterDiscovery::findDynamicClusters(
 
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(path->zk_name);
 
-        auto clusters = zk->getChildren(path->zk_path);
+        auto clusters = zk->getChildrenWatch(path->zk_path, nullptr, path->watch_callback);
 
         for (const auto & cluster : clusters)
         {
             auto p = clusters_info.find(cluster);
             if (p != clusters_info.end() && !p->second.zk_root_index)
-            { /// Not a warning - node can register itsefs in one cluster and discover other clusters
+            {
+                /// Not a warning - node can register itsefs in one cluster and discover other clusters
                 LOG_TRACE(log, "Found dynamic duplicate of cluster '{}' in config and Keeper, skipped", cluster);
                 continue;
             }
 
             if (info.contains(cluster))
-            { /// Possible with several root paths, it's a configuration error
+            {
+                /// Possible with several root paths, it's a configuration error
                 LOG_WARNING(log, "Found dynamic duplicate of cluster '{}' in Keeper, skipped record by path {}:{}",
                     cluster, path->zk_name, path->zk_path);
                 continue;
@@ -645,6 +663,9 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     while (!finished)
     {
         bool all_up_to_date = true;
+        auto clusters = clusters_to_update->wait(5s, finished);
+        if (finished)
+            break;
 
         std::unordered_map<String, ClusterInfo> new_dynamic_clusters_info;
         std::unordered_set<size_t> unchanged_roots;
@@ -653,18 +674,16 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
         std::unordered_set<String> clusters_to_insert;
         std::unordered_set<String> clusters_to_remove;
 
+        /// Remove clusters that are not found in new_dynamic_clusters_info
         for (const auto & [cluster_name, info] : clusters_info)
         {
             if (!info.zk_root_index)
                 continue;
-            if (!new_dynamic_clusters_info.erase(cluster_name))
-            {
-                if (!unchanged_roots.contains(info.zk_root_index))
-                    clusters_to_remove.insert(cluster_name);
-            }
+            if (!new_dynamic_clusters_info.erase(cluster_name)
+                && !unchanged_roots.contains(info.zk_root_index))
+                clusters_to_remove.insert(cluster_name);
         }
         /// new_dynamic_clusters_info now contains only new clusters
-
         for (const auto & [cluster_name, _] : new_dynamic_clusters_info)
             clusters_to_insert.insert(cluster_name);
 
@@ -673,7 +692,6 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 
         clusters_info.merge(new_dynamic_clusters_info);
 
-        auto clusters = clusters_to_update->wait(5s, finished);
         for (const auto & [cluster_name, need_update] : clusters)
         {
             auto cluster_info_it = clusters_info.find(cluster_name);
