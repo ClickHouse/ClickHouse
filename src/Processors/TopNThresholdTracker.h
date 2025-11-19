@@ -5,7 +5,7 @@
 
 /// Field + mutex looks a little heavy, but profiling has not showed anything concerning.
 /// It should be possible to use std::atomic<size_t> for the threshold because we only
-/// support numeric equivalent types. But that will require type specific comparision
+/// support numeric equivalent types. But that will require type specific comparison
 /// operators (e.g for Int32, for Date / DateTime etc).
 namespace DB
 {
