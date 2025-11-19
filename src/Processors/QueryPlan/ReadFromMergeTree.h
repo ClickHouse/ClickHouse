@@ -184,7 +184,7 @@ public:
     static constexpr auto name = "ReadFromMergeTree";
     String getName() const override { return name; }
 
-    std::unique_ptr<ReadFromMergeTree> cloneWithRequredColumns(const NameSet & required_columns) const;
+    std::unique_ptr<ReadFromMergeTree> cloneWithRequiredColumns(const NameSet & required_columns) const;
     QueryPlanStepPtr clone() const override;
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;

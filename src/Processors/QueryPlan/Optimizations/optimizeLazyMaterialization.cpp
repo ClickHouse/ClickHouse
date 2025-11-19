@@ -113,22 +113,53 @@ std::vector<bool> getRequiredInputPositions(const ExpressionStep & expression_st
     return getRequiredInputPositions(expression_step.getExpression(), *expression_step.getInputHeaders().front(), std::move(required_output_positions));
 }
 
-std::vector<bool> getRequiredInputPositions(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+void updateRequiredColumnsForFilterDAG(std::vector<bool> & required_output_positions, const FilterStep & filter_step)
 {
     const auto & expression = filter_step.getExpression();
     const auto & name = filter_step.getFilterColumnName();
     const auto & outputs = expression.getOutputs();
-    for (size_t i = 0; i < outputs.size(); ++i)
+
+    size_t i = 0;
+    for (; i < outputs.size(); ++i)
     {
         if (outputs[i]->result_name == name)
-        {
-            required_output_positions[i] = true;
             break;
-        }
     }
 
-    return getRequiredInputPositions(expression, *filter_step.getInputHeaders().front(), std::move(required_output_positions));
+    if (filter_step.removesFilterColumn())
+    {
+        required_output_positions.push_back(false);
+        for (size_t j = required_output_positions.size() - 1; j > i; --j)
+            required_output_positions[j] = required_output_positions[j - 1];
+    }
+
+    required_output_positions[i] = true;
 }
+
+
+// std::vector<bool> getRequiredInputPositions(const FilterStep & filter_step, std::vector<bool> required_output_positions)
+// {
+//     const auto & expression = filter_step.getExpression();
+//     const auto & name = filter_step.getFilterColumnName();
+//     const auto & outputs = expression.getOutputs();
+//     size_t i = 0;
+//     for (; i < outputs.size(); ++i)
+//     {
+//         if (outputs[i]->result_name == name)
+//             break;
+//     }
+
+//     if (filter_step.removesFilterColumn())
+//     {
+//         required_output_positions.push_back(false);
+//         for (size_t j = required_output_positions.size() - 1; j > i; --j)
+//             required_output_positions[j] = required_output_positions[j - 1];
+//     }
+
+//     required_output_positions[i] = true;
+
+//     return getRequiredInputPositions(expression, *filter_step.getInputHeaders().front(), std::move(required_output_positions));
+// }
 
 struct SplitExpressionStepResult
 {
@@ -191,20 +222,21 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
 
     const auto & outputs = expression.getOutputs();
     std::unordered_set<const ActionsDAG::Node *> split_nodes;
-    const ActionsDAG::Node * filter_node = nullptr;
+    //const ActionsDAG::Node * filter_node = nullptr;
+
+    updateRequiredColumnsForFilterDAG(required_output_positions, filter_step);
+
     for (size_t i = 0; i < outputs.size(); ++i)
     {
         if (required_output_positions[i])
             split_nodes.insert(outputs[i]);
-
-        if (!filter_node && outputs[i]->result_name == name)
-            filter_node = outputs[i];
     }
 
     auto split_result = expression.split(split_nodes, true, true);
 
 
-    auto required_input_positions = getRequiredInputPositions(filter_step, std::move(required_output_positions));
+    // auto required_input_positions = getRequiredInputPositions(filter_step, std::move(required_output_positions));
+    auto required_input_positions =  getRequiredInputPositions(expression, *filter_step.getInputHeaders().front(), std::move(required_output_positions));
 
     FilterDAGInfo filter_dag_info;
     filter_dag_info.actions = std::move(split_result.first);
@@ -216,7 +248,7 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
     return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
 }
 
-std::unique_ptr<ReadFromMergeTree> removeUnuzedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
+std::unique_ptr<ReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
 {
     const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
     chassert(cols.size() == required_output_positions.size());
@@ -620,7 +652,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         if (const auto * expr_step = typeid_cast<ExpressionStep *>(step))
             required_columns = getRequiredInputPositions(*expr_step, std::move(required_columns));
         else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
-            required_columns = getRequiredInputPositions(*filter_step, std::move(required_columns));
+        {
+            updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
+            required_columns = getRequiredInputPositions(filter_step->getExpression(), *filter_step->getInputHeaders().front(), std::move(required_columns));
+        }
         else
             return false;
 
@@ -635,7 +670,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (!read_from_merge_tree)
         return false;
 
-    auto lazy_reading = removeUnuzedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
+    auto lazy_reading = removeUnusedColumnsFromReadingStep(*read_from_merge_tree, required_columns);
     if (!lazy_reading)
         return false;
 
@@ -664,7 +699,10 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
         else if (const auto * filter_step = typeid_cast<FilterStep *>(step))
         {
+            // std::cerr << "fsplit_s: " << filter_step->getExpression().dumpDAG() << std::endl;
             auto split_result = splitFilterStep(*filter_step, std::move(required_columns));
+            // std::cerr << "fsplit_result l: " << split_result.main_filter_step.actions.dumpDAG() << std::endl;
+            // std::cerr << "fsplit_result r: " << split_result.lazy_expression_step.dumpDAG() << std::endl;
             main_steps.push_front(std::move(split_result.main_filter_step));
             lazy_steps.push_front(std::move(split_result.lazy_expression_step));
             required_columns = std::move(split_result.required_input_positions);

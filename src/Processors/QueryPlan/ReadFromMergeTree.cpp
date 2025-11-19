@@ -2639,7 +2639,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
 }
 
-std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithRequredColumns(const NameSet & required_columns) const
+std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithRequiredColumns(const NameSet & required_columns) const
 {
     AnalysisResultPtr analysis_result_copy;
     if (analyzed_result_ptr)
@@ -2711,7 +2711,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::removeUnusedColumns(const 
     if (columns_to_remove.empty())
         return {};
 
-    auto new_reading = cloneWithRequredColumns(columns_to_remove);
+    auto new_reading = cloneWithRequiredColumns(columns_to_remove);
 
     all_column_names = std::move(new_column_names);
 
