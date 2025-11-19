@@ -25,7 +25,7 @@ from pyiceberg.types import (
     ListType,
     MapType,
 )
-from pyiceberg.partitioning import PartitionSpec, PartitionField
+from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.sorting import SortOrder, SortField
 from pyiceberg.transforms import IdentityTransform
 
