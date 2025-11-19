@@ -102,9 +102,9 @@ elseif (ARCH_AARCH64)
         # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
         if (ENABLE_SVE)
-            string (APPEND COMPILER_FLAGS "+sve")
+            set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16+sve")
+            list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16,+sve")
         endif ()
-
         # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
         list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16")
     endif ()
