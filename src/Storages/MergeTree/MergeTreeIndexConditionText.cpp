@@ -118,11 +118,10 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
-        || function_name == "hasTokenOrNull";
-        // TODO(george-larionov) not working
-        //|| function_name == "startsWith"
-        //|| function_name == "endsWith"
-        //|| function_name == "match";
+        || function_name == "hasTokenOrNull"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "match";
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
@@ -173,6 +172,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_HAS,
          RPNElement::FUNCTION_HAS_ANY_TOKENS,
          RPNElement::FUNCTION_HAS_ALL_TOKENS,
+         RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY,
          RPNElement::FUNCTION_IN,
          RPNElement::FUNCTION_NOT_IN,
          RPNElement::FUNCTION_MATCH});
@@ -212,6 +212,13 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
         }
+        else if (element.function == RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY)
+        {
+            chassert(element.text_search_queries.size() == 1);
+            const auto & text_search_query = element.text_search_queries.front();
+            bool exists_in_granule = granule->hasAllQueryTokensOrEmpty(*text_search_query);
+            rpn_stack.emplace_back(exists_in_granule, true);
+        }
         else if (element.function == RPNElement::FUNCTION_MATCH
             || element.function == RPNElement::FUNCTION_IN
             || element.function == RPNElement::FUNCTION_NOT_IN)
@@ -220,7 +227,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
             for (const auto & text_search_query : element.text_search_queries)
             {
-                if (granule->hasAllTokensFromQuery(*text_search_query))
+                if (granule->hasAllQueryTokensOrEmpty(*text_search_query))
                 {
                     exists_in_granule = true;
                     break;
@@ -505,14 +512,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (function_name == "startsWith")
     {
         auto tokens = substringToTokens(const_value, true, false);
-        out.function = RPNElement::FUNCTION_EQUALS;
+        out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith")
     {
         auto tokens = substringToTokens(const_value, false, true);
-        out.function = RPNElement::FUNCTION_EQUALS;
+        out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
         return true;
     }

@@ -246,6 +246,7 @@ public:
 
     bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
     bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
+    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();

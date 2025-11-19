@@ -47,6 +47,8 @@ SELECT count() FROM tab WHERE hasAllTokens(arr, '');
 0
 SELECT count() FROM tab WHERE has(arr, 'abc');
 0
+SELECT count() FROM tab WHERE has(arr, '');
+0
 -- Maps
 SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
 0
@@ -73,6 +75,8 @@ SELECT count() FROM tab WHERE mapContains(map, 'abc');
 SELECT count() FROM tab WHERE mapContains(map, '');
 0
 SELECT count() FROM tab WHERE has(map, 'abc');
+0
+SELECT count() FROM tab WHERE has(map, '');
 0
 Setting query_plan_direct_read_from_text_index to 1.
 -- { echoOn }
@@ -123,6 +127,8 @@ SELECT count() FROM tab WHERE hasAllTokens(arr, '');
 0
 SELECT count() FROM tab WHERE has(arr, 'abc');
 0
+SELECT count() FROM tab WHERE has(arr, '');
+0
 -- Maps
 SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
 0
@@ -149,4 +155,6 @@ SELECT count() FROM tab WHERE mapContains(map, 'abc');
 SELECT count() FROM tab WHERE mapContains(map, '');
 0
 SELECT count() FROM tab WHERE has(map, 'abc');
+0
+SELECT count() FROM tab WHERE has(map, '');
 0

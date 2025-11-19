@@ -115,7 +115,7 @@ SELECT * FROM 03165_token_bf WHERE multiSearchAny(message, [' wx ', 'yz']);
 DROP TABLE IF EXISTS 03165_token_bf;
 
 SELECT '';
-SELECT '-------- GIN filter --------';
+SELECT '-------- Text index filter --------';
 SELECT '';
 
 SET allow_experimental_full_text_index = 1;
@@ -131,8 +131,8 @@ ORDER BY id;
 
 INSERT INTO 03165_token_ft VALUES(1, 'Service is not ready');
 
--- TODO no longer works with text index
-SELECT '-- No skip for prefix(no longer uses text index)';
+-- text search cannot operate on substrings, so no filtering based on text index should be performed here
+SELECT '-- No skip for prefix';
 
 SELECT trim(explain)
 FROM (
@@ -143,7 +143,7 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE startsWith(message, 'Serv');
 
 SELECT '';
--- TODO no longer works with text index
+-- here we get one full token, so we can utilize text index to skip (in this case) all granules
 SELECT '-- Skip for prefix with complete token';
 
 SELECT trim(explain)
@@ -155,7 +155,6 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE startsWith(message, 'Serv i');
 
 SELECT '';
--- TODO no longer works with text index
 SELECT '-- No skip for suffix';
 
 SELECT trim(explain)
@@ -167,7 +166,6 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE endsWith(message, 'eady');
 
 SELECT '';
--- TODO no longer works with text index
 SELECT '-- Skip for suffix with complete token';
 
 SELECT trim(explain)
@@ -179,7 +177,6 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE endsWith(message, ' eady');
 
 SELECT '';
--- TODO no longer works with text index
 SELECT '-- No skip for substring';
 
 SELECT trim(explain)
@@ -191,7 +188,6 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE match(message, 'no');
 
 SELECT '';
--- TODO no longer works with text index
 SELECT '-- Skip for substring with complete token';
 
 SELECT trim(explain)

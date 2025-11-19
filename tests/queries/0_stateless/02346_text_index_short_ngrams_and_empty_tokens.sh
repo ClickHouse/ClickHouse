@@ -75,6 +75,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(arr, '');
 SELECT count() FROM tab WHERE hasAllTokens(arr, '');
 
 SELECT count() FROM tab WHERE has(arr, 'abc');
+SELECT count() FROM tab WHERE has(arr, '');
 
 -- Maps
 SELECT count() FROM tab WHERE hasAnyTokens(mapKeys(map), ['abc']);
@@ -96,6 +97,7 @@ SELECT count() FROM tab WHERE mapContains(map, 'abc');
 SELECT count() FROM tab WHERE mapContains(map, '');
 
 SELECT count() FROM tab WHERE has(map, 'abc');
+SELECT count() FROM tab WHERE has(map, '');
 -- { echoOff }
 EOF
 

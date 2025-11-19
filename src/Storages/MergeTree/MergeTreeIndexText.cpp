@@ -529,6 +529,16 @@ bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & qu
     return !query.tokens.empty(); // return false in case of no tokens
 }
 
+bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
+{
+    for (const auto & token : query.tokens)
+    {
+        if (!remaining_tokens.contains(token))
+            return false;
+    }
+    return true;
+}
+
 void MergeTreeIndexGranuleText::resetAfterAnalysis()
 {
     /// Reset data that is not needed after the analysis.
