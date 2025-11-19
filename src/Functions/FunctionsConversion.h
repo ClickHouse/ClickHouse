@@ -1717,12 +1717,9 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            if (!time_zone)
-            {
-                // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
-                const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-                time_zone = &from_type.getTimeZone();
-            }
+            // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
+            const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
+            time_zone = &from_type.getTimeZone();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
