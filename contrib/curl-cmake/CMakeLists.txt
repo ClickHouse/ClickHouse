@@ -180,6 +180,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curlx/timediff.c"
     "${LIBRARY_DIR}/lib/curlx/timeval.c"
     "${LIBRARY_DIR}/lib/curlx/version_win32.c"
+    "${LIBRARY_DIR}/lib/curlx/wait.c"
     "${LIBRARY_DIR}/lib/curlx/warnless.c"
     "${LIBRARY_DIR}/lib/curlx/winapi.c"
 )
@@ -191,6 +192,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
+    OPENSSL_NO_ENGINE
     CURL_OS="${CMAKE_SYSTEM_NAME}"
 )
 
