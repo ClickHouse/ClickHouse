@@ -757,15 +757,6 @@ void QueryOracle::swapQuery(RandomGenerator & rg, StatementGenerator & gen, goog
     {
         auto & ssc = static_cast<SelectStatementCore &>(mes);
 
-        if ((ssc.has_pre_where() || ssc.has_where()) && rg.nextSmallNumber() < 5)
-        {
-            /// Swap WHERE and PREWHERE
-            auto * prewhere = ssc.release_pre_where();
-            auto * where = ssc.release_where();
-
-            ssc.set_allocated_pre_where(where);
-            ssc.set_allocated_where(prewhere);
-        }
         if (ssc.has_from())
         {
             swapQuery(rg, gen, const_cast<JoinedQuery &>(ssc.from().tos()));
@@ -1149,18 +1140,21 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
 
 void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
 {
-    if (!errcode)
+    if (can_test_oracle_result)
     {
-        if (measure_performance)
+        if (!errcode)
         {
-            other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
+            if (measure_performance)
+            {
+                other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
+            }
+            else
+            {
+                md5_hash1.hashFile(qcfile.generic_string(), first_digest);
+            }
         }
-        else
-        {
-            md5_hash1.hashFile(qcfile.generic_string(), first_digest);
-        }
+        first_errcode = errcode;
     }
-    first_errcode = errcode;
 }
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)
