@@ -209,14 +209,12 @@ TEST(YTDataType, CheckOptional) {
             optional->set("item", tuple);
             json->set("type_v3", optional);
 
-            std::vector<std::shared_ptr<const DB::IDataType>> types{CH_TYPE("String"), CH_TYPE("String")};
-
-            auto tuple_type = std::make_shared<DB::DataTypeTuple>(types);
+            auto tuple_type = std::make_shared<DB::DataTypeTuple>();
 
             if (tuple_type->canBeInsideNullable())
             {
+                ASSERT_THROW(checkColumnType(json, CH_TYPE("Tuple(String, String)")), DB::Exception);
                 ASSERT_TRUE(checkColumnType(json, CH_TYPE("Nullable(Tuple(String, String))")));
-                ASSERT_TRUE(checkColumnType(json, CH_TYPE("Tuple(String, String)")));
             }
             else
             {
