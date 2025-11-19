@@ -83,7 +83,7 @@ def run_fuzz_job(check_name: str):
         dmesg_log,
     ]
     if buzzhouse:
-        paths.extend([workspace_path / "fuzzer_out.sql", workspace_path / "fuzz.json"])
+        paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json"])
 
     try:
         with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:
