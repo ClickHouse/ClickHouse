@@ -59,17 +59,17 @@ working_udf_config = """<functions>
     </function>
 </functions>"""
 
-# Broken UDF config - script does not exist
+# Broken UDF config - invalid return type causes FAILED status at load time
 broken_udf_config = """<functions>
     <function>
         <type>executable</type>
-        <name>test_failed_udf_missing_script</name>
-        <return_type>String</return_type>
+        <name>test_failed_udf_invalid_type</name>
+        <return_type>InvalidTypeName123</return_type>
         <argument>
-            <type>UInt64</type>
+            <type>String</type>
         </argument>
         <format>TabSeparated</format>
-        <command>nonexistent_script.sh</command>
+        <command>working_script.sh</command>
     </function>
 </functions>"""
 
@@ -186,7 +186,7 @@ def test_system_user_defined_functions_failed_status(started_cluster):
             error_count,
             loading_time
         FROM system.user_defined_functions
-        WHERE name = 'test_failed_udf_missing_script'
+        WHERE name = 'test_failed_udf_invalid_type'
         FORMAT Vertical
         """
     )
@@ -194,12 +194,13 @@ def test_system_user_defined_functions_failed_status(started_cluster):
     print("FAILED UDF result:")
     print(result)
 
-    assert "name: test_failed_udf_missing_script" in result
+    assert "name: test_failed_udf_invalid_type" in result
     assert "status: FAILED" in result
 
     # Error message should contain information about the failure
     assert "error_message:" in result
-    # The actual error message will mention the missing script
+    # The actual error message will mention the invalid type
+    assert "InvalidTypeName123" in result or "UNKNOWN_TYPE" in result
     assert len(result) > 100  # Should have substantial error message
 
     # error_count should be > 0 for failed UDFs
@@ -246,7 +247,7 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
     print("\nAll FAILED UDFs:")
     print(result)
 
-    assert "test_failed_udf_missing_script" in result
+    assert "test_failed_udf_invalid_type" in result
 
 
 def test_system_user_defined_functions_columns(started_cluster):

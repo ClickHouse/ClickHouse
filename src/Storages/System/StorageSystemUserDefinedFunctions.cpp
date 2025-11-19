@@ -152,8 +152,8 @@ void StorageSystemUserDefinedFunctions::fillData(
         }
         else
         {
-            // Failed to load - configuration unavailable, insert defaults for 17 fields
-            for (size_t j = 0; j < 17; ++j)
+            // Failed to load - configuration unavailable, insert defaults for 16 fields
+            for (size_t j = 0; j < 16; ++j)
                 res_columns[i++]->insertDefault();
         }
 
