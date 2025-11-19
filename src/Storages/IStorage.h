@@ -171,9 +171,6 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
-    /// Returns true if the storage supports storing of data type Object.
-    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Returns true if the storage supports storing of dynamic subcolumns.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
@@ -738,12 +735,6 @@ public:
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
-    }
-
-    /// Creates a storage snapshot from given metadata and columns, which are used in query.
-    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
-    {
-        return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     /// Creates a storage snapshot but without holding a data specific to storage.
