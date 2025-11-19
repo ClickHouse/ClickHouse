@@ -85,16 +85,14 @@ public:
                     "Function '{}' second argument evaluated to Block with no columns",
                     function_node->getFunctionName());
 
-            DataTypes set_element_types = {};
-
+            DataTypes set_element_types;
+            set_element_types.reserve(set.size());
             /// Get the `set_element_types` from `set` instead of `in_first_argument` because
             /// inside `getSetElementsForConstantValue`, we already do necessary transformation including
             /// getting `dictionaryType` from `DataTypeLowCardinality`. Therefore, we can skip some steps here if
             /// we directly use `set` to get the `set_element_types`.
             for (const auto & elem : set)
-            {
                 set_element_types.push_back(elem.type);
-            }
 
             set_element_types = Set::getElementTypes(std::move(set_element_types), settings[Setting::transform_null_in]);
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
