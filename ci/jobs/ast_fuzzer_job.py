@@ -142,9 +142,9 @@ def run_fuzz_job(check_name: str):
                         with open(reproduce_file_sql, "w") as f:
                             f.write("\n".join(reproduce_commands))
                         paths.append(reproduce_file_sql)
-                        info += f"See file: {reproduce_file_sql}"
+                        info += f"See file: {reproduce_file_sql}\n"
                     else:
-                        info += "\n".join(reproduce_commands)
+                        info += "\n".join(reproduce_commands) + "\n"
             except Exception as e:
                 info += (
                     "---\n\nFailed to fetch relevant queries from logs:\n"
