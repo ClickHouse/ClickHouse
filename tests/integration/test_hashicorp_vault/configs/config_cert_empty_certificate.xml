@@ -7,7 +7,7 @@
       <ssl>
         <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
         <certificateFile></certificateFile>
-        <caLocation>/etc/clickhouse-server/config.d/ca.crt</caLocation>
+        <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
       </ssl>
     </hashicorp_vault>
 </clickhouse>

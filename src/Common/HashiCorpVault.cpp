@@ -60,7 +60,7 @@ void HashiCorpVault::initRequestContext(const Poco::Util::AbstractConfiguration 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "privateKeyFile is not specified for vault.");
     }
 
-    std::string caLocation = config.getString(ssl_prefix + "caLocation", "");
+    std::string caLocation = config.getString(ssl_prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, "");
     if (!caLocation.empty())
     {
         params.verificationMode = Poco::Net::Context::VERIFY_STRICT;

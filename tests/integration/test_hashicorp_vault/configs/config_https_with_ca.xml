@@ -3,7 +3,7 @@
       <url>https://hashicorpvault:8220</url>
       <token>foobar</token>
       <ssl>
-        <caLocation>/etc/clickhouse-server/config.d/ca.crt</caLocation>
+        <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
       </ssl>
     </hashicorp_vault>
 </clickhouse>
