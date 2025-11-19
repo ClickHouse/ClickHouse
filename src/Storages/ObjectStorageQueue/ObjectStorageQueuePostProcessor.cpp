@@ -1,4 +1,5 @@
 #include <Common/ProfileEvents.h>
+#include <Common/setThreadName.h>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Disks/IDisk.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
@@ -40,6 +41,7 @@ namespace S3AuthSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -237,7 +239,7 @@ void ObjectStorageQueuePostProcessor::moveWithinBucket(const StoredObjects & obj
 
     auto schedule = threadPoolCallbackRunnerUnsafe<void>(
         IObjectStorage::getThreadPoolWriter(),
-        "ObjStorQueue_move_objs");
+        ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
 
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
     TaskTracker task_tracker(schedule, post_process_max_inflight_object_moves, limited_log);
@@ -331,7 +333,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             const auto read_settings_to_use = s3_storage->patchSettings(read_settings);
             auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
                 IObjectStorage::getThreadPoolWriter(),
-                "ObjStorQueue_move_s3");
+                ThreadName::S3_COPY_POOL);
 
             size_t moved_objects = 0;
             for (const auto & object_from : objects)
@@ -442,7 +444,7 @@ void ObjectStorageQueuePostProcessor::moveAzureBlobs(const StoredObjects & objec
                         const auto read_settings_to_use = azure_storage->patchSettings(read_settings);
                         auto scheduler = threadPoolCallbackRunnerUnsafe<void>(
                             IObjectStorage::getThreadPoolWriter(),
-                            "ObjStorQueue_move_azure");
+                            ThreadName::AZURE_COPY_POOL);
 
                         LOG_INFO(log, "Copying {} ({} Bytes) to container {}", object_from.remote_path, blob_size, move_container);
                         copyAzureBlobStorageFile(
