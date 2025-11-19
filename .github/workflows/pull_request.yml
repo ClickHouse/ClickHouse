@@ -2,9 +2,9 @@
 
 name: PR
 
-on:
-  pull_request:
-    branches: ['master']
+#on:
+#  pull_request:
+#    branches: ['master']
 
 env:
   # Force the stdout and stderr streams to be unbuffered
