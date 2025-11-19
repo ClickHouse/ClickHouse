@@ -66,6 +66,10 @@ namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
 }
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace VirtualColumnUtils
 {
