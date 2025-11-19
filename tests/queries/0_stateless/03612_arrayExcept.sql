@@ -12,29 +12,29 @@ insert into array_except values ('2019-01-01', []);
 
 select arraySort(arrayExcept(arr, [1,2])) from array_except order by arr;
 select '-------';
-select arraySort(arrayExcept(arr, [])) from array_except order by arr;
+select arraySort(arrayExcept(arr, CAST([], 'Array(UInt8)'))) from array_except order by arr;
 select '-------';
-select arraySort(arrayExcept([], arr)) from array_except order by arr;
+select arraySort(arrayExcept(CAST([], 'Array(UInt8)'), arr)) from array_except order by arr;
 select '-------';
 select arraySort(arrayExcept([1,2], arr)) from array_except order by arr;
 select '-------';
 select arraySort(arrayExcept([1,2,3,4], [1,2])) from array_except order by arr;
 select '-------';
-select arraySort(arrayExcept([], [])) from array_except order by arr;
+select arraySort(arrayExcept(CAST([], 'Array(UInt8)'), CAST([], 'Array(UInt8)'))) from array_except order by arr;
 
 optimize table array_except;
 
 select arraySort(arrayExcept(arr, [1,2])) from array_except order by arr;
 select '-------';
-select arraySort(arrayExcept(arr, [])) from array_except order by arr;
+select arraySort(arrayExcept(arr, CAST([], 'Array(UInt8)'))) from array_except order by arr;
 select '-------';
-select arraySort(arrayExcept([], arr)) from array_except order by arr;
+select arraySort(arrayExcept(CAST([], 'Array(UInt8)'), arr)) from array_except order by arr;
 select '-------';
 select arraySort(arrayExcept([1,2], arr)) from array_except order by arr;
 select '-------';
 select arraySort(arrayExcept([1,2,3,4], [1,2])) from array_except order by arr;
 select '-------';
-select arraySort(arrayExcept([], [])) from array_except order by arr;
+select arraySort(arrayExcept(CAST([], 'Array(UInt8)'), CAST([], 'Array(UInt8)'))) from array_except order by arr;
 
 drop table if exists array_except;
 
