@@ -962,6 +962,9 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Info for path {} is not deserialized", requested_path);
 
             const auto & path_info = path_info_it->second;
+            /// Reset callbacks that might be different for different paths.
+            deserialization_settings.seek_stream_to_current_mark_callback = {};
+            deserialization_settings.getter = {};
 
             /// If we have only subcolumns requested for this path, read all subcolumns.
             auto paths_subcolumns_it = structure_state.requested_paths_subcolumns.find(requested_path);
