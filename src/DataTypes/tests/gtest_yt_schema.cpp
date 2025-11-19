@@ -215,7 +215,7 @@ TEST(YTDataType, CheckOptional) {
 
             if (tuple_type->canBeInsideNullable())
             {
-                ASSERT_THROW(checkColumnType(json, CH_TYPE("Tuple(String, String)")), DB::Exception);
+                ASSERT_TRUE(!checkColumnType(json, CH_TYPE("Tuple(String, String)")));
                 ASSERT_TRUE(checkColumnType(json, CH_TYPE("Nullable(Tuple(String, String))")));
             }
             else
