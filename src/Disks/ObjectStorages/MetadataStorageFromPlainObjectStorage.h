@@ -30,13 +30,12 @@ using ObjectMetadataCachePtr = std::shared_ptr<CacheBase<UInt128, ObjectMetadata
 ///
 /// Also it has excessive API calls.
 ///
-/// It is used to allow ATTACH/RESTORE from ObjectStorage (S3/...) with the same
+/// It is used to allow BACKUP/RESTORE/ATTACH from ObjectStorage (S3/...) with the same
 /// structure as on disk MergeTree, and does not require metadata from a local disk to restore.
 class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
     friend class MetadataStorageFromPlainObjectStorageTransaction;
 
-    ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 
 public:
