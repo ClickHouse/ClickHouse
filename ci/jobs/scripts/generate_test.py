@@ -89,25 +89,34 @@ class FuzzerTestGenerator:
         # get all tables from the command
         # Match table names after FROM and various JOIN types (LEFT JOIN, RIGHT JOIN, INNER JOIN, etc.)
         tables = set()
-        from_pattern = r"\bFROM\s+([a-zA-Z0-9_.]+)"
-        join_pattern = r"\bJOIN\s+([a-zA-Z0-9_.]+)"
+        table_files = set()
+        # Match table names/functions after FROM and JOIN keywords
+        # Captures complete function calls like file(...) or table names
+        from_pattern = r"\bFROM\s+([a-zA-Z0-9_.]+(?:\([^()]*(?:\([^()]*\))*[^()]*\))?)"
+        join_pattern = r"\bJOIN\s+([a-zA-Z0-9_.]+(?:\([^()]*(?:\([^()]*\))*[^()]*\))?)"
         from_matches = re.findall(from_pattern, query_command, re.IGNORECASE)
         join_matches = re.findall(join_pattern, query_command, re.IGNORECASE)
-        tables.update(from_matches)
-        tables.update(join_matches)
-        assert tables, "No tables found in query command"
+
+        for match in from_matches + join_matches:
+            if match.startswith("file("):
+                # Extract filename from file(...) function, handling nested functions
+                # Search for any quoted string within the file() call
+                file_match = re.search(r"['\"]([^'\"]+\.parquet)['\"]", match)
+                if file_match:
+                    table_files.add(file_match.group(1))
+            else:
+                tables.add(match)
+        assert tables or table_files, "No tables found in query command"
+        print(f"Tables found: {tables}, Files found: {table_files}")
 
         # get all write commands for found tables
         commands_to_reproduce = []
-        for table in tables:
+        for table in list(tables) + list(table_files):
             for command in all_fuzzer_commands:
-                if (
-                    any(
-                        command.startswith(write_command)
-                        for write_command in self.WRITE_SQL_COMMANDS
-                    )
-                    and f" {table} " in command
-                ):
+                if any(
+                    command.startswith(write_command)
+                    for write_command in self.WRITE_SQL_COMMANDS
+                ) and (f" {table} " in command or f"'{table}'" in command):
                     commands_to_reproduce.append(command)
         commands_to_reproduce.append(query_command)
 
