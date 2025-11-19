@@ -124,8 +124,8 @@ def run_fuzz_job(check_name: str):
         if result.results and any(
             pattern in result.results[-1].name for pattern in patterns
         ):
-            info += "---\n\nFuzzer log (last 30 lines):\n"
-            info += Shell.get_output(f"tail -n30 {fuzzer_log}", verbose=False) + "\n"
+            info += "---\n\nFuzzer log (last 200 lines):\n"
+            info += Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False) + "\n"
         else:
             try:
                 fuzzer_test_generator = FuzzerTestGenerator(
