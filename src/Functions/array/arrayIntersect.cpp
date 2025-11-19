@@ -407,11 +407,11 @@ FunctionArrayIntersect<Mode>::UnpackedArrays FunctionArrayIntersect<Mode>::prepa
                 {
                     /// Compare original and cast columns. It seem to be the easiest way.
                     auto overflow_mask = callFunctionNotEquals(
-                            {arg.nested_column->getPtr(), nested_init_type, ""},
-                            {initial_column->getPtr(), nested_cast_type, ""},
+                            {arg.nested_column->getPtr(), nested_cast_type, ""},
+                            {initial_column->getPtr(), nested_init_type, ""},
                             context);
 
-                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*overflow_mask).getData();
+                    arg.overflow_mask = &typeid_cast<const ColumnUInt8 &>(*removeNullable(overflow_mask)).getData();
                     arrays.column_holders.emplace_back(std::move(overflow_mask));
                 }
             }
