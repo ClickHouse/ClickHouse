@@ -462,7 +462,7 @@ FutureSetPtr makeExplicitSet(
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
 
-    /// Do not unpack if empty tuple or single element tuple
+    /// Do not unpack if empty tuple or single element tuple.
     if (left_tuple_type && left_tuple_type->getElements().size() > 1)
         set_element_types = left_tuple_type->getElements();
 
