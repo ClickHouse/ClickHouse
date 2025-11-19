@@ -32,6 +32,11 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
         object_metadata_cache = std::make_shared<CacheBase<UInt128, ObjectMetadataEntry>>(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
 }
 
+MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
+{
+    return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this, object_storage);
+}
+
 bool MetadataStorageFromPlainObjectStorage::existsFile(const std::string & path) const
 {
     ObjectStorageKey object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
@@ -60,7 +65,6 @@ bool MetadataStorageFromPlainObjectStorage::existsFileOrDirectory(const std::str
     auto key_prefix = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */).serialize();
     return object_storage->existsOrHasAnyChild(key_prefix);
 }
-
 
 uint64_t MetadataStorageFromPlainObjectStorage::getFileSize(const String & path) const
 {
@@ -170,6 +174,54 @@ ObjectMetadataEntryPtr MetadataStorageFromPlainObjectStorage::getObjectMetadataE
         return object_metadata_cache->get(hash128);
     }
     return get();
+}
+
+MetadataStorageFromPlainObjectStorageTransaction::MetadataStorageFromPlainObjectStorageTransaction(
+    MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_)
+    : metadata_storage(metadata_storage_), object_storage(object_storage_)
+{
+}
+
+const IMetadataStorage & MetadataStorageFromPlainObjectStorageTransaction::getStorageForNonTransactionalReads() const
+{
+    return metadata_storage;
+}
+
+std::optional<StoredObjects> MetadataStorageFromPlainObjectStorageTransaction::tryGetBlobsFromTransactionIfExists(const std::string & path) const
+{
+    return metadata_storage.getStorageObjectsIfExist(path);
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path)
+{
+    if (metadata_storage.object_metadata_cache)
+    {
+        auto object_key = object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+        SipHash hash;
+        hash.update(object_key.serialize());
+        metadata_storage.object_metadata_cache->remove(hash.get128());
+    }
+
+    auto object_key = metadata_storage.object_storage->generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
+}
+
+UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainObjectStorageTransaction::unlinkMetadata(const std::string & path)
+{
+    unlinkFile(path);
+    return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
+{
+    for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
+        metadata_storage.object_storage->removeObjectIfExists(StoredObject(it->path()));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path)
+{
+    /// TODO: Implement recursive listing.
+    removeDirectory(path);
 }
 
 }

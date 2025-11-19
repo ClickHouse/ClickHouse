@@ -34,6 +34,8 @@ using ObjectMetadataCachePtr = std::shared_ptr<CacheBase<UInt128, ObjectMetadata
 /// structure as on disk MergeTree, and does not require metadata from a local disk to restore.
 class MetadataStorageFromPlainObjectStorage : public IMetadataStorage
 {
+    friend class MetadataStorageFromPlainObjectStorageTransaction;
+
     ObjectStorageKey getObjectKeyForPath(const std::string & path) const;
     ObjectMetadataEntryPtr getObjectMetadataEntryWithCache(const std::string & path) const;
 
@@ -45,9 +47,9 @@ public:
     uint32_t getHardlinkCount(const std::string & /* path */) const override { return 0; }
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
-    bool isReadOnly() const override { return true; }
+    bool isReadOnly() const override { return false; }
 
-    MetadataTransactionPtr createTransaction() override { throwNotImplemented(); }
+    MetadataTransactionPtr createTransaction() override;
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -71,6 +73,31 @@ private:
     const String storage_path_full;
 
     mutable ObjectMetadataCachePtr object_metadata_cache;
+};
+
+class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
+{
+public:
+    explicit MetadataStorageFromPlainObjectStorageTransaction(MetadataStorageFromPlainObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_);
+
+    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
+    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+
+    void createMetadataFile(const std::string & /*path*/, const StoredObjects & /* objects */) override {}
+    void createDirectory(const std::string & /*path*/) override {}
+    void createDirectoryRecursive(const std::string & /*path*/) override {}
+    void commit(const TransactionCommitOptionsVariant & /*options*/) override {}
+    bool supportsChmod() const override { return false; }
+
+    void unlinkFile(const std::string & path) override;
+    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
+
+    void removeDirectory(const std::string & path) override;
+    void removeRecursive(const std::string &) override;
+
+private:
+    MetadataStorageFromPlainObjectStorage & metadata_storage;
+    ObjectStoragePtr object_storage;
 };
 
 }
