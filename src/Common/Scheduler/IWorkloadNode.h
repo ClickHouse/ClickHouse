@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/ResourceLink.h>
