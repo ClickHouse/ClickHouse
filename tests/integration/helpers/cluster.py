@@ -651,7 +651,6 @@ class ClickHouseCluster:
         self.with_ytsaurus = False
         self.with_letsencrypt_pebble = False
         self.with_hashicorp_vault = False
-        self.pre_hashicorp_vault_startup_command = None
 
         # available when with_minio == True
         self.with_minio = False
@@ -773,6 +772,8 @@ class ClickHouseCluster:
         self.hashicorp_vault_ip = None
         self.hashicorp_vault_cert_dir = p.abspath(p.join(self.instances_dir, "certs"))
         self.hashicorp_vault_logs_dir = p.abspath(p.join(self.instances_dir, "logs"))
+        self.hashicorp_vault_docker_id = self.get_instance_docker_id(self.hashicorp_vault_host)
+        self.pre_hashicorp_vault_startup_command = None
 
         # available when with_postgres == True
         self.postgres_host = "postgres1"

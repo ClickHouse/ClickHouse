@@ -5,7 +5,7 @@ from .common import *
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
     "instance",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config_token.xml"],
     user_configs=["configs/users.xml"],
     with_hashicorp_vault=True,
 )
@@ -22,7 +22,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_config_with_hashicorp_vault(started_cluster):
+def test_token_work(started_cluster):
     assert (
         instance.query(
             "SELECT currentUser()", user="test_user", password="test_password"

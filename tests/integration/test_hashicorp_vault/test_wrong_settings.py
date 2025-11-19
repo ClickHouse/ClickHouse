@@ -59,17 +59,17 @@ def test_missing_auth_info():
     )
 
 
-def test_wrong_token():
+def test_token_wrong_token():
     start_clickhouse(
-        "configs/config_wrong_token.xml",
+        "configs/config_token_wrong_token.xml",
         "configs/users.xml",
         "Exception: HTTP error: 403",
     )
 
 
-def test_empty_token():
+def test_token_empty_token():
     start_clickhouse(
-        "configs/config_empty_token.xml",
+        "configs/config_token_empty_token.xml",
         "configs/users.xml",
         "DB::Exception: token is not specified for vault",
     )
@@ -77,7 +77,7 @@ def test_empty_token():
 
 def test_wrong_secret():
     start_clickhouse(
-        "configs/config.xml",
+        "configs/config_token.xml",
         "configs/users_wrong_secret.xml",
         "Exception: HTTP error: 404",
     )
@@ -85,7 +85,7 @@ def test_wrong_secret():
 
 def test_wrong_key():
     start_clickhouse(
-        "configs/config.xml",
+        "configs/config_token.xml",
         "configs/users_wrong_key.xml",
         "DB::Exception: Key WRONG not found in secret username of vault",
     )
