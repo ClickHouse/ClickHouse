@@ -120,8 +120,8 @@ public:
         return tuple->serializeValueIntoArena(n, arena, begin);
     }
     char * serializeValueIntoMemory(size_t n, char * memory) const override { return tuple->serializeValueIntoMemory(n, memory); }
-    const char * deserializeAndInsertFromArena(const char * pos) override { return tuple->deserializeAndInsertFromArena(pos); }
-    const char * skipSerializedInArena(const char * pos) const override { return tuple->skipSerializedInArena(pos); }
+    void deserializeAndInsertFromArena(ReadBuffer & in) override { tuple->deserializeAndInsertFromArena(in); }
+    void skipSerializedInArena(ReadBuffer & in) const override { tuple->skipSerializedInArena(in); }
     void updateHashWithValue(size_t n, SipHash & hash) const override { tuple->updateHashWithValue(n, hash); }
     void updateHashFast(SipHash & hash) const override { tuple->updateHashFast(hash); }
     WeakHash32 getWeakHash32() const override { return tuple->getWeakHash32(); }
