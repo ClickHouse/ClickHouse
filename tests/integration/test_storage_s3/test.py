@@ -2850,10 +2850,10 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         f"{table_name}/b=4/c=1",
     ]
 
-    def check_read_files(expected, query_id, node):
-        node.query("SYSTEM FLUSH LOGS")
+    def check_read_files(expected, query_id, current_node):
+        current_node.query("SYSTEM FLUSH LOGS")
         assert expected == int(
-            node.query(
+            current_node.query(
                 f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type='QueryFinish'"
             )
         )

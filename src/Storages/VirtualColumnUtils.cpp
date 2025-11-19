@@ -188,16 +188,18 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     if (!path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
     {
         const auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
-        const auto map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
-        for (const auto & item : map)
+        const auto hive_partitions_keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(path);
+
+        for (const auto & [key, value] : hive_partitions_keys_and_values)
         {
-            auto type = tryInferDataTypeByEscapingRule(std::string(item.second), format_settings, FormatSettings::EscapingRule::Raw, nullptr);
-            if (type == nullptr)
+            auto type = tryInferDataTypeByEscapingRule(std::string(value), format_settings, FormatSettings::EscapingRule::Raw, nullptr);
+            if (!type)
                 type = std::make_shared<DataTypeString>();
+
             if (type->canBeInsideLowCardinality())
-                add_virtual({std::string(item.first), std::make_shared<DataTypeLowCardinality>(type)});
+                add_virtual({std::string(key), std::make_shared<DataTypeLowCardinality>(type)});
             else
-                add_virtual({std::string(item.first), type});
+                add_virtual({std::string(key), type});
         }
     }
 
