@@ -645,6 +645,15 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_string_and_substituion.parse(pos, command_partition, expected))
                     return false;
 
+                if (s_from.ignore(pos, expected))
+                {
+                    ASTPtr ast_from;
+                    if (!parser_string_literal.parse(pos, ast_from, expected))
+                        return false;
+
+                    command->from = ast_from->as<ASTLiteral &>().value.safeGet<String>();
+                }
+
                 command->part = true;
                 command->type = ASTAlterCommand::ATTACH_PARTITION;
             }
