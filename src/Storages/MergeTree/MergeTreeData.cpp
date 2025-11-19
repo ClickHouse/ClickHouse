@@ -4656,7 +4656,7 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
             if (old_name.empty() || new_name.empty())
                 throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Empty part name. Most likely it's a bug.");
             const auto full_path = fs::path(storage.relative_data_path) / source_dir;
-            disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
+            disk->moveDirectory(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
         }
         catch (...)
         {
