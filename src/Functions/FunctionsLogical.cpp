@@ -445,7 +445,7 @@ struct OperationApplier
         if (N > in.size()) \
         { \
             OperationApplier<Op, OperationApplierImpl, N - 1> \
-                ::template FUNCTION_NAME<CarryResult>(in, result_data, size); \
+                ::template FUNCTION_NAME<CarryResult>(in, result_data, size); /* NOLINT */ \
             return; \
         } \
     \
