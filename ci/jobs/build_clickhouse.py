@@ -64,6 +64,19 @@ class JobStages(metaclass=MetaClasses.WithIter):
     UPLOAD_PROFILE_DATA = "profile"
 
 
+def should_use_sparse_checkout_of_submodules(build_type: str) -> bool:
+    NOT_COMPATIBLE_JOBS = [
+        BuildTypes.AMD_DARWIN,
+        BuildTypes.AMD_FREEBSD,
+        BuildTypes.ARM_DARWIN,
+        BuildTypes.PPC64LE,
+        BuildTypes.RISCV64,
+        BuildTypes.S390X,
+    ]
+
+    return build_type not in NOT_COMPATIBLE_JOBS
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Build Job")
     parser.add_argument(
@@ -145,8 +158,14 @@ def main():
             res = Shell.check(
                 f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
+
+            def get_command_to_use():
+                if should_use_sparse_checkout_of_submodules(build_type):
+                    return "contrib/update-submodules.sh --max-procs 10"
+                return "git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch"
+
             res = res and Shell.check(
-                f"git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch",
+                get_command_to_use(),
                 retries=3,
             )
             return res

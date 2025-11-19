@@ -7,6 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.config_cluster import minio_secret_key
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -871,3 +872,17 @@ def test_iceberg_cluster_function():
         ],
         must_not_contain=[password, azure_account_key],
     )
+
+
+def test_query_masking_rule_with_ddl():
+    table_name = "test_ddl_masking"
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(
+        f"CREATE TABLE {table_name} ON CLUSTER 'test_shard_localhost' (s String, sensetive_data UInt32) ENGINE = MergeTree ORDER BY s"
+    )
+
+    assert_eq_with_retry(node, "SELECT count(*) FROM system.distribution_queue", "0\n")
+    assert "sensetive_data" in node.query(
+        f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
+    )
+    node.query("DROP TABLE IF EXISTS test_table")
