@@ -14,7 +14,7 @@ REGISTER_FUNCTION(ToStartOfSecond)
 Rounds down a date with time to the start of the seconds.
     )";
     FunctionDocumentation::Syntax syntax = R"(
-toStartOfSecond(datetime, [timezone])
+toStartOfSecond(datetime[, timezone])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "Date and time to truncate sub-seconds from.", {"DateTime64"}},

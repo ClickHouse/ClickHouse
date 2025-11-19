@@ -848,7 +848,7 @@ void ArrowFlightHandler::start()
     {
         try
         {
-            setThreadName("ArrowFlightSrv");
+            DB::setThreadName(ThreadName::ARROW_FLIGHT_SERVER);
             if (stopped)
                 return;
             auto serve_status = Serve();
@@ -867,7 +867,7 @@ void ArrowFlightHandler::start()
         {
             try
             {
-                setThreadName("ArrowFlightExpr");
+                DB::setThreadName(ThreadName::ARROW_FLIGHT_EXPR);
                 while (!stopped)
                 {
                     calls_data->waitNextExpirationTime();
@@ -1194,7 +1194,7 @@ arrow::Status ArrowFlightHandler::evaluatePollDescriptor(const String & poll_des
         return *info->status;
     }
 
-    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), "ArrowFlight"};
+    ThreadGroupSwitcher thread_group_switcher{poll_session->getThreadGroup(), ThreadName::ARROW_FLIGHT};
     auto ch_to_arrow_converter = poll_session->getCHToArrowConverter();
     bool last = false;
 
@@ -1381,7 +1381,7 @@ arrow::Status ArrowFlightHandler::DoPut(
 
 arrow::Status ArrowFlightHandler::tryRunAndLogIfError(std::string_view method_name, std::function<arrow::Status()> && func) const
 {
-    setThreadName("ArrowFlight");
+    DB::setThreadName(ThreadName::ARROW_FLIGHT);
     ThreadStatus thread_status;
     try
     {

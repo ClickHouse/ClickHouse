@@ -190,7 +190,7 @@ StorageKafka::StorageKafka(
     , thread_per_consumer((*kafka_settings)[KafkaSetting::kafka_thread_per_consumer].value)
     , collection_name(collection_name_)
 {
-    kafka_settings->sanityCheck();
+    kafka_settings->sanityCheck(getContext());
 
     if (auto mode = getStreamingHandleErrorMode();
         mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
@@ -219,9 +219,7 @@ StorageKafka::StorageKafka(
 
     cleanup_thread = std::make_unique<ThreadFromGlobalPool>([this]()
     {
-        const auto & table = getStorageID().getTableName();
-        const auto & thread_name = std::string("KfkCln:") + table;
-        setThreadName(thread_name.c_str(), /*truncate=*/ true);
+        DB::setThreadName(ThreadName::KAFKA_CLEANUP);
         cleanConsumersByTTL();
     });
 }

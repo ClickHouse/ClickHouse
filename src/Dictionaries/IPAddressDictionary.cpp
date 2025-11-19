@@ -407,42 +407,46 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
-
     std::vector<IPRecord> ip_records;
-
     bool has_ipv6 = false;
-
-    DictionaryPipelineExecutor executor(pipeline, configuration.use_async_executor);
-    pipeline.setConcurrencyControl(false);
-    Block block;
-    while (executor.pull(block))
     {
-        const auto rows = block.rows();
-        element_count += rows;
+        BlockIO io = source_ptr->loadAll();
 
-        const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
-        const auto attribute_column_ptrs = Columns{
-            std::from_range_t{},
-            collections::range(0, dict_struct.attributes.size())
-                | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
+        DictionaryPipelineExecutor executor(io.pipeline, configuration.use_async_executor);
+        io.pipeline.setConcurrencyControl(false);
 
-        for (const auto row : collections::range(0, rows))
+        io.executeWithCallbacks([&]()
         {
-            for (const auto attribute_idx : collections::range(0, dict_struct.attributes.size()))
+            Block block;
+            while (executor.pull(block))
             {
-                const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
-                auto & attribute = attributes[attribute_idx];
+                const auto rows = block.rows();
+                element_count += rows;
 
-                setAttributeValue(attribute, attribute_column[row]);
+                const ColumnPtr key_column_ptr = block.safeGetByPosition(0).column;
+                const auto attribute_column_ptrs = Columns{
+                    std::from_range_t{},
+                    collections::range(0, dict_struct.attributes.size())
+                        | std::views::transform([&](const size_t attribute_idx) { return block.safeGetByPosition(attribute_idx + 1).column; })};
+
+                for (const auto row : collections::range(0, rows))
+                {
+                    for (const auto attribute_idx : collections::range(0, dict_struct.attributes.size()))
+                    {
+                        const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+                        auto & attribute = attributes[attribute_idx];
+
+                        setAttributeValue(attribute, attribute_column[row]);
+                    }
+
+                    const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
+                    has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
+
+                    size_t row_number = ip_records.size();
+                    ip_records.emplace_back(addr, prefix, row_number);
+                }
             }
-
-            const auto [addr, prefix] = parseIPFromString(key_column_ptr->getDataAt(row).toView());
-            has_ipv6 = has_ipv6 || (addr.family() == Poco::Net::IPAddress::IPv6);
-
-            size_t row_number = ip_records.size();
-            ip_records.emplace_back(addr, prefix, row_number);
-        }
+        });
     }
 
     if (access_to_key_from_attributes)
