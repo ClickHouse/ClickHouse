@@ -1072,21 +1072,8 @@ void DiskObjectStorageTransaction::commit(const TransactionCommitOptionsVariant 
                 getLogger("DiskObjectStorageTransaction"),
                 fmt::format("An error occurred while executing transaction's operation #{} ({})", i, operations_to_execute[i]->getInfoForLog()));
 
-            for (int64_t j = i; j >= 0; --j)
-            {
-                try
-                {
-                    operations_to_execute[j]->undo();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(
-                        getLogger("DiskObjectStorageTransaction"),
-                        fmt::format("An error occurred while undoing transaction's operation #{}", i));
+            undo();
 
-                    throw;
-                }
-            }
             throw;
         }
     }
