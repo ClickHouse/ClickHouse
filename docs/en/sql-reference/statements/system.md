@@ -114,6 +114,10 @@ Clears the text index header cache.
 
 Clears the text index postings cache.
 
+## SYSTEM DROP TEXT INDEX CACHES {#drop-text-index-caches}
+
+Clears the text index header cache, dictionary cache, and postings cache.
+
 ## SYSTEM DROP REPLICA {#drop-replica}
 
 Dead replicas of `ReplicatedMergeTree` tables can be dropped using following syntax:
@@ -506,7 +510,7 @@ SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
 **Example**
 
 ```sql
-CREATE DATABASE repl_db 
+CREATE DATABASE repl_db
 ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
 
 CREATE TABLE repl_db.test_table (n UInt32)
