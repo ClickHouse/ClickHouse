@@ -31,9 +31,10 @@ public:
 private:
     bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase);
     bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease);
+    void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase);
 
-    /// Ordering by size and unique id for tie breaking
-    /// Used for both running and increasing allocations for consistent ordering
+    /// Ordering by size and unique id for tie breaking.
+    /// Used for both running and increasing children for consistent ordering.
     struct CompareNodes
     {
         bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept

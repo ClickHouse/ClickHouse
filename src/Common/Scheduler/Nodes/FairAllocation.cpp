@@ -30,14 +30,10 @@ void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_b
             "Can't add another child with the same path: {}",
             it->second->getPath());
     child->setParentNode(this);
-
-    Update update;
-    update.setAttached(child.get());
-    if (setIncrease(*child, child->increase))
-        update.setIncrease(increase);
-    if (setDecrease(*child, child->decrease))
-        update.setDecrease(decrease);
-    propagateUpdate(*child, std::move(update));
+    propagateUpdate(*child, Update()
+        .setAttached(child.get())
+        .setIncrease(child->increase)
+        .setDecrease(child->decrease));
 }
 
 void FairAllocation::removeChild(ISchedulerNode * child_base)
@@ -45,14 +41,10 @@ void FairAllocation::removeChild(ISchedulerNode * child_base)
     if (auto iter = children.find(child_base->basename); iter != children.end())
     {
         SpaceSharedNodePtr child = iter->second;
-        Update update;
-        update.setDetached(child.get());
-        if (setIncrease(*child, nullptr))
-            update.setIncrease(increase);
-        if (setDecrease(*child, nullptr))
-            update.setDecrease(decrease);
-        propagateUpdate(*child, std::move(update));
-
+        propagateUpdate(*child, Update()
+            .setDetached(child.get())
+            .setIncrease(nullptr)
+            .setDecrease(nullptr));
         child->setParentNode(nullptr);
         children.erase(iter);
     }
@@ -124,21 +116,7 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
 
 bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
 {
-    // Remove from intrusive sets to update the key
-    if (from_child.increasing_hook.is_linked())
-        increasing_children.erase(increasing_children.iterator_to(from_child));
-    if (from_child.running_hook.is_linked())
-        running_children.erase(running_children.iterator_to(from_child));
-
-    // Compute new key
-    from_child.parent_key.first = double(from_child.allocated + (new_increase ? new_increase->size : 0)) / from_child.info.weight;
-    from_child.parent_key.second = ++tie_breaker;
-
-    // Reinsert into intrusive sets
-    if (from_child.allocated > 0)
-        running_children.insert(from_child);
-    if (new_increase)
-        increasing_children.insert(from_child);
+    updateKey(from_child, new_increase);
 
     // Update current increase request
     IncreaseRequest * old_increase = increase;
@@ -149,10 +127,15 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
 
 bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease)
 {
+    updateKey(from_child, from_child.increase);
+
     // Update intrusive list of decreasing children
-    if (from_child.decreasing_hook.is_linked() && !new_decrease)
-        decreasing_children.erase(decreasing_children.iterator_to(from_child));
-    else if (!from_child.decreasing_hook.is_linked() && new_decrease)
+    if (from_child.decreasing_hook.is_linked())
+    {
+        if (!new_decrease)
+            decreasing_children.erase(decreasing_children.iterator_to(from_child));
+    }
+    else if (new_decrease)
         decreasing_children.push_back(from_child);
 
     // Update current decrease request
@@ -160,6 +143,24 @@ bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest 
     decrease_child = decreasing_children.empty() ? nullptr : &*decreasing_children.begin();
     decrease = decrease_child ? decrease_child->decrease : nullptr;
     return old_decrease != decrease;
+}
+
+void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
+{
+    // Remove from intrusive sets to update the key
+    if (from_child.increasing_hook.is_linked())
+        increasing_children.erase(increasing_children.iterator_to(from_child));
+    if (from_child.running_hook.is_linked())
+        running_children.erase(running_children.iterator_to(from_child));
+
+    from_child.parent_key.first = double(from_child.allocated + (new_increase ? new_increase->size : 0)) / from_child.info.weight;
+    from_child.parent_key.second = ++tie_breaker;
+
+    // Reinsert into intrusive sets
+    if (from_child.allocated > 0)
+        running_children.insert(from_child);
+    if (new_increase)
+        increasing_children.insert(from_child);
 }
 
 }
