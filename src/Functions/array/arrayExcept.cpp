@@ -17,6 +17,7 @@
 #include <Common/register_objects.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
@@ -252,6 +253,26 @@ public:
 
         DataTypePtr source_nested = get_nested_type(arguments[0].type);
         DataTypePtr exclude_nested = get_nested_type(arguments[1].type);
+
+        // Handle Array(Nothing) - if one is Array(Nothing), use the type of the other
+        const DataTypeNothing * source_is_nothing = typeid_cast<const DataTypeNothing *>(source_nested.get());
+        const DataTypeNothing * exclude_is_nothing = typeid_cast<const DataTypeNothing *>(exclude_nested.get());
+
+        if (source_is_nothing && exclude_is_nothing)
+        {
+            // Both are Array(Nothing), return Array(Nothing)
+            return arguments[0].type;
+        }
+        else if (source_is_nothing)
+        {
+            // Source is Array(Nothing), use exclude type
+            return arguments[1].type;
+        }
+        else if (exclude_is_nothing)
+        {
+            // Exclude is Array(Nothing), use source type
+            return arguments[0].type;
+        }
 
         if (!source_nested->equals(*exclude_nested))
         {
