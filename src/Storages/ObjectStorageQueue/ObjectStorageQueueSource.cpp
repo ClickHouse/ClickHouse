@@ -1336,7 +1336,15 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     Coordination::Requests requests;
     StoredObjects successful_objects;
     HiveLastProcessedFileInfoMap file_map;
-    prepareCommitRequests(requests, insert_succeeded, successful_objects, file_map, nullptr, exception_message);
+    // `created_nodes` is nullptr here, because it is required only in mutithread case,
+    // when `requests` is filled with several `prepareCommitRequests` calls.
+    prepareCommitRequests(
+        requests,
+        insert_succeeded,
+        successful_objects,
+        file_map,
+        /* created_nodes */ nullptr,
+        exception_message);
     prepareHiveProcessedRequests(requests, file_map);
 
     if (!successful_objects.empty()

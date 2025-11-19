@@ -216,11 +216,15 @@ bool ObjectStorageQueueOrderedFileMetadata::getMaxProcessedNode(
     return false;
 }
 
-std::optional<ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo> ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
+ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
     Coordination::Stat * stat,
     bool check_failed,
     LoggerPtr log_)
 {
+    /// With hive partitioning we keep last processed file for each partition
+    /// processed : <JSON with bucket metadata, see NodeMetadata structure>
+    ///   key=bar : file042.parquet
+    ///   key=foo : file123.parquet
     std::optional<std::string> processed_node_hive_partitioning_path;
     if (is_path_with_hive_partitioning)
         processed_node_hive_partitioning_path = std::filesystem::path(processed_node_path) / getHivePart(path);
@@ -231,7 +235,7 @@ std::optional<ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo> ObjectSt
         failed_node_path_, log_);
 }
 
-std::optional<ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo> ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
+ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo ObjectStorageQueueOrderedFileMetadata::getLastProcessedFile(
     Coordination::Stat * stat,
     const std::string & processed_node_path_,
     const std::string & file_path,
@@ -269,17 +273,17 @@ std::optional<ObjectStorageQueueOrderedFileMetadata::LastProcessedInfo> ObjectSt
     for (size_t i = 0; i < size; ++i)
         check_code(responses[i].error, file_path);
 
-    if (responses[0].data.empty())
-        return std::nullopt;
-
     LastProcessedInfo resp;
+
+    if (failed_node_path_.has_value())
+        resp.is_failed = responses[1].error == Coordination::Error::ZOK;
+
+    if (responses[0].data.empty())
+        return resp;
 
     NodeMetadata result = NodeMetadata::fromString(responses[0].data);
     if (stat)
         *stat = responses[0].stat;
-
-    if (failed_node_path_.has_value())
-        resp.is_failed = responses[1].error == Coordination::Error::ZOK;
 
     if (processed_node_hive_partitioning_path.has_value())
         resp.file_path = responses[hive_partitioning_index].data;
@@ -423,22 +427,22 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
         std::optional<Coordination::Stat> processed_node_stat;
 
         Coordination::Stat processed_node_stat_;
-        auto processed_file_info = getLastProcessedFile(&processed_node_stat_, true, log);
+        auto processed_file_info = getLastProcessedFile(&processed_node_stat_, /*check_failed*/ true, log);
 
-        if (processed_file_info.has_value())
+        if (processed_file_info.is_failed)
         {
-            if (processed_file_info->is_failed)
-            {
-                LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
-                return {false, FileStatus::State::Failed};
-            }
+            LOG_TEST(log, "File {} is Failed, path {}", path, failed_node_path);
+            return {false, FileStatus::State::Failed};
+        }
 
+        if (processed_file_info.file_path.has_value())
+        {
             processed_node_stat = processed_node_stat_;
 
             LOG_TEST(log, "Current max processed file {} from path: {}",
-                        processed_file_info->file_path, processed_node_path);
+                        *processed_file_info.file_path, processed_node_path);
 
-            if (!processed_file_info->file_path.empty() && path <= processed_file_info->file_path)
+            if (!processed_file_info.file_path->empty() && path <= *processed_file_info.file_path)
             {
                 return {false, FileStatus::State::Processed};
             }
@@ -547,15 +551,15 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
     Coordination::Stat processed_node_stat;
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);
-    auto processed_file_info = getLastProcessedFile(&processed_node_stat, false, log);
-    if (processed_file_info.has_value())
+    auto processed_file_info = getLastProcessedFile(&processed_node_stat, /*check_failed*/ false, log);
+    if (processed_file_info.file_path.has_value())
     {
         LOG_TEST(log, "Current max processed file: {}, condition less: {}",
-                 processed_file_info->file_path, bool(path <= processed_file_info->file_path));
+                 *processed_file_info.file_path, bool(path <= *processed_file_info.file_path));
 
-        if (!processed_file_info->file_path.empty() && path <= processed_file_info->file_path)
+        if (!processed_file_info.file_path->empty() && path <= *processed_file_info.file_path)
         {
-            LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, processed_file_info->file_path);
+            LOG_TRACE(log, "File {} is already processed, current max processed file: {}", path, *processed_file_info.file_path);
 
             if (ignore_if_exists)
                 return;
@@ -771,8 +775,8 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
         else
         {
             auto processed_file_info = getLastProcessedFile({}, processed_node_path, "");
-            if (processed_file_info.has_value())
-                max_processed_file_per_bucket_and_hive_partition[i][""] = std::move(processed_file_info->file_path);
+            if (processed_file_info.file_path.has_value())
+                max_processed_file_per_bucket_and_hive_partition[i][""] = std::move(*processed_file_info.file_path);
         }
     }
 
