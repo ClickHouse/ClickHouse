@@ -9,21 +9,10 @@ from pyiceberg.schema import Schema, NestedField
 import random
 from pyiceberg.types import (
     StringType,
-    IntegerType,
     LongType,
-    FloatType,
     DoubleType,
-    TimestampType,
     BooleanType,
-    TimestamptzType,
     DateType,
-    TimeType,
-    UUIDType,
-    BinaryType,
-    DecimalType,
-    StructType,
-    ListType,
-    MapType,
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.sorting import SortOrder, SortField
