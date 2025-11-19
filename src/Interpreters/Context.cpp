@@ -1343,18 +1343,43 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
-        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views is more than {}.", shared->max_view_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create("The number of active parts is more than {}.", shared->max_part_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > static_cast<Int64>(shared->max_named_collection_num_to_warn))
-            common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create("The number of named collections is more than {}.", shared->max_named_collection_num_to_warn.load());
+
+        auto attached_tables = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        auto attached_views = CurrentMetrics::get(CurrentMetrics::AttachedView);
+        auto attached_dictionaries = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
+        auto attached_databases = CurrentMetrics::get(CurrentMetrics::AttachedDatabase);
+
+        if (attached_tables > static_cast<Int64>(shared->max_table_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_table_num_to_throw]; limit > shared->max_table_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables ({}) is more than {}. You will not be able to create new tables once the limit of {} is reached.", attached_tables, shared->max_table_num_to_warn.load(), limit);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables ({}) is more than {}.", attached_tables, shared->max_table_num_to_warn.load());
+        }
+
+        if (attached_views > static_cast<Int64>(shared->max_view_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_view_num_to_throw]; limit > shared->max_view_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views ({}) is more than {}. You will not be able to create new views once the limit of {} is reached.", attached_views, shared->max_view_num_to_warn.load(), limit);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views ({}) is more than {}.", attached_views, shared->max_view_num_to_warn.load());
+        }
+
+        if (attached_dictionaries > static_cast<Int64>(shared->max_dictionary_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_dictionary_num_to_throw]; limit > shared->max_dictionary_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries ({}) is more than {}. You will not be able to create new dictionaries once the limit of {} is reached.", attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries ({}) is more than {}.", attached_dictionaries, shared->max_dictionary_num_to_warn.load());
+        }
+
+        if (attached_databases > static_cast<Int64>(shared->max_database_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_database_num_to_throw]; limit > shared->max_database_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases ({}) is more than {}. You will not be able to create new databases once the limit of {} is reached.", attached_databases, shared->max_database_num_to_warn.load(), limit);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases ({}) is more than {}.", attached_databases, shared->max_database_num_to_warn.load());
+        }
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
