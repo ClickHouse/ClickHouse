@@ -33,9 +33,9 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_sasl_mechanism;
     extern const KafkaSettingsString kafka_sasl_username;
     extern const KafkaSettingsString kafka_sasl_password;
-    extern const KafkaSettingsString kafka_autodetect_client_rack;
     extern const KafkaSettingsString kafka_compression_codec;
     extern const KafkaSettingsInt64 kafka_compression_level;
+    extern const KafkaSettingsString kafka_autodetect_client_rack;
 }
 
 namespace ErrorCodes
@@ -70,13 +70,13 @@ KafkaInterceptors<TStorageKafka>::rdKafkaOnThreadStart(rd_kafka_t *, rd_kafka_th
     switch (thread_type)
     {
         case RD_KAFKA_THREAD_MAIN:
-            setThreadName(("rdk:m/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_MAIN);
             break;
         case RD_KAFKA_THREAD_BACKGROUND:
-            setThreadName(("rdk:bg/" + table.substr(0, 8)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BACKGROUND);
             break;
         case RD_KAFKA_THREAD_BROKER:
-            setThreadName(("rdk:b/" + table.substr(0, 9)).c_str());
+            DB::setThreadName(ThreadName::KAFKA_BROKER);
             break;
     }
 
@@ -360,8 +360,8 @@ void updateConfigurationFromConfig(
 {
     loadFromConfig(kafka_config, params, KafkaConfigLoader::CONFIG_KAFKA_TAG);
 
-    /// We have to set these settings before taking the values from the consumer/producer specific configuration,
-    /// because otherwise we would introduce a breaking change.
+    specific_config_updater(kafka_config, params);
+
     auto kafka_settings = storage.getKafkaSettings();
     if (!kafka_settings[KafkaSetting::kafka_security_protocol].value.empty())
         kafka_config.set("security.protocol", kafka_settings[KafkaSetting::kafka_security_protocol]);
@@ -371,6 +371,11 @@ void updateConfigurationFromConfig(
         kafka_config.set("sasl.username", kafka_settings[KafkaSetting::kafka_sasl_username]);
     if (!kafka_settings[KafkaSetting::kafka_sasl_password].value.empty())
         kafka_config.set("sasl.password", kafka_settings[KafkaSetting::kafka_sasl_password]);
+    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
+        kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
+
+    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
+        kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
     auto autodetect_rack = kafka_settings[KafkaSetting::kafka_autodetect_client_rack].value;
     if (!autodetect_rack.empty())
@@ -406,13 +411,6 @@ void updateConfigurationFromConfig(
         else
             LOG_ERROR(params.log, "Unknown kafka_autodetect_client_rack facility.");
     }
-    specific_config_updater(kafka_config, params);
-
-    if (!kafka_settings[KafkaSetting::kafka_compression_codec].value.empty())
-        kafka_config.set("compression.codec", kafka_settings[KafkaSetting::kafka_compression_codec]);
-
-    if (kafka_settings[KafkaSetting::kafka_compression_level].changed)
-        kafka_config.set("compression.level", kafka_settings[KafkaSetting::kafka_compression_level].toString());
 
 #if USE_KRB5
     if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
@@ -496,6 +494,7 @@ void updateConfigurationFromConfig(
             LOG_ERROR(params.log, "Cannot set dup conf interceptor due to {} error", status);
     }
 }
+
 }
 
 template <typename TKafkaStorage>
@@ -530,6 +529,8 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     for (auto & property : conf.get_all())
     {
+        if (property.first.find("password") != std::string::npos)
+            continue;
         LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
     }
 
