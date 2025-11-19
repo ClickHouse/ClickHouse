@@ -373,18 +373,6 @@ private:
     }
 };
 
-template <>
-size_t FunctionArrayDistance<L2DistanceTransposed>::getNumberOfArguments() const
-{
-    return 3;
-}
-
-template <>
-ColumnNumbers FunctionArrayDistance<L2DistanceTransposed>::getArgumentsThatAreAlwaysConstant() const
-{
-    return {2};
-}
-
 /// Used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
