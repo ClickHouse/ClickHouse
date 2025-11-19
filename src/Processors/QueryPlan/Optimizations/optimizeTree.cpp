@@ -8,7 +8,9 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Poco/Logger.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -367,7 +369,7 @@ void considerEnablingParallelReplicas(
             stats->output_bytes,
             max_threads,
             num_replicas);
-        if (stats->input_bytes / max_threads >= (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
+        if (stats->input_bytes / max_threads > (stats->input_bytes / (max_threads * num_replicas)) + stats->output_bytes / num_replicas)
         {
             if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                 && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)

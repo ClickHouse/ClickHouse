@@ -87,6 +87,12 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
         res.input_bytes,
         res.output_bytes);
 
+    if (res.input_bytes == 0 && res.output_bytes == 0)
+    {
+        LOG_DEBUG(getLogger("RuntimeDataflowStatisticsCacheUpdater"), "No statistics collected, skipping statistics update.");
+        return;
+    }
+
     auto & dataflow_cache = getRuntimeDataflowStatisticsCache();
     dataflow_cache.update(*cache_key, res);
 }
