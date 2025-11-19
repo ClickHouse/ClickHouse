@@ -560,6 +560,9 @@ public:
     /// Returns true if part was created or removed by a transaction
     bool wasInvolvedInTransaction() const;
 
+    /// Returns true if part is created or removed by an active transaction
+    bool isInvolvedInTransaction() const;
+
     /// Moar hardening: this method is supposed to be used for debug assertions
     bool assertHasValidVersionMetadata() const;
 

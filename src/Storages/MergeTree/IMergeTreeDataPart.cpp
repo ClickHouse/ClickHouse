@@ -1981,6 +1981,15 @@ bool IMergeTreeDataPart::wasInvolvedInTransaction() const
     return created_by_transaction || removed_by_transaction;
 }
 
+bool IMergeTreeDataPart::isInvolvedInTransaction() const
+{
+    assert(!storage.data_parts_loading_finished || !version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
+    bool created_in_transaction = !version.creation_tid.isPrehistoric() && version.creation_csn == Tx::UnknownCSN;
+    bool removed_in_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash() && version.removal_csn == Tx::UnknownCSN;
+
+    return created_in_transaction || removed_in_transaction;
+}
+
 bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
 {
     /// We don't have many tests with server restarts and it's really inconvenient to write such tests.

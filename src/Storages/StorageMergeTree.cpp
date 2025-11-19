@@ -1428,6 +1428,17 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                                 "that is going to be applied to part {}",
                                 first_mutation_tid, mutations_begin_it->second.file_name, part->name);
         }
+        else
+        {
+            /// Do not mutate parts in an active transaction.
+            /// Mutation without transaction should wait for the transaction to commit or rollback.
+            if (part->isInvolvedInTransaction())
+            {
+                LOG_DEBUG(log, "Cannot mutate part {} because it's created or removed by an active transaction, mutation {} will wait for the transaction to commit or rollback.",
+                          part->name, mutations_begin_it->second.file_name);
+                continue;
+            }
+        }
 
         auto commands = std::make_shared<MutationCommands>();
         size_t current_ast_elements = 0;
