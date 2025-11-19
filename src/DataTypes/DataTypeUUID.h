@@ -8,8 +8,6 @@
 namespace DB
 {
 
-constexpr size_t UUID_BINARY_LENGTH = 16;
-
 class DataTypeUUID : public IDataType
 {
 public:

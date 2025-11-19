@@ -176,7 +176,7 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
     format(buf, settings);
-    return wipeSensitiveDataAndCutToLength(buf.str(), max_length, !show_secrets);
+    return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 
 String IAST::formatForLogging(size_t max_length) const

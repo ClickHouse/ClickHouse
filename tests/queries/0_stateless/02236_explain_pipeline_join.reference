@@ -8,12 +8,10 @@ ExpressionTransform × 16
         Resize 1 → 16
           (Expression)
           ExpressionTransform
-            (Expression)
-            ExpressionTransform
-              (Limit)
-              Limit
-                (ReadFromSystemNumbers)
-                NumbersRange 0 → 1
+            (Limit)
+            Limit
+              (ReadFromSystemNumbers)
+              NumbersRange 0 → 1
           (Expression)
           Resize × 2 16 → 1
             FillingRightJoinSide
@@ -50,9 +48,7 @@ ExpressionTransform × 16
                                                                           SimpleSquashingTransform
                                                                             Resize 1 → 16
                                                                               ExpressionTransform
-                                                                                (Expression)
-                                                                                ExpressionTransform
-                                                                                  (Limit)
-                                                                                  Limit
-                                                                                    (ReadFromSystemNumbers)
-                                                                                    NumbersRange 0 → 1
+                                                                                (Limit)
+                                                                                Limit
+                                                                                  (ReadFromSystemNumbers)
+                                                                                  NumbersRange 0 → 1

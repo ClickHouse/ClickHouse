@@ -26,7 +26,6 @@
 #    include <Client/BuzzHouse/Generator/FuzzConfig.h>
 #    include <Client/BuzzHouse/Generator/QueryOracle.h>
 #    include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#    include <Common/re2.h>
 namespace BuzzHouse
 {
 extern void loadFuzzerServerSettings(const FuzzConfig & fc);
@@ -489,7 +488,7 @@ bool Client::processBuzzHouseQuery(const String & full_query)
     }
     if (error_code > 0)
     {
-        if (fuzz_config->disallowed_error_codes.contains(error_code))
+        if (fuzz_config->disallowed_error_codes.find(error_code) != fuzz_config->disallowed_error_codes.end())
         {
             throw Exception(ErrorCodes::BUZZHOUSE, "Found disallowed error code {} - {}", error_code, ErrorCodes::getName(error_code));
         }
@@ -517,31 +516,12 @@ bool Client::fuzzLoopReconnect()
     return tryToReconnect(fuzz_config->max_reconnection_attempts, fuzz_config->time_to_sleep_between_reconnects);
 }
 
-static void runExternalCommand(
-    std::unique_ptr<BuzzHouse::ExternalIntegrations> & external_integrations,
-    const uint64_t seed,
-    const bool async,
-    const String & cname,
-    const String & tname)
-{
-    if (!external_integrations->performExternalCommand(seed, async, BuzzHouse::IntegrationCall::Dolor, cname, tname))
-    {
-        throw Exception(ErrorCodes::BUZZHOUSE, "External command failed for {} on catalog {}", tname, cname);
-    }
-}
-
 /// Returns false when server is not available.
 bool Client::buzzHouse()
 {
-    String full_query;
     bool server_up = true;
+    String full_query;
     static const String & restart_cmd = "--Reconnecting client";
-    static const String & rerun_database = "--External database ";
-    static const RE2 rerun_database_re(R"((?i)^--External\s+database\s+(.*)$)");
-    static const String & rerun_table = "--External table ";
-    static const RE2 rerun_table_re(R"((?i)^--External\s+table\s+(.*)$)");
-    static const String & external_cmd = "--External command ";
-    static const RE2 extern_re(R"((?i)^--External\s+command\s+(?:(async)\s+)?with\s+seed\s+(\d+)\s+to\s+([^\s.]+)\.([^\s.]+)\s*$)");
 
     /// Set time to run, but what if a query runs for too long?
     buzz_done = 0;
@@ -557,37 +537,9 @@ bool Client::buzzHouse()
 
         while (server_up && !buzz_done && std::getline(infile, full_query))
         {
-            String async_flag;
-            String seed_str;
-            String database;
-            String table;
-
             if (full_query == restart_cmd)
             {
                 server_up &= fuzzLoopReconnect();
-            }
-            else if (startsWith(full_query, rerun_database) && RE2::FullMatch(full_query, rerun_database_re, &database))
-            {
-                const auto x = external_integrations->reRunCreateDatabase(BuzzHouse::IntegrationCall::Dolor, database);
-
-                UNUSED(x);
-            }
-            else if (startsWith(full_query, rerun_table) && RE2::FullMatch(full_query, rerun_table_re, &table))
-            {
-                const auto x = external_integrations->reRunCreateTable(BuzzHouse::IntegrationCall::Dolor, table);
-
-                UNUSED(x);
-            }
-            else if (
-                startsWith(full_query, external_cmd) && RE2::FullMatch(full_query, extern_re, &async_flag, &seed_str, &database, &table))
-            {
-                uint64_t seed = 0;
-                const auto * const first = seed_str.data();
-                const auto * const last = first + seed_str.size();
-                const auto x = std::from_chars(first, last, seed, 10);
-
-                UNUSED(x);
-                runExternalCommand(external_integrations, seed, !async_flag.empty(), database, table);
             }
             else
             {
@@ -599,14 +551,12 @@ bool Client::buzzHouse()
     else
     {
         String full_query2;
-        String full_query3;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool has_cloud_features = true;
         BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;
-        BuzzHouse::SQLQuery sq4;
         std::vector<BuzzHouse::SQLQuery> intermediate_queries;
         uint32_t nsuccessfull_create_database = 0;
         uint32_t total_create_database_tries = 0;
@@ -631,7 +581,6 @@ bool Client::buzzHouse()
         loadSystemTables(*fuzz_config);
 
         full_query2.reserve(8192);
-        full_query3.reserve(8192);
         BuzzHouse::StatementGenerator gen(*fuzz_config, *external_integrations, has_cloud_features);
         BuzzHouse::QueryOracle qo(*fuzz_config);
         while (server_up && !buzz_done)
@@ -652,7 +601,7 @@ bool Client::buzzHouse()
                 total_create_database_tries++;
             }
             else if (
-                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 150
+                gen.collectionHas<std::shared_ptr<BuzzHouse::SQLDatabase>>(gen.attached_databases) && total_create_table_tries < 50
                 && nsuccessfull_create_table < max_initial_tables)
             {
                 gen.generateNextCreateTable(
@@ -675,11 +624,8 @@ bool Client::buzzHouse()
                 const uint32_t peer_oracle
                     = 20 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_table_peer_oracle));
                 const uint32_t restart_client = 1 * static_cast<uint32_t>(fuzz_config->allow_client_restarts);
-                const uint32_t external_call
-                    = 10 * static_cast<uint32_t>(gen.collectionHas<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call));
                 const uint32_t run_query = 910;
-                const uint32_t prob_space
-                    = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + run_query;
+                const uint32_t prob_space = correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query;
                 std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
                 const uint32_t nopt = next_dist(rg.generator);
 
@@ -734,12 +680,8 @@ bool Client::buzzHouse()
                     server_up &= processBuzzHouseQuery(full_query);
                     qo.setIntermediateStepSuccess(!have_error);
 
-                    sq4.Clear();
-                    full_query3.resize(0);
-                    qo.maybeUpdateOracleSelectQuery(rg, gen, sq2, sq4);
-                    BuzzHouse::SQLQueryToString(full_query3, sq4);
-                    fuzz_config->outf << full_query3 << std::endl;
-                    server_up &= processBuzzHouseQuery(full_query3);
+                    fuzz_config->outf << full_query2 << std::endl;
+                    server_up &= processBuzzHouseQuery(full_query2);
                     qo.processSecondOracleQueryResult(error_code, *external_integrations, "Multi setting query");
                 }
                 else if (dump_oracle && nopt < (correctness_oracle + settings_oracle + dump_oracle + 1))
@@ -861,25 +803,7 @@ bool Client::buzzHouse()
                     server_up &= fuzzLoopReconnect();
                 }
                 else if (
-                    external_call
-                    && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + 1))
-                {
-                    const uint64_t nseed = rg.nextRandomUInt64();
-                    const auto & tbl
-                        = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                    const auto & ndname = tbl.getSparkCatalogName();
-                    const auto & ntname = tbl.getTableName(false);
-                    const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;
-
-                    fuzz_config->outf << "--External command " << (async ? "async " : "") << "with seed " << nseed << " to " << ndname
-                                      << "." << ntname << std::endl;
-                    runExternalCommand(external_integrations, nseed, async, ndname, ntname);
-                }
-                else if (
-                    run_query
-                    && nopt
-                        < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + run_query
-                           + 1))
+                    run_query && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + run_query + 1))
                 {
                     gen.generateNextStatement(rg, sq1);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
@@ -889,7 +813,7 @@ bool Client::buzzHouse()
                 }
                 else
                 {
-                    UNREACHABLE();
+                    chassert(0);
                 }
             }
         }

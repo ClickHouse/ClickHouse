@@ -227,7 +227,7 @@ private:
     UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     UInt64 server_parallel_replicas_protocol_version = 0;
-    UInt64 worker_cluster_function_protocol_version = 0;
+    UInt64 server_cluster_function_protocol_version = 0;
     UInt64 server_query_plan_serialization_version = 0;
     String server_timezone;
     String server_display_name;
@@ -318,7 +318,7 @@ private:
     Block receiveDataImpl(NativeReader & reader);
     Block receiveProfileEvents();
 
-    String receiveTableColumns();
+    std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
     ParallelReadRequest receiveParallelReadRequest() const;
@@ -326,7 +326,6 @@ private:
     ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
-    void initMaybeCompressedInput();
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
