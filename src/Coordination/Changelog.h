@@ -420,8 +420,10 @@ private:
 
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
 
-    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
+    /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
+    /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
+    void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
