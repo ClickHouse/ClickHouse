@@ -99,7 +99,7 @@ SELECT * FROM test_partial_index WHERE region = 'us_west' AND user_id = 106 ORDE
 -- Skip indexes on OR supported.
 -- All 5 rows from part1 (no skip indexes) +
 -- All 5 rows from part2 (because no index on user_id) +
--- 2 rows form part3 -> 1 row each for region='asia' and user_id=101.
+-- 2 rows from part3 -> 1 row each for region='asia' and user_id=101.
 -- Total 12
 SELECT * FROM test_partial_index WHERE region = 'asia' OR user_id = 101 ORDER BY ALL SETTINGS log_comment = 'test_partial_4';
 1	2023-01-01	101	https://example.com/page1	europe
