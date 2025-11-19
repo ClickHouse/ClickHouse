@@ -243,15 +243,16 @@ struct ToTimeImpl
         if (local_seconds < 0)
             local_seconds += 86400;
 
-        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
         {
-            if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
+            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            {
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
-        }
-        else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-        {
-            if (local_seconds > MAX_TIME_TIMESTAMP)
+            }
+            else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+            {
                 return MAX_TIME_TIMESTAMP;
+            }
         }
 
         return static_cast<Int32>(local_seconds);
@@ -1234,59 +1235,59 @@ struct ConvertThroughParsing
             if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
             {
                 if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort && (to_datetime || to_datetime64))
+                {
+                    if constexpr (to_datetime64)
                     {
-                        if constexpr (to_datetime64)
-                        {
-                            DateTime64 res = 0;
-                            parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                            vec_to[i] = res;
-                        }
-                        else if constexpr (to_time64)
-                        {
-                            Time64 res = 0;
-                            parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                            vec_to[i] = res;
-                        }
-                        else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                        {
-                            time_t res;
-                            parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                            convertFromTime<ToDataType>(vec_to[i], res);
-                        }
-                        else
-                        {
-                            time_t res;
-                            parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                            convertFromTime<ToDataType>(vec_to[i], res);
-                        }
+                        DateTime64 res = 0;
+                        parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
                     }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parseTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parseTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
+                    }
+                    else
+                    {
+                        time_t res;
+                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
+                    }
+                }
                 else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS && (to_datetime || to_datetime64))
                 {
-                        if constexpr (to_datetime64)
-                        {
-                            DateTime64 res = 0;
-                            parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                            vec_to[i] = res;
-                        }
-                        else if constexpr (to_time64)
-                        {
-                            Time64 res = 0;
-                            parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                            vec_to[i] = res;
-                        }
-                        else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                        {
-                            time_t res;
-                            parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                            convertFromTime<ToDataType>(vec_to[i], res);
-                        }
-                        else
-                        {
-                            time_t res;
-                            parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                            convertFromTime<ToDataType>(vec_to[i], res);
-                        }
+                    if constexpr (to_datetime64)
+                    {
+                        DateTime64 res = 0;
+                        parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
                     }
+                    else if constexpr (to_time64)
+                    {
+                        Time64 res = 0;
+                        parseTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        vec_to[i] = res;
+                    }
+                    else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
+                    {
+                        time_t res;
+                        parseTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
+                    }
+                    else
+                    {
+                        time_t res;
+                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        convertFromTime<ToDataType>(vec_to[i], res);
+                    }
+                }
                 else
                 {
                     if constexpr (to_datetime64)
