@@ -43,14 +43,6 @@ def test_empty_url():
     )
 
 
-def test_wrong_url():
-    start_clickhouse(
-        "configs/config_wrong_url.xml",
-        "configs/users.xml",
-        "DNS error: Temporary DNS error while resolving: wrong",
-    )
-
-
 def test_missing_auth_info():
     start_clickhouse(
         "configs/config_missing_auth_info.xml",
@@ -88,4 +80,12 @@ def test_wrong_key():
         "configs/config_token.xml",
         "configs/users_wrong_key.xml",
         "DB::Exception: Key WRONG not found in secret username of vault",
+    )
+
+
+def test_wrong_url():
+    start_clickhouse(
+        "configs/config_wrong_url.xml",
+        "configs/users.xml",
+        "DNS error: Temporary DNS error while resolving: wrong",
     )
