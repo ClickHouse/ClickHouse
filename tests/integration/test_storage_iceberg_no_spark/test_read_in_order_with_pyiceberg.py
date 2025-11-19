@@ -109,7 +109,7 @@ def test_sort_order(started_cluster_iceberg_no_spark):
 
     partition_spec = PartitionSpec()
 
-    # NOTE pyiceberg ignore sort order when writing data, so writes data unsorted
+    # NOTE pyiceberg ignores sort order when writing data, so writes data unsorted
     sort_order = SortOrder(SortField(source_id=4, transform=IdentityTransform()))
     table = create_table(catalog, root_namespace, "test", schema, partition_spec, sort_order)
 
