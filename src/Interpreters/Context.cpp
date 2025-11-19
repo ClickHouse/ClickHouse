@@ -132,6 +132,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
@@ -266,6 +267,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
+    extern const SettingsBool filesystem_cache_allow_background_download;
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
     extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
     extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
@@ -895,9 +897,8 @@ struct ContextSharedPart : boost::noncopyable
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
         LOG_TRACE(log, "Shutting down caches");
-        const auto & caches = FileCacheFactory::instance().getAll();
-        for (const auto & [_, cache] : caches)
-            cache->cache->deactivateBackgroundOperations();
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
+            cache_data->cache->deactivateBackgroundOperations();
         FileCacheFactory::instance().clear();
 
         {
@@ -6879,6 +6880,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
     res.filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
     res.filesystem_cache_allow_background_download_during_fetch = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
