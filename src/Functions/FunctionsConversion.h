@@ -237,6 +237,7 @@ struct ToTimeImpl
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
+        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
         Int64 offset = time_zone.timezoneOffset(dt64);
         Int64 local_seconds = (dt64 + offset) % 86400;
         if (local_seconds < 0)
@@ -397,6 +398,7 @@ struct ToTimeTransformFromDateTime
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         auto utc_seconds = from;
+        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
         Int64 offset = time_zone.timezoneOffset(utc_seconds);
         /// compute local time-of-day in seconds
         Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
@@ -1289,9 +1291,9 @@ struct ConvertThroughParsing
                 {
                     if constexpr (to_datetime64)
                     {
-                            DateTime64 value = 0;
-                            readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                            vec_to[i] = value;
+                        DateTime64 value = 0;
+                        readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
                         }
                     else if constexpr (to_time64)
                     {
@@ -1337,8 +1339,8 @@ struct ConvertThroughParsing
                 }
 
                 if (!isAllRead(read_buffer))
-                        throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
-                }
+                    throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
+            }
             else
             {
                 bool parsed;
@@ -1753,7 +1755,7 @@ struct ConvertImpl
                 auto utc_seconds = vec_to[i] / scale_mult;
                 auto fraction = vec_to[i] % scale_mult;
 
-                // Compute local seconds-of-day using timezone offset
+                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
                 Int64 offset = time_zone->timezoneOffset(utc_seconds);
                 Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
                 if (local_seconds < 0)
@@ -2226,33 +2228,7 @@ struct ConvertImpl
                 {
                     vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
                 }
-                else if constexpr (std::is_same_v<FromDataType, DataTypeTime64> && std::is_same_v<ToDataType, DataTypeTime64>)
-                {
-                    // Handle Time64 to Time64 conversions with different scales
-                    if (col_from->getScale() != col_to->getScale())
-                    {
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
-                        {
-                            ToFieldType result;
-                            bool convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
-                            if (convert_result)
-                                vec_to[i] = result;
-                            else
-                            {
-                                vec_to[i] = static_cast<ToFieldType>(0);
-                                (*vec_null_map_to)[i] = true;
-                            }
-                        }
-                        else
-                        {
-                            vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
-                        }
-                    }
-                    else
-                    {
-                        vec_to[i] = vec_from[i];
-                    }
-                }
+                /// Time64->Time64 scale conversion is handled by the generic decimal conversion logic below.
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
