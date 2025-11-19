@@ -46,8 +46,8 @@ StorageFileCluster::StorageFileCluster(
 {
     StorageInMemoryMetadata storage_metadata;
 
-    size_t total_bytes_to_read; // its value isn't used as we are not reading files (just listing them). But it is required by getPathsList
-    paths = StorageFile::getPathsList(filename_, context->getUserFilesPath(), context, total_bytes_to_read);
+    /// The archive syntax (e.g. "archive*.zip::file.parquet") is not supported by function fileCluster() yet.
+    paths = StorageFile::FileSource::parse(filename_, context, /* allow_archive_path_syntax = */ false).paths;
 
     if (columns_.empty())
     {

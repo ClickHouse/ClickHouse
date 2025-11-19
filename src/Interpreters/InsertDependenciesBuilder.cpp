@@ -6,6 +6,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
+#include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -668,7 +669,8 @@ private:
             auto converting_types_dag = ActionsDAG::makeConvertingActions(
                 input.getColumnsWithTypeAndName(),
                 to_convert,
-                ActionsDAG::MatchColumnsMode::Name);
+                ActionsDAG::MatchColumnsMode::Name,
+                local_context);
 
             auto adding_missing_defaults_dag = addMissingDefaults(
                 Block(to_convert),
@@ -1411,6 +1413,9 @@ Chain InsertDependenciesBuilder::createSink(StorageIDPrivate view_id) const
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
+
+    /// Add transform to remove Replicated columns. Right now no storage supports writing it.
+    result.addSink(std::make_shared<RemovingReplicatedColumnsTransform>(header));
 
     if (!inner_storage->supportsSparseSerialization())
         result.addSink(std::make_shared<RemovingSparseTransform>(header));
