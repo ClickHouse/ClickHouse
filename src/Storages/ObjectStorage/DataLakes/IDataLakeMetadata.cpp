@@ -96,6 +96,7 @@ ReadFromFormatInfo IDataLakeMetadata::prepareReadingFromFormat(
     return DB::prepareReadingFromFormat(requested_columns, storage_snapshot, context, supports_subset_of_columns, supports_tuple_elements);
 }
 
+#if USE_AVRO
 DataFileMetaInfo::DataFileMetaInfo(
     const Iceberg::IcebergSchemaProcessor & schema_processor,
     Int32 schema_id,
@@ -125,6 +126,7 @@ DataFileMetaInfo::DataFileMetaInfo(
         }
     }
 }
+#endif
 
 constexpr size_t FIELD_MASK_ROWS = 0x1;
 constexpr size_t FIELD_MASK_NULLS = 0x2;

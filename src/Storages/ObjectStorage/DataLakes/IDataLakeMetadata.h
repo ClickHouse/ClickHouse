@@ -29,10 +29,12 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 };
 
+#if USE_AVRO
 namespace Iceberg
 {
 struct ColumnInfo;
 };
+#endif
 
 class DataFileMetaInfo
 {
@@ -47,11 +49,13 @@ public:
         std::optional<DB::Range> hyperrectangle;
     };
 
+#if USE_AVRO
     // Extract metadata from Iceberg structure
     explicit DataFileMetaInfo(
         const Iceberg::IcebergSchemaProcessor & schema_processor,
         Int32 schema_id,
         const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_);
+#endif
 
     void serialize(WriteBuffer & out) const;
     static DataFileMetaInfo deserialize(ReadBuffer & in);

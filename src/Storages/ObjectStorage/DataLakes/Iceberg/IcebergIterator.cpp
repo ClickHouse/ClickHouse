@@ -350,10 +350,12 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         {
             object_info->addEqualityDeleteObject(equality_delete);
         }
+#if USE_AVRO
         object_info->setFileMetaInfo(std::make_shared<DataFileMetaInfo>(
             *persistent_components.schema_processor,
             table_schema_id, /// current schema id to use current column names
             manifest_file_entry.columns_infos));
+#endif
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
         return object_info;
     }
