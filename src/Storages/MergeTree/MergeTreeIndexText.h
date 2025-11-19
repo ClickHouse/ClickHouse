@@ -371,7 +371,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
