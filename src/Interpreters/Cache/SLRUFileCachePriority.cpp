@@ -430,7 +430,7 @@ void SLRUFileCachePriority::increasePriority(SLRUIterator & iterator, const Cach
         /// "downgrade" candidates cannot be moved to probationary queue,
         /// so entry cannot be moved to protected queue as well.
         /// Then just increase its priority within probationary queue.
-        iterator.lru_iterator = addOrThrow(entry, probationary_queue, lock);
+        iterator.lru_iterator.increasePriority(lock);
         return;
     }
 
