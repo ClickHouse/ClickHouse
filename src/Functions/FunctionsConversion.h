@@ -1294,13 +1294,13 @@ struct ConvertThroughParsing
                         DateTime64 value = 0;
                         readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
-                        }
+                    }
                     else if constexpr (to_time64)
                     {
-                            Time64 value = 0;
-                            readTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                            vec_to[i] = value;
-                        }
+                        Time64 value = 0;
+                        readTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        vec_to[i] = value;
+                    }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                     {
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
