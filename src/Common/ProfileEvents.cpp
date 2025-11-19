@@ -894,6 +894,7 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperBatchMaxTotalSize, "Number of times the size of batch was limited by the total bytes size", ValueType::Number) \
     M(KeeperCommits, "Number of successful commits", ValueType::Number) \
     M(KeeperCommitsFailed, "Number of failed commits", ValueType::Number) \
+    M(KeeperCommittedBytes, "Number of bytes commited to RAFT", ValueType::Number) \
     M(KeeperSnapshotCreations, "Number of snapshots creations", ValueType::Number) \
     M(KeeperSnapshotCreationsFailed, "Number of failed snapshot creations", ValueType::Number) \
     M(KeeperSnapshotApplys, "Number of snapshot applying", ValueType::Number) \
