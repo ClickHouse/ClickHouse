@@ -101,6 +101,10 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
+    /// Maximum number of elements in the RPN condition for disjunct processing.
+    /// Each RPN element needs one bit for partial evaluation result storage.
+    /// 32 is a good limit, could be lowered for e.g (A = 5 OR B = 5) requires 3 bits,
+    /// (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits
     static constexpr size_t BITS_FOR_RPN_EVALUATION_RESULTS = 32;
 
 private:

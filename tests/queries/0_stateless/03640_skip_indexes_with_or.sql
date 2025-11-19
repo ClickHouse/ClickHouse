@@ -15,7 +15,7 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS index_granularity = 64,min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1, use_const_adaptive_granularity = 1, index_granularity_bytes = 0;
 
--- Total 156 ranges
+-- Total 157 ranges
 INSERT INTO tab1 SELECT number+1, number+1, (10000 - number), (number * 5) FROM numbers(10000);
 
 SET use_skip_indexes = 1;
@@ -23,22 +23,22 @@ SET use_skip_indexes_on_data_read = 0;
 SET use_skip_indexes_on_disjuncts = 0;
 SET use_query_condition_cache = 0; -- explain plan stability
 
--- 156
+-- 157
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (v1 = 111 OR v2 = 111)
 ) WHERE explain LIKE '%Granules%';
 
--- 78
+-- 79
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (id >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%';
 
--- 78
+-- 79
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (_part_offset >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%';
 
--- 156 (No skip index on v3)
+-- 157 (No skip index on v3)
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE v1 = 111 OR v2 = 111 OR v3 = 90000
 ) WHERE explain LIKE '%Granules%';
@@ -61,7 +61,7 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE (_part_offset >= 5000 AND (v1 = 111 OR v2 = 111))
 ) WHERE explain LIKE '%Granules%';
 
--- Final 156 (because no skip index on v3)
+-- Final 157 (because no skip index on v3)
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1 SELECT id FROM tab1 WHERE v1 = 111 OR v2 = 111 OR v3 = 90000
 ) WHERE explain LIKE '%Granules%';
@@ -78,6 +78,7 @@ DROP TABLE tab1;
 
 DROP TABLE IF EXISTS tab2;
 
+-- Test with composite primary key condition
 CREATE TABLE tab2
 (
     x UInt32,

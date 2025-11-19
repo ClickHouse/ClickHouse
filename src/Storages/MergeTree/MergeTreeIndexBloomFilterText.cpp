@@ -185,7 +185,7 @@ bool MergeTreeConditionBloomFilterText::alwaysUnknownOrTrue() const
          RPNElement::ALWAYS_FALSE});
 }
 
-/// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnTranuleInPart
+/// Keep in-sync with MergeTreeIndexConditionGin::mayBeTrueOnGranuleInPart
 bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const
 {
     std::shared_ptr<MergeTreeIndexGranuleBloomFilterText> granule

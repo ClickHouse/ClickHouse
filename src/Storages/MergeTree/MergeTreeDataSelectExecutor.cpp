@@ -754,7 +754,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool support_disjuncts = is_support_disjuncts && !settings[Setting::use_skip_indexes_on_data_read] &&
-                                        key_condition.getRPN().size() < BITS_FOR_RPN_EVALUATION_RESULTS;
+                                        key_condition.getRPN().size() <= BITS_FOR_RPN_EVALUATION_RESULTS;
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
@@ -2257,6 +2257,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 /// For each range, we have saved the results of evaluation with
 /// skip index A, skip index B, skip index C. Now we run a "final pass"
 /// to see if the range qualifies on the whole condition.
+/// rpn_template_for_eval_result is a "template" only. Hence the code
+/// below only processes 5 specific RPNElement types.
 MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
