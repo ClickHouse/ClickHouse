@@ -566,6 +566,7 @@ bool ManifestFileContent::areAllDataFilesSortedBySortOrderID(Int32 sort_order_id
         if (!file.sort_order_id.has_value() || (*file.sort_order_id != sort_order_id))
             return false;
     }
+    /// Empty manifest (no data files) is considered sorted by definition
     return true;
 
 }
