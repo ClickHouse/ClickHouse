@@ -118,10 +118,11 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
-        || function_name == "hasTokenOrNull"
-        || function_name == "startsWith"
-        || function_name == "endsWith"
-        || function_name == "match";
+        || function_name == "hasTokenOrNull";
+        // TODO(george-larionov) not working
+        //|| function_name == "startsWith"
+        //|| function_name == "endsWith"
+        //|| function_name == "match";
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
