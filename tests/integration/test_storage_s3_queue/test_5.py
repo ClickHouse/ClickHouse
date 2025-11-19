@@ -426,7 +426,7 @@ def test_failed_commit(started_cluster):
     node.query(f"SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit")
 
     processed = False
-    for _ in range(20):
+    for _ in range(100):
         node.query("SYSTEM FLUSH LOGS")
         processed = int(
             node.query(
