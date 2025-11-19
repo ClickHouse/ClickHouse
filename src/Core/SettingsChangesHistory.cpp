@@ -943,11 +943,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.12",
+        {
+            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.11",
         {
             {"merge_max_dynamic_subcolumns_in_wide_part", "auto", "auto", "Add a new setting to limit number of dynamic subcolumns in Wide part after merge regardless the parameters specified in the data type"},
             {"refresh_statistics_interval", 0, 0, "New setting"},
-            {"alter_column_secondary_index_mode", "compatibility", "rebuild", "Change the behaviour to allow ALTER `column` when they have dependent secondary indices"},
             {"shared_merge_tree_create_per_replica_metadata_nodes", true, false, "Reduce the amount of metadata in Keeper."},
             {"serialization_info_version", "basic", "with_types", "Change to the newer format allowing custom string serialization"},
             {"string_serialization_version", "single_stream", "with_size_stream", "Change to the newer format with separate sizes"},
