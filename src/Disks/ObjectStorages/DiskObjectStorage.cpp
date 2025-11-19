@@ -599,7 +599,7 @@ bool DiskObjectStorage::supportsCache() const
 
 bool DiskObjectStorage::isReadOnly() const
 {
-    return object_storage->isReadOnly() || metadata_storage->isReadOnly();
+    return object_storage->isReadOnly();
 }
 
 bool DiskObjectStorage::isPlain() const
