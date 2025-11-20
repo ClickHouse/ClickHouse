@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Interpreters/StorageID.h>
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Storages/StorageTimeSeriesSelector.h>
 #include <TableFunctions/ITableFunction.h>
 
 
@@ -10,12 +9,23 @@ namespace DB
 
 /// Table functions timeSeriesSelector('mydb', 'my_ts_table', 'instant_selector', min_time, max_time) reads time series from a specified
 /// TimeSeries table corresponding to a specified instant selector and with timestamps in a specified interval [min_time, max_time].
+///
+/// Table functions timeSeriesSelectorToGrid('mydb', 'my_ts_table', 'instant_selector', start_time, end_time, step, window) reads time series from a specified
+/// TimeSeries table corresponding to a specified instant selector and with timestamps in any of the following intervals
+/// [start_time - window, start_time],
+/// [start_time + step - window, start_time + step],
+/// [start_time + 2 * step - window, start_time + 2 * step],
+/// [start_time + 3 * step - window, start_time + 3 * step],
+/// [start_time + N * step - window, start_time + N * step],
+/// where N is such number that (start_time + N * step <= end_time) and (start_time + (N + 1) * step > end_time).
+///
 /// Here instant_selector should be written in PromQL syntax, for example 'http_requests{job="prometheus"}',
 /// and table can be specified either as two arguments 'mydb', 'my_ts_table', or one argument mydb.my_ts_table, or just 'my_ts_table'.
+template <bool to_grid>
 class TableFunctionTimeSeriesSelector : public ITableFunction
 {
 public:
-    static constexpr auto name = "timeSeriesSelector";
+    static constexpr auto name = to_grid ? "timeSeriesSelectorToGrid" : "timeSeriesSelector";
 
     String getName() const override { return name; }
 
@@ -37,10 +47,7 @@ private:
         return "";
     }
 
-    StorageID time_series_storage_id = StorageID::createEmpty();
-    PrometheusQueryTree instant_selector;
-    Field min_time;
-    Field max_time;
+    StorageTimeSeriesSelector::Configuration config;
 };
 
 }

@@ -125,10 +125,16 @@ void registerTableFunctionTimeSeries(TableFunctionFactory & factory)
             .examples{{"timeSeriesMetrics", "SELECT * from timeSeriesMetrics('mydb', 'time_series_table');", ""}},
             .category = FunctionDocumentation::Category::TableFunction}
         });
-    factory.registerFunction<TableFunctionTimeSeriesSelector>(
+    factory.registerFunction<TableFunctionTimeSeriesSelector</* to_grid = */ false>>(
         {.documentation = {
             .description=R"(Reads time series from a specified TimeSeries table.)",
             .examples{{"timeSeriesSelector", "SELECT * from timeSeriesSelector('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now());", ""}},
+            .category = FunctionDocumentation::Category::TableFunction}
+        });
+    factory.registerFunction<TableFunctionTimeSeriesSelector</* to_grid = */ true>>(
+        {.documentation = {
+            .description=R"(Reads time series from a specified TimeSeries table.)",
+            .examples{{"timeSeriesSelectorToGrid", "SELECT * from timeSeriesSelectorToGrid('mydb', 'time_series_table', 'http_requests{job=\"prometheus\"}', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE, INTERVAL 30 SECONDS);", ""}},
             .category = FunctionDocumentation::Category::TableFunction}
         });
     factory.registerFunction<TableFunctionPrometheusQuery</* range = */ false>>(
