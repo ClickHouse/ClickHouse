@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE mt UPDATE num = num + 1 WHERE 1;
 "
 
-sleep 1.0
+wait_for_mutation_in_progress "mt" "mutation_2.txt"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, is_done \
@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM START MERGES mt;
 "
 
-sleep 1.0
+wait_for_mutation_in_progress "mt" "mutation_4.txt"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, is_done \

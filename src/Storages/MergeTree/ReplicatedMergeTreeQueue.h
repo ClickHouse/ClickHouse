@@ -269,11 +269,13 @@ private:
     ///    ^ (this may happen if we downloaded mutated part from other replica)
     void removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts);
 
-    /// Add part in progress for mutations with block_number > part_info.getDataVersion()
+    /// Add part to mutations (parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
     /// and block_number <= new_part_info.getMutationVersion()
     void addPartInProgressToMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
 
-    /// Remove part in progress from mutations with block_number > part_info.getDataVersion()
+    /// Remove part from mutations(parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
     /// and block_number <= new_part_info.getMutationVersion()
     void removePartInProgressFromMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
 

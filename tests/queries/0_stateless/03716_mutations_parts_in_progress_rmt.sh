@@ -13,9 +13,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 set -e
 
 # disable fault injection; part ids are non-deterministic in case of insert retries
-$CLICKHOUSE_CLIENT --query "SET insert_keeper_fault_injection_probability = 0;"
-
 $CLICKHOUSE_CLIENT --query "
+    SET insert_keeper_fault_injection_probability = 0;
+
     CREATE TABLE rmt (id UInt64, num UInt64)
     ENGINE = ReplicatedMergeTree('/zookeeper/{database}/rmt/', '1')
     ORDER BY id;
@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT --query "
     ALTER TABLE rmt UPDATE num = num + 1 WHERE 1;
 "
 
-sleep 1.0
+wait_for_mutation_in_progress  "rmt" "0000000000"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, is_done \
@@ -50,7 +50,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_pause_when_scheduled;
 "
 
-sleep 1.0
+wait_for_mutation_in_progress  "rmt" "0000000002"
 
 $CLICKHOUSE_CLIENT --query "
     SELECT mutation_id, command, parts_to_do_names, parts_in_progress_names, is_done \
