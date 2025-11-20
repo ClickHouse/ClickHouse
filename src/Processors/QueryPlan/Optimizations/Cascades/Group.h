@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
-#include "Processors/QueryPlan/Optimizations/Cascades/Properties.h"
 #include <memory>
 #include <vector>
 

@@ -5,8 +5,6 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/logger_useful.h>
 
-#include <iostream>
-
 
 namespace DB
 {

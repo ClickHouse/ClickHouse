@@ -202,7 +202,7 @@ void CostEstimator::fillStatistics(GroupExpressionPtr expression)
         expression->statistics = ExpressionStatistics();
     }
 
-    LOG_TRACE(log, "Statistics for group #{} expression {}:\n{}",
+    LOG_TEST(log, "Statistics for group #{} expression {}:\n{}",
         expression->group_id, expression->getDescription(), expression->statistics->dump());
 }
 
@@ -312,7 +312,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
             for (const auto & [column_name, column_stats] : relation_profile.column_stats)
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
 
-            LOG_TRACE(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
+            LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
             return statistics;
         }
     }

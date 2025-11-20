@@ -15,7 +15,7 @@ GroupId Memo::addGroup(GroupExpressionPtr group_expression)
     group_expression->group_id = group_id;
     new_group->addLogicalExpression(group_expression);
     groups_by_id.push_back(new_group);
-    LOG_TRACE(log, "Add group '{}' -> id {}", group_expression->getName(), group_id);
+    LOG_TEST(log, "Add group '{}' -> id {}", group_expression->getName(), group_id);
     return group_id;
 }
 

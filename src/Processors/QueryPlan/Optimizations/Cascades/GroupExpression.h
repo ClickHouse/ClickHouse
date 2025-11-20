@@ -3,10 +3,10 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <base/types.h>
-#include "Processors/QueryPlan/Optimizations/Cascades/Cost.h"
 #include <memory>
 #include <unordered_set>
 
