@@ -50,6 +50,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
+    extern const SettingsBool date_time_saturate_on_overflow;
 }
 
 namespace ErrorCodes
@@ -356,6 +357,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.native.use_flattened_dynamic_and_json_serialization = settings[Setting::output_format_native_use_flattened_dynamic_and_json_serialization];
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
+    format_settings.date_time_saturate_on_overflow = settings[Setting::date_time_saturate_on_overflow];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];

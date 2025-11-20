@@ -794,9 +794,14 @@ ReturnType parseDateTimeBestEffortImpl(
             if (!res_maybe)
                 return false;
 
-            /// For usual DateTime check if value is within supported range
-            if (!is_64 && (*res_maybe > UINT32_MAX))
-                return false;
+            if (!is_64)
+            {
+                /// For usual DateTime check if value is within supported range
+                if (strict && (*res_maybe < 0))
+                    return ReturnType(false);
+                if (*res_maybe > UINT32_MAX)
+                    return ReturnType(false);
+            }
 
             res = *res_maybe;
             adjust_time_zone();

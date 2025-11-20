@@ -94,6 +94,7 @@ namespace Setting
     extern const SettingsBool precise_float_parsing;
     extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool date_time_saturate_on_overflow;
 }
 
 namespace ErrorCodes
@@ -1392,7 +1393,7 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
-                        parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
+                        bool parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone, nullptr, nullptr, context ? bool(context->getSettingsRef()[Setting::date_time_saturate_on_overflow]) : true);
                         vec_to[i] = value;
                     }
                     else if constexpr (to_time64)

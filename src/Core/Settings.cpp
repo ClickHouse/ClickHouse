@@ -6536,6 +6536,11 @@ See also:
 - [DateTime data type.](../../sql-reference/data-types/datetime.md)
 - [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
 )", 0) \
+    DECLARE(Bool, date_time_saturate_on_overflow, true, R"(
+Control saturation on overflow when parsing DateTime/DateTime64 from text.
+
+If enabled, pre-epoch negative DateTime values are saturated to '1970-01-01 00:00:00' instead of being treated as errors in non-throwing parsing paths (e.g. OrNull/try-parse variants).
+)", 0) \
     DECLARE(Bool, enable_blob_storage_log, true, R"(
 Write information about blob storage operations to system.blob_storage_log table
 )", 0) \

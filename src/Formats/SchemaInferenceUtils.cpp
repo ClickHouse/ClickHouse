@@ -826,7 +826,7 @@ namespace
             switch (settings.date_time_input_format)
             {
                 case FormatSettings::DateTimeInputFormat::Basic:
-                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                    if (tryReadDateTimeText(tmp, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
                         return std::make_shared<DataTypeDateTime>();
                     break;
                 case FormatSettings::DateTimeInputFormat::BestEffort:
@@ -845,7 +845,7 @@ namespace
         switch (settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":") && buf.eof())
+                if (tryReadDateTime64Text(tmp, 9, buf, DateLUT::instance(), /*allowed_date_delimiters=*/"-/:", /*allowed_time_delimiters=*/":", /*saturate_on_overflow=*/false) && buf.eof())
                     return std::make_shared<DataTypeDateTime64>(9);
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
