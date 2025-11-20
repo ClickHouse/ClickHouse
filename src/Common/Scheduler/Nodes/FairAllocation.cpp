@@ -1,4 +1,5 @@
 #include <Common/Scheduler/Nodes/FairAllocation.h>
+#include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -147,20 +148,46 @@ bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest 
 
 void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
 {
-    // Remove from intrusive sets to update the key
-    if (from_child.increasing_hook.is_linked())
-        increasing_children.erase(increasing_children.iterator_to(from_child));
-    if (from_child.running_hook.is_linked())
-        running_children.erase(running_children.iterator_to(from_child));
+    ResourceCost increase_size = new_increase ? new_increase->size : 0;
+    double new_key = double(from_child.allocated + increase_size) / from_child.info.weight;
+    if (from_child.parent_key.first != new_key)
+    {
+        SCHED_DBG("FairAllocation::updateKey of {}: key = {}, allocated = {}, weight = {}, increase.size = {}",
+            from_child.getPath(), new_key, from_child.allocated, from_child.info.weight, increase_size);
 
-    from_child.parent_key.first = double(from_child.allocated + (new_increase ? new_increase->size : 0)) / from_child.info.weight;
-    from_child.parent_key.second = ++tie_breaker;
+        // Remove from intrusive sets to update the key
+        if (from_child.increasing_hook.is_linked())
+            increasing_children.erase(increasing_children.iterator_to(from_child));
+        if (from_child.running_hook.is_linked())
+            running_children.erase(running_children.iterator_to(from_child));
 
-    // Reinsert into intrusive sets
-    if (from_child.allocated > 0)
-        running_children.insert(from_child);
-    if (new_increase)
-        increasing_children.insert(from_child);
+        from_child.parent_key.first = new_key;
+        from_child.parent_key.second = ++tie_breaker;
+
+        // Reinsert into intrusive sets
+        if (new_increase)
+            increasing_children.insert(from_child);
+        if (from_child.allocated > 0)
+            running_children.insert(from_child);
+    }
+    else // The key has not been changed - do less work if possible (this is the common case on approve)
+    {
+        if (!from_child.increasing_hook.is_linked())
+        {
+            if (new_increase)
+                increasing_children.insert(from_child);
+        }
+        else if (!new_increase)
+            increasing_children.erase(increasing_children.iterator_to(from_child));
+
+        if (!from_child.running_hook.is_linked())
+        {
+            if (from_child.allocated > 0)
+                running_children.insert(from_child);
+        }
+        else if (from_child.allocated == 0)
+            running_children.erase(running_children.iterator_to(from_child));
+    }
 }
 
 }
