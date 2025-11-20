@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
@@ -984,59 +985,73 @@ void ColumnObject::serializePathAndValueIntoArena(DB::Arena & arena, const char 
     res.size += sizeof(size_t) + path_size + sizeof(size_t) + value_size;
 }
 
-const char * ColumnObject::deserializeAndInsertFromArena(const char * pos)
+void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
-        pos = typed_paths.find(path)->second->deserializeAndInsertFromArena(pos);
+        typed_paths.find(path)->second->deserializeAndInsertFromArena(in);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    return deserializeDynamicPathsAndSharedDataFromArena(pos);
+    deserializeDynamicPathsAndSharedDataFromArena(in);
 }
 
-const char * ColumnObject::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnObject::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
-        pos = typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(pos);
+        typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(in);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    return deserializeDynamicPathsAndSharedDataFromArena(pos);
+    deserializeDynamicPathsAndSharedDataFromArena(in);
 }
 
-const char * ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(const char * pos)
+void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
 {
     size_t current_size = size();
-    auto num_paths = unalignedLoad<size_t>(pos);
-    pos += sizeof(size_t);
+    size_t num_paths;
+    readBinaryLittleEndian<size_t>(num_paths, in);
+
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != num_paths; ++i)
     {
-        auto path_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t);
-        std::string_view path(pos, path_size);
-        pos += path_size;
+        size_t path_size;
+        readBinaryLittleEndian<size_t>(path_size, in);
+
+        if (in.available() < path_size)
+            throw Exception(
+                ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF,
+                "Attempt to read {} bytes for the path size, but only {} bytes are available",
+                path_size,
+                in.available());
+        std::string_view path(in.position(), path_size);
+        in.ignore(path_size);
+
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
-        auto value_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t);
-        std::string_view value(pos, value_size);
-        pos += value_size;
+        size_t value_size;
+        readBinaryLittleEndian<size_t>(value_size, in);
+
         /// Check if we have this path in dynamic paths.
         if (auto dynamic_it = dynamic_paths.find(path); dynamic_it != dynamic_paths.end())
         {
-            ReadBufferFromMemory buf(value.data(), value.size());
-            getDynamicSerialization()->deserializeBinary(*dynamic_it->second, buf, getFormatSettings());
+            getDynamicSerialization()->deserializeBinary(*dynamic_it->second, in, getFormatSettings());
         }
         /// Try to add a new dynamic path.
         else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
         {
-            ReadBufferFromMemory buf(value.data(), value.size());
-            getDynamicSerialization()->deserializeBinary(*dynamic_path_column, buf, getFormatSettings());
+            getDynamicSerialization()->deserializeBinary(*dynamic_path_column, in, getFormatSettings());
         }
         /// Limit on dynamic paths is reached, add this path to shared data.
         /// Serialized paths are sorted, so we can insert right away.
         else
         {
+            if (in.available() < value_size)
+                throw Exception(
+                    ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF,
+                    "Attempt to read {} bytes for the value size, but only {} bytes are available",
+                    value_size,
+                    in.available());
+            std::string_view value(in.position(), value_size);
+            in.ignore(value_size);
             shared_data_paths->insertData(path.data(), path.size());
             shared_data_values->insertData(value.data(), value.size());
         }
@@ -1050,30 +1065,28 @@ const char * ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(const c
         if (column->size() == current_size)
             column->insertDefault();
     }
-
-    return pos;
 }
 
-const char * ColumnObject::skipSerializedInArena(const char * pos) const
+void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
 {
     /// First, skip all values of typed paths;
     for (auto path : sorted_typed_paths)
-        pos = typed_paths.find(path)->second->skipSerializedInArena(pos);
+        typed_paths.find(path)->second->skipSerializedInArena(in);
 
     /// Second, skip all other paths and values.
-    auto num_paths = unalignedLoad<size_t>(pos);
-    pos += sizeof(size_t);
+    size_t num_paths;
+    readBinaryLittleEndian<size_t>(num_paths, in);
+
     for (size_t i = 0; i != num_paths; ++i)
     {
-        auto path_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t);
-        std::string_view path(pos, path_size);
-        pos += path_size;
-        auto value_size = unalignedLoad<size_t>(pos);
-        pos += sizeof(size_t) + value_size;
-    }
+        size_t path_size;
+        readBinaryLittleEndian<size_t>(path_size, in);
+        in.ignore(path_size);
 
-    return pos;
+        size_t value_size;
+        readBinaryLittleEndian<size_t>(value_size, in);
+        in.ignore(value_size);
+    }
 }
 
 void ColumnObject::updateHashWithValue(size_t n, SipHash & hash) const
