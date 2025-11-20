@@ -1408,7 +1408,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
         {
             if (auto limit = shared->server_settings[ServerSetting::max_named_collection_num_to_throw]; limit > shared->max_named_collection_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
-                    "The number of named collections ({}) exceeds the warning limit of {}. You will not be able to create new once the limit of {} is reached.",
+                    "The number of named collections ({}) exceeds the warning limit of {}. You will not be able to create new named collections once the limit of {} is reached.",
                     attached_named_collections, shared->max_named_collection_num_to_warn.load(), limit.value);
             else
                 common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
