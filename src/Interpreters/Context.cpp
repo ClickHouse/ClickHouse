@@ -1361,7 +1361,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             if (auto limit = shared->server_settings[ServerSetting::max_table_num_to_throw]; limit > shared->max_table_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
                     "The number of attached tables ({}) exceeds the warning limit of {}. You will not be able to create new tables once the limit of {} is reached.",
-                    attached_tables, shared->max_table_num_to_warn.load(), limit);
+                    attached_tables, shared->max_table_num_to_warn.load(), limit.value);
             else
                 common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
                     "The number of attached tables ({}) exceeds the warning limit of {}.",
@@ -1373,7 +1373,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             if (auto limit = shared->server_settings[ServerSetting::max_view_num_to_throw]; limit > shared->max_view_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
                     "The number of attached views ({}) exceeds the warning limit of {}. You will not be able to create new views once the limit of {} is reached.",
-                    attached_views, shared->max_view_num_to_warn.load(), limit);
+                    attached_views, shared->max_view_num_to_warn.load(), limit.value);
             else
                 common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
                     "The number of attached views ({}) exceeds the warning limit of {}.",
@@ -1385,7 +1385,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             if (auto limit = shared->server_settings[ServerSetting::max_dictionary_num_to_throw]; limit > shared->max_dictionary_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
                     "The number of attached dictionaries ({}) exceeds the warning limit of {}. You will not be able to create new dictionaries once the limit of {} is reached.",
-                    attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit);
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit.value);
             else
                 common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
                     "The number of attached dictionaries ({}) exceeds the warning limit of {}.",
@@ -1397,7 +1397,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             if (auto limit = shared->server_settings[ServerSetting::max_database_num_to_throw]; limit > shared->max_database_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
                     "The number of attached databases ({}) exceeds the warning limit of {}. You will not be able to create new databases once the limit of {} is reached.",
-                    attached_databases, shared->max_database_num_to_warn.load(), limit);
+                    attached_databases, shared->max_database_num_to_warn.load(), limit.value);
             else
                 common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
                     "The number of attached databases ({}) exceeds the warning limit of {}.",
@@ -1409,7 +1409,7 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
             if (auto limit = shared->server_settings[ServerSetting::max_named_collection_num_to_throw]; limit > shared->max_named_collection_num_to_warn.load())
                 common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
                     "The number of named collections ({}) exceeds the warning limit of {}. You will not be able to create new once the limit of {} is reached.",
-                    attached_named_collections, shared->max_named_collection_num_to_warn.load(), limit);
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load(), limit.value);
             else
                 common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
                     "The number of named collections ({}) exceeds the warning limit of {}.",
