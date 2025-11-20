@@ -508,10 +508,9 @@ private:
                     /// PODArray has geometric growth with reserve. This is important.
                     /// Otherwise, each repeated incremental `resize()` will cause
                     /// repeated reallocations and copy which is very inefficient.
-                    if (need > mapped->capacity())
-                        mapped->reserve(need);
-
+                    mapped->reserve(need);
                     mapped->resize_assume_reserved(need);
+
                     std::memcpy(mapped->data() + old_size, ref.data, ref.size);
 
                     const size_t alloc = static_cast<size_t>((ref.data - begin) + ref.size);
