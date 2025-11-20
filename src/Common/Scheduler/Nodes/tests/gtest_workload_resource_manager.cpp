@@ -1751,12 +1751,11 @@ private:
 
 public:
     TestAllocation(ResourceLink link, const String & name_, ResourceCost initial_size, std::function<void()> approved_callback_ = {})
-        : ResourceAllocation(*link.allocation_queue)
-        , name(name_)
+        : ResourceAllocation(*link.allocation_queue, name_)
     {
         std::unique_lock lock(mutex);
         chassert(link.allocation_queue);
-        DBG_PRINT("{}: New allocation, initial size = {}", name, initial_size);
+        DBG_PRINT("{}: New allocation, initial size = {}", id, initial_size);
         real_size = initial_size;
         approved_callback = approved_callback_;
         queue.insertAllocation(*this, initial_size);
@@ -1770,37 +1769,37 @@ public:
         if (removed)
         {
             chassert(allocated_size == 0);
-            DBG_PRINT("{}: Destroying removed allocation", name);
+            DBG_PRINT("{}: Destroying removed allocation", id);
             return;
         }
         if (fail_reason)
         {
-            DBG_PRINT("{}: Destroying failed allocation", name);
+            DBG_PRINT("{}: Destroying failed allocation", id);
             return;
         }
         ResourceCost last_size = real_size;
         real_size = 0;
         if (allocated_size > 0) // Running allocation
         {
-            DBG_PRINT("{}: Removing running allocation... size = {}. killed = {}", name, allocated_size, kill_reason ? "1" : "0");
+            DBG_PRINT("{}: Removing running allocation... size = {}. killed = {}", id, allocated_size, kill_reason ? "1" : "0");
             queue.decreaseAllocation(*this, allocated_size);
             cv.wait(lock, [this]() { return allocated_size == 0; });
         }
         else
         {
-            DBG_PRINT("{}: Removing pending allocation...", name);
+            DBG_PRINT("{}: Removing pending allocation...", id);
             queue.decreaseAllocation(*this, last_size);
             // It can be either approved and decreased later or failed (i.e. canceled) right away
             cv.wait(lock, [this]() { return bool(fail_reason) || (!increase_enqueued && !decrease_enqueued && allocated_size == 0); });
         }
         chassert(removed);
-        DBG_PRINT("{}: Allocation removed", name);
+        DBG_PRINT("{}: Allocation removed", id);
     }
 
     void setSize(ResourceCost new_real_size, std::function<void()> approved_callback_ = {})
     {
         std::unique_lock lock(mutex);
-        DBG_PRINT("{}: Set size from {} to {}", name, real_size, new_real_size);
+        DBG_PRINT("{}: Set size from {} to {}", id, real_size, new_real_size);
         real_size = new_real_size;
         approved_callback = approved_callback_;
         syncSize();
@@ -1812,14 +1811,14 @@ public:
         cv.wait(lock, [this] { return fail_reason || (!increase_enqueued && !decrease_enqueued && real_size == allocated_size); });
         if (fail_reason)
             std::rethrow_exception(fail_reason);
-        DBG_PRINT("{}: Waiting done. size = {}", name, allocated_size);
+        DBG_PRINT("{}: Waiting done. size = {}", id, allocated_size);
     }
 
     void waitKilled()
     {
         std::unique_lock lock(mutex);
         cv.wait(lock, [this] { return kill_reason; });
-        DBG_PRINT("{}: Waiting killed done. size = {}. failed = {}. killed = {}", name, allocated_size, fail_reason ? "1" : "0", kill_reason ? "1" : "0");
+        DBG_PRINT("{}: Waiting killed done. size = {}. failed = {}. killed = {}", id, allocated_size, fail_reason ? "1" : "0", kill_reason ? "1" : "0");
         ASSERT_EQ(kill_reason != nullptr, true);
     }
 
@@ -1833,7 +1832,7 @@ private: // interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override
     {
         std::unique_lock lock(mutex);
-        DBG_PRINT("{}: Kill allocation at size = {}", name, allocated_size);
+        DBG_PRINT("{}: Kill allocation at size = {}", id, allocated_size);
         kill_reason = reason;
         real_size = 0; // Initiate deallocation
         syncSize();
@@ -1843,21 +1842,21 @@ private: // interaction with the scheduler thread
     {
         if (!fail_reason && real_size > allocated_size && !increase_enqueued)
         {
-            DBG_PRINT("{}: Increase allocation by {}", name, real_size - allocated_size);
+            DBG_PRINT("{}: Increase allocation by {}", id, real_size - allocated_size);
             chassert(!removed);
             queue.increaseAllocation(*this, real_size - allocated_size);
             increase_enqueued = true;
         }
         else if (!fail_reason && real_size < allocated_size && !decrease_enqueued)
         {
-            DBG_PRINT("{}: Decrease allocation by {}", name, allocated_size - real_size);
+            DBG_PRINT("{}: Decrease allocation by {}", id, allocated_size - real_size);
             chassert(!removed);
             queue.decreaseAllocation(*this, allocated_size - real_size);
             decrease_enqueued = true;
         }
         else if (real_size == allocated_size)
         {
-            DBG_PRINT("{}: Synced at size {}", name, real_size);
+            DBG_PRINT("{}: Synced at size {}", id, real_size);
             cv.notify_all(); // notify dtor or waitSync
         }
     }
@@ -1867,7 +1866,7 @@ private: // interaction with the scheduler thread
         std::unique_lock lock(mutex);
         allocated_size += increase.size;
         increase_enqueued = false;
-        DBG_PRINT("{}: Approved increase by {}. size = {}", name, increase.size, allocated_size);
+        DBG_PRINT("{}: Approved increase by {}. size = {}", id, increase.size, allocated_size);
         syncSize();
         if (auto callback = std::exchange(approved_callback, {}))
             callback();
@@ -1881,7 +1880,7 @@ private: // interaction with the scheduler thread
         decrease_enqueued = false;
         if (decrease.removing_allocation)
             removed = true;
-        DBG_PRINT("{}: Approved decrease by {}. size = {}", name, decrease.size, allocated_size);
+        DBG_PRINT("{}: Approved decrease by {}. size = {}", id, decrease.size, allocated_size);
         syncSize();
         if (auto callback = std::exchange(approved_callback, {}))
             callback();
@@ -1890,7 +1889,7 @@ private: // interaction with the scheduler thread
     void allocationFailed(const std::exception_ptr & reason) override
     {
         std::unique_lock lock(mutex);
-        DBG_PRINT("{}: Allocation failed", name);
+        DBG_PRINT("{}: Allocation failed", id);
         fail_reason = reason;
         removed = true;
         allocated_size = 0;
@@ -1904,7 +1903,6 @@ private: // interaction with the scheduler thread
 
     std::function<void()> approved_callback;
 
-    String name;
     std::exception_ptr kill_reason;
     std::exception_ptr fail_reason;
     bool increase_enqueued = false;
@@ -1952,7 +1950,7 @@ struct TestAllocationArray
 
     std::array<std::optional<TestAllocation>, count> allocations;
     std::array<ResourceLink, count> links;
-    std::array<String, count> names;
+    std::array<String, count> ids;
     std::vector<ClassifierPtr> classifiers;
 
     std::mutex mutex;
@@ -1978,7 +1976,7 @@ struct TestAllocationArray
         {
             chassert(!links[idx]);
             links[idx] = link;
-            names[idx] = fmt::format("{}{}", std::toupper(workload[0]), idx);
+            ids[idx] = fmt::format("{}{}", static_cast<char>(std::toupper(workload[0])), idx);
         }
         classifiers.push_back(c);
     }
@@ -1993,8 +1991,8 @@ struct TestAllocationArray
                 ResourceCost mem = sizes[i];
                 chassert(!links[i]);
                 links[i] = link;
-                names[i] = fmt::format("A{}", i);
-                allocations[i].emplace(links[i], names[i], mem, [this, mem] { onApprove(mem); });
+                ids[i] = fmt::format("A{}", i);
+                allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
             }
         });
     }
@@ -2008,7 +2006,7 @@ struct TestAllocationArray
             {
                 ResourceCost mem = sizes[i];
                 chassert(links[i]);
-                allocations[i].emplace(links[i], names[i], mem, [this, mem] { onApprove(mem); });
+                allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
             }
         });
     }
@@ -2020,8 +2018,8 @@ struct TestAllocationArray
             ResourceCost mem = sizes[i];
             chassert(!links[i]);
             links[i] = link;
-            names[i] = fmt::format("A{}", i);
-            allocations[i].emplace(links[i], names[i], mem);
+            ids[i] = fmt::format("A{}", i);
+            allocations[i].emplace(links[i], ids[i], mem);
             allocations[i]->waitSync();
         }
     }
@@ -2032,7 +2030,7 @@ struct TestAllocationArray
         {
             ResourceCost mem = sizes[i];
             chassert(links[i]);
-            allocations[i].emplace(links[i], names[i], mem);
+            allocations[i].emplace(links[i], ids[i], mem);
             allocations[i]->waitSync();
         }
     }
@@ -2304,9 +2302,10 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
         a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
-        // dev and prd workloads orders its running allocation increases by fair_key - resulting allocation size
-        // (note that all allocations start from size 1 in this test)
-        // while all workload orders its children by parent_key - resulting total size of all allocations in workload
+
+        // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
+        // Note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd.
+        // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload)
         // dev: 10 20 50 50            ~ fair_key
         //      10 30 80 130 <-- (sum) ~ parent_key
         // prd: 15 20 30 40            ~ fair_key
@@ -2328,9 +2327,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
     t.query("CREATE WORKLOAD dev IN all");
     t.query("CREATE WORKLOAD prd IN all");
 
-    ClassifierPtr dev = t.manager->acquire("dev");
-    ClassifierPtr prd = t.manager->acquire("prd");
-
     for (int i = 0; i < 3; i++)
     {
         TestAllocationArray<8> a(t);
@@ -2338,9 +2334,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         a.setWorkload("prd", {1, 3, 5, 7});
         a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
-        // dev and prd workloads orders its pending allocation by arriaval order (FIFO)
-        // (note that all allocations start from size 1 in this test)
-        // while all workload orders its children by parent_key - resulting total size of all allocations in workload
+        // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
+        // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload).
         // dev: 50 20  50  10             FIFO order
         //      50 70 120 130 <-- (sum) ~ parent_key
         // prd: 40 20  30  15             FIFO order
@@ -2358,9 +2353,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
     t.query("CREATE WORKLOAD dev IN all");
     t.query("CREATE WORKLOAD prd IN all SETTINGS weight = 3");
 
-    ClassifierPtr dev = t.manager->acquire("dev");
-    ClassifierPtr prd = t.manager->acquire("prd");
-
     for (int i = 0; i < 3; i++)
     {
         TestAllocationArray<8> a(t);
@@ -2369,9 +2361,9 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
         a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
-        // dev and prd workloads orders its running allocation increases by fair_key - resulting allocation size
-        // (note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd)
-        // while all workload orders its children by parent_key - resulting total size of all allocations in workload
+        // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
+        // Note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd.
+        // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload)
         // dev: 4 10 20 50 50             ~ fair_key
         //        14 34 84 134 <-- (sum)  ~ parent_key
         // prd: 4 15 20 30 40             ~ fair_key
@@ -2380,3 +2372,44 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         a.assertApproveOrder("15 20 10 30 20 40 50 50");
     }
 }
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 213");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS priority = -1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 1, 2, 3});
+        a.setWorkload("prd", {4, 5, 6, 7});
+        std::array<ResourceCost, 8> sizes = { 10, 30, 31, 32, 15, 20, 30, 40 };
+        a.insertSequential(sizes);
+
+        ClassifierPtr c_vip = t.manager->acquire("vip");
+        TestAllocation vip(c_vip->get("memory"), "VIP", 5);
+        vip.waitSync();
+
+        // Workload `all` kills its children by parent_key DESC, while `prd` and `dev` kill their allocations by fair_key DESC
+        // dev:  32 31 30 10            ~ fair_key
+        //      103 71 40 10 <-- (sum) ~ parent_key
+        //        3  2  1  0 <-- (idx)
+        // prd:  40 30 20 15            ~ fair_key
+        //      105 65 35 15 <-- (sum) ~ parent_key
+        //        7  6  5  4 <-- (idx)
+        ResourceCost vip_size = 5;
+        for (size_t idx_to_be_killed : {7, 3, 2, 6, 1, 5, 4, 0})
+        {
+            vip_size += sizes[idx_to_be_killed];
+            vip.setSize(vip_size);
+            a.allocations[idx_to_be_killed]->waitKilled();
+            vip.waitSync();
+        }
+    }
+}
+

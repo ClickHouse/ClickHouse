@@ -152,8 +152,9 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
     double new_key = double(from_child.allocated + increase_size) / from_child.info.weight;
     if (from_child.parent_key.first != new_key)
     {
-        SCHED_DBG("FairAllocation::updateKey of {}: key = {}, allocated = {}, weight = {}, increase.size = {}",
-            from_child.getPath(), new_key, from_child.allocated, from_child.info.weight, increase_size);
+        SCHED_DBG("{} -- updateKey(from_child={}, new_increase={}): key = {}, allocated = {}, weight = {}, increase.size = {}",
+            getPath(), from_child.basename, new_increase ? new_increase->allocation.id : String(),
+            new_key, from_child.allocated, from_child.info.weight, increase_size);
 
         // Remove from intrusive sets to update the key
         if (from_child.increasing_hook.is_linked())

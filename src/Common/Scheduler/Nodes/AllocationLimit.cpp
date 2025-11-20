@@ -77,7 +77,7 @@ ResourceAllocation * AllocationLimit::selectAllocationToKill()
 
 void AllocationLimit::approveIncrease()
 {
-    SCHED_DBG("{} -- approveIncrease()", getPath());
+    SCHED_DBG("{} -- approveIncrease({})", getPath(), increase->allocation.id);
     chassert(increase);
     allocated += increase->size;
     increase = nullptr;
@@ -87,7 +87,7 @@ void AllocationLimit::approveIncrease()
 
 void AllocationLimit::approveDecrease()
 {
-    SCHED_DBG("{} -- approveDecrease()", getPath());
+    SCHED_DBG("{} -- approveDecrease({})", getPath(), decrease->allocation.id);
 
     chassert(decrease);
     allocated -= decrease->size;
@@ -109,7 +109,7 @@ void AllocationLimit::approveDecrease()
 
 void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
-    SCHED_DBG("{} -- propagateUpdate({}, {})", getPath(), reinterpret_cast<void*>(&from_child), update.toString());
+    SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
     bool reapply_constraint = false;
     if (update.attached)
@@ -161,7 +161,8 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     if (!new_increase->pending_allocation // Kill due to running allocation increase
                         || &candidate_to_kill->queue != &new_increase->allocation.queue) // Or kills allocation from a different queue
                     {
-                        SCHED_DBG("{}: Killing. allocated={}, increase_size={}, max={}, increasing={}, killing={}", getPath(), allocated, new_increase->size, max_allocated, reinterpret_cast<void*>(&new_increase->allocation), reinterpret_cast<void*>(candidate_to_kill));
+                        SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
+                            getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, candidate_to_kill->id);
                         allocation_to_kill = candidate_to_kill;
                         allocation_to_kill->killAllocation(std::make_exception_ptr(
                             Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,

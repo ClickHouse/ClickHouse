@@ -69,17 +69,11 @@ public:
         String toString() const
         {
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-            oss << "{ attached=" << attached << ", detached=" << detached << ", increase=";
-            if (increase)
-                oss << (*increase ? reinterpret_cast<void*>(&(*increase)->allocation) : nullptr);
-            else
-                oss << "no_change";
-            oss << ", decrease=";
-            if (decrease)
-                oss << (*decrease ? reinterpret_cast<void*>(&(*decrease)->allocation) : nullptr);
-            else
-                oss << "no_change";
-            oss << " }";
+            oss << "{ attached=" << (attached ? attached->getPath() : "nullptr")
+                << ", detached=" << (detached ? detached->getPath() : "nullptr")
+                << ", increase=" << (increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change")
+                << ", decrease=" << (decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change")
+                << " }";
             return oss.str();
         }
     };
