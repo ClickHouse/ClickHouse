@@ -28,6 +28,8 @@ public:
         reset();
     }
 
+    ~HashiCorpVault() { reset(); }
+
     static HashiCorpVault & instance();
 
     /// Load data and throw exception if something went wrong.

@@ -35,6 +35,14 @@ def test_missing_url():
     )
 
 
+def test_wrong_url():
+    start_clickhouse(
+        "configs/config_wrong_url.xml",
+        "configs/users.xml",
+        "DB::Exception: Poco::Exception. Code: 1000",
+    )
+
+
 def test_empty_url():
     start_clickhouse(
         "configs/config_empty_url.xml",
@@ -80,12 +88,4 @@ def test_wrong_key():
         "configs/config_token.xml",
         "configs/users_wrong_key.xml",
         "DB::Exception: Key WRONG not found in secret username of vault",
-    )
-
-
-def test_wrong_url():
-    start_clickhouse(
-        "configs/config_wrong_url.xml",
-        "configs/users.xml",
-        "DNS error: Temporary DNS error while resolving: wrong",
     )
