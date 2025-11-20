@@ -2,6 +2,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <config.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -27,6 +28,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
+#include "Common/Exception.h"
 #include <Common/DateLUT.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -243,16 +245,16 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
     std::string transform_name = Poco::toLower(transform_name_src);
 
     if (transform_name == "year" || transform_name == "years")
-        return TransformAndArgument{"toYear", std::nullopt};
+        return TransformAndArgument{"toYearNumSinceEpoch", std::nullopt};
 
     if (transform_name == "month" || transform_name == "months")
-        return TransformAndArgument{"toMonth", std::nullopt};
+        return TransformAndArgument{"toMonthNumSinceEpoch", std::nullopt};
 
     if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-        return TransformAndArgument{"toDayOfMonth", std::nullopt};
+        return TransformAndArgument{"toRelativeDayNum", std::nullopt};
 
     if (transform_name == "hour" || transform_name == "hours")
-        return TransformAndArgument{"toHour", std::nullopt};
+        return TransformAndArgument{"toRelativeHourNum", std::nullopt};
 
     if (transform_name == "identity")
         return TransformAndArgument{"identity", std::nullopt};
@@ -617,22 +619,22 @@ Poco::JSON::Object::Ptr getPartitionField(
         result->set(Iceberg::f_transform, "identity");
         return result;
     }
-    else if (partition_function->name == "toYear")
+    else if (partition_function->name == "toYearNumSinceEpoch")
     {
         result->set(Iceberg::f_transform, "year");
         return result;
     }
-    else if (partition_function->name == "toMonth")
+    else if (partition_function->name == "toMonthNumSinceEpoch")
     {
         result->set(Iceberg::f_transform, "month");
         return result;
     }
-    else if (partition_function->name == "toDayOfMonth")
+    else if (partition_function->name == "toRelativeDayNum")
     {
         result->set(Iceberg::f_transform, "days");
         return result;
     }
-    else if (partition_function->name == "toHour")
+    else if (partition_function->name == "toRelativeHourNum")
     {
         result->set(Iceberg::f_transform, "hours");
         return result;
@@ -691,50 +693,60 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     return {result, partition_iter};
 }
 
-std::pair<String, String> parseTransformAndColumn(const String & object)
+
+
+std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
 {
-    String s = object;
-
-    auto trim = [](String & str)
-    {
-        str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char c){ return !std::isspace(c); }));
-        str.erase(std::find_if(str.rbegin(), str.rend(), [](unsigned char c){ return !std::isspace(c); }).base(), str.end());
-    };
-    trim(s);
-
-    if (s.find('(') == String::npos)
-        return {"identity", s};
-
-    static const RE2 re(
-        R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*(?:([0-9]+)\s*,\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*$)"
-    );
-
-    String fn_name;
-    String arg;
-    String column;
-
-    if (!RE2::FullMatch(s, re, &fn_name, &arg, &column))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid transform expression: {}", object);
-    }
+    if (auto identifier = object->as<ASTIdentifier>(); identifier)
+        return {"identity", identifier->name()};
 
     static const std::unordered_map<String, String> clickhouse_name_to_iceberg = {
         {"identity", "identity"},
         {"icebergBucket", "bucket"},
         {"icebergTruncate", "truncate"},
-        {"toYear", "year"},
-        {"toMonth", "month"},
-        {"toDayOfMonth", "day"},
-        {"toHour", "hour"}
+        {"toYearNumSinceEpoch", "year"},
+        {"toMonthNumSinceEpoch", "month"},
+        {"toRelativeDayNum", "day"},
+        {"toRelativeHourNum", "hour"}
     };
 
-    const auto & transform_base = clickhouse_name_to_iceberg.at(fn_name);
+    auto parse_function = [] (ASTPtr func_object) -> std::pair<String, String> {
+        auto func = func_object->as<ASTFunction>();
+        String clickhouse_name = func->name;
+        auto args = func->children[0]->children;
+        std::optional<size_t> arg;
+        String column_name;
+        if (args.size() == 2)
+        {
+            arg = args[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
+            column_name = args[1]->as<ASTIdentifier>()->name();
+        }
+        else
+        {
+            column_name = args[0]->as<ASTIdentifier>()->name();
+        }
 
-    String transform = transform_base;
-    if (!arg.empty())
-        transform += "[" + arg + "]";
+        if (!clickhouse_name_to_iceberg.contains(clickhouse_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported function {} for iceberg", clickhouse_name);
+        const auto & transform_base = clickhouse_name_to_iceberg.at(clickhouse_name);
 
-    return {transform, column};
+        String transform = transform_base;
+        if (arg.has_value())
+            transform += "[" + std::to_string(arg.value()) + "]";
+
+        return {transform, column_name};
+    };
+
+    if (auto func = object->as<ASTFunction>(); func->name != "tuple")
+    {
+        return parse_function(object);
+    }
+
+    auto function_desc = object->children[0]->children[i]->children[0];
+    if (auto identifier = function_desc->as<ASTIdentifier>(); identifier)
+        return {"identity", identifier->name()};
+
+    return parse_function(function_desc);
 }
 
 std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
@@ -819,11 +831,12 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         Names sort_columns = sort_columns_key_description.column_names;
         std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
 
+        std::cerr << "bp1 " << sort_columns_key_description.definition_ast->dumpTree() << '\n';
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < sort_columns.size(); ++i)
         {
             Poco::JSON::Object::Ptr sorting_field = new Poco::JSON::Object;
-            auto [transform_name, column_name] = parseTransformAndColumn(sort_columns[i]);
+            auto [transform_name, column_name] = parseTransformAndColumn(sort_columns_key_description.definition_ast, i);
             sorting_field->set(f_source_id, column_name_to_source_id[column_name]);
             sorting_field->set(f_transform, transform_name);
             if (reverse_flags.empty() || !reverse_flags[i])
@@ -1047,7 +1060,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
     return {schema, current_schema_id};
 }
 
-KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context)
 {
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
@@ -1108,35 +1121,33 @@ DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTyp
     if (iceberg_transform_name.starts_with("year"))
         return std::make_shared<DataTypeUInt16>();
     if (iceberg_transform_name.starts_with("month") || iceberg_transform_name.starts_with("day") || iceberg_transform_name.starts_with("hour"))
-        return std::make_shared<DataTypeUInt8>();
+        return std::make_shared<DataTypeUInt32>();
     return std::make_shared<DataTypeInt32>();
 }
 
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context)
 {
-    for (const auto & column_name_to_sort : sort_description.column_names)
+    std::vector<String> initial_column_names;
+    std::unordered_set<String> initial_column_names_set;
+    for (const auto & column_name : block.getNames())
     {
-        auto [iceberg_transform_name, column_name] = parseTransformAndColumn(column_name_to_sort);
-        auto clickhouse_function_info = parseTransformAndArgument(iceberg_transform_name);
-        auto function = FunctionFactory::instance().get(clickhouse_function_info->transform_name, context);
-        ColumnsWithTypeAndName arguments;
-        if (clickhouse_function_info->argument)
-        {
-            Field const_value_arg(*clickhouse_function_info->argument);
-            auto column_arg = DataTypeUInt64().createColumnConst(block.rows(), const_value_arg);
-            ColumnWithTypeAndName result_column_with_type_and_name(column_arg, std::make_shared<DataTypeUInt64>(), column_name_to_sort);
-            arguments.push_back(result_column_with_type_and_name);
-        }
-        arguments.push_back(block.getByName(column_name));
-        auto executable_function = function->build(arguments);
-        auto result_type = getFunctionResultType(iceberg_transform_name, block.getByName(column_name).type);
-        auto result_column = executable_function->execute(arguments, result_type, block.rows(), false);
-
-        ColumnsWithTypeAndName new_columns = block.getColumnsWithTypeAndName();
-        new_columns.push_back(ColumnWithTypeAndName(result_column, result_type, column_name_to_sort));
-        block = Block(new_columns);
+        initial_column_names.push_back(column_name);
+        initial_column_names_set.insert(column_name);
     }
+    ASTPtr combined_expr_list = sort_description.expression_list_ast;
+    
+    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
+    auto analyzer = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    analyzer->execute(block);
 
+    ColumnsWithTypeAndName reordered_columns;
+    for (const auto & column_name : initial_column_names)
+        reordered_columns.push_back(block.getByName(column_name));
+    for (size_t i = 0; i < block.columns(); ++i)
+        if (!initial_column_names_set.contains(block.getNames()[i]))
+            reordered_columns.push_back(block.getColumnsWithTypeAndName()[i]);
+
+    block = Block(reordered_columns);
     SortDescription result_sort_description;
     for (size_t i = 0; i < sort_description.column_names.size(); ++i)
     {

@@ -617,7 +617,7 @@ IcebergStorageSink::IcebergStorageSink(
         }
     }
 
-    sort_description = Iceberg::getSortDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
+    sort_description = Iceberg::getSortingKeyDescriptionFromMetadata(metadata, sample_block->getNamesAndTypesList(), context);
 
     for (size_t i = 0; i < partitions_specs->size(); ++i)
     {

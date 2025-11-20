@@ -99,10 +99,10 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::J
 /// "x" -> {"identity", "x"}
 /// "identity(x)" -> {"identity", "x"}
 /// "bucket(16, x)" -> {"bucket[16]", "x"}
-std::pair<String, String> parseTransformAndColumn(const String & object);
+std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i);
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
-KeyDescription getSortDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
 void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
 
 }

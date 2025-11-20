@@ -77,24 +77,24 @@ def test_writes_create_table_order_by(started_cluster_iceberg_with_spark, format
     assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '4\n2\n1\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toYear(x))", format_version=format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toYearNumSinceEpoch(x))", format_version=format_version)
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('2019-01-01 00:00:00', 'abc'), ('2021-01-03 00:00:00', 'bc'), ('2020-01-02 00:00:00', 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '2019-01-01 00:00:00.000000\n2020-01-02 00:00:00.000000\n2021-01-03 00:00:00.000000\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toMonth(x))", format_version=format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toMonthNumSinceEpoch(x))", format_version=format_version)
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('2019-01-01 00:00:00', 'abc'), ('2021-03-03 00:00:00', 'bc'), ('2020-02-02 00:00:00', 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '2019-01-01 00:00:00.000000\n2020-02-02 00:00:00.000000\n2021-03-03 00:00:00.000000\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toDayOfMonth(x))", format_version=format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toRelativeDayNum(x))", format_version=format_version)
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('2019-01-01 00:00:00', 'abc'), ('2021-03-03 00:00:00', 'bc'), ('2020-02-02 00:00:00', 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
     assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '2019-01-01 00:00:00.000000\n2020-02-02 00:00:00.000000\n2021-03-03 00:00:00.000000\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
-    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toHour(x))", format_version=format_version)
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x DateTime, y String)", order_by="(toRelativeHourNum(x))", format_version=format_version)
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('2019-01-01 03:00:00', 'abc'), ('2021-03-03 01:00:00', 'bc'), ('2020-02-02 02:00:00', 'd');", settings={"allow_experimental_insert_into_iceberg": 1})
-    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '2021-03-03 01:00:00.000000\n2020-02-02 02:00:00.000000\n2019-01-01 03:00:00.000000\n'
+    assert instance.query(f"SELECT x FROM {TABLE_NAME}") == '2019-01-01 03:00:00.000000\n2020-02-02 02:00:00.000000\n2021-03-03 01:00:00.000000\n'
 
     TABLE_NAME = "test_writes_create_table_" + storage_type + "_" + get_uuid_str()
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x UInt32, y String)", order_by="(x DESC, y ASC)", format_version=format_version)
