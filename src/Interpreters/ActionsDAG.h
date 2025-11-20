@@ -580,5 +580,4 @@ struct ActionsAndProjectInputsFlag
 };
 
 using ActionsAndProjectInputsFlagPtr = std::shared_ptr<ActionsAndProjectInputsFlag>;
-
 }

@@ -1088,7 +1088,7 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
     {
         auto & input = inputs_map[col.name];
         if (!input)
-            input = &dag.addInput(col);
+            input = &dag.addInput(col.name, col.type);
     }
 
     ActionsDAG::NodeRawConstPtrs new_outputs;

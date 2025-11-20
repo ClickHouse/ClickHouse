@@ -237,8 +237,32 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_, bool duplicate_co
     }
 }
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+namespace
+{
+void checkNodeIsValid(const ActionsDAG::Node & node)
+{
+    /// TODO(antaljanosbenjamin): Deal with placeholders
+    if (node.type == ActionsDAG::ActionType::PLACEHOLDER)
+        return;
+
+    if (node.column != nullptr && !(node.column->isConst() || typeid_cast<const ColumnSet *>(node.column.get())))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Node's column must be either Conts or Set, but got {} for node {} (structure: {})",
+            node.column->getFamilyName(),
+            node.result_name,
+            node.column->dumpStructure());
+}
+}
+#endif
+
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    checkNodeIsValid(node);
+#endif
+
     auto & res = nodes.emplace_back(std::move(node));
 
     if (res.type == ActionType::INPUT)
@@ -467,7 +491,7 @@ const ActionsDAG::Node & ActionsDAG::addPlaceholder(std::string name, DataTypePt
     node.type = ActionType::PLACEHOLDER;
     node.result_type = std::move(type);
     node.result_name = std::move(name);
-    node.column = node.result_type->createColumn();
+    node.column = node.result_type->createColumnConst(1, node.result_type->getDefault());
 
     return addNode(std::move(node));
 }
@@ -2640,7 +2664,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsFor
         const Node * input;
         auto & list = required_inputs[col.name];
         if (list.empty())
-            input = &actions.addInput(col);
+            input = &actions.addInput(col.name, col.type);
         else
         {
             input = list.front();
@@ -3192,7 +3216,7 @@ std::optional<ActionsDAG> ActionsDAG::buildFilterActionsDAG(
         {
             auto & result_input = result_inputs[input_node_it->second.name];
             if (!result_input)
-                result_input = &result_dag.addInput(input_node_it->second);
+                result_input = &result_dag.addInput(input_node_it->second.name, input_node_it->second.type);
 
             node_to_result_node.emplace(node, result_input);
             nodes_to_process.pop_back();
@@ -4054,5 +4078,4 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
 
     return dag;
 }
-
 }

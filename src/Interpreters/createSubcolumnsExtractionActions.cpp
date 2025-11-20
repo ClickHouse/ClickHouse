@@ -26,7 +26,8 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
             /// Check if we don't have input with this column yet.
             if (auto it = input_nodes.find(column_name); it == input_nodes.end())
             {
-                const auto * node = &extract_subcolumns_dag.addInput(available_columns.getByName(column_name));
+                const auto & column = available_columns.getByName(column_name);
+                const auto * node = &extract_subcolumns_dag.addInput(column.name, column.type);
                 extract_subcolumns_dag.getOutputs().push_back(node);
                 input_nodes[column_name] = node;
             }

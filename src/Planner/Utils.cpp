@@ -686,7 +686,7 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     auto & outputs = project_only_used_columns_actions.getOutputs();
     for (const auto & column : stream_header->getColumnsWithTypeAndName())
     {
-        const auto * input_node = &project_only_used_columns_actions.addInput(column);
+        const auto * input_node = &project_only_used_columns_actions.addInput(column.name, column.type);
         if (used_column_identifiers_set.contains(column.name))
             outputs.push_back(input_node);
     }
