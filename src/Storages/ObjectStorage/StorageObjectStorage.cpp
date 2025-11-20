@@ -393,7 +393,7 @@ void StorageObjectStorage::read(
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
             start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
-            if (auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
                 delta_kernel_metadata != nullptr)
             {
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
