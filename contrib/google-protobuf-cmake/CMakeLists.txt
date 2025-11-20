@@ -444,16 +444,34 @@ else ()
 
     if (NOT EXISTS "${PROTOC_BUILD_DIR}/protoc")
 
-        # This is quite ugly but I cannot make dependencies work propery.
-
+        # We need to build abseil for the native processor to then use it as dependency for protoc build
+        # This is required because google-protobuf cmake does not support passing a different abseil source path
+        # In any case it's not a big deal because it was going to be built for the host platform anyway
         set(abseil_source_dir "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
-
         execute_process(
-            COMMAND mkdir -p ${PROTOC_BUILD_DIR}
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
+                COMMAND mkdir -p ${PROTOC_BUILD_DIR}/absl_build ${PROTOC_BUILD_DIR}/absl_install
+                COMMAND_ECHO STDOUT
+                COMMAND_ERROR_IS_FATAL ANY
+        )
+        execute_process(
+                COMMAND ${CMAKE_COMMAND}
+                "-G${CMAKE_GENERATOR}"
+                "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
+                "-S ${abseil_source_dir}"
+                "-B ${PROTOC_BUILD_DIR}/absl_build"
+                "-DCMAKE_PREFIX_PATH=${PROTOC_BUILD_DIR}/absl_install"
+                "-DCMAKE_INSTALL_PREFIX=${PROTOC_BUILD_DIR}/absl_install"
+                "-DABSL_ENABLE_INSTALL=ON"
+                WORKING_DIRECTORY "${PROTOC_BUILD_DIR}/absl_build"
+                COMMAND_ECHO STDOUT
+                COMMAND_ERROR_IS_FATAL ANY
         )
 
+        # Now we build the native protoc executable
         execute_process(
             COMMAND ${CMAKE_COMMAND}
                 "-G${CMAKE_GENERATOR}"
@@ -466,9 +484,8 @@ else ()
                 "-Dprotobuf_BUILD_CONFORMANCE=0"
                 "-Dprotobuf_BUILD_EXAMPLES=0"
                 "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
-                "-DABSL_ROOT_DIR=${abseil_source_dir}"
-                "-DABSL_ENABLE_INSTALL=0"
                 "-Dprotobuf_LOCAL_DEPENDENCIES_ONLY=1"
+                "-DCMAKE_FIND_ROOT_PATH=${PROTOC_BUILD_DIR}/absl_install"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
             COMMAND_ECHO STDOUT
