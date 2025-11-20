@@ -933,9 +933,7 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 
 bool KeyCondition::isOnlyConjuncts() const
 {
-    return std::find_if(rpn.begin(), rpn.end(),
-                        [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; }
-                       ) == rpn.end();
+    return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
 
@@ -3128,7 +3126,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const PartialEvalResultsFunction & partial_eval_results_function) const
+    const FunctionPartialEvalResults & function_partial_eval_results) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3140,7 +3138,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t position = 0;
+    size_t current_element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -3451,10 +3449,11 @@ BoolMask KeyCondition::checkInHyperrectangle(
         }
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
-        if (unlikely(partial_eval_results_function))
+
+        if (unlikely(function_partial_eval_results))
         {
-            partial_eval_results_function(position, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            position++;
+            function_partial_eval_results(current_element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            current_element_idx++;
         }
     }
 

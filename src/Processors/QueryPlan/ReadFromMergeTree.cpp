@@ -1917,7 +1917,7 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
-    indexes->support_disjuncts_with_skip_indexes = skip_indexes.useful_indices.size() > 1 && !indexes->key_condition_rpn_template->isOnlyConjuncts() && settings[Setting::use_skip_indexes_on_disjuncts];
+    indexes->support_disjuncts_with_skip_indexes = settings[Setting::use_skip_indexes_on_disjuncts] && skip_indexes.useful_indices.size() > 1 && !indexes->key_condition_rpn_template->isOnlyConjuncts();
 
     {
         std::vector<size_t> index_sizes;

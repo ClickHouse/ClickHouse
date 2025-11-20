@@ -16,6 +16,8 @@ class KeyCondition;
 struct QueryIdHolder;
 class VectorSimilarityIndexCache;
 
+using PartialEvalResultsBits = boost::dynamic_bitset<>;
+
 /** Executes SELECT queries on data from the merge tree.
   */
 class MergeTreeDataSelectExecutor
@@ -87,7 +89,7 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool support_disjuncts,
-        boost::dynamic_bitset<> & partial_eval_results_for_disjuncts,
+        PartialEvalResultsBits & partial_eval_results_for_disjuncts,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -254,7 +256,7 @@ public:
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
-        const boost::dynamic_bitset<> & partial_eval_results,
+        const PartialEvalResultsBits & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 };

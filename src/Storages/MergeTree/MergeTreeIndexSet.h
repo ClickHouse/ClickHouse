@@ -106,7 +106,7 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const FunctionPartialEvalResults & function_partial_eval_results) const override;
 
     FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
 

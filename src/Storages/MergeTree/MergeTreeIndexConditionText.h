@@ -61,7 +61,7 @@ public:
     static bool isSupportedFunction(const String & function_name);
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const FunctionPartialEvalResults & function_partial_eval_results) const override;
 
     const std::vector<String> & getAllSearchTokens() const { return all_search_tokens; }
     bool useBloomFilter() const { return use_bloom_filter; }

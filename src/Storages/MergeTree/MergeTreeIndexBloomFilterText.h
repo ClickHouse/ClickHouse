@@ -73,7 +73,7 @@ public:
     ~MergeTreeConditionBloomFilterText() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const FunctionPartialEvalResults & function_partial_eval_results) const override;
 private:
     struct KeyTuplePositionMapping
     {

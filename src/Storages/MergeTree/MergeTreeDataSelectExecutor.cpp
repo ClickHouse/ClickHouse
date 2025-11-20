@@ -743,7 +743,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
 
-    std::atomic<size_t> sum_marks_finalized = 0;
+    std::atomic<size_t> sum_marks_union = 0;
 
     std::vector<size_t> skip_index_used_in_part(parts_with_ranges.size(), 0);
 
@@ -861,7 +861,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
-                boost::dynamic_bitset<> partial_eval_results;
+                PartialEvalResultsBits partial_eval_results;
                 if (support_disjuncts)
                     partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * BITS_FOR_RPN_EVALUATION_RESULTS, true);
 
@@ -916,13 +916,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (support_disjuncts)
+                if (support_disjuncts && key_condition_rpn_template.has_value())
                 {
                     ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
                                         ranges.ranges, key_condition_rpn_template.value(),
                                         partial_eval_results, reader_settings, log);
 
-                    sum_marks_finalized.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
+                    sum_marks_union.fetch_add(ranges.getMarksCount(), std::memory_order_relaxed);
                 }
 
                 for (size_t idx = 0; idx < skip_indexes.merged_indices.size(); ++idx)
@@ -1080,7 +1080,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 .name = "<Combined Skip Indexes>",
                 .description = "Final set of granules after AND/OR processing",
                 .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
-                .num_granules_after = sum_marks_finalized.load(std::memory_order_relaxed)});
+                .num_granules_after = sum_marks_union.load(std::memory_order_relaxed)});
         }
     }
 
@@ -1786,7 +1786,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     bool support_disjuncts,
-    boost::dynamic_bitset<> & partial_eval_results_for_disjuncts,
+    PartialEvalResultsBits & partial_eval_results_for_disjuncts,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName()))
@@ -1797,7 +1797,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering();
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !support_disjuncts;
 
     auto index_granularity = index_helper->index.granularity;
 
@@ -2263,7 +2263,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
-    const boost::dynamic_bitset<> & partial_eval_results,
+    const PartialEvalResultsBits & partial_eval_results,
     MergeTreeReaderSettings reader_settings,
     LoggerPtr log)
 {
@@ -2287,6 +2287,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     {
         for (auto range_begin = range.begin; range_begin < range.end; range_begin++)
         {
+            rpn_stack.clear();
             size_t position = 0;
             for (const auto & element : rpn)
             {
@@ -2336,7 +2337,6 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
                 else
                     res.back().end = range_begin + 1;
             }
-            rpn_stack.pop_back();
         }
     }
     return res;

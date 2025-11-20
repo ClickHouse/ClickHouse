@@ -163,8 +163,8 @@ public:
     /// Checks if this index is useful for query.
     virtual bool alwaysUnknownOrTrue() const = 0;
 
-    using PartialEvalResultsFunction = KeyCondition::PartialEvalResultsFunction;
-    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const PartialEvalResultsFunction & partial_eval_results_function) const = 0;
+    using FunctionPartialEvalResults = KeyCondition::FunctionPartialEvalResults;
+    virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const FunctionPartialEvalResults & function_partial_eval_results) const = 0;
 
     using FilteredGranules = std::vector<size_t>;
     virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const

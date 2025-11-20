@@ -151,7 +151,7 @@ public:
     ~MergeTreeIndexConditionVectorSimilarity() override = default;
 
     bool alwaysUnknownOrTrue() const override;
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const PartialEvalResultsFunction & partial_eval_results_function) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const FunctionPartialEvalResults & function_partial_eval_results) const override;
     NearestNeighbours calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:

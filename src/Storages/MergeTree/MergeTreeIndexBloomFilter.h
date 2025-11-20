@@ -78,10 +78,10 @@ public:
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const PartialEvalResultsFunction & partial_eval_results_function) const override
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const FunctionPartialEvalResults & function_partial_eval_results) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
-            return mayBeTrueOnGranule(bf_granule, partial_eval_results_function);
+            return mayBeTrueOnGranule(bf_granule, function_partial_eval_results);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
@@ -91,7 +91,7 @@ private:
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
 
-    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const PartialEvalResultsFunction & partial_eval_results_function) const;
+    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const FunctionPartialEvalResults & function_partial_eval_results) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 

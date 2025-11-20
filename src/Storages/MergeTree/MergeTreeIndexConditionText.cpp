@@ -177,7 +177,7 @@ bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const
          RPNElement::FUNCTION_MATCH});
 }
 
-bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const
+bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const FunctionPartialEvalResults & function_partial_eval_results) const
 {
     const auto * granule = typeid_cast<const MergeTreeIndexGranuleText *>(idx_granule.get());
     if (!granule)
@@ -185,7 +185,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
-    size_t position = 0;
+    size_t current_element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
@@ -262,10 +262,10 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in MergeTreeIndexConditionText::RPNElement", element.function);
         }
 
-        if (unlikely(partial_eval_results_function))
+        if (unlikely(function_partial_eval_results))
         {
-            partial_eval_results_function(position, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
-            position++;
+            function_partial_eval_results(current_element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            current_element_idx++;
         }
     }
 

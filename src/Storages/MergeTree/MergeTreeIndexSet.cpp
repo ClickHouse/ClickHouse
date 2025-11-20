@@ -389,7 +389,7 @@ bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
     return isUseless();
 }
 
-bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const PartialEvalResultsFunction & partial_eval_results_function) const
+bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const FunctionPartialEvalResults & function_partial_eval_results) const
 {
     if (isUseless())
         return true;
@@ -400,7 +400,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
     if (size == 0 || (max_rows != 0 && size > max_rows))
         return true;
 
-    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types, {}, partial_eval_results_function).can_be_true)
+    if (!condition.checkInHyperrectangle(granule.set_hyperrectangle, index_data_types, {}, function_partial_eval_results).can_be_true)
         return false;
 
     Block result = granule.block;
