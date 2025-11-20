@@ -104,7 +104,7 @@ def run_fuzz_job(check_name: str):
     if not result.is_ok():
         info = ""
         error_output = Shell.get_output(
-            f"rg --text -A 10 -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
+            f"rg --text -A 10 -o 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|Received signal.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
         )
         if error_output:
             error_lines = error_output.splitlines()
@@ -116,10 +116,10 @@ def run_fuzz_job(check_name: str):
             info += f"Error:\n{error_output}\n"
 
         patterns = [
-            "Let op!",
-            "Killed",
-            "Unknown error",
             "BuzzHouse fuzzer exception",
+            "Killed",
+            "Let op!",
+            "Received signal" "Unknown error",
         ]
         if result.results and any(
             pattern in result.results[-1].name for pattern in patterns
