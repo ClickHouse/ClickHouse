@@ -251,9 +251,11 @@ private:
     }
 
     Resource * current = nullptr; // round-robin pointer
-    std::unordered_map<ISchedulerNode *, Resource> children; // resources by pointer
     std::atomic<bool> stop_flag = false;
     EventQueue events;
+    /// Resources by pointer. Must be destroyed before the "events",
+    /// because the descructor of ISchedulerNode might access the mutex in that queue.
+    std::unordered_map<ISchedulerNode *, Resource> children;
     ThreadFromGlobalPool scheduler;
 };
 
