@@ -2624,7 +2624,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /* digest */,
     const KeeperContext & /*keeper_context*/)
 {
-    ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
+    ProfileEvents::increment(ProfileEvents::KeeperRemoveWatchRequest);
 
     if (!storage.uncommitted_state.getNode(zk_request.path))
         return {typename Storage::Delta{zxid, Coordination::Error::ZNONODE}};

@@ -627,8 +627,8 @@ size_t ZooKeeperCheckWatchRequest::sizeImpl() const
 
 std::string ZooKeeperCheckWatchRequest::toStringImpl(bool /*short_format*/) const
 {
-    String result = std::format("path: {}\n", path);
-    result += std::format("type: {}\n", static_cast<Int32>(type));
+    String result = fmt::format("path: {}\n", path);
+    result += fmt::format("type: {}\n", static_cast<Int32>(type));
     return result;
 }
 
@@ -671,8 +671,8 @@ size_t ZooKeeperRemoveWatchRequest::sizeImpl() const
 
 std::string ZooKeeperRemoveWatchRequest::toStringImpl(bool /*short_format*/) const
 {
-    String result = std::format("path: {}\n", path);
-    result += std::format("type: {}\n", static_cast<Int32>(type));
+    String result = fmt::format("path: {}\n", path);
+    result += fmt::format("type: {}\n", static_cast<Int32>(type));
     return result;
 }
 
@@ -715,8 +715,8 @@ size_t ZooKeeperAddWatchRequest::sizeImpl() const
 
 std::string ZooKeeperAddWatchRequest::toStringImpl(bool /*short_format*/) const
 {
-    String result = std::format("path: {}\n", path);
-    result += std::format("mode: {}\n", static_cast<Int32>(mode));
+    String result = fmt::format("path: {}\n", path);
+    result += fmt::format("mode: {}\n", static_cast<Int32>(mode));
     return result;
 }
 
@@ -763,16 +763,16 @@ size_t ZooKeeperSetWatchRequest::sizeImpl() const
 
 std::string ZooKeeperSetWatchRequest::toStringImpl(bool /*short_format*/) const
 {
-    String result = std::format("zxid: {}\n", zxid);
+    String result = fmt::format("zxid: {}\n", zxid);
 
     for (const auto & elem : data_watches)
-        result += std::format("data_watch: {}\n", elem);
+        result += fmt::format("data_watch: {}\n", elem);
 
     for (const auto & elem : exist_watches)
-        result += std::format("exist_watch: {}\n", elem);
+        result += fmt::format("exist_watch: {}\n", elem);
 
     for (const auto & elem : child_watches)
-        result += std::format("child_watch: {}\n", elem);
+        result += fmt::format("child_watch: {}\n", elem);
     return result;
 }
 
@@ -812,22 +812,22 @@ size_t ZooKeeperSetWatch2Request::sizeImpl() const
 
 std::string ZooKeeperSetWatch2Request::toStringImpl(bool /*short_format*/) const
 {
-    String result = std::format("zxid: {}\n", zxid);
+    String result = fmt::format("zxid: {}\n", zxid);
 
     for (const auto & elem : data_watches)
-        result += std::format("data_watch: {}\n", elem);
+        result += fmt::format("data_watch: {}\n", elem);
 
     for (const auto & elem : exist_watches)
-        result += std::format("exist_watch: {}\n", elem);
+        result += fmt::format("exist_watch: {}\n", elem);
 
     for (const auto & elem : child_watches)
-        result += std::format("child_watch: {}\n", elem);
+        result += fmt::format("child_watch: {}\n", elem);
 
     for (const auto & elem : persistent_watches)
-        result += std::format("persistent_watches: {}\n", elem);
+        result += fmt::format("persistent_watches: {}\n", elem);
 
     for (const auto & elem : persistent_recursive_watches)
-        result += std::format("persistent_recursive_watches: {}\n", elem);
+        result += fmt::format("persistent_recursive_watches: {}\n", elem);
 
     return result;
 }
