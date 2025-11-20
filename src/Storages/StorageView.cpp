@@ -128,7 +128,7 @@ StorageView::StorageView(
     if (!is_parameterized_view_)
     {
         /// If CREATE query is to create parameterized view, then we dont want to set columns
-        /// if thed don't specified explicitly.
+        /// if they aren't specified explicitly.
         if (!query.isParameterizedView() || !columns_.empty())
             storage_metadata.setColumns(columns_);
     }
