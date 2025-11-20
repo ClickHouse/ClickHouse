@@ -144,6 +144,7 @@ def main():
     job_params = [to.strip() for to in job_params]
     use_old_analyzer = False
     use_distributed_plan = False
+    use_database_disk = False
     is_flaky_check = False
     is_bugfix_validation = False
     is_parallel = False
@@ -167,6 +168,8 @@ def main():
             use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
+        elif to == "db disk":
+            use_database_disk = True
         elif to == "flaky":
             is_flaky_check = True
         elif to == "parallel":
@@ -312,6 +315,7 @@ def main():
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
+        "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
     }
