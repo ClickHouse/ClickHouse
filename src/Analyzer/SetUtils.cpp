@@ -67,6 +67,10 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return depth;
 }
 
+/// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
+/// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
+/// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
+/// We can not include values that don't represent any possible value from the type of filtered column to the set.
 std::optional<Field> convertFieldToTypeCheckEnum(
     const Field & from_value, const IDataType & from_type, const IDataType & to_type, bool forbid_unknown_enum_values)
 {
