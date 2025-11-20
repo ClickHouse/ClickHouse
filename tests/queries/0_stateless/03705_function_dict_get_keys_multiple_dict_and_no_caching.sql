@@ -1,3 +1,9 @@
+DROP DICTIONARY IF EXISTS dict_products;
+DROP DICTIONARY IF EXISTS dict_geo;
+DROP TABLE IF EXISTS src_products;
+DROP TABLE IF EXISTS src_geo;
+DROP TABLE IF EXISTS inputs;
+
 CREATE TABLE src_products
 (
     id UInt64,
