@@ -18,7 +18,7 @@ private:
     const std::filesystem::path path;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     std::string object_key_prefix;
@@ -30,7 +30,7 @@ public:
         std::filesystem::path path_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
@@ -44,7 +44,7 @@ private:
     const std::filesystem::path path_to;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
@@ -60,7 +60,7 @@ public:
         std::filesystem::path path_to_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
@@ -73,7 +73,7 @@ private:
     const std::filesystem::path path;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     DirectoryRemoteInfo info;
@@ -84,7 +84,7 @@ public:
         std::filesystem::path path_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
@@ -98,7 +98,7 @@ private:
     const StoredObject object;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     bool written = false;
@@ -109,7 +109,7 @@ public:
         StoredObject object_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
@@ -122,7 +122,7 @@ private:
     const std::filesystem::path path;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     std::filesystem::path remote_path;
@@ -134,7 +134,7 @@ public:
         std::filesystem::path path_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
@@ -149,7 +149,7 @@ private:
     const std::filesystem::path path_to;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     std::filesystem::path remote_path_from;
@@ -162,7 +162,7 @@ public:
         std::filesystem::path path_to_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
@@ -182,7 +182,7 @@ private:
     const std::filesystem::path path_to;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
 
     std::filesystem::path remote_path_from;
@@ -203,7 +203,7 @@ public:
         std::filesystem::path path_to_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
@@ -236,7 +236,7 @@ private:
     const std::filesystem::path path;
     const std::string metadata_key_prefix;
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
     const LoggerPtr log;
 
@@ -249,7 +249,7 @@ public:
         std::filesystem::path path_,
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
-        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
         std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;

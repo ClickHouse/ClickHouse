@@ -79,7 +79,7 @@ private:
 
     std::mutex metadata_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
 
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;

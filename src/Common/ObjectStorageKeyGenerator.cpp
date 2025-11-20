@@ -6,7 +6,7 @@
 #include <fmt/format.h>
 
 
-class GeneratorWithTemplate : public DB::IObjectStorageKeysGenerator
+class GeneratorWithTemplate : public DB::IObjectStorageKeyGenerator
 {
 public:
     explicit GeneratorWithTemplate(String key_template_)
@@ -28,7 +28,7 @@ private:
 };
 
 
-class GeneratorWithPrefix : public DB::IObjectStorageKeysGenerator
+class GeneratorWithPrefix : public DB::IObjectStorageKeyGenerator
 {
 public:
     explicit GeneratorWithPrefix(String key_prefix_)
@@ -62,7 +62,7 @@ private:
 };
 
 
-class GeneratorAsIsWithPrefix : public DB::IObjectStorageKeysGenerator
+class GeneratorAsIsWithPrefix : public DB::IObjectStorageKeyGenerator
 {
 public:
     explicit GeneratorAsIsWithPrefix(String key_prefix_)
@@ -85,17 +85,17 @@ private:
 namespace DB
 {
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorAsIsWithPrefix(String key_prefix)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorAsIsWithPrefix(String key_prefix)
 {
     return std::make_shared<GeneratorAsIsWithPrefix>(std::move(key_prefix));
 }
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByPrefix(String key_prefix)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix)
 {
     return std::make_shared<GeneratorWithPrefix>(std::move(key_prefix));
 }
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByTemplate(String key_template)
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByTemplate(String key_template)
 {
     return std::make_shared<GeneratorWithTemplate>(std::move(key_template));
 }

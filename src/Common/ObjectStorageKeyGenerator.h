@@ -5,10 +5,10 @@
 namespace DB
 {
 
-class IObjectStorageKeysGenerator
+class IObjectStorageKeyGenerator
 {
 public:
-    virtual ~IObjectStorageKeysGenerator() = default;
+    virtual ~IObjectStorageKeyGenerator() = default;
 
     /// Generates an object storage key based on a path in the virtual filesystem.
     /// @param path - Path in the virtual filesystem.
@@ -19,10 +19,10 @@ public:
     virtual bool isRandom() const = 0;
 };
 
-using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
+using ObjectStorageKeyGeneratorPtr = std::shared_ptr<IObjectStorageKeyGenerator>;
 
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorAsIsWithPrefix(String key_prefix);
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByPrefix(String key_prefix);
-ObjectStorageKeysGeneratorPtr createObjectStorageKeysGeneratorByTemplate(String key_template);
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorAsIsWithPrefix(String key_prefix);
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix);
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByTemplate(String key_template);
 
 }

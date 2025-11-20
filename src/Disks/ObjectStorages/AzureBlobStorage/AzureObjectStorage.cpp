@@ -137,9 +137,9 @@ AzureObjectStorage::AzureObjectStorage(
 {
 }
 
-ObjectStorageKeysGeneratorPtr AzureObjectStorage::createKeysGenerator() const
+ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
 {
-    return createObjectStorageKeysGeneratorByTemplate("[a-z]{32}");
+    return createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const

@@ -207,9 +207,9 @@ String CachedObjectStorage::getObjectsNamespace() const
     return object_storage->getObjectsNamespace();
 }
 
-ObjectStorageKeysGeneratorPtr CachedObjectStorage::createKeysGenerator() const
+ObjectStorageKeyGeneratorPtr CachedObjectStorage::createKeyGenerator() const
 {
-    return object_storage->createKeysGenerator();
+    return object_storage->createKeyGenerator();
 }
 
 }

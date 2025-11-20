@@ -19,7 +19,7 @@ public:
         , metadata_storage_metrics(std::move(metadata_storage_metrics_))
         /// A basic key generator is required for checking S3 capabilities,
         /// it will be reset later by metadata storage.
-        , key_generator(createObjectStorageKeysGeneratorAsIsWithPrefix(BaseObjectStorage::getCommonKeyPrefix()))
+        , key_generator(createObjectStorageKeyGeneratorAsIsWithPrefix(BaseObjectStorage::getCommonKeyPrefix()))
     {
     }
 
@@ -33,7 +33,7 @@ public:
 
 private:
     MetadataStorageMetrics metadata_storage_metrics;
-    ObjectStorageKeysGeneratorPtr key_generator;
+    ObjectStorageKeyGeneratorPtr key_generator;
 };
 
 }

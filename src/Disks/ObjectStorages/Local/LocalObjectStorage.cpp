@@ -224,9 +224,9 @@ void LocalObjectStorage::throwIfReadonly() const
         throw Exception(ErrorCodes::READONLY, "Local object storage `{}` is readonly", getName());
 }
 
-ObjectStorageKeysGeneratorPtr LocalObjectStorage::createKeysGenerator() const
+ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
-    return createObjectStorageKeysGeneratorByPrefix(settings.key_prefix);
+    return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
 }
 
 }

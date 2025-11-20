@@ -16,10 +16,10 @@
 namespace DB
 {
 
-MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeysGeneratorPtr keys_generator_)
+MetadataStorageFromDisk::MetadataStorageFromDisk(DiskPtr disk_, std::string compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_)
     : disk(disk_)
     , compatible_key_prefix(std::move(compatible_key_prefix_))
-    , keys_generator(std::move(keys_generator_))
+    , key_generator(std::move(key_generator_))
 {
 }
 
@@ -272,7 +272,7 @@ std::optional<StoredObjects> MetadataStorageFromDiskTransaction::tryGetBlobsFrom
 
 ObjectStorageKey MetadataStorageFromDiskTransaction::generateObjectKeyForPath(const std::string & path) const
 {
-    return metadata_storage.keys_generator->generate(path);
+    return metadata_storage.key_generator->generate(path);
 }
 
 }

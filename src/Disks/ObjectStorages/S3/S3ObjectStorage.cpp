@@ -539,7 +539,7 @@ void S3ObjectStorage::applyNewSettings(
     s3_settings.set(std::move(modified_settings));
 }
 
-ObjectStorageKeysGeneratorPtr S3ObjectStorage::createKeysGenerator() const
+ObjectStorageKeyGeneratorPtr S3ObjectStorage::createKeyGenerator() const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");

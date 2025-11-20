@@ -277,9 +277,9 @@ void WebObjectStorage::startup()
 {
 }
 
-ObjectStorageKeysGeneratorPtr WebObjectStorage::createKeysGenerator() const
+ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeysGenerator is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & /* path */, bool) const

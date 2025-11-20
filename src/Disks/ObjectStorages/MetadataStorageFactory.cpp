@@ -113,8 +113,8 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         fs::create_directories(metadata_path);
         auto db_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        auto keys_generator = object_storage->createKeysGenerator();
-        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(keys_generator));
+        auto key_generator = object_storage->createKeyGenerator();
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator));
     });
 }
 

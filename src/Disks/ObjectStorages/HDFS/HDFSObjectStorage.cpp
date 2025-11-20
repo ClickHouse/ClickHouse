@@ -53,12 +53,12 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     return path;
 }
 
-ObjectStorageKeysGeneratorPtr HDFSObjectStorage::createKeysGenerator() const
+ObjectStorageKeyGeneratorPtr HDFSObjectStorage::createKeyGenerator() const
 {
     initializeHDFSFS();
     /// what ever data_source_description.description value is, consider that key as relative key
     chassert(data_directory.starts_with("/"));
-    return createObjectStorageKeysGeneratorByPrefix(fs::path(url_without_path) / data_directory.substr(1));
+    return createObjectStorageKeyGeneratorByPrefix(fs::path(url_without_path) / data_directory.substr(1));
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const

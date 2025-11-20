@@ -302,7 +302,7 @@ public:
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
-    virtual ObjectStorageKeysGeneratorPtr createKeysGenerator() const = 0;
+    virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
 
 #if USE_AZURE_BLOB_STORAGE
     virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const

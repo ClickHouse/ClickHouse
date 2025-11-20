@@ -62,8 +62,8 @@ private:
         fs::create_directories(local_disk_metadata_dir);
 
         auto disk = active_disks[path] = std::make_shared<DB::DiskLocal>("test-metadata", local_disk_metadata_dir);
-        auto keys_generator = DB::createObjectStorageKeysGeneratorAsIsWithPrefix("");
-        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, keys_generator);
+        auto key_generator = DB::createObjectStorageKeyGeneratorAsIsWithPrefix("");
+        auto metadata = active_metadatas[path] = std::make_shared<DB::MetadataStorageFromDisk>(disk, path, key_generator);
 
         return metadata;
     }

@@ -66,7 +66,7 @@ public:
 
     String getObjectsNamespace() const override { return ""; }
 
-    ObjectStorageKeysGeneratorPtr createKeysGenerator() const override;
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return true; }
 

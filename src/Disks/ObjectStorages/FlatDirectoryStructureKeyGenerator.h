@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class FlatDirectoryStructureKeyGenerator : public IObjectStorageKeysGenerator
+class FlatDirectoryStructureKeyGenerator : public IObjectStorageKeyGenerator
 {
 public:
     explicit FlatDirectoryStructureKeyGenerator(std::string storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_);

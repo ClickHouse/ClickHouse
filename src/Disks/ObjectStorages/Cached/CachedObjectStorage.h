@@ -83,7 +83,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKeysGeneratorPtr createKeysGenerator() const override;
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isPlain() const override { return object_storage->isPlain(); }
 

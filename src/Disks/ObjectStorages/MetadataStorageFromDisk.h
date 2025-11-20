@@ -24,10 +24,10 @@ private:
     mutable SharedMutex metadata_mutex;
     const DiskPtr disk;
     const std::string compatible_key_prefix;
-    const ObjectStorageKeysGeneratorPtr keys_generator;
+    const ObjectStorageKeyGeneratorPtr key_generator;
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeysGeneratorPtr keys_generator_);
+    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -40,7 +40,7 @@ public:
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
 
-    bool areBlobPathsRandom() const override { return keys_generator->isRandom(); }
+    bool areBlobPathsRandom() const override { return key_generator->isRandom(); }
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
