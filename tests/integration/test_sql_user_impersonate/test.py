@@ -5,8 +5,7 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
-    "node",
-    stay_alive=True,
+    "node"
 )
 
 @pytest.fixture(scope="module", autouse=True)
@@ -26,28 +25,22 @@ def test_sql_impersonate():
         "CREATE  USER user2 IDENTIFIED WITH plaintext_password BY 'password2';"
     )
 
+    queries = [
+        "EXECUTE AS user2 SELECT * from system.tables;",
+        "EXECUTE AS default SELECT * from system.tables;",
+        "EXECUTE AS default",
+        "GRANT IMPERSONATE ON default TO user2; EXECUTE AS user2;",
+        "GRANT IMPERSONATE ON default TO user2; EXECUTE AS default;",
+        "GRANT IMPERSONATE ON user2 TO user1; EXECUTE AS user1;"
+    ]
+
     errors = []
+    for q in queries:
+        err = node.get_query_request(q).get_error()
+        errors.append((q, err))
 
-    errors.append(node.get_query_request(
-        "EXECUTE AS user2 SELECT * from system.tables;"
-    ).get_error())
+    node.get_query_request("DROP USER IF EXISTS user1;")
+    node.get_query_request("DROP USER IF EXISTS user2;")
 
-    errors.append(node.get_query_request(
-        "EXECUTE AS default SELECT * from system.tables;"
-    ).get_error())
-
-    errors.append(node.get_query_request(
-        "EXECUTE AS default"
-    ).get_error())
-
-    errors.append(node.get_query_request(
-        "GRANT IMPERSONATE ON user1 TO user2;"
-    ).get_error())
-
-    errors.append(node.get_query_request(
-        "GRANT IMPERSONATE ON * TO user2;"
-    ).get_error())
-
-    assert len(errors) == 5
-    assert all("IMPERSONATE feature is disabled" in x for x in errors)
-
+    for q, err in errors:
+        assert "IMPERSONATE feature is disabled" in err, f"Unexpected error for query:\n{q}\nError: {err}"
