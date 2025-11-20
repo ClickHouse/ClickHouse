@@ -298,10 +298,6 @@ def test_alter_settings(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
-    assert '"after_processing":"keep"' in node1.query(
-        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
-    )
-
     generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
@@ -334,7 +330,10 @@ def test_alter_settings(started_cluster):
         ALTER TABLE r.{table_name}
         MODIFY SETTING processing_threads_num=5,
         loading_retries=44,
-        after_processing='delete',
+        after_processing='tag',
+        after_processing_retries=21,
+        after_processing_tag_key='tagkey',
+        after_processing_tag_value='tagvalue',
         tracked_files_limit=50,
         tracked_file_ttl_sec=10000,
         polling_min_timeout_ms=222,
@@ -357,6 +356,7 @@ def test_alter_settings(started_cluster):
     int_settings = {
         "processing_threads_num": 5,
         "loading_retries": 44,
+        "after_processing_retries": 21,
         "tracked_files_ttl_sec": 10000,
         "tracked_files_limit": 50,
         "polling_min_timeout_ms": 222,
@@ -374,7 +374,11 @@ def test_alter_settings(started_cluster):
         "cleanup_interval_max_ms": 45600,
         "persistent_processing_node_ttl_seconds": 89
     }
-    string_settings = {"after_processing": "delete"}
+    string_settings = {
+        "after_processing": "tag",
+        "after_processing_tag_key": "tagkey",
+        "after_processing_tag_value": "tagvalue",
+    }
 
     def check_alterable(setting):
         if setting.startswith("s3queue_"):
@@ -395,7 +399,6 @@ def test_alter_settings(started_cluster):
 
     def with_keeper(setting):
         return setting in {
-            "after_processing",
             "loading_retries",
             "processing_threads_num",
             "tracked_files_limit",
