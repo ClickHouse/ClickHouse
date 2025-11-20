@@ -520,7 +520,8 @@ private:
 
                     /// This is important to rollback otherwise we will have double memory consumption.
                     /// Additionally, just used memory is now hot in CPU cache which speeds up next serialization.
-                    arena.rollback(alloc);
+                    [[maybe_unused]] void * rollback_ptr = arena.rollback(alloc);
+                    chassert(rollback_ptr == static_cast<const void *>(begin));
                 }
             }
         }
