@@ -83,11 +83,11 @@ String InstrumentationManager::InstrumentedPointInfo::toString() const
     {
         const auto & param = parameters[i];
         if (std::holds_alternative<String>(param))
-            parameters_str += fmt::format("{}, ", std::get<String>(param));
+            parameters_str += fmt::format("{}", std::get<String>(param));
         else if (std::holds_alternative<Int64>(param))
-            parameters_str += fmt::format("{}, ", std::get<Int64>(param));
+            parameters_str += fmt::format("{}", std::get<Int64>(param));
         else if (std::holds_alternative<Float64>(param))
-            parameters_str += fmt::format("{}, ", std::get<Float64>(param));
+            parameters_str += fmt::format("{}", std::get<Float64>(param));
 
         if (i < parameters.size() - 1)
             parameters_str += ", ";
@@ -186,7 +186,7 @@ void InstrumentationManager::patchFunction(ContextPtr context, const String & fu
     patchFunctionIfNeeded(function_id);
 
     InstrumentedPointInfo info{context, instrumented_point_ids, function_id, function_name, handler_name_lower, entry_type, symbol, parameters};
-    LOG_DEBUG(logger, "Adding instrumentation point for {}", info.toString());
+    LOG_INFO(logger, "Adding instrumentation point for {}", info.toString());
     instrumented_points.emplace(std::move(info));
     instrumented_point_ids++;
 }
@@ -197,10 +197,10 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
 
     if (std::holds_alternative<bool>(id))
     {
-        LOG_DEBUG(logger, "Removing all instrumented functions");
+        LOG_INFO(logger, "Removing all instrumented functions");
         for (const auto & info : instrumented_points)
         {
-            LOG_DEBUG(logger, "Removing instrumented function {}", info.toString());
+            LOG_INFO(logger, "Removing instrumented function {}", info.toString());
             unpatchFunctionIfNeeded(info.function_id);
         }
         instrumented_points.clear();
@@ -211,7 +211,7 @@ void InstrumentationManager::unpatchFunction(std::variant<UInt64, bool> id)
         if (it == instrumented_points.get<Id>().end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown instrumentation point id to remove: ({})", std::get<UInt64>(id));
 
-        LOG_DEBUG(logger, "Removing instrumented function {}", it->toString());
+        LOG_INFO(logger, "Removing instrumented function {}", it->toString());
         unpatchFunctionIfNeeded(it->function_id);
         instrumented_points.erase(it);
     }

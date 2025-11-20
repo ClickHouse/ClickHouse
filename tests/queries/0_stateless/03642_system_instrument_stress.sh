@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: use-xray, no-parallel, no-fasttest
-# no-parallel: avoid other tests trying to add the same instrumentation to the same symbol
+# no-parallel: avoid other tests interfering with the global system.instrumentation table
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,7 +46,7 @@ function send_requests()
 }
 
 # Send in parallel a bunch of queries to ensure nothing breaks.
-# We don't care about the percise result since it depends on timing and the queries selected.
+# We don't care about the precise result since it depends on timing and the queries selected.
 for i in $(seq 1 $(nproc)); do
     send_requests &
 done
