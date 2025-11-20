@@ -126,6 +126,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        static_assert(sizeof(SerializedKeys::value_type) == 1, "SerializedKeys must store raw bytes");
+
         if (input_rows_count == 0)
             return result_type->createColumn();
 
