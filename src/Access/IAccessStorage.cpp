@@ -2,6 +2,7 @@
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/User.h>
+#include <Access/ExternalAuthenticators.h>
 #include <Access/AccessBackup.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
@@ -540,8 +541,15 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     bool allow_no_password,
     bool allow_plaintext_password) const
 {
-    if (typeid_cast<const TokenCredentials *>(&credentials) && !typeid_cast<const TokenCredentials *>(&credentials)->isReady())
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Could not resolve username from token");
+    // Resolve TokenCredentials on-demand if not ready yet
+    if (auto * token_credentials = typeid_cast<TokenCredentials *>(const_cast<Credentials *>(&credentials)))
+    {
+        if (!token_credentials->isReady())
+        {
+            if (!external_authenticators.checkTokenCredentials(*token_credentials))
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Could not resolve username from token");
+        }
+    }
 
     if (auto id = find<User>(credentials.getUserName()))
     {

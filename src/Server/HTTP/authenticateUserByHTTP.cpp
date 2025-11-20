@@ -1,4 +1,3 @@
-#include <Access/AccessControl.h>
 #include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
@@ -223,13 +222,8 @@ bool authenticateUserByHTTP(
 #endif
     else if (!bearer_token.empty() && Poco::toLower(bearer_token).starts_with(BEARER_PREFIX))
     {
-        const auto token_credentials = TokenCredentials(bearer_token.substr(BEARER_PREFIX.length()));
-        const auto & external_authenticators = global_context->getAccessControl().getExternalAuthenticators();
-
-        if (!external_authenticators.checkTokenCredentials(token_credentials))
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: Token could not be verified.");
-
-        current_credentials = std::make_unique<TokenCredentials>(token_credentials);
+        // Token resolution and validation will happen in IAccessStorage::authenticate() when the username is needed for user lookup.
+        current_credentials = std::make_unique<TokenCredentials>(bearer_token.substr(BEARER_PREFIX.length()));
     }
     else // I.e., now using user name and password strings ("Basic").
     {
