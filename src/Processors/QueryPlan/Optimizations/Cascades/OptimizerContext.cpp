@@ -4,11 +4,17 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Common/logger_useful.h>
 #include <memory>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
     : cost_estimator(memo, statistics)
@@ -36,6 +42,12 @@ void OptimizerContext::addRule(OptimizationRulePtr rule)
 
 GroupId OptimizerContext::addGroup(QueryPlan::Node & node)
 {
+    /// TODO: Currently CommonSubplanReferenceStep is expected to be resolved before Cascades optimizer.
+    /// But it seem that we can resolve it here by just mapping the target Node to a corresponding Group.
+    auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(node.step.get());
+    if (subplan_reference)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
+
     auto group_expression = std::make_shared<GroupExpression>(std::move(node.step));
     auto group_id = memo.addGroup(group_expression);
     for (auto * child_node : node.children)

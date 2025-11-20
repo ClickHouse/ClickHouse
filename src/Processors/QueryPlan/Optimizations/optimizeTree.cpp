@@ -230,12 +230,6 @@ void optimizeTreeSecondPass(
         stack.pop_back();
     }
 
-    if (optimization_settings.enable_cascades_optimizer)
-    {
-        CascadesOptimizer cascades_optimizer(query_plan);
-        cascades_optimizer.optimize();
-    }
-
     /// Materialize subplan references before other optimizations.
     traverseQueryPlan(stack, root, [&](auto & frame_node)
     {
@@ -247,6 +241,12 @@ void optimizeTreeSecondPass(
     {
         optimizeUnusedCommonSubplans(frame_node);
     });
+
+    if (optimization_settings.enable_cascades_optimizer)
+    {
+        CascadesOptimizer cascades_optimizer(query_plan);
+        cascades_optimizer.optimize();
+    }
 
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
