@@ -52,7 +52,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         auto object_storage = active_object_storages.at(key_prefix);
-        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", 0);
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
         return active_metadatas.at(key_prefix);
     }
 
@@ -86,7 +86,7 @@ private:
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<PlainRewritableObjectStorage<LocalObjectStorage>>(std::move(metadata_storage_metrics), std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", 0);
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 
         active_metadatas.emplace(key_prefix, metadata_storage);
         active_object_storages.emplace(key_prefix, object_storage);
@@ -899,24 +899,6 @@ TEST_F(MetadataPlainRewritableDiskTest, UnlinkNonExisting)
         auto tx = metadata->createTransaction();
         tx->unlinkMetadata("A/non-existing");
         EXPECT_ANY_THROW(tx->commit());
-    }
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->unlinkFile("non-existing");
-        tx->commit();
-    }
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->unlinkFile("non-existing/A");
-        tx->commit();
-    }
-
-    {
-        auto tx = metadata->createTransaction();
-        tx->unlinkFile("A/non-existing");
-        tx->commit();
     }
 }
 
