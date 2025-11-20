@@ -137,9 +137,9 @@ public:
         chars.resize_assume_reserved(chars.size() - n * elems);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 

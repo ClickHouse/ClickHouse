@@ -27,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
@@ -65,8 +66,8 @@ public:
     IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
                                                                      size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
-    size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
-    size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos) override;
+    size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in) override;
+    size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
@@ -91,7 +92,7 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
@@ -520,68 +521,79 @@ StringRef ColumnUnique<ColumnType>::serializeAggregationStateValueIntoArena(size
 }
 
 template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos)
+size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(ReadBuffer & in)
 {
     if (is_nullable)
     {
-        UInt8 val = unalignedLoad<UInt8>(pos);
-        pos += sizeof(val);
+        UInt8 val;
+        readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
-        {
-            new_pos = pos;
             return getNullValueIndex();
-        }
     }
 
     /// Numbers, FixedString
     if (size_of_value_if_fixed)
     {
-        new_pos = pos + size_of_value_if_fixed;
-        return uniqueInsertData(pos, size_of_value_if_fixed);
+        if (in.available() < size_of_value_if_fixed)
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
+
+        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+        in.ignore(size_of_value_if_fixed);
+        return ret;
     }
 
     /// String
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    new_pos = pos + string_size;
+    size_t string_size;
+    readBinaryLittleEndian<size_t>(string_size, in);
+    if (in.available() < string_size)
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
 
-    return uniqueInsertData(pos, string_size);
+    size_t ret = uniqueInsertData(in.position(), string_size);
+    in.ignore(string_size);
+    return ret;
 }
 
 template <typename ColumnType>
-size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos)
+size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     if (is_nullable)
     {
-        UInt8 val = unalignedLoad<UInt8>(pos);
-        pos += sizeof(val);
+        UInt8 val;
+        readBinaryLittleEndian<UInt8>(val, in);
 
         if (val)
-        {
-            new_pos = pos;
             return getNullValueIndex();
-        }
+
     }
 
     /// Numbers, FixedString
     if (size_of_value_if_fixed)
     {
-        new_pos = pos + size_of_value_if_fixed;
-        return uniqueInsertData(pos, size_of_value_if_fixed);
+        if (in.available() < size_of_value_if_fixed)
+            throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize fixed size value in ColumnUnique.");
+
+        size_t ret = uniqueInsertData(in.position(), size_of_value_if_fixed);
+        in.ignore(size_of_value_if_fixed);
+        return ret;
+
     }
 
     /// String
     /// For compatibility, serialized string value contains zero byte at the end, we just ignore this byte.
-    const size_t string_size_with_zero_byte = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size_with_zero_byte);
-    new_pos = pos + string_size_with_zero_byte;
+    size_t string_size_with_zero_byte;
+    readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
+    if (in.available() < string_size_with_zero_byte)
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUnique.");
 
-    return uniqueInsertData(pos, string_size_with_zero_byte - 1);
+    size_t ret = uniqueInsertData(in.position(), string_size_with_zero_byte - 1);
+    in.ignore(string_size_with_zero_byte);
+
+    return ret;
 }
 
 template <typename ColumnType>
-const char * ColumnUnique<ColumnType>::skipSerializedInArena(const char *) const
+void ColumnUnique<ColumnType>::skipSerializedInArena(ReadBuffer &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }

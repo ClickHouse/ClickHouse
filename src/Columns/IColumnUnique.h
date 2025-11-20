@@ -68,8 +68,8 @@ public:
     virtual size_t getNestedTypeDefaultValueIndex() const = 0;  /// removeNullable()->getDefault() value index
     virtual bool canContainNulls() const = 0;
 
-    virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
-    virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(const char * pos, const char *& new_pos) = 0;
+    virtual size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in) = 0;
+    virtual size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) = 0;
 
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
@@ -116,7 +116,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method gather is not supported for ColumnUnique.");
     }
 
-    const char * deserializeAndInsertFromArena(const char *) override
+    void deserializeAndInsertFromArena(ReadBuffer &) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for ColumnUnique.");
     }
