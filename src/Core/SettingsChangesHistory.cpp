@@ -67,6 +67,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
+            {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
+            {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
         });
