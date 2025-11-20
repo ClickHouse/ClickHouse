@@ -197,10 +197,17 @@ void MergeTreeSink::finishDelayedChunk()
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
+            auto block_id = String{};
+            if (context->getSettingsRef()[Setting::insert_deduplicate] && storage.getDeduplicationLog())
+                block_id = part->getNewPartBlockID(partition.block_dedup_token);
+
             partition.temp_part->prewarmCaches();
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
-            PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
+            PartLog::addNewPart(
+                storage.getContext(),
+                PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot),
+                {block_id});
             StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
@@ -252,7 +259,7 @@ bool MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const String 
         ///
         /// Hence, for now rename_in_transaction is false.
         added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
-        transaction.commit(&lock);
+        transaction.commit(lock);
     }
 
     return added;
