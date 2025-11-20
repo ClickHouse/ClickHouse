@@ -194,8 +194,8 @@ public:
     }
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
