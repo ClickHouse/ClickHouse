@@ -402,19 +402,16 @@ private:
             }
 
             const size_t before = out_offset;
-            const char * pos = reinterpret_cast<const char *>(cached_bytes.data());
-            const char * end = pos + cached_bytes.size();
-
-            while (pos < end)
+            DB::ReadBufferFromMemory in(reinterpret_cast<const char *>(cached_bytes.data()), cached_bytes.size());
+            while (!in.eof())
             {
                 for (size_t key_pos = 0; key_pos < num_keys; ++key_pos)
-                    pos = result_cols[key_pos]->deserializeAndInsertFromArena(pos);
+                    result_cols[key_pos]->deserializeAndInsertFromArena(in);
 
-                chassert(pos <= end);
                 ++out_offset;
             }
 
-            chassert(pos == end);
+            chassert(in.count() == cached_bytes.size());
 
             bucket_start_offset[bucket_id] = before;
             bucket_row_count[bucket_id] = out_offset - before;
