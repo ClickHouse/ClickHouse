@@ -55,7 +55,7 @@ SELECT
                          16,
                          CAST(query_vec, 'Array(Float32)')
                         ) AS distance
-FROM test; -- { serverError BAD_ARGUMENTS }
+FROM test; -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
 
 
 DROP TABLE test;

@@ -205,12 +205,7 @@ public:
         size_t max_precision_for_type = ref_vec_type->getNestedType()->getSizeOfValueInMemory() * 8;
 
         if (precision > max_precision_for_type)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Number of bit planes ({}) exceeds the maximum precision ({}) for reference vector type {}",
-                precision,
-                max_precision_for_type,
-                ref_vec_type->getNestedType()->getName());
+            return false;
 
         return true;
     }
