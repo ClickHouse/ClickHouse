@@ -79,7 +79,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int TYPE_MISMATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int INCORRECT_ELEMENT_OF_SET;
     extern const int BAD_ARGUMENTS;
     extern const int DUPLICATE_COLUMN;
     extern const int LOGICAL_ERROR;
@@ -87,8 +86,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int FUNCTION_CANNOT_HAVE_PARAMETERS;
     extern const int SYNTAX_ERROR;
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
-    extern const int LOGICAL_ERROR;
 }
 
 static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypesList & cols)
