@@ -4,6 +4,7 @@
 #include <Common/iota.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <Common/setThreadName.h>
 #include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
@@ -12,8 +13,6 @@
 #include <boost/geometry/geometries/polygon.hpp>
 
 #include <Dictionaries/PolygonDictionary.h>
-
-#include <numeric>
 
 namespace CurrentMetrics
 {

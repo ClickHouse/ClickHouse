@@ -657,6 +657,13 @@ Possible values:
 - 0 — `SELECT` throws an exception if empty file is not compatible with requested format.
 - 1 — `SELECT` returns empty result for empty file.
 )", 0) \
+    DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
+Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
+
+Possible values:
+- 'path' — Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
+- 'command' — Use FlightDescriptor::Command with a SELECT query (required for Dremio)
+)", 0) \
     DECLARE(UInt64, hsts_max_age, 0, R"(
 Expired time for HSTS. 0 means disable HSTS.
 )", 0) \
@@ -3282,6 +3289,9 @@ Read more about [memory overcommit](memory-overcommit.md).
     DECLARE(UInt64, max_untracked_memory, (4 * 1024 * 1024), R"(
 Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
 )", 0) \
+    DECLARE(UInt64, max_reverse_dictionary_lookup_cache_size_bytes, (100 * 1024 * 1024), R"(
+Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query. When the limit is reached, entries are evicted using LRU. Set to 0 to disable caching.
+)", 0) \
     DECLARE(UInt64, memory_profiler_step, (4 * 1024 * 1024), R"(
 Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](/operations/system-tables/trace_log).
 
@@ -5107,7 +5117,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
 
@@ -5638,7 +5648,7 @@ Enable multithreading after evaluating window functions to allow parallel stream
     DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
 Use query plan for lazy materialization optimization.
 )", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
+    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 100, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, enable_lazy_columns_replication, true, R"(
 Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
@@ -6197,6 +6207,9 @@ Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed c
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
 Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
 )", 0) \
+    DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
+Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
+)", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
 Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
 )", 0) \
@@ -6561,7 +6574,7 @@ a   Tuple(
 )
 ```
 )", 0) \
-    DECLARE(Bool, create_table_empty_primary_key_by_default, false, R"(
+    DECLARE(Bool, create_table_empty_primary_key_by_default, true, R"(
 Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
 )", 0) \
     DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
@@ -6914,6 +6927,19 @@ Both database and table names have to be unquoted - only simple identifiers are 
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
+    DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
+Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
+
+This setting defines the granularity of work distribution across the cluster:
+- `file` — each task processes an entire file.
+- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups).
+
+Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
+For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
+)", 0) \
+    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
+Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
+)", 0) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
 If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
@@ -6954,6 +6980,9 @@ Max rows of iceberg parquet data file on insert operation.
 )", 0) \
     DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
 Max bytes of iceberg parquet data file on insert operation.
+)", 0) \
+    DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
+Max allowed partitions count per one insert operation for Iceberg table engine.
 )", 0) \
     DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
     DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
@@ -7003,6 +7032,19 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
+Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
 Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
@@ -7024,6 +7066,11 @@ Linux nice value for materialized view threads. Lower values mean higher CPU pri
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
+    )", 0) \
+    DECLARE(Bool, show_processlist_include_internal, 1, R"(
+Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
+
+Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
     )", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
@@ -7250,6 +7297,9 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
 Allow to create table with the Alias engine.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, use_paimon_partition_pruning, false, R"(
+Use Paimon partition pruning for Paimon table functions
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
