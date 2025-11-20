@@ -273,7 +273,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
 
 static void renameSimpleAliases(ASTPtr node, const StoragePtr & table)
 {
-    if (!node) 
+    if (!node)
         return;
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
