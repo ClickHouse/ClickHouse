@@ -7,9 +7,19 @@ import os
 import sys
 import subprocess
 from kazoo.exceptions import NoNodeError
+import helpers.keeper_utils as ku
+import threading
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+
+from kazoo.protocol.states import (
+    AddWatchMode,
+    KazooState,
+    KeeperState,
+    WatcherType,
+    EventType,
+)
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -21,18 +31,13 @@ config_dir = os.path.join(SCRIPT_DIR, './configs')
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
-    "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True,
-    with_keeper_persistent_watcher=True
+    "node1", main_configs=["configs/keeper_config1.xml"], stay_alive=True
 )
-
 node2 = cluster.add_instance(
-    "node2", main_configs=["configs/keeper_config2.xml"], stay_alive=True,
-    with_keeper_persistent_watcher=True
+    "node2", main_configs=["configs/keeper_config2.xml"], stay_alive=True
 )
-
 node3 = cluster.add_instance(
-    "node3", main_configs=["configs/keeper_config3.xml"], stay_alive=True,
-    with_keeper_persistent_watcher=True
+    "node3", main_configs=["configs/keeper_config3.xml"], stay_alive=True
 )
 
 bool_struct = struct.Struct("B")
@@ -70,69 +75,100 @@ def wait_nodes():
     keeper_utils.wait_nodes(cluster, [node1])
 
 
-def get_fake_zk(nodename, timeout=30.0):
-    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
+def get_fake_zk(node, timeout=30.0):
+    return keeper_utils.get_fake_zk(cluster, node.name, timeout=timeout)
 
 
 def get_keeper_socket(node_name):
     return keeper_utils.get_keeper_socket(cluster, node_name)
 
 def test_persistent_watch(started_cluster):
-    node = cluster.instances["node"]
+    keeper_utils.wait_until_connected(cluster, node1)
+    client = get_fake_zk(node1)
+    NODE_PATH = "/testPersistentWatch2"
+    FAKE_PATH = "/fakeNode"
 
-    reference = [
-        "Connected!",
-        "Trying to add PERSISTENT watch...",
-        "PERSISTENT watch added successfully!",
-        "Updating node data...",
-        "PERSISTENT Watch triggered: /testPersistentWatch2",
-        "Updating node data again...",
-        "PERSISTENT Watch triggered: /testPersistentWatch2",
-        "Updating fake node data...",
-        "Trying to remove PERSISTENT watch...",
-        "PERSISTENT watch removed successfully!",
-        "Updating node data again...",
-        "Test finished."
-    ]
+    events = []
+    event_lock = threading.Event()
 
-    res = started_cluster.exec_in_container(
-        started_cluster.keeper_persistent_watcher_id,
-        [
-            "bash",
-            "-c",
-            f"java ZooKeeperWatcher",
-        ],
-    )
-    assert res == reference
+    def callback(event):
+        events.append(dict(type=event.type, path=event.path))
+        event_lock.set()
+
+    client.create(NODE_PATH, b"1")
+    client.create(FAKE_PATH, b"1")
+
+    client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT)
+    full_path = client.chroot + NODE_PATH
+    assert len(client._persistent_watchers[full_path]) == 1
+
+    event_lock.clear()
+    client.set(NODE_PATH, b"2")
+    event_lock.wait(5)
+    assert len(events) == 1
+
+    event_lock.clear()
+    client.set(NODE_PATH, b"3")
+    event_lock.wait(5)
+    assert len(events) == 2
+
+    client.set(FAKE_PATH, b"3")
+    time.sleep(0.3)
+    assert len(events) == 2
+
+    client.remove_all_watches(NODE_PATH, WatcherType.ANY)
+
+    client.set(NODE_PATH, b"Another update")
+    time.sleep(1)
+    assert len(events) == 2
 
 
 def test_persistent_recursive_watch(started_cluster):
-    node = cluster.instances["node"]
+    keeper_utils.wait_until_connected(cluster, node1)
+    client = get_fake_zk(node1)
 
-    reference = [
-        "Connected!",
-        "Trying to add PERSISTENT watch...",
-        "PERSISTENT watch added successfully!",
-        "Updating node data...",
-        "PERSISTENT Watch triggered: /testPersistentWatch2 NodeDataChanged",
-        "Updating child node data...",
-        "PERSISTENT Watch triggered: /testPersistentWatch2 NodeDataChanged",
-        "Updating fake node data...",
-        "Trying to remove PERSISTENT watch...",
-        "PERSISTENT watch removed successfully!",
-        "PERSISTENT Watch triggered: /testPersistentWatch2 PersistentWatchRemoved",
-        "Updating node data...",
-        "Updating node data...",
-        "Updating node data...",
-        "Test finished."
-    ]
+    client = get_fake_zk(node1)
+    NODE_PATH = "/testPersistentWatch2"
+    CHILD_NODE = "/testPersistentWatch2/child"
+    FAKE_PATH = "/fakeNode"
 
-    res = started_cluster.exec_in_container(
-        started_cluster.keeper_persistent_watcher_id,
-        [
-            "bash",
-            "-c",
-            f"java ZooKeeperRecursiveWatcher",
-        ],
-    )
-    assert res == reference
+    events = []
+    event_lock = threading.Event()
+
+    def callback(event):
+        events.append(dict(type=event.type, path=event.path))
+        event_lock.set()
+
+    # --- Prepare nodes ---
+    client.create(NODE_PATH, b"1")
+    client.create(CHILD_NODE, b"1")
+    client.create(FAKE_PATH, b"1")
+
+    # --- Add PERSISTENT_RECURSIVE watch ---
+    client.add_watch(NODE_PATH, callback, AddWatchMode.PERSISTENT_RECURSIVE)
+
+    event_lock.clear()
+    client.set(NODE_PATH, b"2")
+    event_lock.wait(5)
+    assert len(events) == 1
+    assert events[-1]["path"] == NODE_PATH
+
+    event_lock.clear()
+    client.set(CHILD_NODE, b"3")
+    event_lock.wait(5)
+    assert len(events) == 2
+    assert events[-1]["path"] == NODE_PATH
+
+    event_lock.clear()
+    client.set(FAKE_PATH, b"999")
+    time.sleep(0.3)
+    assert len(events) == 2
+
+    client.remove_all_watches(NODE_PATH, WatcherType.ANY)
+
+    client.set(NODE_PATH, b"after")
+    client.set(CHILD_NODE, b"after2")
+    client.set(FAKE_PATH, b"after3")
+    time.sleep(1)
+
+    assert len(events) == 2

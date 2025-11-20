@@ -1532,6 +1532,11 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::SetACL, ZooKeeperSetACLRequest>(*this);
     registerZooKeeperRequest<OpNum::FilteredList, ZooKeeperFilteredListRequest>(*this);
     registerZooKeeperRequest<OpNum::RemoveRecursive, ZooKeeperRemoveRecursiveRequest>(*this);
+    registerZooKeeperRequest<OpNum::AddWatch, ZooKeeperAddWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::CheckWatches, ZooKeeperCheckWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::RemoveWatches, ZooKeeperRemoveWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::SetWatches, ZooKeeperSetWatchRequest>(*this);
+    registerZooKeeperRequest<OpNum::SetWatches2, ZooKeeperSetWatch2Request>(*this);
 }
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to)

@@ -2,6 +2,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <unordered_set>
 
+#include <iostream>
+
 namespace Coordination
 {
 
@@ -31,10 +33,16 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::CheckNotExists),
     static_cast<int32_t>(OpNum::RemoveRecursive),
     static_cast<int32_t>(OpNum::CheckStat),
+    static_cast<int32_t>(OpNum::AddWatch),
+    static_cast<int32_t>(OpNum::CheckWatches),
+    static_cast<int32_t>(OpNum::RemoveWatches),
+    static_cast<int32_t>(OpNum::SetWatches),
+    static_cast<int32_t>(OpNum::SetWatches2),
 };
 
 OpNum getOpNum(int32_t raw_op_num)
 {
+    std::cerr << "raw_op_num " << raw_op_num << '\n';
     if (!VALID_OPERATIONS.contains(raw_op_num))
         throw Exception(Error::ZUNIMPLEMENTED, "Operation {} is unknown", raw_op_num);
     return static_cast<OpNum>(raw_op_num);
@@ -52,6 +60,7 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
         case OpNum::FilteredList:
         case OpNum::Check:
         case OpNum::CheckNotExists:
+        case OpNum::CheckWatches:
         case OpNum::CheckStat:
             return "readonly";
 
@@ -63,6 +72,10 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
 
         case OpNum::Create:
         case OpNum::Remove:
+        case OpNum::RemoveWatches:
+        case OpNum::SetWatches:
+        case OpNum::SetWatches2:
+        case OpNum::AddWatch:
         case OpNum::Set:
         case OpNum::SetACL:
         case OpNum::Sync:

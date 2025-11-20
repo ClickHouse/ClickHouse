@@ -164,6 +164,7 @@ KeeperResponsesForSessions processWatchesImplBase(
     Coordination::Event event_type,
     bool should_delete)
 {
+    std::cerr << "processWatchesImplBase\n";
     KeeperResponsesForSessions result;
 
     auto watch_it = watches.find(path);
@@ -268,6 +269,7 @@ KeeperResponsesForSessions processWatchesImpl(
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers,
     Coordination::Event event_type)
 {
+    std::cerr << "processWatchesImpl\n";
     KeeperResponsesForSessions result;
 
     if (event_type == Coordination::Event::CREATED || event_type == Coordination::Event::DELETED)
@@ -2697,6 +2699,7 @@ template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr
 processImpl(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
+    std::cerr << "processImpl\n";
     auto response = zk_request.makeResponse();
     if constexpr (!local)
     {
@@ -2714,6 +2717,7 @@ processImpl(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage &
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
+    std::cerr << "process\n";
     return processImpl<false>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -2721,6 +2725,7 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
+    std::cerr << "processLocal\n";
     ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
