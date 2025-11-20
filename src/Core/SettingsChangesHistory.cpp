@@ -63,6 +63,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
             {"allow_experimental_alias_table_engine", false, false, "New setting"},
+            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
