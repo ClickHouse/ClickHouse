@@ -271,6 +271,31 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
     }
 }
 
+static void renameSimpleAliases(ASTPtr node, const StoragePtr & table)
+{
+    if (!node) 
+        return;
+
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    std::unordered_map<String, String> column_rename_map;
+    for (const auto & [name, default_desc] : metadata_snapshot->columns.getDefaults())
+    {
+        if (default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            const ASTPtr & alias_expression = default_desc.expression;
+            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
+                column_rename_map[name] = actual_column->full_name;
+        }
+    }
+
+    if (!column_rename_map.empty())
+    {
+        RenameMultipleColumnsData rename_data{column_rename_map};
+        RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
+        rename_columns_visitor.visit(node);
+    }
+}
+
 /// Call this inside catch block.
 static void setExceptionStackTrace(QueryLogElement & elem)
 {
@@ -1402,25 +1427,7 @@ static BlockIO executeQueryImpl(
                 if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
                 {
                     async_insert_enabled |= table->areAsynchronousInsertsEnabled();
-
-                    auto metadata_snapshot = table->getInMemoryMetadataPtr();
-                    std::unordered_map<String, String> column_rename_map;
-                    for (const auto & column : metadata_snapshot->getColumns())
-                    {
-                        if (column.default_desc.kind == ColumnDefaultKind::Alias)
-                        {
-                            const ASTPtr & alias_expression = column.default_desc.expression;
-                            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
-                                column_rename_map[column.name] = actual_column->full_name;
-                        }
-                    }
-
-                    if (!column_rename_map.empty() && insert_query->columns)
-                    {
-                        RenameMultipleColumnsData rename_data{column_rename_map};
-                        RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
-                        rename_columns_visitor.visit(insert_query->columns);
-                    }
+                    renameSimpleAliases(insert_query->columns, table);
                 }
             }
         }

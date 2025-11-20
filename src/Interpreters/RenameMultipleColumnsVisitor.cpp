@@ -8,10 +8,13 @@ namespace DB
 void RenameMultipleColumnsData::visit(ASTIdentifier & identifier, ASTPtr &) const
 {
     std::optional<String> identifier_column_name = IdentifierSemantic::getColumnName(identifier);
-    if (identifier_column_name && column_rename_map.find(*identifier_column_name) != column_rename_map.end())
+    if (identifier_column_name)
     {
-        String new_name = column_rename_map.at(*identifier_column_name);
-        identifier.setShortName(new_name);
+        auto column_map_it = column_rename_map.find(*identifier_column_name);
+        if (column_map_it != column_rename_map.end())
+        {
+            identifier.setShortName(column_map_it->second);
+        }
     }
 }
 
