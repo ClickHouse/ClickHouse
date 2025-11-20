@@ -640,16 +640,13 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
     void execute(MetadataTransactionPtr tx) override
     {
         const auto blobs_to_copy = metadata_storage.getStorageObjects(from_path);
-        const auto blobs_to_write = blobs_to_copy
-                                    | std::views::transform([&](const auto & from) { return StoredObject(tx->generateObjectKeyForPath(to_path).serialize(), to_path, from.bytes_size); })
-                                    | std::ranges::to<StoredObjects>();
+        created_objects = blobs_to_copy
+                            | std::views::transform([&](const auto & from) { return StoredObject(tx->generateObjectKeyForPath(to_path).serialize(), to_path, from.bytes_size); })
+                            | std::ranges::to<StoredObjects>();
 
-        auto copy_error = copyBlobsToOtherObjectStorage(blobs_to_copy, blobs_to_write, read_settings, write_settings, object_storage, destination_object_storage);
+        auto copy_error = copyBlobsToOtherObjectStorage(blobs_to_copy, created_objects, read_settings, write_settings, object_storage, destination_object_storage);
         if (copy_error)
-        {
-            created_objects = blobs_to_write;
             std::rethrow_exception(copy_error);
-        }
 
         tx->createMetadataFile(to_path, created_objects);
     }
