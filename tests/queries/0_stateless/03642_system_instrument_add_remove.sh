@@ -15,7 +15,7 @@ function cleanup()
 
 trap cleanup EXIT
 
-$CLICKHOUSE_CLIENT -q """
+$CLICKHOUSE_CLIENT -q "
     SYSTEM INSTRUMENT REMOVE ALL;
     SELECT '-- Empty table';
     SELECT count() FROM system.instrumentation;
@@ -31,11 +31,11 @@ $CLICKHOUSE_CLIENT -q """
     SELECT '-- Add another one';
     SYSTEM INSTRUMENT ADD \`QueryMetricLog::startQuery\` LOG ENTRY 'my log in startQuery';
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
-"""
+"
 
 id=$($CLICKHOUSE_CLIENT -q "SELECT id FROM system.instrumentation WHERE function_name = 'QueryMetricLog::startQuery';")
 
-$CLICKHOUSE_CLIENT -q """
+$CLICKHOUSE_CLIENT -q "
     SELECT '-- Remove one specific id';
     SYSTEM INSTRUMENT REMOVE $id;
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
@@ -49,7 +49,11 @@ $CLICKHOUSE_CLIENT -q """
     SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE entry_type = 'Exit');
     SELECT function_name, handler, entry_type, symbol, parameters FROM system.instrumentation ORDER BY id ASC;
 
+    SELECT '-- Remove with wrong arguments fails';
+    SYSTEM INSTRUMENT REMOVE (SELECT id, function_id FROM system.instrumentation); -- { serverError BAD_ARGUMENTS }
+    SYSTEM INSTRUMENT REMOVE (SELECT handler FROM system.instrumentation); -- { serverError BAD_ARGUMENTS }
+
     SELECT '-- Remove everything';
     SYSTEM INSTRUMENT REMOVE ALL;
     SELECT count() FROM system.instrumentation;
-"""
+"

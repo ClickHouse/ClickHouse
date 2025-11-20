@@ -1781,7 +1781,10 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
         {
             if (!query.instrumentation_subquery.empty())
             {
-                auto [_, block_io] = executeQuery(query.instrumentation_subquery, getContext(), QueryFlags{ .internal = true });
+                auto subquery_context = Context::createCopy(getContext());
+                subquery_context->makeQueryContext();
+                subquery_context->setCurrentQueryId({});
+                auto [_, block_io] = executeQuery(query.instrumentation_subquery, subquery_context, QueryFlags{ .internal = true });
 
                 if (!block_io.pipeline.initialized())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to execute subquery");
@@ -1791,10 +1794,13 @@ void InterpreterSystemQuery::instrumentWithXRay(bool add, ASTSystemQuery & query
 
                 while (executor.pull(block))
                 {
-                    if (block.columns() == 0)
-                        continue;
+                    if (block.columns() != 1)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected only one column as result of the subquery, but {} were found", block.columns());
 
-                    const auto & column = block.getByPosition(0).column;
+                    const auto & column_with_type = block.getByPosition(0);
+                    const auto & column = column_with_type.column;
+                    if (!isUInt(column_with_type.type))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected non-UInt column as result of the subquery: {}", column_with_type.type);
 
                     for (size_t i = 0; i < column->size(); ++i)
                     {
