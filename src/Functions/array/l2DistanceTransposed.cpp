@@ -142,45 +142,18 @@ public:
                 precision_col.type->getName());
 
         const auto precision = precision_col.column->getUInt(0);
+        const auto element_size = zeroth_arg_type->getElementSize();
 
-        switch (first_arg_type->getNestedType()->getTypeId())
-        {
-            case TypeIndex::BFloat16:
-                if (precision == 0 || precision > 16)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The third argument (precision) of function {} must be in range [1, 16] for BFloat16 QBit, got {}",
-                        getName(),
-                        precision);
-                return std::make_shared<DataTypeFloat64>();
+        if (precision == 0 || precision > element_size)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The third argument (precision) of function {} must be in range [1, {}] for {} QBit, got {}",
+                getName(),
+                element_size,
+                zeroth_arg_type->getElementType()->getName(),
+                precision);
 
-            case TypeIndex::Float32:
-                if (precision == 0 || precision > 32)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The third argument (precision) of function {} must be in range [1, 32] for Float32 QBit, got {}",
-                        getName(),
-                        precision);
-                return std::make_shared<DataTypeFloat64>();
-
-            case TypeIndex::Float64:
-                if (precision == 0 || precision > 64)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The third argument (precision) function {} must be in range [1, 64] for Float64 QBit, got {}",
-                        getName(),
-                        precision);
-                return std::make_shared<DataTypeFloat64>();
-
-            default:
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Arguments of function {} have nested or unsupported type {}. The supported types are BFloat16, Float32 and Float64",
-                    getName(),
-                    first_arg_type->getNestedType()->getName());
-        }
-
-        UNREACHABLE();
+        return std::make_shared<DataTypeFloat64>();
     }
 
     /// Validates arguments for optimised L2DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec) case
