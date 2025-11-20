@@ -1,11 +1,15 @@
 <clickhouse>
-    <max_table_num_to_warn>6</max_table_num_to_warn>
-    <max_view_num_to_warn>10</max_view_num_to_warn>
-    <max_dictionary_num_to_warn>11</max_dictionary_num_to_warn>
+    <max_table_num_to_warn>5</max_table_num_to_warn>
+    <max_view_num_to_warn>5</max_view_num_to_warn>
+    <max_dictionary_num_to_warn>5</max_dictionary_num_to_warn>
     <max_database_num_to_warn>5</max_database_num_to_warn>
+    <max_named_collection_num_to_warn>5</max_named_collection_num_to_warn>
+    <max_part_num_to_warn>5</max_part_num_to_warn>
 
-    <max_table_num_to_throw>101</max_table_num_to_throw>
-    <max_view_num_to_throw>102</max_view_num_to_throw>
-    <max_dictionary_num_to_throw>103</max_dictionary_num_to_throw>
-    <max_database_num_to_throw>104</max_database_num_to_throw>
+    <!-- Set hard limits higher to ensure we hit the warning first without throwing exceptions during creation -->
+    <max_table_num_to_throw>100</max_table_num_to_throw>
+    <max_view_num_to_throw>100</max_view_num_to_throw>
+    <max_dictionary_num_to_throw>100</max_dictionary_num_to_throw>
+    <max_database_num_to_throw>100</max_database_num_to_throw>
+    <max_named_collection_num_to_throw>100</max_named_collection_num_to_throw>
 </clickhouse>

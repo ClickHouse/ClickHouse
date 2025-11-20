@@ -368,6 +368,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+    extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
+    extern const ServerSettingsUInt64 max_database_num_to_throw;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -1348,38 +1353,73 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
         auto attached_views = CurrentMetrics::get(CurrentMetrics::AttachedView);
         auto attached_dictionaries = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
         auto attached_databases = CurrentMetrics::get(CurrentMetrics::AttachedDatabase);
+        auto attached_named_collections = CurrentMetrics::get(CurrentMetrics::NamedCollection);
+        auto active_parts = CurrentMetrics::get(CurrentMetrics::PartsActive);
 
         if (attached_tables > static_cast<Int64>(shared->max_table_num_to_warn))
         {
             if (auto limit = shared->server_settings[ServerSetting::max_table_num_to_throw]; limit > shared->max_table_num_to_warn.load())
-                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables ({}) is more than {}. You will not be able to create new tables once the limit of {} is reached.", attached_tables, shared->max_table_num_to_warn.load(), limit);
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
+                    "The number of attached tables ({}) exceeds the warning limit of {}. You will not be able to create new tables once the limit of {} is reached.",
+                    attached_tables, shared->max_table_num_to_warn.load(), limit);
             else
-                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables ({}) is more than {}.", attached_tables, shared->max_table_num_to_warn.load());
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
+                    "The number of attached tables ({}) exceeds the warning limit of {}.",
+                    attached_tables, shared->max_table_num_to_warn.load());
         }
 
         if (attached_views > static_cast<Int64>(shared->max_view_num_to_warn))
         {
             if (auto limit = shared->server_settings[ServerSetting::max_view_num_to_throw]; limit > shared->max_view_num_to_warn.load())
-                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views ({}) is more than {}. You will not be able to create new views once the limit of {} is reached.", attached_views, shared->max_view_num_to_warn.load(), limit);
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
+                    "The number of attached views ({}) exceeds the warning limit of {}. You will not be able to create new views once the limit of {} is reached.",
+                    attached_views, shared->max_view_num_to_warn.load(), limit);
             else
-                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views ({}) is more than {}.", attached_views, shared->max_view_num_to_warn.load());
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
+                    "The number of attached views ({}) exceeds the warning limit of {}.",
+                    attached_views, shared->max_view_num_to_warn.load());
         }
 
         if (attached_dictionaries > static_cast<Int64>(shared->max_dictionary_num_to_warn))
         {
             if (auto limit = shared->server_settings[ServerSetting::max_dictionary_num_to_throw]; limit > shared->max_dictionary_num_to_warn.load())
-                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries ({}) is more than {}. You will not be able to create new dictionaries once the limit of {} is reached.", attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit);
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
+                    "The number of attached dictionaries ({}) exceeds the warning limit of {}. You will not be able to create new dictionaries once the limit of {} is reached.",
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit);
             else
-                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries ({}) is more than {}.", attached_dictionaries, shared->max_dictionary_num_to_warn.load());
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
+                    "The number of attached dictionaries ({}) exceeds the warning limit of {}.",
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load());
         }
 
         if (attached_databases > static_cast<Int64>(shared->max_database_num_to_warn))
         {
             if (auto limit = shared->server_settings[ServerSetting::max_database_num_to_throw]; limit > shared->max_database_num_to_warn.load())
-                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases ({}) is more than {}. You will not be able to create new databases once the limit of {} is reached.", attached_databases, shared->max_database_num_to_warn.load(), limit);
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
+                    "The number of attached databases ({}) exceeds the warning limit of {}. You will not be able to create new databases once the limit of {} is reached.",
+                    attached_databases, shared->max_database_num_to_warn.load(), limit);
             else
-                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases ({}) is more than {}.", attached_databases, shared->max_database_num_to_warn.load());
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
+                    "The number of attached databases ({}) exceeds the warning limit of {}.",
+                    attached_databases, shared->max_database_num_to_warn.load());
         }
+
+        if (attached_named_collections > static_cast<Int64>(shared->max_named_collection_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_named_collection_num_to_throw]; limit > shared->max_named_collection_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
+                    "The number of named collections ({}) exceeds the warning limit of {}. You will not be able to create new once the limit of {} is reached.",
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load(), limit);
+            else
+                common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
+                    "The number of named collections ({}) exceeds the warning limit of {}.",
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load());
+        }
+
+        if (active_parts > static_cast<Int64>(shared->max_part_num_to_warn))
+            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create(
+                "The number of active parts ({}) exceeds the warning limit of {}.",
+                active_parts, shared->max_part_num_to_warn.load());
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
