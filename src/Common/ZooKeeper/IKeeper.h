@@ -340,8 +340,8 @@ struct AddWatchResponse : virtual Response
 struct SetWatchRequest : virtual Request
 {
     int64_t zxid;
+    std::vector<String> child_watches;
     std::vector<String> exist_watches;
-	std::vector<String> child_watches;
     std::vector<String> data_watches;
 
     String getPath() const override { return data_watches[0]; }
