@@ -1,7 +1,6 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrorCodes.h>
-#include <Common/SymbolIndex.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
