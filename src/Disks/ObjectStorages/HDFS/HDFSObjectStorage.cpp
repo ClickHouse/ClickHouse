@@ -6,6 +6,7 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
@@ -52,14 +53,12 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     return path;
 }
 
-ObjectStorageKey
-HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKeysGeneratorPtr HDFSObjectStorage::createKeysGenerator() const
 {
     initializeHDFSFS();
     /// what ever data_source_description.description value is, consider that key as relative key
     chassert(data_directory.starts_with("/"));
-    return ObjectStorageKey::createAsRelative(
-        fs::path(url_without_path) / data_directory.substr(1), getRandomASCIIString(32));
+    return createObjectStorageKeysGeneratorByPrefix(fs::path(url_without_path) / data_directory.substr(1));
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const

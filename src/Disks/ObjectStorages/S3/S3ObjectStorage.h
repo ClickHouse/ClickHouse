@@ -128,9 +128,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
+    ObjectStorageKeysGeneratorPtr createKeysGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
 
@@ -151,7 +149,7 @@ private:
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    ObjectStorageKeysGeneratorPtr key_generator;
+    const ObjectStorageKeysGeneratorPtr key_generator;
 
     LoggerPtr log;
 

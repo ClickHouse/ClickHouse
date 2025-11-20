@@ -539,17 +539,12 @@ void S3ObjectStorage::applyNewSettings(
     s3_settings.set(std::move(modified_settings));
 }
 
-ObjectStorageKey S3ObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
+ObjectStorageKeysGeneratorPtr S3ObjectStorage::createKeysGenerator() const
 {
     if (!key_generator)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Key generator is not set");
 
-    return key_generator->generate(path, /* is_directory */ false, key_prefix);
-}
-
-bool S3ObjectStorage::areObjectKeysRandom() const
-{
-    return key_generator->isRandom();
+    return key_generator;
 }
 
 std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()

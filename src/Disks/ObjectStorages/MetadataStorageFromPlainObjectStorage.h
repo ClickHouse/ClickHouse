@@ -10,6 +10,7 @@
 #include <Core/Types.h>
 
 #include <Common/CacheBase.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 namespace DB
 {
@@ -72,6 +73,7 @@ private:
     const String storage_path_full;
 
     mutable ObjectMetadataCachePtr object_metadata_cache;
+    const ObjectStorageKeysGeneratorPtr keys_generator;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
@@ -93,6 +95,8 @@ public:
 
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string &) override;
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
 private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;

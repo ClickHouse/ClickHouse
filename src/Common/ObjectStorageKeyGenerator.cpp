@@ -10,11 +10,12 @@ class GeneratorWithTemplate : public DB::IObjectStorageKeysGenerator
 {
 public:
     explicit GeneratorWithTemplate(String key_template_)
-    : key_template(std::move(key_template_))
-    , re_gen(key_template)
+        : key_template(std::move(key_template_))
+        , re_gen(key_template)
     {
     }
-    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+
+    DB::ObjectStorageKey generate(const String & /*path*/) const override
     {
         return DB::ObjectStorageKey::createAsAbsolute(re_gen.generate());
     }
@@ -32,9 +33,10 @@ class GeneratorWithPrefix : public DB::IObjectStorageKeysGenerator
 public:
     explicit GeneratorWithPrefix(String key_prefix_)
         : key_prefix(std::move(key_prefix_))
-    {}
+    {
+    }
 
-    DB::ObjectStorageKey generate(const String &, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    DB::ObjectStorageKey generate(const String & /*path*/) const override
     {
         /// Path to store the new S3 object.
 
@@ -65,10 +67,10 @@ class GeneratorAsIsWithPrefix : public DB::IObjectStorageKeysGenerator
 public:
     explicit GeneratorAsIsWithPrefix(String key_prefix_)
         : key_prefix(std::move(key_prefix_))
-    {}
+    {
+    }
 
-    DB::ObjectStorageKey
-    generate(const String & path, bool /* is_directory */, const std::optional<String> & /* key_prefix */) const override
+    DB::ObjectStorageKey generate(const String & path) const override
     {
         return DB::ObjectStorageKey::createAsRelative(key_prefix, path);
     }

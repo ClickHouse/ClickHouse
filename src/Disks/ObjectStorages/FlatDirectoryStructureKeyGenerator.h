@@ -12,14 +12,15 @@ namespace DB
 class FlatDirectoryStructureKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:
-    explicit FlatDirectoryStructureKeyGenerator(String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_);
+    explicit FlatDirectoryStructureKeyGenerator(std::string storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_);
 
-    ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const override;
+    ObjectStorageKey generate(const std::string & path) const override;
+    std::string generateForDirectory(const std::string & path) const;
 
     bool isRandom() const override { return true; }
 
 private:
-    const String storage_key_prefix;
+    const std::string storage_key_prefix;
 
     std::weak_ptr<InMemoryDirectoryTree> tree;
 };

@@ -144,6 +144,10 @@ public:
 
     /// Metadata related methods
 
+    /// Generate blob name for passed absolute local path.
+    /// Path can be generated either independently or based on `path`.
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
+
     /// Create metadata file on paths with content consisting of objects
     virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
 

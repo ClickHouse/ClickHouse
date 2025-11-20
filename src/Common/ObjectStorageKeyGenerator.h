@@ -1,7 +1,5 @@
 #pragma once
 
-#include <memory>
-#include <optional>
 #include <Common/ObjectStorageKey.h>
 
 namespace DB
@@ -13,10 +11,9 @@ public:
     virtual ~IObjectStorageKeysGenerator() = default;
 
     /// Generates an object storage key based on a path in the virtual filesystem.
-    /// @param path         - Path in the virtual filesystem.
-    /// @param is_directory - If the path in the virtual filesystem corresponds to a directory.
-    /// @param key_prefix   - Optional key prefix for the generated object storage key. If provided, this prefix will be added to the beginning of the generated key.
-    virtual ObjectStorageKey generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const = 0;
+    /// @param path - Path in the virtual filesystem.
+    /// @returns Keys that should be used to save data.
+    virtual ObjectStorageKey generate(const String & path) const = 0;
 
     /// Returns whether this generator uses a pseudorandom number generator to generate object storage keys.
     virtual bool isRandom() const = 0;

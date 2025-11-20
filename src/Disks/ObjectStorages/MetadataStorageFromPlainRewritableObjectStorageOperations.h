@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
@@ -13,23 +14,24 @@ namespace DB
 class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path;
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
-    const std::string metadata_key_prefix;
     const bool recursive;
+    const std::filesystem::path path;
+    const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
 
     std::string object_key_prefix;
     bool created_directory = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
-        /// path_ must end with a trailing '/'.
-        std::filesystem::path && path_,
-        InMemoryDirectoryTree & fs_tree_,
-        ObjectStoragePtr object_storage_,
-        const std::string & metadata_key_prefix_,
-        bool recursive_);
+        bool recursive_,
+        std::filesystem::path path_,
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
@@ -38,11 +40,12 @@ public:
 class MetadataStorageFromPlainObjectStorageMoveDirectoryOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path_from;
-    std::filesystem::path path_to;
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
+    const std::filesystem::path path_from;
+    const std::filesystem::path path_to;
     const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
     std::unordered_set<std::string> changed_paths;
@@ -53,12 +56,12 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageMoveDirectoryOperation(
-        /// Both path_from_ and path_to_ must end with a trailing '/'.
-        std::filesystem::path && path_from_,
-        std::filesystem::path && path_to_,
-        InMemoryDirectoryTree & fs_tree_,
-        ObjectStoragePtr object_storage_,
-        const std::string & metadata_key_prefix_);
+        std::filesystem::path path_from_,
+        std::filesystem::path path_to_,
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
@@ -67,22 +70,22 @@ public:
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path;
-
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
+    const std::filesystem::path path;
     const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
 
     DirectoryRemoteInfo info;
     bool remove_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation(
-        /// path_ must end with a trailing '/'.
-        std::filesystem::path && path_,
-        InMemoryDirectoryTree & fs_tree_,
-        ObjectStoragePtr object_storage_,
-        const std::string & metadata_key_prefix_);
+        std::filesystem::path path_,
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
@@ -91,16 +94,23 @@ public:
 class MetadataStorageFromPlainObjectStorageWriteFileOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path;
-    StoredObject object;
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
+    const std::filesystem::path path;
+    const StoredObject object;
+    const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
 
     bool written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageWriteFileOperation(
-        const std::string & path, const StoredObject & object_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_);
+        std::string path_,
+        StoredObject object_,
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
@@ -109,17 +119,23 @@ public:
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path;
+    const std::filesystem::path path;
+    const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
+
     std::filesystem::path remote_path;
     std::optional<FileRemoteInfo> file_remote_info;
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
-
     bool unlinked = false;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
-        std::filesystem::path && path_, InMemoryDirectoryTree & fs_tree_, ObjectStoragePtr object_storage_);
+        std::filesystem::path path_,
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
@@ -129,21 +145,25 @@ public:
 class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path_from;
-    std::filesystem::path remote_path_from;
-    std::filesystem::path path_to;
-    std::filesystem::path remote_path_to;
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
+    const std::filesystem::path path_from;
+    const std::filesystem::path path_to;
+    const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
 
+    std::filesystem::path remote_path_from;
+    std::filesystem::path remote_path_to;
     bool copy_attempted = false;
 
 public:
     MetadataStorageFromPlainObjectStorageCopyFileOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
-        InMemoryDirectoryTree & fs_tree_,
-        ObjectStoragePtr object_storage_);
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
@@ -158,18 +178,19 @@ class MetadataStorageFromPlainObjectStorageMoveFileOperation final : public IMet
 {
 private:
     bool replaceable{false};
-    std::filesystem::path path_from;
+    const std::filesystem::path path_from;
+    const std::filesystem::path path_to;
+    const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
+
     std::filesystem::path remote_path_from;
-    std::filesystem::path path_to;
     std::filesystem::path remote_path_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
     std::optional<FileRemoteInfo> file_to_remote_info;
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
-
-
     bool moved_existing_source_file{false};
     bool moved_existing_target_file{false};
     bool created_target_file{false};
@@ -180,8 +201,10 @@ public:
         bool replaceable_,
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
-        InMemoryDirectoryTree & fs_tree_,
-        ObjectStoragePtr object_storage_);
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
      *  1. Copy remote_path_to (if exists) to tmp_remote_path_from, which is used to restore the target file in case of failure.
@@ -210,11 +233,11 @@ public:
 class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : public IMetadataOperation
 {
 private:
-    std::filesystem::path path;
-
-    InMemoryDirectoryTree & fs_tree;
-    ObjectStoragePtr object_storage;
+    const std::filesystem::path path;
     const std::string metadata_key_prefix;
+    const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    const std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator;
+    const std::shared_ptr<IObjectStorage> object_storage;
     const LoggerPtr log;
 
     std::filesystem::path tmp_path;
@@ -223,11 +246,11 @@ private:
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
-        /// path_ must end with a trailing '/'.
-        std::filesystem::path && path_,
-        InMemoryDirectoryTree & fs_tree_,
-        ObjectStoragePtr object_storage_,
-        const std::string & metadata_key_prefix_);
+        std::filesystem::path path_,
+        std::string metadata_key_prefix_,
+        std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
+        std::shared_ptr<FlatDirectoryStructureKeyGenerator> keys_generator_,
+        std::shared_ptr<IObjectStorage> object_storage_);
 
     void execute() override;
     void undo() override;
