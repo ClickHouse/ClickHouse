@@ -2,6 +2,7 @@
 
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/InstrumentationManager.h>
 #include <Interpreters/SystemLog.h>
 #include <Common/setThreadName.h>
 #include <Common/QueryProfiler.h>
@@ -53,7 +54,7 @@ struct TraceLogElement
     Int32 function_id = -1;
     String function_name{};
     String handler{};
-    std::optional<Int8> entry_type{};
+    std::optional<Instrumentation::EntryType> entry_type{};
     std::optional<UInt64> duration_nanoseconds{};
 
     static std::string name() { return "TraceLog"; }

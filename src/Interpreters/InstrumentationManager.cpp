@@ -25,7 +25,6 @@
 
 #include <chrono>
 #include <filesystem>
-#include <print>
 #include <thread>
 #include <random>
 #include <ranges>
@@ -322,29 +321,15 @@ TraceLogElement InstrumentationManager::createTraceLogElement(const Instrumented
     element.function_id = instrumented_point.function_id;
     element.function_name = instrumented_point.symbol;
     element.handler = instrumented_point.handler_name;
-    element.entry_type = entry_type;
+    element.entry_type = Instrumentation::fromXRayEntryType(entry_type);
     element.symbolize = true;
 
     const auto stack_trace = StackTrace();
     const auto frame_pointers = stack_trace.getFramePointers();
 
     element.trace.reserve(stack_trace.getSize() - stack_trace.getOffset());
-
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    const auto * object = SymbolIndex::instance().thisObject();
-#endif
-
     for (size_t i = stack_trace.getOffset(); i < stack_trace.getSize(); ++i)
-    {
-        /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
-        uintptr_t offset = 0;
-        const uintptr_t addr = reinterpret_cast<uintptr_t>(frame_pointers[i]);
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-        if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
-            offset = uintptr_t(object->address_begin);
-#endif
-        element.trace.emplace_back(addr - offset);
-    }
+        element.trace.emplace_back(reinterpret_cast<UInt64>(frame_pointers[i]));
 
     return element;
 }
@@ -489,7 +474,7 @@ void InstrumentationManager::profile(XRayEntryType entry_type, const Instrumente
             element.event_time_microseconds = Decimal64(now_us);
             element.timestamp_ns = duration_cast<nanoseconds>(now_system_clock.time_since_epoch()).count();
             element.duration_nanoseconds = duration_cast<nanoseconds>(now_high_res - previous_time).count();
-            element.entry_type = XRayEntryType::EXIT;
+            element.entry_type = Instrumentation::EntryType::EXIT;
 
             if (instrumented_point.context)
             {

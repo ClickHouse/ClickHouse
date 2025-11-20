@@ -80,7 +80,7 @@ public:
                 else if (std::holds_alternative<Float64>(param))
                     parameters_str += fmt::format("{}, ", std::get<Float64>(param));
             }
-            parameters_str = "]";
+            parameters_str += "]";
 
             return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
                 id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
