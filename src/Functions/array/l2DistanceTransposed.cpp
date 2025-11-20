@@ -202,15 +202,7 @@ public:
 
         /// The type of reference vector dictates what type QBit had before we sliced it into q.1, ..., q.precision.
         /// Check that the number of bit planes doesn't exceed the maximum precision for the reference vector type.
-        size_t max_precision_for_type = 0;
-        if (ref_vec_type_id == TypeIndex::BFloat16)
-            max_precision_for_type = 16;
-        else if (ref_vec_type_id == TypeIndex::Float32)
-            max_precision_for_type = 32;
-        else if (ref_vec_type_id == TypeIndex::Float64)
-            max_precision_for_type = 64;
-        else
-            return false;
+        size_t max_precision_for_type = ref_vec_type->getNestedType()->getSizeOfValueInMemory() * 8;
 
         if (precision > max_precision_for_type)
             throw Exception(
