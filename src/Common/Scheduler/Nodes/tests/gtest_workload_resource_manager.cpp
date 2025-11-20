@@ -38,7 +38,7 @@
 #include <Parsers/ParserDropWorkloadQuery.h>
 #include <Parsers/ParserDropResourceQuery.h>
 
-#if 0
+#ifdef SCHEDULER_DEBUG
 #include <iostream>
 #include <base/getThreadId.h>
 #define DBG_PRINT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
@@ -1944,6 +1944,121 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
+template <size_t count>
+struct TestAllocationArray
+{
+    ResourceTest & t;
+    String resource = "memory";
+
+    std::array<std::optional<TestAllocation>, count> allocations;
+    std::array<ResourceLink, count> links;
+    std::array<String, count> names;
+    std::vector<ClassifierPtr> classifiers;
+
+    std::mutex mutex;
+    String approve_order;
+
+    explicit TestAllocationArray(ResourceTest & t_)
+        : t(t_)
+    {}
+
+    void onApprove(ResourceCost mem)
+    {
+        std::unique_lock lock(mutex);
+        if (!approve_order.empty())
+            approve_order += " ";
+        approve_order += std::to_string(mem);
+    }
+
+    void setWorkload(const String & workload, std::vector<size_t> indexes)
+    {
+        ClassifierPtr c = t.manager->acquire(workload);
+        ResourceLink link = c->get(resource);
+        for (size_t idx : indexes)
+        {
+            chassert(!links[idx]);
+            links[idx] = link;
+            names[idx] = fmt::format("{}{}", std::toupper(workload[0]), idx);
+        }
+        classifiers.push_back(c);
+    }
+
+    void insert(ResourceLink & link, const std::array<ResourceCost, count> & sizes)
+    {
+        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        t.executeFromScheduler(resource, [&]
+        {
+            for (size_t i = 0; i < count; i++)
+            {
+                ResourceCost mem = sizes[i];
+                chassert(!links[i]);
+                links[i] = link;
+                names[i] = fmt::format("A{}", i);
+                allocations[i].emplace(links[i], names[i], mem, [this, mem] { onApprove(mem); });
+            }
+        });
+    }
+
+    void insert(const std::array<ResourceCost, count> & sizes)
+    {
+        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        t.executeFromScheduler(resource, [&]
+        {
+            for (size_t i = 0; i < count; i++)
+            {
+                ResourceCost mem = sizes[i];
+                chassert(links[i]);
+                allocations[i].emplace(links[i], names[i], mem, [this, mem] { onApprove(mem); });
+            }
+        });
+    }
+
+    void insertSequential(ResourceLink & link, const std::array<ResourceCost, count> & sizes)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            ResourceCost mem = sizes[i];
+            chassert(!links[i]);
+            links[i] = link;
+            names[i] = fmt::format("A{}", i);
+            allocations[i].emplace(links[i], names[i], mem);
+            allocations[i]->waitSync();
+        }
+    }
+
+    void insertSequential(const std::array<ResourceCost, count> & sizes)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            ResourceCost mem = sizes[i];
+            chassert(links[i]);
+            allocations[i].emplace(links[i], names[i], mem);
+            allocations[i]->waitSync();
+        }
+    }
+
+    void setSize(const std::array<ResourceCost, count> & sizes)
+    {
+        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
+        t.executeFromScheduler("memory", [&]
+        {
+            int idx = 0;
+            for (ResourceCost mem : sizes)
+                allocations[idx++]->setSize(mem, [this, mem] { onApprove(mem); });
+        });
+    }
+
+    void assertApproveOrder(const String & expected_order)
+    {
+        for (auto & alloc : allocations)
+            alloc->waitSync();
+
+        std::unique_lock lock(mutex);
+        ASSERT_EQ(approve_order, expected_order);
+        approve_order.clear();
+    }
+};
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingFifoOrder)
 {
     ResourceTest t;
@@ -1955,32 +2070,10 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingFifoOrder)
 
     for (int i = 0; i < 3; i++)
     {
+        TestAllocationArray<9> a(t);
         ResourceLink link = c->get("memory");
-        std::array<std::optional<TestAllocation>, 9> allocations;
-
-        std::mutex mutex;
-        String approve_order;
-
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
-        t.executeFromScheduler("memory", [&]
-        {
-            int idx = 0;
-            for (int mem : { 9, 1, 8, 2, 7, 3, 6, 4, 5 })
-            {
-                allocations[idx].emplace(link, fmt::format("A{}", idx), mem, [&, mem]()
-                {
-                    std::unique_lock lock(mutex);
-                    approve_order += std::to_string(mem);
-                });
-                ++idx;
-            }
-        });
-
-        for (auto & alloc : allocations)
-            alloc->waitSync();
-
-        std::unique_lock lock(mutex);
-        ASSERT_EQ(approve_order, "918273645");
+        a.insert(link, { 9, 1, 8, 2, 7, 3, 6, 4, 5 });
+        a.assertApproveOrder("9 1 8 2 7 3 6 4 5");
     }
 }
 
@@ -1995,36 +2088,11 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseMaxMinFairOrder)
 
     for (int i = 0; i < 3; i++)
     {
+        TestAllocationArray<8> a(t);
         ResourceLink link = c->get("memory");
-        std::array<std::optional<TestAllocation>, 8> allocations;
-        for (int idx = 0; idx < allocations.size(); ++idx)
-        {
-            allocations[idx].emplace(link, fmt::format("A{}", idx), 1);
-            allocations[idx]->waitSync();
-        }
-
-        std::mutex mutex;
-        String approve_order;
-
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
-        t.executeFromScheduler("memory", [&]
-        {
-            int idx = 0;
-            for (int mem : { 9, 2, 8, 3, 7, 4, 6, 5 })
-            {
-                allocations[idx++]->setSize(mem, [&, mem]
-                {
-                    std::unique_lock lock(mutex);
-                    approve_order += std::to_string(mem);
-                });
-            }
-        });
-
-        for (auto & alloc : allocations)
-            alloc->waitSync();
-
-        std::unique_lock lock(mutex);
-        ASSERT_EQ(approve_order, "23456789");
+        a.insertSequential(link, { 1, 1, 1, 1, 1, 1, 1, 1 });
+        a.setSize({ 2, 3, 4, 5, 6, 7, 8, 9 });
+        a.assertApproveOrder("2 3 4 5 6 7 8 9");
     }
 }
 
@@ -2228,44 +2296,13 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
     t.query("CREATE WORKLOAD dev IN all");
     t.query("CREATE WORKLOAD prd IN all");
 
-    ClassifierPtr dev = t.manager->acquire("dev");
-    ClassifierPtr prd = t.manager->acquire("prd");
-
     for (int i = 0; i < 3; i++)
     {
-        ResourceLink dev_link = dev->get("memory");
-        ResourceLink prd_link = prd->get("memory");
-        std::array<std::optional<TestAllocation>, 8> allocations;
-        for (int idx = 0; idx < allocations.size(); ++idx)
-        {
-            ResourceLink link = (idx % 2 == 0) ? dev_link : prd_link;
-            allocations[idx].emplace(link, fmt::format("{}{}", (idx % 2 == 0) ? "D" : "P", idx), 1);
-            allocations[idx]->waitSync();
-        }
-
-        std::mutex mutex;
-        String approve_order;
-
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
-        t.executeFromScheduler("memory", [&]
-        {
-            int idx = 0;
-            for (int mem : { 50, 40, 20, 20, 50, 30, 10, 15 })
-            {
-                allocations[idx++]->setSize(mem, [&, mem]
-                {
-                    std::unique_lock lock(mutex);
-                    if (approve_order.size() > 0)
-                        approve_order += " ";
-                    approve_order += std::to_string(mem);
-                });
-            }
-        });
-
-        for (auto & alloc : allocations)
-            alloc->waitSync();
-
-        std::unique_lock lock(mutex);
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
         // dev and prd workloads orders its running allocation increases by fair_key - resulting allocation size
         // (note that all allocations start from size 1 in this test)
@@ -2278,7 +2315,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         // * After: 10 15 20 20, we would have dev demanding 30 -> 80, and prd demanding 35 -> 65
         // * so prd wins (65 < 80) while based on current size dev would win (30 < 35)
         // This way of ordering approximates max-min fairness between workloads better.
-        ASSERT_EQ(approve_order, "10 15 20 20 30 50 40 50");
+        a.assertApproveOrder("10 15 20 20 30 50 40 50");
     }
 }
 
@@ -2296,36 +2333,10 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
 
     for (int i = 0; i < 3; i++)
     {
-        ResourceLink dev_link = dev->get("memory");
-        ResourceLink prd_link = prd->get("memory");
-
-        std::array<std::optional<TestAllocation>, 8> allocations;
-
-        std::mutex mutex;
-        String approve_order;
-
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
-        t.executeFromScheduler("memory", [&]
-        {
-            int idx = 0;
-            for (int mem : { 50, 40, 20, 20, 50, 30, 10, 15 })
-            {
-                ResourceLink link = (idx % 2 == 0) ? dev_link : prd_link;
-                allocations[idx].emplace(link, fmt::format("{}{}", (idx % 2 == 0) ? "D" : "P", idx), mem, [&, mem]
-                {
-                    std::unique_lock lock(mutex);
-                    if (approve_order.size() > 0)
-                        approve_order += " ";
-                    approve_order += std::to_string(mem);
-                });
-                ++idx;
-            }
-        });
-
-        for (auto & alloc : allocations)
-            alloc->waitSync();
-
-        std::unique_lock lock(mutex);
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
         // dev and prd workloads orders its pending allocation by arriaval order (FIFO)
         // (note that all allocations start from size 1 in this test)
@@ -2334,7 +2345,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         //      50 70 120 130 <-- (sum) ~ parent_key
         // prd: 40 20  30  15             FIFO order
         //      40 60  90 105 <-- (sum) ~ parent_key
-        ASSERT_EQ(approve_order, "40 50 20 20 30 15 50 10");
+        a.assertApproveOrder("40 50 20 20 30 15 50 10");
     }
 }
 
@@ -2352,39 +2363,11 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
 
     for (int i = 0; i < 3; i++)
     {
-        ResourceLink dev_link = dev->get("memory");
-        ResourceLink prd_link = prd->get("memory");
-        std::array<std::optional<TestAllocation>, 8> allocations;
-        for (int idx = 0; idx < allocations.size(); ++idx)
-        {
-            ResourceLink link = (idx % 2 == 0) ? dev_link : prd_link;
-            allocations[idx].emplace(link, fmt::format("{}{}", (idx % 2 == 0) ? "D" : "P", idx), 1);
-            allocations[idx]->waitSync();
-        }
-
-        std::mutex mutex;
-        String approve_order;
-
-        // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
-        t.executeFromScheduler("memory", [&]
-        {
-            int idx = 0;
-            for (int mem : { 50, 40, 20, 20, 50, 30, 10, 15 })
-            {
-                allocations[idx++]->setSize(mem, [&, mem]
-                {
-                    std::unique_lock lock(mutex);
-                    if (approve_order.size() > 0)
-                        approve_order += " ";
-                    approve_order += std::to_string(mem);
-                });
-            }
-        });
-
-        for (auto & alloc : allocations)
-            alloc->waitSync();
-
-        std::unique_lock lock(mutex);
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
         // dev and prd workloads orders its running allocation increases by fair_key - resulting allocation size
         // (note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd)
@@ -2394,10 +2377,6 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         // prd: 4 15 20 30 40             ~ fair_key
         //        19 39 69 109 <-- (sum) ~ parent_key
         //        6  13 23 36 <-- (sum/3) ~ parent_key
-        // We also check that parent key is based on target size = `allocated + increase.size`, not current size = `allocated`:
-        // * After: 10 15 20 20, we would have dev demanding 30 -> 80, and prd demanding 35 -> 65
-        // * so prd wins (65 < 80) while based on current size dev would win (30 < 35)
-        // This way of ordering approximates max-min fairness between workloads better.
-        ASSERT_EQ(approve_order, "15 20 10 30 20 40 50 50");
+        a.assertApproveOrder("15 20 10 30 20 40 50 50");
     }
 }
