@@ -144,7 +144,7 @@ NamesAndTypesList DeltaLakeMetadataDeltaKernel::getTableSchema(ContextPtr local_
         /// (already done in iceberg),
         /// then need to put table changes there as well to reuse.
         return getTableChanges(
-            std::move(version_range),
+            version_range,
             /* source_header */{},
             /* format_settings */{},
             local_context)->getSchema();
