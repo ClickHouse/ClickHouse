@@ -185,6 +185,7 @@ class AsyncLoader;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
+class OpenPolicyAgentAccess;
 
 struct TemporaryTableHolder;
 using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
@@ -340,6 +341,8 @@ protected:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
+    mutable bool opa_enabled = true;
+    mutable std::shared_ptr<const OpenPolicyAgentAccess> open_policy_agent;
     String current_database;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -443,7 +446,7 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
-        std::set<InterpreterOperation> operations TSA_GUARDED_BY(mutex){}; /// TODO: It should be map: opeartion -> access objects
+        std::vector<InterpreterOperation> operations TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -805,6 +808,7 @@ public:
     void checkAccess(const AccessRightsElements & elements) const;
 
     std::shared_ptr<const ContextAccessWrapper> getAccess() const;
+    std::shared_ptr<const OpenPolicyAgentAccess> getOpenPolicyAgent() const;
 
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
