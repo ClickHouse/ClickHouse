@@ -1647,6 +1647,7 @@ checksummed
 checksumming
 checksums
 childern
+chinese
 chproxy
 chroma
 chunksize

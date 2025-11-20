@@ -714,6 +714,10 @@ if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
 
+if (ENABLE_JIEBA)
+    target_link_libraries(dbms PUBLIC ch_contrib::jieba)
+endif()
+
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
 endif()
