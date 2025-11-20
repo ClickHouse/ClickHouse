@@ -7300,6 +7300,9 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
 Allow to create table with the Alias engine.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, use_paimon_partition_pruning, false, R"(
+Use Paimon partition pruning for Paimon table functions
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
