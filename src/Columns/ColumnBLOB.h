@@ -161,8 +161,8 @@ public:
     void popBack(size_t) override { throwInapplicable(); }
     StringRef serializeValueIntoArena(size_t, Arena &, char const *&) const override { throwInapplicable(); }
     char * serializeValueIntoMemory(size_t, char *) const override { throwInapplicable(); }
-    const char * deserializeAndInsertFromArena(const char *) override { throwInapplicable(); }
-    const char * skipSerializedInArena(const char *) const override { throwInapplicable(); }
+    void deserializeAndInsertFromArena(ReadBuffer &) override { throwInapplicable(); }
+    void skipSerializedInArena(ReadBuffer &) const override { throwInapplicable(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwInapplicable(); }
     WeakHash32 getWeakHash32() const override { throwInapplicable(); }
     void updateHashFast(SipHash &) const override { throwInapplicable(); }

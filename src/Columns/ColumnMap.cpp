@@ -171,19 +171,19 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
     return nested->getSerializedValueSize(n);
 }
 
-const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertFromArena(pos);
+    nested->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
+    nested->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
 {
-    return nested->skipSerializedInArena(pos);
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
