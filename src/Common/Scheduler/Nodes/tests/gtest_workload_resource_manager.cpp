@@ -2387,12 +2387,13 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         std::unique_lock lock(mutex);
 
         // dev and prd workloads orders its running allocation increases by fair_key - resulting allocation size
-        // (note that all allocations start from size 1 in this test)
+        // (note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd)
         // while all workload orders its children by parent_key - resulting total size of all allocations in workload
-        // dev: 10 20 50 50             ~ fair_key
-        //      10 30 80 130 <-- (sum)  ~ parent_key
-        // prd: 15 20 30 40             ~ fair_key
-        //      5  12 22 35 <-- (sum/3) ~ parent_key
+        // dev: 4 10 20 50 50             ~ fair_key
+        //        14 34 84 134 <-- (sum)  ~ parent_key
+        // prd: 4 15 20 30 40             ~ fair_key
+        //        19 39 69 109 <-- (sum) ~ parent_key
+        //        6  13 23 36 <-- (sum/3) ~ parent_key
         // We also check that parent key is based on target size = `allocated + increase.size`, not current size = `allocated`:
         // * After: 10 15 20 20, we would have dev demanding 30 -> 80, and prd demanding 35 -> 65
         // * so prd wins (65 < 80) while based on current size dev would win (30 < 35)

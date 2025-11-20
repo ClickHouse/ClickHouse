@@ -1,17 +1,8 @@
 #include <Common/Scheduler/Nodes/AllocationLimit.h>
 #include <Common/Scheduler/IAllocationQueue.h>
+#include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
-
-#if 0
-#include <iostream>
-#include <base/getThreadId.h>
-#define LOG_EVENT(...) std::cout << fmt::format("\033[01;3{}m[{}] {} {} {}\033[00m {}:{}\n", 1 + getThreadId() % 8, getThreadId(), reinterpret_cast<void*>(this), fmt::format(__VA_ARGS__), __PRETTY_FUNCTION__, __FILE__, __LINE__)
-#else
-#include <base/defines.h>
-#define LOG_EVENT(...) UNUSED(__VA_ARGS__)
-#endif
-
 
 namespace DB
 {
@@ -86,7 +77,7 @@ ResourceAllocation * AllocationLimit::selectAllocationToKill()
 
 void AllocationLimit::approveIncrease()
 {
-    LOG_EVENT("{} -- approveIncrease()", getPath());
+    SCHED_DBG("{} -- approveIncrease()", getPath());
     chassert(increase);
     allocated += increase->size;
     increase = nullptr;
@@ -96,7 +87,7 @@ void AllocationLimit::approveIncrease()
 
 void AllocationLimit::approveDecrease()
 {
-    LOG_EVENT("{} -- approveDecrease()", getPath());
+    SCHED_DBG("{} -- approveDecrease()", getPath());
 
     chassert(decrease);
     allocated -= decrease->size;
@@ -118,7 +109,7 @@ void AllocationLimit::approveDecrease()
 
 void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && update)
 {
-    LOG_EVENT("{} -- propagateUpdate({}, {})", getPath(), reinterpret_cast<void*>(&from_child), update.toString());
+    SCHED_DBG("{} -- propagateUpdate({}, {})", getPath(), reinterpret_cast<void*>(&from_child), update.toString());
     chassert(&from_child == child.get());
     bool reapply_constraint = false;
     if (update.attached)
@@ -170,7 +161,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
                     if (!new_increase->pending_allocation // Kill due to running allocation increase
                         || &candidate_to_kill->queue != &new_increase->allocation.queue) // Or kills allocation from a different queue
                     {
-                        LOG_EVENT("{}: Killing. allocated={}, increase_size={}, max={}, increasing={}, killing={}", getPath(), allocated, new_increase->size, max_allocated, reinterpret_cast<void*>(&new_increase->allocation), reinterpret_cast<void*>(candidate_to_kill));
+                        SCHED_DBG("{}: Killing. allocated={}, increase_size={}, max={}, increasing={}, killing={}", getPath(), allocated, new_increase->size, max_allocated, reinterpret_cast<void*>(&new_increase->allocation), reinterpret_cast<void*>(candidate_to_kill));
                         allocation_to_kill = candidate_to_kill;
                         allocation_to_kill->killAllocation(std::make_exception_ptr(
                             Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
