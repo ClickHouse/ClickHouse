@@ -60,6 +60,8 @@ class Result(MetaClasses.Serializable):
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
+        OK_ON_RETRY = "retry_ok"
+        FAILED_ON_RETRY = "retry_failed"
 
     name: str
     status: str
