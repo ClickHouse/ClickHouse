@@ -1,8 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <IO/Operators.h>
-#include "Processors/QueryPlan/Optimizations/Cascades/Properties.h"
 
 namespace DB
 {

@@ -2,15 +2,15 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Core/Joins.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
-#include "Core/SortDescription.h"
-#include "Processors/QueryPlan/Optimizations/Cascades/Properties.h"
-#include "Processors/QueryPlan/SortingStep.h"
 #include <memory>
 
 namespace DB

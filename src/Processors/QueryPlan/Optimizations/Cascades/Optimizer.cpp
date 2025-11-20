@@ -120,7 +120,7 @@ GroupId CascadesOptimizer::fillMemoFromQueryPlan(OptimizerContext & optimizer_co
         join_graph_builder.addRelation({}, *node);
     JoinGraph join_graph(std::move(join_graph_builder));
 
-    LOG_TRACE(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
+    LOG_TEST(optimizer_context.log, "JOIN Graph:\n{}", join_graph.dump());
 
     auto join_graph_group_id = populateMemoFromJoinGraph(join_graph, optimizer_context);
 
@@ -364,13 +364,13 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
                         auto joined_group_id = optimizer_context.memo.addGroup(join_expression);
                         join_groups_by_size[group_size].push_back(GroupInfo{joined_group_id, joined_relations, std::make_shared<const Block>(joined_output_columns)});
                         known_join_groups[joined_group_name] = joined_group_id;
-                        LOG_TRACE(optimizer_context.log, "Created new group for '{}', id {}", joined_group_name, joined_group_id);
+                        LOG_TEST(optimizer_context.log, "Created new group for '{}', id {}", joined_group_name, joined_group_id);
                     }
                     else
                     {
                         auto existing_group = optimizer_context.getGroup(known_group->second);
                         existing_group->addLogicalExpression(join_expression);
-                        LOG_TRACE(optimizer_context.log, "Adding to existing group for '{}' id {}", joined_group_name, known_group->second);
+                        LOG_TEST(optimizer_context.log, "Adding to existing group for '{}' id {}", joined_group_name, known_group->second);
                     }
                 }
             }
@@ -384,6 +384,7 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
 
 void CascadesOptimizer::optimize()
 {
+    Stopwatch optimizer_timer;
     OptimizerStatisticsPtr statistics;
     /// FIXME: statistics stub for testing
     auto query_context = CurrentThread::get().getQueryContext();
@@ -399,7 +400,7 @@ void CascadesOptimizer::optimize()
 
     auto root_group_id = fillMemoFromQueryPlan(optimizer_context);
 
-    LOG_TRACE(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
+    LOG_TEST(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
 
     /// Add task to optimize root group
     CostLimit initial_cost_limit = std::numeric_limits<Int64>::max();
@@ -416,17 +417,19 @@ void CascadesOptimizer::optimize()
         task->execute(optimizer_context);
     }
 
-    LOG_TRACE(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
+    LOG_TEST(optimizer_context.log, "Executed {} tasks, Memo after:\n{}", executed_tasks_count, optimizer_context.memo.dump());
 
     /// Get the best plan for the root group
     auto best_plan = buildBestPlan(root_group_id, {}, optimizer_context.memo);
 
-    LOG_TRACE(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
+    LOG_TEST(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));
 
     /// Update the original plan in-place because there might be references to the root node of the original plan
     query_plan.getRootNode()->step = best_plan->getRootNode()->step->clone();   /// We moved original step from the root node, but replaceNodeWithPlan
                                                                                 /// need the replaced node to have a step, so let's put a stub there
     query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(best_plan));
+
+    LOG_TRACE(optimizer_context.log, "Optimization took {} ms", optimizer_timer.elapsedMilliseconds());
 }
 
 /// Drop unused columns and reorder columns between steps if needed
@@ -494,7 +497,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             .rows = group_best_expression->statistics->estimated_row_count
         };
 
-    LOG_TRACE(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, dumpQueryPlanShort(*plan_for_group));
+    LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", subtree_root_group_id, dumpQueryPlanShort(*plan_for_group));
 
     return plan_for_group;
 }
