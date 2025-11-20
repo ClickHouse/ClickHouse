@@ -499,13 +499,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                     break;
             }
 
-            bool first = false;
+            bool whitespace = false;
             for (const auto & param : instrumentation_parameters)
             {
-                if (!first)
+                if (!whitespace)
                     ostr << ' ';
                 else
-                    first = true;
+                    whitespace = true;
                 std::visit([&](const auto & value)
                 {
                     using T = std::decay_t<decltype(value)>;
