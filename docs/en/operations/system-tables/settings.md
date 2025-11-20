@@ -19,6 +19,7 @@ Columns:
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short setting description.
 - `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](/operations/settings/constraints-on-settings). If the setting has no minimum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
 - `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](/operations/settings/constraints-on-settings). If the setting has no maximum value, contains [NULL](/operations/settings/formats#input_format_null_as_default).
+- `disallowed_values` ([Array](/sql-reference/data-types/array)([String](../../sql-reference/data-types/string.md))) — List of disallowed values.
 - `readonly` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows whether the current user can change the setting:
   - `0` — Current user can change the setting.
   - `1` — Current user can't change the setting.
