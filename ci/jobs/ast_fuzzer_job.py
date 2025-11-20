@@ -119,6 +119,7 @@ def run_fuzz_job(check_name: str):
             "BuzzHouse fuzzer exception",
             "Killed",
             "Let op!",
+            "Received signal 11",
             "runtime error",
             "Sanitizer:",
             "Unknown error",
