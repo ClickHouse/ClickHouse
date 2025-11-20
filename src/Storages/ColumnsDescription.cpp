@@ -635,13 +635,8 @@ bool ColumnsDescription::hasSubcolumn(const String & column_name) const
         return true;
 
     /// Check for dynamic subcolumns
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    auto it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns() && !dynamic_subcolumn_name.empty())
-    {
-        if (auto /*dynamic_subcolumn_type*/ _ = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-            return true;
-    }
+    if (tryGetDynamicSubcolumn(column_name))
+        return true;
 
     return false;
 }
@@ -718,13 +713,8 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
             return *jt;
 
         /// Check for dynamic subcolumns.
-        auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-        it = columns.get<1>().find(ordinary_column_name);
-        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-        {
-            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
-                return NameAndTypePair(ordinary_column_name, dynamic_subcolumn_name, it->type, dynamic_subcolumn_type);
-        }
+        if (auto dynamic_subcolumn = tryGetDynamicSubcolumn(column_name))
+            return dynamic_subcolumn;
     }
 
     return {};
@@ -815,15 +805,6 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, cons
     auto it = columns.get<1>().find(column_name);
     if ((it != columns.get<1>().end() && (defaultKindToGetKind(it->default_desc.kind) & kind)) || hasSubcolumn(column_name))
         return true;
-
-    /// Check for dynamic subcolumns.
-    auto [ordinary_column_name, dynamic_subcolumn_name] = Nested::splitName(column_name);
-    it = columns.get<1>().find(ordinary_column_name);
-    if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
-    {
-        if (auto /*dynamic_subcolumn_type*/ _ = it->type->hasSubcolumn(dynamic_subcolumn_name))
-            return true;
-    }
 
     return false;
 }
@@ -979,6 +960,22 @@ std::vector<String> ColumnsDescription::getAllRegisteredNames() const
     }
     return names;
 }
+
+std::optional<NameAndTypePair> ColumnsDescription::tryGetDynamicSubcolumn(const String & column_name) const
+{
+    for (auto [ordinary_column_name, dynamic_subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(column_name))
+    {
+        auto it = columns.get<1>().find(String(ordinary_column_name));
+        if (it != columns.get<1>().end() && it->type->hasDynamicSubcolumns())
+        {
+            if (auto dynamic_subcolumn_type = it->type->tryGetSubcolumnType(dynamic_subcolumn_name))
+                return NameAndTypePair(String(ordinary_column_name), String(dynamic_subcolumn_name), it->type, dynamic_subcolumn_type);
+        }
+    }
+
+    return std::nullopt;
+}
+
 
 void getDefaultExpressionInfoInto(const ASTColumnDeclaration & col_decl, const DataTypePtr & data_type, DefaultExpressionsInfo & info)
 {
