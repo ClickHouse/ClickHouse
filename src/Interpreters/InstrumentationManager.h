@@ -65,27 +65,7 @@ public:
         String symbol;
         std::vector<InstrumentedParameter> parameters;
 
-        String toString() const
-        {
-            String entry_type_str = entryTypeToString(entry_type);
-            String parameters_str;
-
-            parameters_str = ", parameters [";
-            for (const auto & param : parameters)
-            {
-                if (std::holds_alternative<String>(param))
-                    parameters_str += fmt::format("{}, ", std::get<String>(param));
-                else if (std::holds_alternative<Int64>(param))
-                    parameters_str += fmt::format("{}, ", std::get<Int64>(param));
-                else if (std::holds_alternative<Float64>(param))
-                    parameters_str += fmt::format("{}, ", std::get<Float64>(param));
-            }
-            parameters_str += "]";
-
-            return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
-                id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
-        }
-
+        String toString() const;
         bool operator<(const InstrumentedPointInfo & other) const { return id < other.id; }
     };
 

@@ -73,6 +73,32 @@ String entryTypeToString(EntryType entry_type)
 
 }
 
+String InstrumentationManager::InstrumentedPointInfo::toString() const
+{
+    String entry_type_str = entryTypeToString(entry_type);
+    String parameters_str;
+
+    parameters_str = ", parameters [";
+    for (size_t i = 0; i < parameters.size(); ++i)
+    {
+        const auto & param = parameters[i];
+        if (std::holds_alternative<String>(param))
+            parameters_str += fmt::format("{}, ", std::get<String>(param));
+        else if (std::holds_alternative<Int64>(param))
+            parameters_str += fmt::format("{}, ", std::get<Int64>(param));
+        else if (std::holds_alternative<Float64>(param))
+            parameters_str += fmt::format("{}, ", std::get<Float64>(param));
+
+        if (i < parameters.size() - 1)
+            parameters_str += ", ";
+        else
+            parameters_str += "]";
+    }
+
+    return fmt::format("id {}, function_id {}, function_name '{}', handler_name {}, entry_type {}, symbol {}{}",
+        id, function_id, function_name, handler_name, entry_type_str, symbol, parameters_str);
+}
+
 InstrumentationManager::InstrumentationManager()
 {
     registerHandler(LOG_HANDLER, [this](XRayEntryType entry_type, const InstrumentedPointInfo & ip) { log(entry_type, ip); });
