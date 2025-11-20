@@ -101,6 +101,18 @@ if (ENABLE_BUZZHOUSE)
     set (ENABLE_PROTOBUF 1)
 endif()
 
+option (ENABLE_XRAY "Enable LLVM XRay" ON)
+
+if (NOT ENABLE_XRAY)
+    message (STATUS "Not using LLVM XRay because it's disabled")
+    return()
+endif()
+
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE)
+    message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
+    return()
+endif()
+
 # Global libraries
 # See:
 # - default_libs.cmake
@@ -108,8 +120,6 @@ endif()
 add_library(global-libs INTERFACE)
 
 include (cmake/sanitize.cmake)
-
-include (cmake/xray_instrumentation.cmake)
 
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
@@ -467,6 +477,9 @@ endif ()
 message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE}")
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
+
+# We can only include XRay flags and defines once we know that we're building LLVM
+include (cmake/xray_instrumentation.cmake)
 
 # Sets dummy launchers to suppress linking. Used for clang-tidy builds.
 enable_dummy_launchers_if_needed()
