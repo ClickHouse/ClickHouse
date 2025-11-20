@@ -173,14 +173,14 @@ public:
     bool validateOptimizedArguments(const ColumnsWithTypeAndName & arguments) const
     {
         constexpr size_t max_precision = 64;
-        const size_t num_arguments = arguments.size();
+        const size_t precision = arguments.size() - 2;
         const auto * ref_vec_type = checkAndGetDataType<DataTypeArray>(arguments.back().type.get());
         const auto & qbit_size_column = (arguments.end() - 2)->column;
         const auto & qbit_size_arg_type = (arguments.end() - 2)->type;
         const WhichDataType which_qbit_size_arg_type(qbit_size_arg_type);
 
         /// Note: we only allow constant qbit_size_column
-        if (!ref_vec_type || num_arguments - 2 > max_precision || !qbit_size_column || !qbit_size_column->isConst()
+        if (!ref_vec_type || precision > max_precision || !qbit_size_column || !qbit_size_column->isConst()
             || !which_qbit_size_arg_type.isUInt())
             return false;
 
@@ -192,13 +192,33 @@ public:
         const auto qbit_size_bytes = DataTypeQBit::bitsToBytes(qbit_size);
 
         /// All QBit subcolumns should be FixedString and have a consistent size
-        for (size_t i = 0; i < arguments.size() - 2; ++i)
+        for (size_t i = 0; i < precision; ++i)
         {
             const auto * arg_type = checkAndGetDataType<DataTypeFixedString>(arguments[i].type.get());
 
             if (!arg_type || arg_type->getN() != qbit_size_bytes)
                 return false;
         }
+
+        /// The type of reference vector dictates what type QBit had before we sliced it into q.1, ..., q.precision.
+        /// Check that the number of bit planes doesn't exceed the maximum precision for the reference vector type.
+        size_t max_precision_for_type = 0;
+        if (ref_vec_type_id == TypeIndex::BFloat16)
+            max_precision_for_type = 16;
+        else if (ref_vec_type_id == TypeIndex::Float32)
+            max_precision_for_type = 32;
+        else if (ref_vec_type_id == TypeIndex::Float64)
+            max_precision_for_type = 64;
+        else
+            return false;
+
+        if (precision > max_precision_for_type)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Number of bit planes ({}) exceeds the maximum precision ({}) for reference vector type {}",
+                precision,
+                max_precision_for_type,
+                ref_vec_type->getNestedType()->getName());
 
         return true;
     }
