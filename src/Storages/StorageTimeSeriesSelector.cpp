@@ -18,6 +18,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
@@ -111,7 +112,10 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto timestamp_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
     auto scalar_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
 
-    UInt32 time_scale = std::max<UInt32>(getTimeseriesTimeScale(timestamp_type), 3);
+    /// We use the following time scale to parse `start_time`, `end_time`, `step` and `window`
+    /// in case they are represented by strings or floating-point numbers.
+    /// For consistency reasons we use the same scale as PrometheusQueryToSQL converter.
+    UInt32 time_scale = PrometheusQueryToSQL::getResultTimeScale(data_table_metadata);
 
     auto selector_field = evaluateConstantExpression(args[argument_index++], context).first;
     if (selector_field.getType() != Field::Types::String)
@@ -364,7 +368,6 @@ namespace
         {
             /// (timestamp - min_time) % step <= window
             UInt32 timestamp_scale = getTimeseriesTimeScale(timestamp_type);
-
             UInt32 max_scale = std::max({timestamp_scale, min_time.getScale(), step.getScale(), window.getScale()});
 
             /// Round up `max_scale` to next number divisible by 3 but not greater than 9 (nanoseconds scale).
