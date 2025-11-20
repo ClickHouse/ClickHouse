@@ -276,12 +276,6 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    Docker.Config(
-        name="clickhouse/keeper-persistent-watcher",
-        path="./ci/docker/integration/keeper_persistent_watcher",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
 ]
 
 

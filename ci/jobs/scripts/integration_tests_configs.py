@@ -125,7 +125,6 @@ IMAGES_ENV = {
     "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
     "clickhouse/integration-test-with-hms": "DOCKER_BASE_WITH_HMS_TAG",
     "clickhouse/mysql_dotnet_client": "DOCKER_MYSQL_DOTNET_CLIENT_TAG",
-    "clickhouse/keeper-persistent-watcher": "DOCKER_KEEPER_PERSISTENT_WATCHER_TAG"
 }
 
 # collected by
