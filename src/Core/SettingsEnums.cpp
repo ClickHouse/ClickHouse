@@ -209,6 +209,12 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
+IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", AlterColumnSecondaryIndexMode::THROW},
+     {"drop", AlterColumnSecondaryIndexMode::DROP},
+     {"rebuild", AlterColumnSecondaryIndexMode::REBUILD},
+     {"compatibility", AlterColumnSecondaryIndexMode::COMPATIBILITY}})
+
 IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", ParallelReplicasMode::AUTO},
      {"read_tasks", ParallelReplicasMode::READ_TASKS},
@@ -305,7 +311,8 @@ IMPLEMENT_SETTING_ENUM(
     {{"rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
      {"unity", DatabaseDataLakeCatalogType::UNITY},
      {"glue", DatabaseDataLakeCatalogType::GLUE},
-     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE}})
+     {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
+     {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -331,13 +338,13 @@ IMPLEMENT_SETTING_ENUM(
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeSerializationInfoVersion::DEFAULT},
+    {{"basic", MergeTreeSerializationInfoVersion::BASIC},
      {"with_types", MergeTreeSerializationInfoVersion::WITH_TYPES}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeStringSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
-    {{"default", MergeTreeStringSerializationVersion::DEFAULT},
+    {{"single_stream", MergeTreeStringSerializationVersion::SINGLE_STREAM},
      {"with_size_stream", MergeTreeStringSerializationVersion::WITH_SIZE_STREAM}})
 
 IMPLEMENT_SETTING_ENUM(
@@ -369,6 +376,12 @@ IMPLEMENT_SETTING_ENUM(
      {"none", SearchOrphanedPartsDisks::NONE}})
 
 IMPLEMENT_SETTING_ENUM(
+    DecorrelationJoinKind,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"left", DecorrelationJoinKind::LEFT},
+     {"right", DecorrelationJoinKind::RIGHT}})
+
+IMPLEMENT_SETTING_ENUM(
     IcebergMetadataLogLevel,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", IcebergMetadataLogLevel::None},
@@ -377,4 +390,15 @@ IMPLEMENT_SETTING_ENUM(
      {"manifest_list_entry", IcebergMetadataLogLevel::ManifestListEntry},
      {"manifest_file_metadata", IcebergMetadataLogLevel::ManifestFileMetadata},
      {"manifest_file_entry", IcebergMetadataLogLevel::ManifestFileEntry}})
+
+IMPLEMENT_SETTING_ENUM(
+    ObjectStorageGranularityLevel,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"file", ObjectStorageGranularityLevel::FILE},
+    {"bucket", ObjectStorageGranularityLevel::BUCKET}})
+
+IMPLEMENT_SETTING_ENUM(ArrowFlightDescriptorType, ErrorCodes::BAD_ARGUMENTS,
+    {{"path", ArrowFlightDescriptorType::Path},
+     {"command", ArrowFlightDescriptorType::Command}})
 }
+

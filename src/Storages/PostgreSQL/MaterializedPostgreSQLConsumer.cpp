@@ -693,6 +693,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
                     auto storage = storage_data.storage;
 
                     auto insert_context = Context::createCopy(context);
+                    insert_context->makeQueryContext();
                     insert_context->setInternalQuery(true);
 
                     auto insert = std::make_shared<ASTInsertQuery>();

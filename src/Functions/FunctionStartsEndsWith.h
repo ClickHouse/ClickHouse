@@ -1,20 +1,15 @@
 #pragma once
 
-#include <Common/StringSearcher.h>
-#include <Common/TargetSpecific.h>
-#include <Common/UTF8Helpers.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <Columns/ColumnString.h>
 #include <Interpreters/castColumn.h>
-#include <Poco/String.h>
-#include <Poco/Unicode.h>
+#include <Common/StringSearcher.h>
+#include <Common/UTF8Helpers.h>
 
 #include <ranges>
 
@@ -81,8 +76,6 @@ struct NameEndsWithCaseInsensitiveUTF8
     static constexpr auto is_case_insensitive = true;
 };
 
-DECLARE_MULTITARGET_CODE(
-
 template <typename Name>
 class FunctionStartsEndsWith : public IFunction
 {
@@ -95,6 +88,8 @@ public:
     {
         return name;
     }
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStartsEndsWith<Name>>(); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
     {
@@ -113,8 +108,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1])
-            || isString(arguments[0]) && isString(arguments[1]))
+        if ((!is_utf8 && isStringOrFixedString(arguments[0]) && isStringOrFixedString(arguments[1]))
+            || (isString(arguments[0]) && isString(arguments[1])))
             return std::make_shared<DataTypeUInt8>();
 
         if (isArray(arguments[0]) && isArray(arguments[1]))
@@ -377,42 +372,4 @@ private:
         }
     }
 };
-
-) // DECLARE_MULTITARGET_CODE
-
-template <typename Name>
-class FunctionStartsEndsWith : public TargetSpecific::Default::FunctionStartsEndsWith<Name>
-{
-public:
-    explicit FunctionStartsEndsWith(ContextPtr context) : selector(context)
-    {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionStartsEndsWith<Name>>();
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::SSE42,
-            TargetSpecific::SSE42::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX,
-            TargetSpecific::AVX::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX2,
-            TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>();
-        selector.registerImplementation<TargetArch::AVX512F,
-            TargetSpecific::AVX512F::FunctionStartsEndsWith<Name>>();
-    #endif
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
-    }
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionStartsEndsWith<Name>>(context);
-    }
-
-private:
-    ImplementationSelector<IFunction> selector;
-};
-
 }

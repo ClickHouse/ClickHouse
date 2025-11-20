@@ -2444,7 +2444,7 @@ Calculates the unit vector of a given vector (the elements of the tuple are the 
         FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
             {
-                "Basic usage",
+                "Usage example",
                 R"(
 SELECT LpNormalize((3, 4), 5)
                 )",
