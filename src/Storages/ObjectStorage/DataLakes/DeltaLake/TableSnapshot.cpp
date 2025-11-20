@@ -16,7 +16,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/escapeForFileName.h>
-#include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -61,7 +60,7 @@ Field parseFieldFromString(const String & value, DB::DataTypePtr data_type)
     {
         ReadBufferFromString buffer(value);
         auto col = data_type->createColumn();
-        auto serialization = data_type->getSerialization({ISerialization::Kind::DEFAULT});
+        auto serialization = data_type->getSerialization(ISerialization::Kind::DEFAULT);
         serialization->deserializeWholeText(*col, buffer, FormatSettings{});
         return (*col)[0];
     }
@@ -85,7 +84,6 @@ public:
     Iterator(
         std::shared_ptr<KernelSnapshotState> kernel_snapshot_state_,
         const std::string & data_prefix_,
-        const ReadSchema & read_schema_,
         const TableSchema & table_schema_,
         const DB::NameToNameMap & physical_names_map_,
         const DB::Names & partition_columns_,
@@ -99,7 +97,6 @@ public:
         LoggerPtr log_)
         : kernel_snapshot_state(kernel_snapshot_state_)
         , data_prefix(data_prefix_)
-        , read_schema(read_schema_)
         , expression_schema(table_schema_)
         , partition_columns(partition_columns_)
         , object_storage(object_storage_)
@@ -141,7 +138,7 @@ public:
             {
                 /// Attach to current query thread group, to be able to
                 /// have query id in logs and metrics from scanDataFunc.
-                DB::ThreadGroupSwitcher switcher(thread_group, DB::ThreadName::DATALAKE_TABLE_SNAPSHOT);
+                DB::ThreadGroupSwitcher switcher(thread_group, "TableSnapshot");
                 scanDataFunc();
             });
     }
@@ -167,7 +164,7 @@ public:
     {
         if (filter.has_value() && enable_engine_predicate)
         {
-            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception, nullptr);
+            auto predicate = getEnginePredicate(filter.value(), engine_predicate_exception);
             scan = KernelUtils::unwrapResult(
                 ffi::scan(kernel_snapshot_state->snapshot.get(), kernel_snapshot_state->engine.get(), predicate.get()),
                 "scan");
@@ -287,12 +284,12 @@ public:
                 continue;
             }
 
-            object->setObjectMetadata(object_storage->getObjectMetadata(object->getPath(), /*with_tags=*/ false));
+            object->metadata = object_storage->getObjectMetadata(object->getPath());
 
             if (callback)
             {
-                chassert(object->getObjectMetadata());
-                callback(DB::FileProgress(0, object->getObjectMetadata()->size_bytes));
+                chassert(object->metadata);
+                callback(DB::FileProgress(0, object->metadata->size_bytes));
             }
             return object;
         }
@@ -311,7 +308,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * dv_info,
+        const ffi::DvInfo * dv_info,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * deprecated)
     {
@@ -333,7 +330,7 @@ public:
         struct ffi::KernelStringSlice path,
         int64_t size,
         const ffi::Stats * stats,
-        const ffi::CDvInfo * /* dv_info */,
+        const ffi::DvInfo * /* dv_info */,
         const ffi::Expression * transform,
         const struct ffi::CStringMap * /* deprecated */)
     {
@@ -345,13 +342,12 @@ public:
         }
 
         std::string full_path = fs::path(context->data_prefix) / DB::unescapeForFileName(KernelUtils::fromDeltaString(path));
-        auto object = std::make_shared<DB::ObjectInfo>(DB::RelativePathWithMetadata(std::move(full_path)));
+        auto object = std::make_shared<DB::ObjectInfo>(std::move(full_path));
 
         if (transform && !context->partition_columns.empty())
         {
             auto parsed_transform = visitScanCallbackExpression(
                 transform,
-                context->read_schema,
                 context->expression_schema,
                 context->enable_expression_visitor_logging);
 
@@ -389,7 +385,6 @@ private:
     std::optional<DB::ActionsDAG> filter;
 
     const std::string data_prefix;
-    DB::NamesAndTypesList read_schema;
     DB::NamesAndTypesList expression_schema;
     DB::Names partition_columns;
     const DB::ObjectStoragePtr object_storage;
@@ -458,16 +453,17 @@ void TableSnapshot::updateSettings(const DB::ContextPtr & context)
     }
 }
 
-void TableSnapshot::update(const DB::ContextPtr & context)
+bool TableSnapshot::update(const DB::ContextPtr & context)
 {
     updateSettings(context);
     if (!kernel_snapshot_state)
     {
         /// Snapshot is not yet created,
         /// so next attempt to create it would return the latest snapshot.
-        return;
+        return false;
     }
     initSnapshotImpl();
+    return true;
 }
 
 void TableSnapshot::initSnapshot() const
@@ -534,7 +530,6 @@ DB::ObjectIterator TableSnapshot::iterate(
     return std::make_shared<TableSnapshot::Iterator>(
         kernel_snapshot_state,
         helper->getDataPath(),
-        getReadSchema(),
         getTableSchema(),
         getPhysicalNamesMap(),
         getPartitionColumns(),

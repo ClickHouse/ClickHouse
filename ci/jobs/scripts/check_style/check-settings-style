@@ -120,7 +120,6 @@ done
 SETTINGS_H_EXCLUDES=(
     # Templated code
     --exclude "$ROOT_PATH/src/Access/resolveSetting.h"
-    --exclude "$ROOT_PATH/src/Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h"
 
     # For functions we allow it for regular functions (due to lots of
     # templates), but forbid it in interface (IFunction) part.

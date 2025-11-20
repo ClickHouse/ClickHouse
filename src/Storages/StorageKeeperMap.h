@@ -35,8 +35,7 @@ public:
         bool attach,
         std::string_view primary_key_,
         const std::string & root_path_,
-        UInt64 keys_limit_,
-        bool override_metadata);
+        UInt64 keys_limit_);
 
     void read(
         QueryPlan & query_plan,
@@ -111,20 +110,8 @@ public:
         }
     }
 
-    static void dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger);
-
 private:
-    bool dropTableData(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
-
-    static bool dropTableData(
-        zkutil::ZooKeeperPtr zookeeper,
-        const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock,
-        const String & zk_data_path_,
-        const String & zk_metadata_path_,
-        const String & zk_dropped_path_,
-        const String & zk_dropped_lock_version_path_,
-        const String & zk_root_path_,
-        LoggerPtr logger);
+    bool dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);
 
     enum class TableStatus : uint8_t
     {
@@ -145,7 +132,8 @@ private:
         const BackupPtr & backup,
         const String & data_path_in_backup,
         std::shared_ptr<WithRetries> with_retries,
-        bool allow_non_empty_tables);
+        bool allow_non_empty_tables,
+        const DiskPtr & temporary_disk);
 
     std::string zk_root_path;
     std::string primary_key;
