@@ -559,8 +559,8 @@ static void validateUpdateColumns(
             /// Check if we have a subcolumn of this column as a key column.
             for (const auto & key_column : key_columns)
             {
-                auto [key_column_name, key_subcolumn_name] = Nested::splitName(key_column);
-                if (key_column_name == column_name && ordinary_storage_column->type->hasSubcolumn(key_subcolumn_name))
+                auto column = storage_columns.getColumnOrSubcolumn(GetColumnsOptions::All, key_column);
+                if (column.isSubcolumn() && column_name == column.getNameInStorage())
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
             }
         }

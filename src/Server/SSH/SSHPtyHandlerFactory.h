@@ -79,7 +79,6 @@ public:
         LOG_TRACE(log, "TCP Request. Address: {}", socket.peerAddress().toString());
         ::ssh::libsshLogger::initialize();
         ::ssh::SSHSession session;
-        session.disableSocketOwning();
         session.disableDefaultConfig();
         ssh_bind.acceptFd(session, socket.sockfd());
 

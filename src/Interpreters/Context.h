@@ -261,6 +261,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class ReverseLookupCache;
+using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -541,6 +544,10 @@ protected:
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
+
+    /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
+    /// This is a per query cache and not shared across queries.
+    mutable ReverseLookupCachePtr reverse_lookup_cache;
 
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
@@ -1629,6 +1636,8 @@ public:
 
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
+
+    ReverseLookupCache & getReverseLookupCache() const;
 
     /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
     /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.

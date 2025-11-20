@@ -1319,6 +1319,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
           "max_temporary_data_on_disk_size_for_query",
           "max_temporary_data_on_disk_size_for_user",
           "max_untracked_memory",
+          "max_reverse_dictionary_lookup_cache_size_bytes",
           "merge_tree_max_bytes_to_use_cache",
           "merge_tree_min_bytes_for_concurrent_read",
           "merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem",

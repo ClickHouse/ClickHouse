@@ -1868,6 +1868,7 @@ dictGetAll
 dictGetChildren
 dictGetDescendant
 dictGetHierarchy
+dictGetKeys
 dictGetOrDefault
 dictGetOrNull
 dictGetUUID

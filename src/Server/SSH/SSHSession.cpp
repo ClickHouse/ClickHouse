@@ -64,14 +64,6 @@ void SSHSession::disableDefaultConfig()
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed disabling default config for ssh session due due to {}", getError());
 }
 
-void SSHSession::disableSocketOwning()
-{
-    bool owns_socket = false;
-    int rc = ssh_options_set(session, SSH_OPTIONS_OWNS_SOCKET, &owns_socket);
-    if (rc != SSH_OK)
-        throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed disabling socket owning for ssh session due to {}", getError());
-}
-
 void SSHSession::setPeerHost(const String & host)
 {
     int rc = ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str());

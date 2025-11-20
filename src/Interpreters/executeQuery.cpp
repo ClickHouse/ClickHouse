@@ -18,6 +18,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/copyData.h>
 
+#include <Interpreters/RenameMultipleColumnsVisitor.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
@@ -267,6 +268,31 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
                 "OpenTelemetry traceparent '{}'",
                 client_info.client_trace_context.composeTraceparentHeader());
         }
+    }
+}
+
+static void renameSimpleAliases(ASTPtr node, const StoragePtr & table)
+{
+    if (!node)
+        return;
+
+    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    std::unordered_map<String, String> column_rename_map;
+    for (const auto & [name, default_desc] : metadata_snapshot->columns.getDefaults())
+    {
+        if (default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            const ASTPtr & alias_expression = default_desc.expression;
+            if (const ASTIdentifier * actual_column = typeid_cast<const ASTIdentifier *>(alias_expression.get()))
+                column_rename_map[name] = actual_column->full_name;
+        }
+    }
+
+    if (!column_rename_map.empty())
+    {
+        RenameMultipleColumnsData rename_data{column_rename_map};
+        RenameMultipleColumnsVisitor rename_columns_visitor{rename_data};
+        rename_columns_visitor.visit(node);
     }
 }
 
@@ -1397,8 +1423,13 @@ static BlockIO executeQueryImpl(
                 insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
 
             if (insert_query->table_id)
+            {
                 if (auto table = DatabaseCatalog::instance().tryGetTable(insert_query->table_id, context))
+                {
                     async_insert_enabled |= table->areAsynchronousInsertsEnabled();
+                    renameSimpleAliases(insert_query->columns, table);
+                }
+            }
         }
 
         if (insert_query && insert_query->select)
