@@ -502,6 +502,9 @@ private:
                     const char * begin = nullptr;
                     StringRef ref = key_col->serializeValueIntoArena(row_id, arena, begin);
 
+                    chassert(begin != nullptr);
+                    chassert(ref.data >= begin);
+
                     const size_t old_size = mapped->size();
                     const size_t need = old_size + ref.size;
 
