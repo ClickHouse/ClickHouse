@@ -120,6 +120,7 @@ def run_fuzz_job(check_name: str):
             "Killed",
             "Let op!",
             "runtime error",
+            "Sanitizer:",
             "Unknown error",
         ]
         if result.results and any(
