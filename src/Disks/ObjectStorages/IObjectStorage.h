@@ -109,7 +109,6 @@ struct ObjectMetadata
     ObjectAttributes attributes;
 };
 
-struct DataFileInfo;
 class DataFileMetaInfo;
 using DataFileMetaInfoPtr = std::shared_ptr<DataFileMetaInfo>;
 
@@ -120,17 +119,14 @@ struct RelativePathWithMetadata
     String relative_path;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
-    /// Information about columns
-    std::optional<DataFileMetaInfoPtr> file_meta_info;
 
     RelativePathWithMetadata() = default;
 
-    explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+    explicit RelativePathWithMetadata(String relative_path_
+        , std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
-
-    explicit RelativePathWithMetadata(const DataFileInfo & info, std::optional<ObjectMetadata> metadata_);
 
     RelativePathWithMetadata(const RelativePathWithMetadata & other) = default;
 
@@ -138,9 +134,6 @@ struct RelativePathWithMetadata
 
     std::string getFileName() const { return std::filesystem::path(relative_path).filename(); }
     std::string getPath() const { return relative_path; }
-
-    void setFileMetaInfo(std::optional<DataFileMetaInfoPtr> file_meta_info_) { file_meta_info = file_meta_info_; }
-    std::optional<DataFileMetaInfoPtr> getFileMetaInfo() const { return file_meta_info; }
 };
 
 struct ObjectKeyWithMetadata

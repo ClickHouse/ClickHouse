@@ -353,11 +353,11 @@ Chunk StorageObjectStorageSource::generate()
             /// Not empty when allow_experimental_iceberg_read_optimization=true
             /// and some columns were removed from read list as columns with constant values.
             /// Restore data for these columns.
-            for (const auto & constant_column : reader.constant_columns_with_values)
+            for (const auto & [column_name, column_type_and_value] : reader.constant_columns_with_values)
             {
-                chunk.addColumn(constant_column.first,
-                    constant_column.second.name_and_type.type->createColumnConst(
-                        chunk.getNumRows(), constant_column.second.value)->convertToFullColumnIfConst());
+                chunk.addColumn(column_name,
+                    column_type_and_value.name_and_type.type->createColumnConst(
+                        chunk.getNumRows(), column_type_and_value.value)->convertToFullColumnIfConst());
             }
 
 #if USE_PARQUET
@@ -547,12 +547,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::map<size_t, ConstColumnWithValue> constant_columns_with_values;
     std::unordered_set<String> constant_columns;
 
-    NamesAndTypesList requested_columns_copy = read_from_format_info.requested_columns;
+    NamesAndTypesList non_constant_requested_columns = read_from_format_info.requested_columns;
 
     std::unordered_map<String, std::pair<size_t, NameAndTypePair>> requested_columns_list;
     {
         size_t column_index = 0;
-        for (const auto & column : requested_columns_copy)
+        for (const auto & column : non_constant_requested_columns)
             requested_columns_list[column.getNameInStorage()] = std::make_pair(column_index++, column);
     }
 
@@ -655,12 +655,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (!constant_columns.empty())
         {
-            size_t original_columns = requested_columns_copy.size();
-            requested_columns_copy = requested_columns_copy.eraseNames(constant_columns);
-            if (requested_columns_copy.size() + constant_columns.size() != original_columns)
+            size_t original_columns = non_constant_requested_columns.size();
+            non_constant_requested_columns = non_constant_requested_columns.eraseNames(constant_columns);
+            if (non_constant_requested_columns.size() + constant_columns.size() != original_columns)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't remove constant columns for file {} correct, fallback to read. Founded constant columns: [{}]",
                     object_info->getPath(), constant_columns);
-            if (requested_columns_copy.empty())
+            if (non_constant_requested_columns.empty())
                 need_only_count = true;
         }
     }
@@ -793,7 +793,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// from chunk read by IInputFormat.
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, requested_columns_copy);
+        return std::make_shared<ExtractColumnsTransform>(header, non_constant_requested_columns);
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));

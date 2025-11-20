@@ -67,23 +67,6 @@ public:
 
 using DataFileMetaInfoPtr = std::shared_ptr<DataFileMetaInfo>;
 
-struct DataFileInfo
-{
-    std::string file_path;
-    std::optional<DataFileMetaInfoPtr> file_meta_info;
-
-    explicit DataFileInfo(const std::string & file_path_)
-        : file_path(file_path_) {}
-
-    explicit DataFileInfo(std::string && file_path_)
-        : file_path(std::move(file_path_)) {}
-
-    bool operator==(const DataFileInfo & rhs) const
-    {
-        return file_path == rhs.file_path;
-    }
-};
-
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 class StorageObjectStorageConfiguration;

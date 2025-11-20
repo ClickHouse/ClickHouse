@@ -104,11 +104,4 @@ WriteSettings IObjectStorage::patchSettings(const WriteSettings & write_settings
     return write_settings;
 }
 
-RelativePathWithMetadata::RelativePathWithMetadata(const DataFileInfo & info, std::optional<ObjectMetadata> metadata_)
-    : relative_path(info.file_path)
-    , metadata(std::move(metadata_))
-    , file_meta_info(info.file_meta_info)
-{
-}
-
 }
