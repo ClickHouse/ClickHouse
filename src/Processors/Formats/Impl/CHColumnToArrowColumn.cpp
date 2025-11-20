@@ -41,6 +41,7 @@
         M(Float64, arrow::DoubleBuilder)
 
 #define FOR_ARROW_TYPES(M) \
+        M(BOOL, arrow::BooleanType) \
         M(UINT8, arrow::UInt8Type) \
         M(INT8, arrow::Int8Type) \
         M(UINT16, arrow::UInt16Type) \
