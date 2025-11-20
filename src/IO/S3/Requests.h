@@ -149,7 +149,6 @@ public:
 };
 
 using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
-using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
