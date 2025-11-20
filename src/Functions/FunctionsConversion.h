@@ -1393,7 +1393,7 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
-                        bool parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone, nullptr, nullptr, context ? bool(context->getSettingsRef()[Setting::date_time_saturate_on_overflow]) : true);
+                        parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone, nullptr, nullptr, context ? bool(context->getSettingsRef()[Setting::date_time_saturate_on_overflow]) : true);
                         vec_to[i] = value;
                     }
                     else if constexpr (to_time64)
