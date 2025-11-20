@@ -745,38 +745,44 @@ template <bool IsReadMethod, typename RequestType, typename RequestFn>
 std::invoke_result_t<RequestFn, RequestType &>
 Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const
 {
+    /// S3 does retries network errors actually.
+    /// But it does matter when errors occur.
+    /// This code retries a specific case when
+    /// network error happens when XML document is being read from the response body.
+    /// Hence, the response body is a stream, network errors are possible at reading.
+    /// S3 doesn't retry them.
+
+    /// Not all requests can be retried in that way.
+    /// Requests that read out response body to build the result are possible to retry.
+    /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
+
     addAdditionalAMZHeadersToCanonicalHeadersList(request, client_configuration.extra_headers);
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
         const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
         chassert(max_attempts > 0);
-        std::exception_ptr last_exception = nullptr;
 
         Int64 attempt_no = 0;
+        std::invoke_result_t<RequestFn, RequestType &> outcome;
 
-        auto net_exception_handler = [&]() -> bool
+        auto net_exception_handler = [&]() -> bool /// return true if we should retry
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
 
-            tryLogCurrentException(log, "Will retry");
-            last_exception = std::current_exception();
+            tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts));
 
-            auto error = Aws::Client::AWSError<Aws::Client::CoreErrors>(Aws::Client::CoreErrors::NETWORK_CONNECTION, /*retry*/ true);
+            outcome = Aws::Client::AWSError<Aws::Client::CoreErrors>(
+                Aws::Client::CoreErrors::NETWORK_CONNECTION,
+                /*name*/ "",
+                /*message*/ fmt::format("All {} retry attempts failed. Last exception: {}", max_attempts, getCurrentExceptionMessage(false)),
+                /*retryable*/ true);
 
-            /// Check if query is canceled.
-            /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
-            if (!client_configuration.retryStrategy->ShouldRetry(error, /*attemptedRetries*/ -1))
-                return true;
-
-            incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
-            if (isClientForDisk())
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
-
-            updateNextTimeToRetryAfterRetryableError(error, attempt_no);
-            return false;
+            // network exceptions are always retryable, we could just return true here
+            // but we have to check cancellation points for query, ShouldRetry method does it already
+            return client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1);
         };
 
         for (attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
@@ -791,10 +797,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (isClientForDisk())
                     incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestRetryableErrors, ProfileEvents::DiskS3WriteRequestRetryableErrors);
 
+                // use previously attempt number to calculate delay
+                updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no - 1);
+
                 // update ClickHouse-specific attempt number in the request
                 // to help choose the right timeouts on the HTTP client which depends on retry attempt number
-                auto clickhouse_request_attept = getClickhouseAttemptNumber(request_);
-                setClickhouseAttemptNumber(request_, clickhouse_request_attept + attempt_no);
+                auto clickhouse_request_attempt = getClickhouseAttemptNumber(request_);
+                setClickhouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -802,50 +811,34 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
             try
             {
-                /// S3 does retries network errors actually.
-                /// But it does matter when errors occur.
-                /// This code retries a specific case when
-                /// network error happens when XML document is being read from the response body.
-                /// Hence, the response body is a stream, network errors are possible at reading.
-                /// S3 doesn't retry them.
+                outcome = request_fn_(request_);
 
-                /// Not all requests can be retried in that way.
-                /// Requests that read out response body to build the result are possible to retry.
-                /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
-                auto outcome = request_fn_(request_);
+                if (outcome.IsSuccess())
+                    break;
 
-                if (!outcome.IsSuccess()
-                    /// AWS SDK's built-in per-thread retry logic is disabled.
-                    && client_configuration.s3_slow_all_threads_after_retryable_error
-                    && attempt_no + 1 < max_attempts
+                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
+                if (isClientForDisk())
+                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+
                     /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
-                    && client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
-                {
-                    updateNextTimeToRetryAfterRetryableError(outcome.GetError(), attempt_no);
-                    continue;
-                }
-
-                if (attempt_no > 0)
-                    LOG_TRACE(log, "Request succeeded after {} retries. Max retries: {}", attempt_no, max_attempts);
-
-                return outcome;
+                if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
+                    break;
             }
             catch (Poco::Net::NetException &)
             {
                 /// This includes "connection reset", "malformed message", and possibly other exceptions.
-                if (net_exception_handler())
+                if (!net_exception_handler())
                     break;
             }
             catch (Poco::TimeoutException &)
             {
                 /// This includes "Timeout"
-                if (net_exception_handler())
+                if (!net_exception_handler())
                     break;
             }
         }
 
-        chassert(last_exception);
-        std::rethrow_exception(last_exception);
+        return outcome;
     };
 
     return doRequest(request, with_retries);
@@ -886,7 +879,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {} ('{}')", sleep_ms, error.GetResponseCode(), error.GetMessage());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {}", sleep_ms, error.GetResponseCode());
             break;
         }
     }

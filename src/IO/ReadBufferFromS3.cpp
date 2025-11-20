@@ -176,7 +176,7 @@ bool ReadBufferFromS3::nextImpl()
         }
         catch (...)
         {
-                if (!processException(getPosition(), attempt) || last_attempt)
+            if (!processException(getPosition(), attempt) || last_attempt)
                 throw;
 
             /// Pause before next attempt.
