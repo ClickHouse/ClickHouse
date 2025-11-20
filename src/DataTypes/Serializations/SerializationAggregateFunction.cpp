@@ -1,5 +1,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
 #include <Formats/FormatFactory.h>
@@ -13,7 +14,7 @@
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeTuple.h>
+#include "absl/container/inlined_vector.h"
 
 namespace DB
 {
@@ -192,51 +193,38 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
     {
         // Get the argument types for the aggregate function
         const auto & argument_types = function->getArgumentTypes();
+        const auto elem_type = argument_types.size() == 1 ? argument_types[0] : std::make_shared<DataTypeTuple>(argument_types);
+        const auto tmp_column = elem_type->createColumn();
+        const auto elem_serialization = elem_type->getDefaultSerialization();
+        absl::InlinedVector<const IColumn *, 7> columns_ptrs;
+        if (argument_types.size() == 1)
+            columns_ptrs.push_back(tmp_column.get());
+        else
+            for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
+                columns_ptrs.push_back(col.get());
         // Parse the array - expect format like [val1,val2,val3] or [(val1a,val1b),(val2a,val2b)]
         ReadBufferFromString buf(array_str);
-        if (buf.eof() || *buf.position() != '[')
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                "Expected array format starting with '[', got: '{}'", array_str);
-        ++buf.position(); // skip '['
-        size_t row = 0;
+        assertChar('[', buf);
+        bool first = true;
         while (!buf.eof())
         {
             skipWhitespaceIfAny(buf);
             if (*buf.position() == ']')
                 break;
-            if (row > 0)
+            if (!first)
             {
-                if (buf.eof() || *buf.position() != ',')
-                    throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                        "Expected comma in array, got: '{}'", array_str);
-                ++buf.position(); // skip ','
+                assertChar(',', buf);
                 skipWhitespaceIfAny(buf);
             }
+            first = false;
             if (argument_types.size() == 1)
-            {
-                // Single argument
-                auto temp_column = argument_types[0]->createColumn();
-                argument_types[0]->getDefaultSerialization()->deserializeTextCSV(*temp_column, buf, settings);
-                const IColumn * columns[] = {temp_column.get()};
-                function->add(place, columns, 0, &arena);
-            }
+                elem_serialization->deserializeTextCSV(*tmp_column, buf, settings);  // CSV handles both ' and "
             else
-            {
-                // Multiple arguments - parse as tuple
-                auto arg_types = DataTypeTuple(argument_types);
-                auto tmp_column = arg_types.createColumn();
-                arg_types.getDefaultSerialization()->deserializeTextQuoted(*tmp_column, buf, settings);
-                std::vector<const IColumn *> columns_ptrs;
-                for (const auto & col : assert_cast<const ColumnTuple*>(tmp_column.get())->getColumns())
-                    columns_ptrs.push_back(col.get());
-                function->add(place, columns_ptrs.data(), 0, &arena);
-            }
-            ++row;
-            skipWhitespaceIfAny(buf);
+                elem_serialization->deserializeTextQuoted(*tmp_column, buf, settings);  // Quoted for tuples
+            function->add(place, columns_ptrs.data(), 0, &arena);
+            tmp_column->popBack(1);
         }
-        if (buf.eof() || *buf.position() != ']')
-            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED,
-                "Expected closing bracket in array, got: '{}'", array_str);
+        assertChar(']', buf);
     }
     catch (...)
     {
