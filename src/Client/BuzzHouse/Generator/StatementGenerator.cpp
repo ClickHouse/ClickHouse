@@ -4773,7 +4773,7 @@ void StatementGenerator::dropTable(const bool staged, bool drop_peer, const uint
     }
 }
 
-void StatementGenerator::dropDatabase(const uint32_t dname)
+void StatementGenerator::dropDatabase(const uint32_t dname, const bool all)
 {
     for (auto it = this->tables.cbegin(), next_it = it; it != this->tables.cend(); it = next_it)
     {
@@ -4799,7 +4799,10 @@ void StatementGenerator::dropDatabase(const uint32_t dname)
             this->dictionaries.erase(it);
         }
     }
-    this->databases.erase(dname);
+    if (all)
+    {
+        this->databases.erase(dname);
+    }
 }
 
 template <typename T>
@@ -4955,7 +4958,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         }
         else if (isdatabase)
         {
-            dropDatabase(getIdentifierFromString(drp.object().database().database()));
+            dropDatabase(getIdentifierFromString(drp.object().database().database()), true);
         }
         else if (isfunction)
         {
@@ -5310,7 +5313,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
-        dropDatabase(getIdentifierFromString(query.trunc().database().database()));
+        dropDatabase(getIdentifierFromString(query.trunc().database().database()), false);
     }
     else if (ssq.has_explain() && query.has_backup_restore() && !ssq.explain().is_explain() && success)
     {
