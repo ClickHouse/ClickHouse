@@ -119,7 +119,8 @@ def run_fuzz_job(check_name: str):
             "BuzzHouse fuzzer exception",
             "Killed",
             "Let op!",
-            "Received signal" "Unknown error",
+            "runtime error",
+            "Unknown error",
         ]
         if result.results and any(
             pattern in result.results[-1].name for pattern in patterns
