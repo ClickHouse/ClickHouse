@@ -468,6 +468,7 @@ else ()
                 "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
                 "-DABSL_ROOT_DIR=${abseil_source_dir}"
                 "-DABSL_ENABLE_INSTALL=0"
+                "-Dprotobuf_LOCAL_DEPENDENCIES_ONLY=1"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
             COMMAND_ECHO STDOUT

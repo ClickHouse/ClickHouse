@@ -150,10 +150,11 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
             "-DPROTOBUF_ROOT_DIR=${protobuf_source_dir}"
             "-DRE2_ROOT_DIR=${re2_source_dir}"
             "-DCARES_ROOT_DIR=${cares_source_dir}"
+            "-DgRPC_SSL_PROVIDER=package"
             "-DOPENSSL_ROOT_DIR=${OPENSSL_BUILD_DIR}"
             "-DOPENSSL_INCLUDE_DIR=${OPENSSL_BUILD_DIR}/include"
             "-DZLIB_ROOT_DIR=${zlib_source_dir}"
-            "-DgRPC_SSL_PROVIDER=package"
+            "-DgRPC_DOWNLOAD_ARCHIVES=False"
             # TODO: Bump c-ares
             "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
             "${_gRPC_SOURCE_DIR}"
