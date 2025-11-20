@@ -270,8 +270,7 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setComment(comment);
     if (engine_args->settings)
         storage_metadata.settings_changes = engine_args->settings->ptr();
-
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
     bool is_path_with_hive_partitioning = !hive_partition_columns_to_read_from_file_path.empty();
