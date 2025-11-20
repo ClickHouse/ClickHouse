@@ -171,19 +171,19 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
     return nested->getSerializedValueSize(n);
 }
 
-const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertFromArena(pos);
+    nested->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
+    nested->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
 {
-    return nested->skipSerializedInArena(pos);
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
@@ -443,13 +443,13 @@ ColumnPtr ColumnMap::compress(bool force_compression) const
     });
 }
 
-void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnMap::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnMap &>(*source_column).getNestedColumnPtr());
-    nested->takeDynamicStructureFromSourceColumns(nested_source_columns);
+    nested->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnMap::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

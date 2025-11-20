@@ -51,11 +51,6 @@ time_t MetadataStorageFromDisk::getLastChanged(const std::string & path) const
     return disk->getLastChanged(path);
 }
 
-bool MetadataStorageFromDisk::supportsPartitionCommand(const PartitionCommand & /*command*/) const
-{
-    return true;
-}
-
 uint64_t MetadataStorageFromDisk::getFileSize(const String & path) const
 {
     return getTotalSize(readMetadata(path)->objects);

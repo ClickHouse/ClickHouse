@@ -1,4 +1,3 @@
-#include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
@@ -300,39 +299,35 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
 }
 
 
-const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
+void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
+    size_t array_size;
+    readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        pos = getData().deserializeAndInsertFromArena(pos);
+        getData().deserializeAndInsertFromArena(in);
 
     getOffsets().push_back(getOffsets().back() + array_size);
-    return pos;
 }
 
-const char * ColumnArray::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnArray::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
+    size_t array_size;
+    readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        pos = getData().deserializeAndInsertAggregationStateValueFromArena(pos);
+        getData().deserializeAndInsertAggregationStateValueFromArena(in);
 
     getOffsets().push_back(getOffsets().back() + array_size);
-    return pos;
 }
 
-const char * ColumnArray::skipSerializedInArena(const char * pos) const
+void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
+    size_t array_size;
+    readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        pos = getData().skipSerializedInArena(pos);
-
-    return pos;
+        getData().skipSerializedInArena(in);
 }
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
@@ -1416,14 +1411,14 @@ size_t ColumnArray::getNumberOfDimensions() const
     return 1 + nested_array->getNumberOfDimensions();   /// Every modern C++ compiler optimizes tail recursion.
 }
 
-void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnArray::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     Columns nested_source_columns;
     nested_source_columns.reserve(source_columns.size());
     for (const auto & source_column : source_columns)
         nested_source_columns.push_back(assert_cast<const ColumnArray &>(*source_column).getDataPtr());
 
-    data->takeDynamicStructureFromSourceColumns(nested_source_columns);
+    data->takeDynamicStructureFromSourceColumns(nested_source_columns, max_dynamic_subcolumns);
 }
 
 void ColumnArray::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

@@ -20,6 +20,9 @@ struct PrometheusRequestHandlerConfig
 
         /// Handles Prometheus remote-read protocol.
         RemoteRead,
+
+        /// Handles Prometheus Query API endpoints (/api/v1/query, /api/v1/query_range, etc.)
+        QueryAPI,
     };
 
     Type type = Type::ExposeMetrics;

@@ -12,6 +12,7 @@ main_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    with_remote_database_disk=False,
     macros={"shard": 1, "replica": 1},
 )
 dummy_node = cluster.add_instance(
@@ -20,6 +21,7 @@ dummy_node = cluster.add_instance(
     user_configs=["configs/settings2.xml"],
     with_zookeeper=True,
     stay_alive=True,
+    with_remote_database_disk=False,
     macros={"shard": 1, "replica": 2},
 )
 
@@ -37,7 +39,6 @@ def started_cluster():
 def create_some_tables(db):
     settings = {
         "distributed_ddl_task_timeout": 0,
-        "allow_experimental_object_type": 1,
         "allow_suspicious_codecs": 1,
     }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
@@ -61,7 +62,7 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE TABLE {db}.rmt3 (n int, json Object('json') materialized '') ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt3 (n int, json JSON materialized '{{}}') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(

@@ -7,6 +7,8 @@
 #include <Client/BuzzHouse/Utils/HugeInt.h>
 #include <Client/BuzzHouse/Utils/UHugeInt.h>
 
+#include <IO/ReadBufferFromFile.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -69,7 +71,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
         {
             SetValue & sv = const_cast<SetValue &>(i == 0 ? svs.set_value() : svs.other_values(i - 1));
 
-            if (allSettings.find(sv.property()) != allSettings.end())
+            if (allSettings.contains(sv.property()))
             {
                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -187,7 +189,7 @@ void ClickHouseIntegratedDatabase::swapTableDefinitions(RandomGenerator & rg, Cr
                         {
                             SetValue & sv = const_cast<SetValue &>(j == 0 ? svs.set_value() : svs.other_values(j - 1));
 
-                            if (allSettings.find(sv.property()) != allSettings.end())
+                            if (allSettings.contains(sv.property()))
                             {
                                 const CHSetting & chs = allSettings.at(sv.property());
 
@@ -264,7 +266,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             {
                 t.db->setName(est.mutable_database());
             }
-            if (rg.nextMediumNumber() < 91)
+            if (!fc.measure_performance && !fc.compare_explains && rg.nextMediumNumber() < 91)
             {
                 this->swapTableDefinitions(rg, newt);
             }
@@ -1204,7 +1206,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1350,7 +1352,7 @@ void MongoDBIntegration::documentAppendAnyValue(
     }
     else
     {
-        chassert(0);
+        UNREACHABLE();
     }
 }
 
@@ -1510,7 +1512,7 @@ bool DolorIntegration::performDatabaseIntegration(RandomGenerator & rg, SQLDatab
             catalog = "unity";
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
     buf += fmt::format(
         R"({{"seed":{},"database_name":"{}","storage":"{}","lake":"{}","catalog":"{}"}})",
@@ -1564,7 +1566,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
             catalog_str = d.format == LakeFormat::Iceberg ? "rest" : "unity";
             break;
         default:
-            chassert(0);
+            UNREACHABLE();
     }
 
     if (rg.nextMediumNumber() < 6)
@@ -1632,7 +1634,7 @@ void DolorIntegration::setDatabaseDetails(RandomGenerator & rg, const SQLDatabas
         }
         else
         {
-            chassert(0);
+            UNREACHABLE();
         }
     }
 }
@@ -1723,7 +1725,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
                     t.getPossibleLakeFormat() == LakeFormat::Iceberg ? "/iceberg" : "");
                 break;
             default:
-                chassert(0);
+                UNREACHABLE();
         }
 
         /// The other storages are not tested yet
@@ -1803,7 +1805,7 @@ void DolorIntegration::setTableEngineDetails(RandomGenerator & rg, const SQLTabl
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -1871,8 +1873,7 @@ void ExternalIntegrations::createExternalDatabase(RandomGenerator & rg, SQLDatab
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performDatabaseIntegration(rg, d));
@@ -1914,8 +1915,7 @@ void ExternalIntegrations::createExternalDatabaseTable(
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     requires_external_call_check++;
     next_calls_succeeded.emplace_back(next->performTableIntegration(rg, t, true, entries));
@@ -1932,8 +1932,7 @@ bool ExternalIntegrations::reRunCreateDatabase(const IntegrationCall ic, const S
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     return next ? next->reRunCreateDatabase(body) : false;
 }
@@ -1948,8 +1947,7 @@ bool ExternalIntegrations::reRunCreateTable(const IntegrationCall ic, const Stri
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     return next ? next->reRunCreateTable(body) : false;
 }
@@ -1965,8 +1963,7 @@ bool ExternalIntegrations::performExternalCommand(
             next = dolor.get();
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
     if (next)
     {
@@ -2041,8 +2038,7 @@ void ExternalIntegrations::setBackupDetails(const IntegrationCall dc, const Stri
             azurite->setBackupDetails(filename, br);
             break;
         default:
-            chassert(0);
-            break;
+            UNREACHABLE();
     }
 }
 
