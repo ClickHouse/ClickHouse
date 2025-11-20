@@ -107,23 +107,11 @@ void ErrorLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_idx++]->insert(last_error_message);
     columns[column_idx++]->insert(last_error_query_id);
 
-    std::vector<UInt64> last_error_trace_array;
+    std::vector<uintptr_t> last_error_trace_array;
     last_error_trace_array.reserve(last_error_trace.size());
 
     for (auto * ptr : last_error_trace)
-    {
-        uintptr_t addr = reinterpret_cast<uint64_t>(ptr);
-
-        /// Addresses in the main object will be normalized to the physical file offsets for convenience and security.
-        uintptr_t offset = 0;
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-        const auto * object = SymbolIndex::instance().thisObject();
-        if (object && uintptr_t(object->address_begin) <= addr && addr < uintptr_t(object->address_end))
-            offset = uintptr_t(object->address_begin);
-#endif
-
-        last_error_trace_array.emplace_back(static_cast<UInt64>(addr) - offset);
-    }
+        last_error_trace_array.emplace_back(reinterpret_cast<uintptr_t>(ptr));
 
     columns[column_idx++]->insert(Array(last_error_trace_array.begin(), last_error_trace_array.end()));
 }
