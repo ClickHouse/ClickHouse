@@ -207,6 +207,9 @@ public:
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
     virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
 
+    /// Returns true if underlying blob ids generator uses random.
+    virtual bool areBlobPathsRandom() const = 0;
+
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool existsFile(const std::string & path) const = 0;

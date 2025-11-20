@@ -40,6 +40,8 @@ public:
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
 
+    bool areBlobPathsRandom() const override { return keys_generator->isRandom(); }
+
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
     bool existsFileOrDirectory(const std::string & path) const override;

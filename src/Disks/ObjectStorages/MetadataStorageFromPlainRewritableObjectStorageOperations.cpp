@@ -71,6 +71,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     , object_storage(std::move(object_storage_))
 {
     chassert(path.empty() || path.string().ends_with('/'));
+    chassert(!metadata_key_prefix.empty());
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
@@ -143,6 +144,7 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 {
     chassert(path_from.empty() || path_from.string().ends_with('/'));
     chassert(path_to.empty() || path_to.string().ends_with('/'));
+    chassert(!metadata_key_prefix.empty());
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
@@ -270,6 +272,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     , object_storage(std::move(object_storage_))
 {
     chassert(path.empty() || path.string().ends_with('/'));
+    chassert(!metadata_key_prefix.empty());
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
@@ -333,6 +336,7 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
     , keys_generator(std::move(keys_generator_))
     , object_storage(std::move(object_storage_))
 {
+    chassert(!metadata_key_prefix.empty());
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
@@ -366,6 +370,7 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     , keys_generator(std::move(keys_generator_))
     , object_storage(object_storage_)
 {
+    chassert(!metadata_key_prefix.empty());
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
@@ -409,6 +414,7 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
     , keys_generator(std::move(keys_generator_))
     , object_storage(std::move(object_storage_))
 {
+    chassert(!metadata_key_prefix.empty());
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
@@ -464,6 +470,7 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     , keys_generator(std::move(keys_generator_))
     , object_storage(std::move(object_storage_))
 {
+    chassert(!metadata_key_prefix.empty());
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
@@ -617,8 +624,9 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     , object_storage(std::move(object_storage_))
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
+    chassert(!metadata_key_prefix.empty());
     tmp_path = "remove_recursive." + getRandomASCIIString(16);
-    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", metadata_key_prefix_, fs_tree, keys_generator_, object_storage);
+    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", metadata_key_prefix, fs_tree, keys_generator_, object_storage);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
@@ -626,7 +634,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
     /// Unfortunately we are able to create merge tree unlinked from database directory.
     /// In this case during the dropAllData method removeRecursive can be called pointing to the root folder.
     /// I don't know what to do in this case, so right now it is a no-op.
-    if (path.empty())
+    if (path.empty() || path == "/")
         return;
 
     if (fs_tree->existsDirectory(path).first)

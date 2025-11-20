@@ -180,6 +180,11 @@ public:
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
 
+    bool areBlobPathsRandom() const override
+    {
+        return delegate->areBlobPathsRandom();
+    }
+
     bool existsFile(const std::string & path) const override
     {
         return delegate->existsFile(wrappedPath(path));
