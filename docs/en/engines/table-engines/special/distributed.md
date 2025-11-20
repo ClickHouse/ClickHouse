@@ -6,7 +6,7 @@ description: 'Tables with Distributed engine do not store any data of their own,
 sidebar_label: 'Distributed'
 sidebar_position: 10
 slug: /engines/table-engines/special/distributed
-title: 'Distributed table engine'
+title: 'Distributed Table Engine'
 doc_type: 'reference'
 ---
 

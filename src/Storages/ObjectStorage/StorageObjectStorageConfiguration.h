@@ -6,6 +6,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
@@ -14,18 +15,13 @@
 #include <Storages/IStorage.h>
 #include <Common/Exception.h>
 #include <Storages/StorageFactory.h>
-#include <Formats/FormatFilterInfo.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {
 
 class NamedCollection;
 class SinkToStorage;
-class IDataLakeMetadata;
-struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
-using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
 namespace ErrorCodes
 {

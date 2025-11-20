@@ -199,8 +199,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
         writeString(Paimon::PathEscape::escapePathName(entry.second), path_writer);
         ++i;
     }
-    if (!partition_entries.empty())
-        writeString("/", path_writer);
+    writeString("/", path_writer);
     return path_writer.str();
 };
 
