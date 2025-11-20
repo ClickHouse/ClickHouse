@@ -37,7 +37,7 @@ OPTIMIZE TABLE t_lwd_vertical FINAL;
 SELECT count() FROM t_lwd_vertical;
 SELECT count() FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_lwd_vertical' AND active AND partition_id = 'all' AND column = '_row_exists';
 
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 SELECT
     merge_algorithm,

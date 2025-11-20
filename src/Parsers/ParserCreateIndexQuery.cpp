@@ -50,7 +50,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         }
         else
         {
-            auto tuple_func = makeASTOperator("tuple");
+            auto tuple_func = makeASTFunction("tuple");
             tuple_func->arguments = std::make_shared<ASTExpressionList>();
 
             for (const auto & order_by_elem : order_list->children)

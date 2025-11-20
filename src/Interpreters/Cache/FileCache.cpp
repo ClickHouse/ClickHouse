@@ -155,6 +155,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
+    if (settings[FileCacheSetting::cache_hits_threshold])
+    {
+        stash = std::make_unique<HitsCountStash>(
+            settings[FileCacheSetting::cache_hits_threshold],
+            settings[FileCacheSetting::max_elements]);
+    }
+
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
 }
@@ -467,7 +474,7 @@ FileSegments FileCache::createFileSegmentsFromRanges(
     {
         if (file_segments_limit && file_segments_count >= file_segments_limit)
             break;
-        auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings);
+        auto metadata_it = addFileSegment(locked_key, r.left, r.size(), FileSegment::State::EMPTY, create_settings, nullptr);
         result.push_back(metadata_it->second->file_segment);
         ++file_segments_count;
     }
@@ -622,7 +629,7 @@ FileSegmentsHolderPtr FileCache::trySet(
     {
         /// If the file is unbounded, we can create a single file_segment_metadata for it.
         auto file_segment_metadata_it = addFileSegment(
-            *locked_key, offset, size, FileSegment::State::EMPTY, create_settings);
+            *locked_key, offset, size, FileSegment::State::EMPTY, create_settings, nullptr);
         file_segments = {file_segment_metadata_it->second->file_segment};
     }
     else
@@ -854,7 +861,8 @@ KeyMetadata::iterator FileCache::addFileSegment(
     size_t offset,
     size_t size,
     FileSegment::State state,
-    const CreateFileSegmentSettings & create_settings)
+    const CreateFileSegmentSettings & create_settings,
+    const CachePriorityGuard::Lock * lock)
 {
     /// Create a file_segment_metadata and put it in `files` map by [key][offset].
 
@@ -871,7 +879,41 @@ KeyMetadata::iterator FileCache::addFileSegment(
             range.toString(), intersecting_range->toString());
     }
 
-    FileSegment::State result_state = state;
+    FileSegment::State result_state;
+
+    /// `stash` - a queue of "stashed" key-offset pairs. Implements counting of
+    /// cache entries and allows caching only if cache hit threadhold is reached.
+    if (stash && state == FileSegment::State::EMPTY)
+    {
+        if (!lock)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Using stash requires cache_lock");
+
+        KeyAndOffset stash_key(key, offset);
+
+        auto record_it = stash->records.find(stash_key);
+        if (record_it == stash->records.end())
+        {
+            auto & stash_records = stash->records;
+
+            stash_records.emplace(
+                stash_key, stash->queue->add(locked_key.getKeyMetadata(), offset, 0, locked_key.getKeyMetadata()->user, *lock));
+
+            if (stash->queue->getElementsCount(*lock) > stash->queue->getElementsLimit(*lock))
+                stash->queue->pop(*lock);
+
+            result_state = FileSegment::State::DETACHED;
+        }
+        else
+        {
+            result_state = record_it->second->increasePriority(*lock) >= stash->hits_threshold
+                ? FileSegment::State::EMPTY
+                : FileSegment::State::DETACHED;
+        }
+    }
+    else
+    {
+        result_state = state;
+    }
 
     auto file_segment = std::make_shared<FileSegment>(
         key,
@@ -1318,6 +1360,13 @@ void FileCache::removeAllReleasable(const UserID & user_id)
 #endif
 
     metadata.removeAllKeys(/* if_releasable */true, user_id);
+
+    if (stash)
+    {
+        /// Remove all access information.
+        auto lock = lockCache();
+        stash->clear();
+    }
 }
 
 void FileCache::loadMetadata()
@@ -1636,18 +1685,6 @@ IFileCachePriority::PriorityDumpPtr FileCache::dumpQueue()
 {
     assertInitialized();
     return main_priority->dump(lockCache());
-}
-
-IFileCachePriority::Type FileCache::getEvictionPolicyType()
-{
-    assertInitialized();
-    return main_priority->getType();
-}
-
-std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPerClient()
-{
-    assertInitialized();
-    return main_priority->getUsageStatPerClient();
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -2080,6 +2117,19 @@ std::vector<FileSegment::Info> FileCache::sync()
         file_segments.insert(file_segments.end(), broken.begin(), broken.end());
     }, getInternalUser().user_id);
     return file_segments;
+}
+
+FileCache::HitsCountStash::HitsCountStash(size_t hits_threashold_, size_t queue_size_)
+    : hits_threshold(hits_threashold_), queue_size(queue_size_), queue(std::make_unique<LRUFileCachePriority>(0, queue_size_))
+{
+    if (!queue_size_)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Queue size for hits queue must be non-zero");
+}
+
+void FileCache::HitsCountStash::clear()
+{
+    records.clear();
+    queue = std::make_unique<LRUFileCachePriority>(0, queue_size);
 }
 
 }

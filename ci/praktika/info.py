@@ -141,9 +141,6 @@ class Info:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
         return self.workflow.get_secret(name)
 
-    def get_job_url(self):
-        return f"{self.env.RUN_URL}/job/{self.env.WORKFLOW_JOB_DATA['check_run_id']}"
-
     def get_job_report_url(self, latest=False):
         url = self.get_report_url(latest=latest)
         return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
@@ -204,9 +201,7 @@ class Info:
             kv_data = self.env.JOB_KV_DATA
         else:
             kv_data = json.loads(
-                self.env.WORKFLOW_STATUS_DATA.get(
-                    Utils.normalize_string(source_job), {}
-                )
+                self.env.WORKFLOW_DATA.get(Utils.normalize_string(source_job), {})
                 .get("outputs", {})
                 .get("data", {})
             )
@@ -240,9 +235,3 @@ class Info:
                 print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
                 return False
         return True
-
-    def docker_tag(self, image_name):
-        runconfig = self.get_kv_data("workflow_config")
-        if runconfig:
-            return runconfig.get("digest_dockers", None).get(image_name, None)
-        return None

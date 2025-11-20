@@ -55,7 +55,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (!columns_without_table.contains(column.name))
+        if (columns_without_table.find(column.name) == columns_without_table.end())
             return true;
     }
     return false;
@@ -70,8 +70,7 @@ ColumnPtr getFilteredDatabases(const ActionsDAG::Node * predicate, ContextPtr co
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto & settings = context->getSettingsRef();
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = settings[Setting::show_data_lake_catalogs_in_system_tables]});
+    const auto databases = DatabaseCatalog::instance().getDatabases();
     for (const auto & database_name : databases | boost::adaptors::map_keys)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
@@ -90,32 +89,21 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
-    MutableColumnPtr table_column = ColumnString::create();
-    MutableColumnPtr uuid_column;
+    MutableColumnPtr database_column = ColumnString::create();
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
-        bool filter_by_uuid = false;
         for (const auto * input : dag->getInputs())
-        {
             if (input->result_name == "engine")
                 filter_by_engine = true;
 
-            if (input->result_name == "uuid")
-                filter_by_uuid = true;
-        }
-
         if (filter_by_engine)
             engine_column = ColumnString::create();
-
-        if (filter_by_uuid)
-            uuid_column = ColumnUUID::create();
     }
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
@@ -130,30 +118,27 @@ ColumnPtr getFilteredTables(
             auto table_it = database->getDetachedTablesIterator(context, {}, false);
             for (; table_it->isValid(); table_it->next())
             {
-                table_column->insert(table_it->table());
+                database_column->insert(table_it->table());
             }
         }
         else
         {
             auto table_it = database->getLightweightTablesIterator(context,
                                                                    /* filter_by_table_name */ {},
-                                                                   /* skip_not_loaded */ false);
+                                                                   /* skip_not_loaded */ false,
+                                                                   !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
             for (; table_it->isValid(); table_it->next())
             {
-                table_column->insert(table_it->name());
+                database_column->insert(table_it->name());
                 if (engine_column)
                     engine_column->insert(table_it->table()->getName());
-                if (uuid_column)
-                    uuid_column->insert(table_it->table()->getStorageID().uuid);
             }
         }
     }
 
-    Block block{ColumnWithTypeAndName(std::move(table_column), std::make_shared<DataTypeString>(), "name")};
+    Block block{ColumnWithTypeAndName(std::move(database_column), std::make_shared<DataTypeString>(), "name")};
     if (engine_column)
         block.insert(ColumnWithTypeAndName(std::move(engine_column), std::make_shared<DataTypeString>(), "engine"));
-    if (uuid_column)
-        block.insert(ColumnWithTypeAndName(std::move(uuid_column), std::make_shared<DataTypeUUID>(), "uuid"));
 
     if (dag)
         VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), block);
@@ -211,7 +196,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
         {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
-        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -438,7 +422,7 @@ protected:
                                 {
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
-                                    res_columns[res_index]->insertDefault();
+                                    res_columns[res_index++]->insertDefault();
                                 }
                                 ++res_index;
                             }
@@ -460,7 +444,8 @@ protected:
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getLightweightTablesIterator(context,
                         /* filter_by_table_name */ {},
-                        /* skip_not_loaded */ false);
+                        /* skip_not_loaded */ false,
+                        !context->getSettingsRef()[DB::Setting::show_data_lake_catalogs_in_system_tables]);
 
             const bool need_table = needTable(database, getPort().getHeader());
 
@@ -765,15 +750,6 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
-                }
-
-                // columns_descriptions_cache_size
-                if (columns_mask[src_index++])
-                {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheSize());
-                    else
-                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])

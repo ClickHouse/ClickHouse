@@ -433,21 +433,13 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
 
-    auto query_context = Context::createCopy(getContext());
-    query_context->makeQueryContext();
-    query_context->setCurrentQueryId("");
-
-    auto io = executeQuery(select_query, std::move(query_context), QueryFlags{ .internal = true }).second;
-
+    auto io = executeQuery(select_query, getContext(), QueryFlags{ .internal = true }).second;
+    PullingPipelineExecutor executor(io.pipeline);
     Block res;
-    Block tmp_block;
-    io.executeWithCallbacks([&]()
-    {
-        PullingPipelineExecutor executor(io.pipeline);
-        while (res.empty() && executor.pull(res));
+    while (res.empty() && executor.pull(res));
 
-        while (executor.pull(tmp_block));
-    });
+    Block tmp_block;
+    while (executor.pull(tmp_block));
 
     if (!tmp_block.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block from input stream");
@@ -469,7 +461,6 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
                 | AccessType::ALTER_MATERIALIZE_INDEX
                 | AccessType::ALTER_MATERIALIZE_COLUMN
                 | AccessType::ALTER_MATERIALIZE_TTL
-                | AccessType::ALTER_REWRITE_PARTS
             );
     return required_access;
 }

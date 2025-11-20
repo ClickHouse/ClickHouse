@@ -459,6 +459,8 @@ static FunctionOverloadResolverPtr operatorToFunction(JoinConditionOperator op)
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
         case JoinConditionOperator::Or:
             return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
+        case JoinConditionOperator::NullSafeEquals:
+            return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>());
         default:
             auto function_name = operatorToFunctionName(op);
             return FunctionFactory::instance().get(function_name, nullptr);

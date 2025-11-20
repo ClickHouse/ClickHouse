@@ -5,7 +5,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
 
@@ -17,13 +16,10 @@ extern const Event MergeTreeDataWriterStatisticsCalculationMicroseconds;
 
 namespace DB
 {
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
-    extern const MergeTreeSettingsBool replace_long_file_name_to_hash;
-    extern const MergeTreeSettingsUInt64 max_file_name_length;
 }
 
 namespace ErrorCodes
@@ -129,17 +125,12 @@ void MergeTreeDataPartWriterOnDisk::initStatistics()
 {
     for (const auto & stat_ptr : stats)
     {
-        auto stats_filename = escapeForFileName(stat_ptr->getStatisticName());
-        if ((*storage_settings)[MergeTreeSetting::replace_long_file_name_to_hash] && stats_filename.size() > (*storage_settings)[MergeTreeSetting::max_file_name_length])
-            stats_filename = sipHash128String(stats_filename);
-
+        String stats_name = stat_ptr->getFileName();
         stats_streams.emplace_back(std::make_unique<MergeTreeWriterStream<true>>(
-                                       stats_filename,
+                                       stats_name,
                                        data_part_storage,
-                                       stats_filename,
-                                       STATS_FILE_SUFFIX,
-                                       default_codec,
-                                       settings.max_compress_block_size,
+                                       stats_name, STATS_FILE_SUFFIX,
+                                       default_codec, settings.max_compress_block_size,
                                        settings.query_write_settings));
     }
 }
@@ -180,7 +171,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
             skip_indices_streams_holders.push_back(std::move(stream));
         }
 
-        skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
+        skip_indices_aggregators.push_back(skip_index->createIndexAggregator(settings));
         skip_index_accumulated_marks.push_back(0);
     }
 }
@@ -238,7 +229,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeStatistics(const Block 
     {
         const auto & stat_ptr = stats[i];
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        stat_ptr->build(block.getByName(stat_ptr->getColumnName()).column);
+        stat_ptr->build(block.getByName(stat_ptr->columnName()).column);
         execution_stats.statistics_build_us[i] += watch.elapsed();
     }
 }
@@ -262,7 +253,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
             if (skip_indices_aggregators[i]->empty() && granule.mark_on_start)
             {
-                skip_indices_aggregators[i] = index_helper->createIndexAggregator();
+                skip_indices_aggregators[i] = index_helper->createIndexAggregator(settings);
 
                 for (const auto & [type, stream] : index_streams)
                 {
@@ -380,7 +371,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(bool sync)
     }
 
     for (size_t i = 0; i < stats.size(); ++i)
-        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->getColumnName(), data_part_name);
+        LOG_DEBUG(log, "Spent {} ms calculating statistics {} for the part {}", execution_stats.statistics_build_us[i] / 1000, stats[i]->columnName(), data_part_name);
 }
 
 void MergeTreeDataPartWriterOnDisk::fillStatisticsChecksums(MergeTreeData::DataPart::Checksums & checksums)
@@ -453,7 +444,7 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
                 /// and insert data into it. Resulting column will have required dynamic structure and the content
                 /// of the column in current block.
                 auto new_column = sample_column.type->createColumn();
-                new_column->takeDynamicStructureFromColumn(sample_column.column);
+                new_column->takeDynamicStructureFromSourceColumns({sample_column.column});
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
             }

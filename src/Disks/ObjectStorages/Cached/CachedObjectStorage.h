@@ -65,9 +65,9 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override { return object_storage->getConnectionInfo(); }
 
     void shutdown() override;
 

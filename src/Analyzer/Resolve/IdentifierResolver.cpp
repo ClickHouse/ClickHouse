@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 
@@ -199,10 +200,10 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     if (!storage)
         return {};
 
+    storage->updateExternalDynamicMetadataIfExists(context);
 
     if (!storage_lock)
         storage_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    storage->updateExternalDynamicMetadataIfExists(context);
     auto storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     auto result = std::make_shared<TableNode>(std::move(storage), std::move(storage_lock), std::move(storage_snapshot));
     if (is_temporary_table)
@@ -239,6 +240,20 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
 
     if (!expression_type->hasSubcolumn(nested_path.getFullName()))
     {
+        if (auto * column = compound_expression->as<ColumnNode>())
+        {
+            const DataTypePtr & column_type = column->getColumn().getTypeInStorage();
+            if (column_type->getTypeId() == TypeIndex::ObjectDeprecated)
+            {
+                const auto & object_type = checkAndGetDataType<DataTypeObjectDeprecated>(*column_type);
+                if (object_type.getSchemaFormat() == "json" && object_type.hasNullableSubcolumns())
+                {
+                    QueryTreeNodePtr constant_node_null = std::make_shared<ConstantNode>(Field());
+                    return constant_node_null;
+                }
+            }
+        }
+
         if (can_be_not_found)
             return {};
 

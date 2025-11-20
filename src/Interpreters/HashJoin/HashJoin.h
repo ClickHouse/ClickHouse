@@ -359,7 +359,7 @@ public:
 
     struct ScatteredColumns
     {
-        ColumnsInfo columns_info;
+        Columns columns;
         ScatteredBlock::Selector selector;
 
         size_t allocatedBytes() const;
@@ -369,16 +369,6 @@ public:
     {
         const ScatteredColumns * columns;
         ColumnPtr column;
-        size_t selector_rows = 0;
-
-        NullMapHolder() = default;
-        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
-            : columns(columns_), column(column_)
-        {
-            // we can cache the selector size at construction to make the holder robust
-            // even if columns are moved/cleared later
-            selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
-        }
 
         size_t allocatedBytes() const;
     };
@@ -462,15 +452,9 @@ public:
     void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
 
-    bool hasNonJoinedRows();
-    void updateNonJoinedRowsStatus();
-
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
-    void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
-
-    bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
@@ -486,9 +470,6 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
-
-    bool has_non_joined_rows_checked = false;
-    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;
@@ -532,8 +513,6 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
-    bool joined_block_split_single_row = false;
-    bool enable_lazy_columns_replication = false;
 
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;

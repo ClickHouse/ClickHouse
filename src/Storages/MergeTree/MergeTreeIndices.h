@@ -293,15 +293,17 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexGranulePtr createIndexGranule() const = 0;
 
     /// A more optimal filtering method
-    virtual bool supportsBulkFiltering() const { return false; }
-    virtual bool supportsReadingOnParallelReplicas() const { return false; }
+    virtual bool supportsBulkFiltering() const
+    {
+        return false;
+    }
 
     virtual MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Index does not support filtering in bulk");
     }
 
-    virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
+    virtual MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const = 0;
