@@ -42,7 +42,7 @@ static std::optional<Catalog> loadCatalog(const JSONParserImpl::Element & jobj, 
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (!configEntries.contains(nkey))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown catalog option: {}", nkey);
         }
@@ -63,6 +63,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
     String unix_socket;
     String user = "test";
     String password;
+    String secret;
     String database = "test";
     String named_collection;
     std::filesystem::path user_files_dir = std::filesystem::temp_directory_path();
@@ -81,6 +82,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
            {"unix_socket", [&](const JSONObjectType & value) { unix_socket = String(value.getString()); }},
            {"user", [&](const JSONObjectType & value) { user = String(value.getString()); }},
            {"password", [&](const JSONObjectType & value) { password = String(value.getString()); }},
+           {"secret", [&](const JSONObjectType & value) { secret = String(value.getString()); }},
            {"database", [&](const JSONObjectType & value) { database = String(value.getString()); }},
            {"named_collection", [&](const JSONObjectType & value) { named_collection = String(value.getString()); }},
            {"user_files_dir", [&](const JSONObjectType & value) { user_files_dir = std::filesystem::path(String(value.getString())); }},
@@ -94,10 +96,9 @@ static std::optional<ServerCredentials> loadServerCredentials(
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
-        {
+        if (!configEntries.contains(nkey))
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
-        }
+
         configEntries.at(nkey)(value);
     }
 
@@ -110,6 +111,7 @@ static std::optional<ServerCredentials> loadServerCredentials(
         unix_socket,
         user,
         password,
+        secret,
         database,
         named_collection,
         user_files_dir,
@@ -136,14 +138,13 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
     {
         const String & nkey = String(key);
 
-        if (metricEntries.find(nkey) == metricEntries.end())
-        {
+        if (!metricEntries.contains(nkey))
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
-        }
+
         metricEntries.at(nkey)(value);
     }
 
-    return PerformanceMetric(enabled, threshold, minimum);
+    return PerformanceMetric(std::move(enabled), std::move(threshold), std::move(minimum));
 }
 
 static std::function<void(const JSONObjectType &)>
@@ -160,7 +161,7 @@ parseDisabledOptions(uint64_t & res, const String & text, const std::unordered_m
         {
             const std::string_view entry(word.begin(), word.end());
 
-            if (entries.find(entry) == entries.end())
+            if (!entries.contains(entry))
             {
                 throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown type option for {}: {}", text, String(entry));
             }
@@ -261,7 +262,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"ipv4", allow_ipv4},
            {"ipv6", allow_ipv6},
            {"geo", allow_geo},
-           {"fixedstring", allow_fixed_strings}};
+           {"fixedstring", allow_fixed_strings},
+           {"qbit", allow_qbit},
+           {"aggregate", allow_aggregate},
+           {"simpleaggregate", allow_simple_aggregate}};
 
     static const std::unordered_map<std::string_view, uint64_t> engine_entries
         = {{"replacingmergetree", allow_replacing_mergetree},
@@ -347,6 +351,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_parallel_queries",
+         [&](const JSONObjectType & value) { max_parallel_queries = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"max_number_alters",
+         [&](const JSONObjectType & value) { max_number_alters = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -360,6 +368,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"allow_infinite_tables", [&](const JSONObjectType & value) { allow_infinite_tables = value.getBool(); }},
         {"compare_explains", [&](const JSONObjectType & value) { compare_explains = value.getBool(); }},
         {"allow_hardcoded_inserts", [&](const JSONObjectType & value) { allow_hardcoded_inserts = value.getBool(); }},
+        {"allow_async_requests", [&](const JSONObjectType & value) { allow_async_requests = value.getBool(); }},
         {"allow_memory_tables", [&](const JSONObjectType & value) { allow_memory_tables = value.getBool(); }},
         {"allow_client_restarts", [&](const JSONObjectType & value) { allow_client_restarts = value.getBool(); }},
         {"max_reconnection_attempts",
@@ -370,6 +379,9 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          { time_to_sleep_between_reconnects = std::max(UINT32_C(1000), static_cast<uint32_t>(value.getUInt64())); }},
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
+        {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
+        {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
+        {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
         {"mysql", [&](const JSONObjectType & value) { mysql_server = loadServerCredentials(value, "mysql", 3306, 3306); }},
         {"postgresql", [&](const JSONObjectType & value) { postgresql_server = loadServerCredentials(value, "postgresql", 5432); }},
@@ -387,6 +399,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"arrow_flight_servers", [&](const JSONObjectType & value) { arrow_flight_servers = loadArray(value); }},
         {"hot_settings", [&](const JSONObjectType & value) { hot_settings = loadArray(value); }},
         {"disallowed_settings", [&](const JSONObjectType & value) { disallowed_settings = loadArray(value); }},
+        {"hot_table_settings", [&](const JSONObjectType & value) { hot_table_settings = loadArray(value); }},
         {"disabled_types", parseDisabledOptions(type_mask, "disabled_types", type_entries)},
         {"disabled_engines", parseDisabledOptions(engine_mask, "disabled_engines", engine_entries)},
         {"disallowed_error_codes", parseErrorCodes(disallowed_error_codes)},
@@ -396,7 +409,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     {
         const String & nkey = String(key);
 
-        if (configEntries.find(nkey) == configEntries.end())
+        if (!configEntries.contains(nkey))
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown BuzzHouse option: {}", nkey);
         }
@@ -425,6 +438,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
             "min_string_length value ({}) is higher than max_string_length value ({})",
             min_string_length,
             max_string_length);
+    }
+    if (max_columns == 0)
+    {
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "max_columns must be at least 1");
     }
     for (const auto & entry : std::views::values(metrics))
     {
@@ -561,7 +578,7 @@ bool FuzzConfig::tableHasPartitions(const bool detached, const String & database
     if (processServerQuery(
             true,
             fmt::format(
-                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)",
+                R"(SELECT count() FROM "system"."{}" WHERE {}"table" = '{}' AND "partition_id" != 'all' INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
                 detached_tbl,
                 db_clause,
                 table,
@@ -583,7 +600,8 @@ bool FuzzConfig::hasMutations()
     if (processServerQuery(
             false,
             fmt::format(
-                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT CSV;)", fuzz_server_out.generic_string())))
+                R"(SELECT count() FROM "system"."mutations" INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                fuzz_server_out.generic_string())))
     {
         std::ifstream infile(fuzz_client_out);
         if (std::getline(infile, buf))
@@ -604,7 +622,7 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
             fmt::format(
                 "SELECT z.y FROM (SELECT (row_number() OVER () - 1) AS x, \"mutation_id\" AS y FROM \"system\".\"mutations\") as z "
                 "WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"mutations\") INTO OUTFILE '{}' TRUNCATE "
-                "FORMAT RawBlob;",
+                "FORMAT TabSeparated;",
                 rand_val,
                 fuzz_server_out.generic_string())))
     {
@@ -612,6 +630,24 @@ String FuzzConfig::getRandomMutation(const uint64_t rand_val)
         std::getline(infile, res);
     }
     return res;
+}
+
+String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
+{
+    String res;
+
+    /// Can't use sampling here either
+    if (processServerQuery(
+            false,
+            fmt::format(
+                R"(SELECT {} FROM "system"."iceberg_history" ORDER BY rand() LIMIT 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;)",
+                property,
+                fuzz_server_out.generic_string())))
+    {
+        std::ifstream infile(fuzz_client_out, std::ios::in);
+        std::getline(infile, res);
+    }
+    return res.empty() ? "-1" : res;
 }
 
 String FuzzConfig::tableGetRandomPartitionOrPart(
@@ -629,7 +665,7 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
                 "\"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM \"system\".\"{}\" WHERE "
                 "{}\"table\" "
                 "= "
-                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT RawBlob;",
+                "'{}') INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
                 partition ? "partition_id" : "name",
                 detached_tbl,
                 db_clause,

@@ -127,3 +127,47 @@ def test_jbod_ha(start_cluster):
     finally:
         for node in [node1, node2]:
             node.query("DROP TABLE IF EXISTS tbl SYNC")
+
+
+def test_jbod_ha_fetch_partition(start_cluster):
+    try:
+        for i, node in enumerate([node1, node2]):
+            node.query(
+                """
+                CREATE TABLE tbl (p UInt8, d String)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tbl_{}', '{}')
+                PARTITION BY p
+                ORDER BY tuple()""".format(
+                    i + 1, i
+                )
+            )
+
+        node1.query(
+            "insert into tbl select 0, 'foo' from numbers(10)"
+        )
+
+        # Mimic disk failure
+        node2.exec_in_container(
+            ["bash", "-c", "mount -t proc proc /jbod1"], privileged=True, user="root"
+        )
+        time.sleep(5)
+
+        # FETCH PARTITION will check for detached parts with same name in all disks
+        # It will throw exception if the check doesn't handle broken disk properly
+        node2.query("ALTER TABLE tbl FETCH PARTITION 0 FROM '/clickhouse/tbl_1'")
+        node2.query("ALTER TABLE tbl ATTACH PARTITION 0")
+
+        assert int(node2.query("select count(p) from tbl")) == 10
+
+        # Mimic disk recovery, just in case we add more tests later
+        node1.exec_in_container(
+            ["bash", "-c", "umount  /jbod1"],
+            privileged=True,
+            user="root",
+        )
+
+        node1.restart_clickhouse()
+
+    finally:
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS tbl SYNC".format(i + 1))

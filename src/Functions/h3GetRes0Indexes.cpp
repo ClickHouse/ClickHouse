@@ -61,7 +61,30 @@ public:
 
 REGISTER_FUNCTION(H3GetRes0Indexes)
 {
-    factory.registerFunction<FunctionH3GetRes0Indexes>();
+    FunctionDocumentation::Description description = R"(
+Returns an array of all the resolution 0 [H3](#h3-index) indices.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3GetRes0Indexes()";
+    FunctionDocumentation::Arguments arguments = {};
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of all resolution 0 H3 indices.",
+        {"Array(UInt64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get all resolution 0 H3 indices",
+            "SELECT h3GetRes0Indexes() AS indexes",
+            R"(
+┌─indexes─────────────────────────────────────┐
+│ [576495936675512319,576531121047601151,...] │
+└─────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3GetRes0Indexes>(documentation);
 }
 
 }

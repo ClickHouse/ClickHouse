@@ -19,7 +19,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
@@ -101,6 +100,9 @@ class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
 class VectorSimilarityIndexCache;
+class TextIndexDictionaryBlockCache;
+class TextIndexHeaderCache;
+class TextIndexPostingsCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -124,6 +126,7 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
 class ZooKeeperConnectionLog;
+class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
 class SessionLog;
@@ -258,6 +261,9 @@ using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
+class ReverseLookupCache;
+using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -273,6 +279,9 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
+/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
+/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
+/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
 struct IRuntimeFilterLookup;
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
@@ -341,6 +350,9 @@ protected:
 
     using FileProgressCallback = std::function<void(const FileProgress & progress)>;
     FileProgressCallback file_progress_callback; /// Callback for tracking progress of file loading.
+
+    using InteractiveCancelCallback = std::function<bool()>;
+    InteractiveCancelCallback interactive_cancel_callback; /// Callback for usage in interactive sessions with CompletedPipelineExecutor
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
@@ -533,6 +545,10 @@ protected:
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
 
+    /// Cache for reverse lookups of serialized dictionary keys used in `dictGetKeys` function.
+    /// This is a per query cache and not shared across queries.
+    mutable ReverseLookupCachePtr reverse_lookup_cache;
+
     /// this is a mode of parallel replicas where we set parallel_replicas_count and parallel_replicas_offset
     /// and generate specific filters on the replicas (e.g. when using parallel replicas with sample key)
     /// if we already use a different mode of parallel replicas we want to disable this mode
@@ -647,6 +663,7 @@ public:
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
+
     ~Context();
 
     String getPath() const;
@@ -754,8 +771,8 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user assuming that he/she is already authenticated.
-    /// WARNING: This function doesn't check password!
+    /// Sets the current user, assuming they are already authenticated.
+    /// WARNING: This function doesn't check the password!
     void setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_ = {});
     UserPtr getUser() const;
 
@@ -801,6 +818,7 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
@@ -1162,6 +1180,9 @@ public:
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
+    void setInteractiveCancelCallback(InteractiveCancelCallback && callback) { interactive_cancel_callback = callback; }
+    InteractiveCancelCallback getInteractiveCancelCallback() const { return interactive_cancel_callback; }
+
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
@@ -1208,6 +1229,7 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
     UInt64 getClientProtocolVersion() const;
+    void reconnectZooKeeper(const String & reason) const;
     void setClientProtocolVersion(UInt64 version);
 
 #if USE_NURAFT
@@ -1270,6 +1292,21 @@ public:
     void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
     void clearVectorSimilarityIndexCache() const;
+
+    void setTextIndexDictionaryBlockCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexDictionaryBlockCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexDictionaryBlockCache> getTextIndexDictionaryBlockCache() const;
+    void clearTextIndexDictionaryBlockCache() const;
+
+    void setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexHeaderCache> getTextIndexHeaderCache() const;
+    void clearTextIndexHeaderCache() const;
+
+    void setTextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<TextIndexPostingsCache> getTextIndexPostingsCache() const;
+    void clearTextIndexPostingsCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1600,6 +1637,10 @@ public:
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
+    ReverseLookupCache & getReverseLookupCache() const;
+
+    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
+    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
@@ -1674,6 +1715,8 @@ private:
     std::unordered_set<String> allowed_disks;
     /// Throttling
 public:
+    /// Does not hold the lock, should be called once at the startup.
+    void configureServerWideThrottling();
     ThrottlerPtr getReplicatedFetchesThrottler() const;
     ThrottlerPtr getReplicatedSendsThrottler() const;
 

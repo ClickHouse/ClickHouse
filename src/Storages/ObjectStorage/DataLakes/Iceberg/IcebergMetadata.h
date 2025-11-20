@@ -77,12 +77,14 @@ public:
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
+    bool supportsParallelInsert() const override { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -110,6 +112,7 @@ public:
 
     void checkMutationIsPossible(const MutationCommands & commands) override;
 
+    void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void alter(const AlterCommands & params, ContextPtr context) override;
@@ -146,6 +149,7 @@ private:
     const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     DB::Iceberg::PersistentTableComponents persistent_components;
+    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 };
 }
 

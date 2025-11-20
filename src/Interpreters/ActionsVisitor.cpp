@@ -461,7 +461,9 @@ FutureSetPtr makeExplicitSet(
 
     DataTypes set_element_types = {left_arg_type};
     const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
-    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+
+    /// Do not unpack if empty tuple or single element tuple
+    if (left_tuple_type && left_tuple_type->getElements().size() > 1)
         set_element_types = left_tuple_type->getElements();
 
     auto set_element_keys = Set::getElementTypes(set_element_types, context->getSettingsRef()[Setting::transform_null_in]);
@@ -828,7 +830,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         auto literal = std::make_shared<ASTLiteral>(UInt64{++tid});
         visit(*literal, literal, data);
 
-        auto func = makeASTFunction("tupleElement", tuple_ast, literal);
+        auto func = makeASTOperator("tupleElement", tuple_ast, literal);
         if (!untuple_alias.empty())
         {
             auto element_alias = tuple_type->hasExplicitNames() ? element_name : toString(tid);

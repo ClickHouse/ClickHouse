@@ -10,13 +10,12 @@
 namespace DB
 {
 
-static constexpr UInt64 BLOOM_FILTER_SEED = 42;
-
 BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     SharedHeader header_,
     String filter_column_name_,
     const DataTypePtr & filter_column_type_,
     String filter_name_,
+    UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_)
     : ISimpleTransform(header_, header_, true)
@@ -25,11 +24,11 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
     , filter_name(filter_name_)
-    , built_filter(std::make_unique<BloomFilter>(bloom_filter_bytes_, bloom_filter_hash_functions_, BLOOM_FILTER_SEED))
+    , built_filter(std::make_unique<RuntimeFilter>(filter_column_target_type, exact_values_limit_, bloom_filter_bytes_, bloom_filter_hash_functions_))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
     if (!filter_column_target_type->equals(*filter_column_original_type))
-        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {});
+        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
 }
 
 
@@ -55,13 +54,7 @@ void BuildRuntimeFilterTransform::transform(Chunk & chunk)
             false);
     }
 
-    const size_t num_rows = chunk.getNumRows();
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        /// TODO: make this efficient: compute hashes in vectorized manner
-        auto value = filter_column->getDataAt(row);
-        built_filter->add(value.data, value.size);
-    }
+    built_filter->insert(filter_column);
 }
 
 void BuildRuntimeFilterTransform::finish()

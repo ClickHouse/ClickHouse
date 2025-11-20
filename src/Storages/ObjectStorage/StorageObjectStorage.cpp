@@ -126,8 +126,12 @@ StorageObjectStorage::StorageObjectStorage(
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
+    LOG_DEBUG(log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
+        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function, is_datalake_query, columns_in_table_or_function_definition.toString(true));
+
     if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
     {
+        LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
     }
@@ -205,7 +209,31 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
-    supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+
+    /// TODO: Known problems with datalake prewhere:
+    ///  * If the iceberg table went through schema evolution, columns read from file may need to
+    ///    be renamed or typecast before applying prewhere. There's already a mechanism for
+    ///    telling parquet reader to rename columns: ColumnMapper. And parquet reader already
+    ///    automatically does type casts to requested types. But weirdly the iceberg reader uses
+    ///    those mechanism to request the *old* name and type of the column, then has additional
+    ///    code to do the renaming and casting as a separate step outside parquet reader.
+    ///    We should probably change this and delete that additional code?
+    ///  * Delta Lake can have "partition columns", which are columns with constant value specified
+    ///    in the metadata, not present in parquet file. Like hive partitioning, but in metadata
+    ///    files instead of path. Currently these columns are added to the block outside parquet
+    ///    reader. If they appear in prewhere expression, parquet reader gets a "no column in block"
+    ///    error. Unlike hive partitioning, we can't (?) just return these columns from
+    ///    supportedPrewhereColumns() because at the time of the call the delta lake metadata hasn't
+    ///    been read yet. So we should probably pass these columns to the parquet reader instead of
+    ///    adding them outside.
+    ///  * There's a bug in StorageObjectStorageSource::createReader: it makes a copy of
+    ///    FormatFilterInfo, but for some reason unsets prewhere_info and row_level_filter_info.
+    ///    There's probably no reason for this, and it should just copy those fields like the others.
+    ///  * If the table contains files in different formats, with only some of them supporting
+    ///    prewhere, things break.
+    supports_prewhere = !configuration->isDataLakeConfiguration() && format_supports_prewhere;
+    supports_tuple_elements = format_supports_prewhere;
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -218,7 +246,13 @@ StorageObjectStorage::StorageObjectStorage(
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context,
+        format_settings,
+        configuration->partition_strategy_type,
+        sample_path));
+
     setInMemoryMetadata(metadata);
 
     /// This will update metadata for table function which contains specific information about table
@@ -263,7 +297,7 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -345,20 +379,21 @@ void StorageObjectStorage::read(
         column_names,
         storage_snapshot,
         supportsSubsetOfColumns(local_context),
-        /*supports_tuple_elements=*/ supports_prewhere,
+        supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
-    if (query_info.prewhere_info)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
+        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
-    const bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+
+    const bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    configuration->modifyFormatSettings(modified_format_settings.value());
+    configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,

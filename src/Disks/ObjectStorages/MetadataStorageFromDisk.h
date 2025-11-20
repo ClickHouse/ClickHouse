@@ -5,6 +5,7 @@
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
 #include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
 namespace DB
@@ -26,6 +27,8 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    bool supportWritingWithAppend() const override;
+
     const std::string & getPath() const override;
 
     MetadataStorageType getType() const override { return MetadataStorageType::Local; }
@@ -46,8 +49,6 @@ public:
     bool supportsChmod() const override { return disk->supportsChmod(); }
 
     bool supportsStat() const override { return disk->supportsStat(); }
-
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
 
     struct stat stat(const String & path) const override { return disk->stat(path); }
 
@@ -96,13 +97,11 @@ public:
 
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
 
-    void createEmptyMetadataFile(const std::string & path) override;
-
-    void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) override;
+    void createMetadataFile(const std::string & path, const StoredObjects & objects) override;
 
     bool supportAddingBlobToMetadata() override { return true; }
 
-    void addBlobToMetadata(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) override;
+    void addBlobToMetadata(const std::string & path, const StoredObject & object) override;
 
     void setLastModified(const std::string & path, const Poco::Timestamp & timestamp) override;
 

@@ -325,7 +325,7 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
+ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const
 {
     return nullptr;
 }
@@ -386,7 +386,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(const ASTPtr &) const
 {
 }
 
@@ -407,11 +407,6 @@ std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
-
-    if (row_level_filter)
-    {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
-    }
 
     {
         ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
 
 #include <gtest/gtest.h>
 
@@ -118,9 +119,9 @@ void column_unique_unique_deserialize_from_arena_impl(ColumnType & column, const
         for (size_t i = 0; i < num_values; ++i)
         {
             auto ref = column_unique_pattern->serializeValueIntoArena(idx->getUInt(i), arena, pos);
-            const char * new_pos;
-            column_unique->uniqueDeserializeAndInsertFromArena(ref.data, new_pos);
-            ASSERT_EQ(new_pos - ref.data, ref.size) << "Deserialized data has different sizes at position " << i;
+            ReadBufferFromString in({ref.data, ref.size});
+            column_unique->uniqueDeserializeAndInsertFromArena(in);
+            ASSERT_TRUE(in.eof()) << "Deserialized data has different sizes at position " << i;
 
             ASSERT_EQ(column_unique_pattern->getNestedNotNullableColumn()->getDataAt(idx->getUInt(i)),
                       column_unique->getNestedNotNullableColumn()->getDataAt(idx->getUInt(i)))

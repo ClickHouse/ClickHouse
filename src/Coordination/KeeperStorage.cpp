@@ -6,6 +6,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/SHA1Engine.h>
 
+#include <Common/HistogramMetrics.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -47,12 +48,19 @@ namespace ProfileEvents
     extern const Event KeeperProcessElapsedMicroseconds;
 }
 
+namespace HistogramMetrics
+{
+    extern Metric & KeeperServerPreprocessRequestDuration;
+    extern MetricFamily & KeeperServerProcessRequestDuration;
+}
+
 namespace DB
 {
 
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+    extern const CoordinationSettingsBool check_node_acl_on_remove;
 }
 
 namespace ErrorCodes
@@ -1415,6 +1423,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::Get:
             return function(static_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
+        case Coordination::OpNum::Create2:
         case Coordination::OpNum::CreateIfNotExists:
             return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
@@ -1694,9 +1703,17 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCreateResponse>();
+    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
+
+    if (zk_request.include_stats)
+    {
+        auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
+        response = create2response;
+    }
+    else if (zk_request.not_exists)
+        response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
+    else
+        response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
 
     if (deltas.empty())
     {
@@ -1714,8 +1731,11 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
         { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
 
     if (create_delta_it != deltas.end())
+    {
         created_path = create_delta_it->path;
-
+        if (response->getOpNum() == Coordination::OpNum::Create2)
+            static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat = std::get<CreateNodeDelta>(create_delta_it->operation).stat;
+    }
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;
@@ -1820,6 +1840,12 @@ processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & sto
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
+    if (auto check_node_acl = storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove];
+        check_node_acl && !storage.checkACL(zk_request.getPath(), Coordination::ACL::Delete, session_id, is_local))
+    {
+        return false;
+    }
+
     return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
@@ -3107,8 +3133,12 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
 {
     Stopwatch watch;
     SCOPE_EXIT({
-        auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
+        watch.stop();
+
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        const auto elapsed_us = watch.elapsedMicroseconds();
+
+        if (elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3116,7 +3146,10 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
+
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed_us);
+
+        HistogramMetrics::observe(HistogramMetrics::KeeperServerPreprocessRequestDuration, elapsed_ms);
     });
 
     if (!initialized)
@@ -3315,8 +3348,12 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 {
     Stopwatch watch;
     SCOPE_EXIT({
-        auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
+        watch.stop();
+
+        const auto elapsed_us = watch.elapsedMicroseconds();
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+
+        if (elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3324,7 +3361,13 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
+
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed_us);
+
+        HistogramMetrics::observe(
+            HistogramMetrics::KeeperServerProcessRequestDuration,
+            {toOperationTypeMetricLabel(zk_request->getOpNum())},
+            elapsed_ms);
     });
 
     if (!initialized)

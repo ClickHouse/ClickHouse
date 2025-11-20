@@ -3,6 +3,9 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Common/PODArray.h>
+#include <IO/WriteBuffer.h>
+#include <base/types.h>
 #include <Core/BlockMissingValues.h>
 #include <Processors/ISource.h>
 
@@ -13,14 +16,59 @@ namespace DB
 struct SelectQueryInfo;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
-struct ChunkInfoRowNumOffset : public ChunkInfoCloneable<ChunkInfoRowNumOffset>
+/// Most (all?) file formats have a natural order of rows within the file.
+/// But our format readers and query pipeline may reorder or filter rows. This struct is used to
+/// propagate the original row numbers, e.g. for _row_number virtual column or for iceberg
+/// positional deletes.
+///
+/// Warning: we currently don't correctly update this info in most transforms. E.g. things like
+/// FilterTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
+/// have a mechanism to systematically find all code sites that would need to do that or to detect
+/// if one was missed.
+/// So this is only used in a few specific situations, and the builder of query pipeline must be
+/// careful to never put a step that uses this info after a step that breaks it.
+///
+/// If row numbers in a chunk are consecutive, this contains just the first row number.
+/// If row numbers are not consecutive as a result of filtering, this additionally contains the mask
+/// that was used for filtering, from which row numbers can be recovered.
+struct ChunkInfoRowNumbers : public ChunkInfo
 {
-    ChunkInfoRowNumOffset(const ChunkInfoRowNumOffset & other) = default;
-    explicit ChunkInfoRowNumOffset(size_t row_num_offset_) : row_num_offset(row_num_offset_) { }
+    explicit ChunkInfoRowNumbers(size_t row_num_offset_, std::optional<IColumnFilter> applied_filter_ = std::nullopt);
+
+    Ptr clone() const override;
 
     const size_t row_num_offset;
+    /// If nullopt, row numbers are consecutive.
+    /// If not empty, the number of '1' elements is equal to the number of rows in the chunk;
+    /// row i in the chunk has row number:
+    /// row_num_offset + {index of the i-th '1' element in applied_filter}.
+    std::optional<IColumnFilter> applied_filter;
 };
+
+/// Structure for storing information about buckets that IInputFormat needs to read.
+struct FileBucketInfo
+{
+    virtual void serialize(WriteBuffer & buffer) = 0;
+    virtual void deserialize(ReadBuffer & buffer) = 0;
+    virtual String getIdentifier() const = 0;
+    virtual String getFormatName() const = 0;
+
+    virtual ~FileBucketInfo() = default;
+};
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
+/// Interface for splitting a file into buckets.
+struct IBucketSplitter
+{
+    /// Splits a file into buckets using the given read buffer and format settings.
+    /// Returns information about the resulting buckets (see the structure above for details).
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
+    virtual ~IBucketSplitter() = default;
+};
+using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
@@ -45,6 +93,7 @@ public:
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
+    virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of

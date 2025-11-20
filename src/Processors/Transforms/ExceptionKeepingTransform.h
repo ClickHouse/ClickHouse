@@ -56,6 +56,9 @@ protected:
     virtual void onFinish() {}
     virtual void onException(std::exception_ptr /* exception */) { }
 
+    virtual bool canGenerate() { return true; }
+    virtual GenerateResult getRemaining() { return {};}
+
 public:
     ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_ = true);
 
