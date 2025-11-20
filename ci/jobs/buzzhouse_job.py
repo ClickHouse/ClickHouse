@@ -202,6 +202,7 @@ def main():
             "union_default_mode",
             "except_default_mode",
             "input_format_skip_unknown_fields",
+            "unknown_packet_in_send_data",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [
