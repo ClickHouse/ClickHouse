@@ -42,7 +42,7 @@ public:
     std::vector<GroupExpressionPtr> logical_expressions;
     std::vector<GroupExpressionPtr> physical_expressions;
 
-    /// Best implementation for various required properties 
+    /// Best implementation for various required properties
     std::set<GroupExpressionPtr> best_implementations;
 
 private:

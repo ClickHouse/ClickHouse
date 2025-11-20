@@ -129,7 +129,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
     {
         optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1, cost_limit));
         /// TODO: limit ← UpdateCostLimit(expr, limit)
-        const auto & input = expression->inputs[input_index_to_optimize]; 
+        const auto & input = expression->inputs[input_index_to_optimize];
         optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties, cost_limit));
     }
 }

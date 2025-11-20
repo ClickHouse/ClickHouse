@@ -25,6 +25,7 @@
 #include <Common/iota.h>
 #include <DataTypes/FieldToDataType.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
@@ -57,16 +58,17 @@ namespace ErrorCodes
 }
 
 template <typename T>
-const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    data.emplace_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T element;
+    readBinaryLittleEndian<T>(element, in);
+    data.emplace_back(std::move(element));
 }
 
 template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <typename T>

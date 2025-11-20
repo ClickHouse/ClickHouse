@@ -81,7 +81,7 @@ ExpressionCost CostEstimator::estimateHashJoinCost(
         const ExpressionStatistics & left_statistics,
         const ExpressionStatistics & right_statistics)
 {
-    /// TODO: better way to distinguish between implementations: maybe differrent step types?
+    /// TODO: better way to distinguish between implementations: maybe different step types?
     const bool is_broadcast = join_step.getStepDescription().contains("Broadcast");
     const bool is_shuffle = join_step.getStepDescription().contains("Shuffle");
 

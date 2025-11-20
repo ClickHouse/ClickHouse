@@ -262,7 +262,7 @@ std::vector<GroupExpressionPtr> ShuffleHashJoinImplementation::applyImpl(GroupEx
     hash_join_expression->inputs[0].required_properties.distribution_columns = distribution_columns;
     hash_join_expression->inputs[1].required_properties.distribution_columns = distribution_columns;
 
-    /// Output is also distibuted by join keys 
+    /// Output is also distributed by join keys
     /// TODO: handle equivalent columns
     hash_join_expression->properties.distribution_columns = distribution_columns;
 

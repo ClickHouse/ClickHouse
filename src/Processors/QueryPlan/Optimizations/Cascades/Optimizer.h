@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
-#include "Processors/QueryPlan/Optimizations/Cascades/Properties.h"
+#include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 
 
 namespace DB

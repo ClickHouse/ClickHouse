@@ -49,7 +49,7 @@ bool ExpressionProperties::isDistibutionSatisfiedBy(const DistributionColumns & 
 bool ExpressionProperties::isSatisfiedBy(const ExpressionProperties & existing_properties) const
 {
     return isSortingSatisfiedBy(sorting, existing_properties.sorting) &&
-        isDistibutionSatisfiedBy(distribution_columns, existing_properties.distribution_columns); 
+        isDistibutionSatisfiedBy(distribution_columns, existing_properties.distribution_columns);
 }
 
 void  ExpressionProperties::dump(WriteBuffer & out) const
