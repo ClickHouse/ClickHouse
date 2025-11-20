@@ -24,8 +24,8 @@ class AllocationQueue;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
-    explicit ResourceAllocation(IAllocationQueue & queue_)
-        : queue(queue_), increase(*this), decrease(*this)
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {})
+        : queue(queue_), id(id_), increase(*this), decrease(*this)
     {}
 
     virtual ~ResourceAllocation();
@@ -44,8 +44,8 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
-    /// Queue that manages this allocation.
-    IAllocationQueue & queue;
+    IAllocationQueue & queue; /// Queue that manages this allocation.
+    String const id; /// ID of this allocation for introspection purposes.
 
 private:
     friend class AllocationQueue; // TODO(serxa): move the following fields to a separate struct to better hide implementation details?
