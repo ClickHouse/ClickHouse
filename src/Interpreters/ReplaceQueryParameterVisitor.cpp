@@ -18,6 +18,7 @@
 #include <Common/checkStackSize.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
+#include <Analyzer/Utils.h>
 
 
 namespace DB
@@ -95,28 +96,6 @@ const String & ReplaceQueryParameterVisitor::getParamValue(const String & name)
     return search->second;
 }
 
-namespace
-{
-
-/// Return true if we cannot use cast from Field for this type and need to use cast from String
-bool needCastFromString(const DataTypePtr & type)
-{
-    if (type->getCustomSerialization())
-        return true;
-
-    bool result = false;
-    auto check = [&](const IDataType & t)
-    {
-        result |= isVariant(t) || isDynamic(t) || isObject(t);
-    };
-
-    check(*type);
-    type->forEachChild(check);
-    return result;
-}
-
-}
-
 void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
 {
     const auto & ast_param = ast->as<ASTQueryParameter &>();
@@ -150,21 +129,17 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
             " because it isn't parsed completely: only {} of {} bytes was parsed: {}",
             value, type_name, ast_param.name, read_buffer.count(), value.size(), value.substr(0, read_buffer.count()));
 
-    Field literal;
-    /// For some data types we should use CAST from String,
-    /// because CAST from field may not work correctly (for example for type IPv6, JSON, Dynamic, etc).
-    if (needCastFromString(data_type))
-        literal = value;
-    else
-        literal = temp_column[0];
+    /// Serialize to literal and add CAST from it to the required data type.
+    WriteBufferFromOwnString value_buf;
+    serialization->serializeText(temp_column, 0, value_buf, format_settings);
 
     /// If it's a String, substitute it in the form of a string literal without CAST
     /// to enable substitutions in simple queries that don't support expressions
     /// (such as CREATE USER).
     if (typeid_cast<const DataTypeString *>(data_type.get()))
-        ast = std::make_shared<ASTLiteral>(literal);
+        ast = std::make_shared<ASTLiteral>(value_buf.str());
     else
-        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(literal), type_name);
+        ast = addTypeConversionToAST(std::make_shared<ASTLiteral>(value_buf.str()), type_name);
 
     /// Keep the original alias.
     ast->setAlias(alias);
