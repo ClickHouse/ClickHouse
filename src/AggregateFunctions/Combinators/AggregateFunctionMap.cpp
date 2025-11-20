@@ -1,7 +1,8 @@
-#include <unordered_map>
+#include <absl/container/flat_hash_map.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/Helpers.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
@@ -15,6 +16,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
+#include <Core/CompareHelper.h>
 
 
 namespace DB
@@ -29,11 +31,23 @@ namespace ErrorCodes
 namespace
 {
 
+template <typename T>
+struct CompareHelperEqual
+{
+    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::equals(a, b, 1); }
+};
+
+template <typename T>
+struct CompareHelperLess
+{
+    bool operator()(const T & a, const T & b) const { return CompareHelper<T>::less(a, b, 1); }
+};
+
 template <typename KeyType>
 struct AggregateFunctionMapCombinatorData
 {
     using SearchType = KeyType;
-    std::unordered_map<KeyType, AggregateDataPtr> merged_maps;
+    absl::flat_hash_map<KeyType, AggregateDataPtr, std::hash<KeyType>, CompareHelperEqual<KeyType>> merged_maps;
 
     static void writeKey(KeyType key, WriteBuffer & buf) { writeBinaryLittleEndian(key, buf); }
     static void readKey(KeyType & key, ReadBuffer & buf) { readBinaryLittleEndian(key, buf); }
@@ -51,7 +65,7 @@ struct AggregateFunctionMapCombinatorData<String>
     };
 
     using SearchType = std::string_view;
-    std::unordered_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
+    absl::flat_hash_map<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
     static void writeKey(String key, WriteBuffer & buf)
     {
@@ -76,7 +90,7 @@ struct AggregateFunctionMapCombinatorData<IPv6>
     };
 
     using SearchType = IPv6;
-    std::unordered_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
+    absl::flat_hash_map<IPv6, AggregateDataPtr, IPv6Hash, std::equal_to<>> merged_maps;
 
     static void writeKey(const IPv6 & key, WriteBuffer & buf)
     {
@@ -88,16 +102,17 @@ struct AggregateFunctionMapCombinatorData<IPv6>
     }
 };
 
-template <typename KeyType>
+template <typename KeyType, bool Plain>
 class AggregateFunctionMap final
-    : public IAggregateFunctionDataHelper<AggregateFunctionMapCombinatorData<KeyType>, AggregateFunctionMap<KeyType>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionMapCombinatorData<KeyType>, AggregateFunctionMap<KeyType, Plain>>
 {
 private:
     DataTypePtr key_type;
     AggregateFunctionPtr nested_func;
+    size_t arguments_num;
 
     using Data = AggregateFunctionMapCombinatorData<KeyType>;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType>>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionMap<KeyType, Plain>>;
 
 public:
     bool isState() const override
@@ -122,7 +137,7 @@ public:
 
     AggregateFunctionMap(AggregateFunctionPtr nested, const DataTypes & types)
         : Base(types, nested->getParameters(), std::make_shared<DataTypeMap>(DataTypes{getKeyType(types, nested), nested->getResultType()}))
-        , nested_func(nested)
+        , nested_func(nested), arguments_num(types.size())
     {
         key_type = getKeyType(types, nested_func);
     }
@@ -131,68 +146,82 @@ public:
 
     static DataTypePtr getKeyType(const DataTypes & types, const AggregateFunctionPtr & nested)
     {
-        if (types.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {}Map requires one map argument, but {} found", nested->getName(), types.size());
+        if (types.size() == 1)
+        {
+            const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
+            if (!map_type)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Aggregate function {}Map requires map as argument", nested->getName());
 
-        const auto * map_type = checkAndGetDataType<DataTypeMap>(types[0].get());
-        if (!map_type)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Aggregate function {}Map requires map as argument", nested->getName());
+            return map_type->getKeyType();
+        }
+        return types.back();
+    }
 
-        return map_type->getKeyType();
+    void addSingleKey(AggregateDataPtr __restrict place, const IColumn & key_column, const IColumn ** value_column, size_t position, Arena * arena) const
+    {
+        typename Data::SearchType key;
+        if constexpr (std::is_same_v<KeyType, String>)
+        {
+            StringRef key_ref;
+            if (key_type->getTypeId() == TypeIndex::FixedString)
+                key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(position);
+            else if (key_type->getTypeId() == TypeIndex::IPv6)
+                key_ref = assert_cast<const ColumnIPv6 &>(key_column).getDataAt(position);
+            else
+                key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(position);
+
+            key = key_ref.toView();
+        }
+        else
+        {
+            key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[position];
+        }
+
+        AggregateDataPtr nested_place;
+        auto it = this->data(place).merged_maps.find(key);
+        if (it == this->data(place).merged_maps.end())
+        {
+            // create a new place for each key
+            nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
+            nested_func->create(nested_place);
+            this->data(place).merged_maps.emplace(key, nested_place);
+        } else
+            nested_place = it->second;
+
+        nested_func->add(nested_place, value_column, position, arena);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
-        const auto & map_nested_tuple = map_column.getNestedData();
-        const IColumn::Offsets & map_array_offsets = map_column.getNestedColumn().getOffsets();
 
-        const size_t offset = map_array_offsets[row_num - 1];
-        const size_t size = (map_array_offsets[row_num] - offset);
-
-        const auto & key_column = map_nested_tuple.getColumn(0);
-        const auto & val_column = map_nested_tuple.getColumn(1);
-
-        auto & merged_maps = this->data(place).merged_maps;
-
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (Plain)
         {
-            typename Data::SearchType key;
+            const auto & key_column = *columns[arguments_num - 1];
 
-            if constexpr (std::is_same_v<KeyType, String>)
-            {
-                StringRef key_ref;
-                if (key_type->getTypeId() == TypeIndex::FixedString)
-                    key_ref = assert_cast<const ColumnFixedString &>(key_column).getDataAt(offset + i);
-                else if (key_type->getTypeId() == TypeIndex::IPv6)
-                    key_ref = assert_cast<const ColumnIPv6 &>(key_column).getDataAt(offset + i);
-                else
-                    key_ref = assert_cast<const ColumnString &>(key_column).getDataAt(offset + i);
+            addSingleKey(place, key_column, columns, row_num, arena);
 
-                key = key_ref.toView();
-            }
-            else
-            {
-                key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[offset + i];
-            }
+        }
+        else
+        {
 
-            AggregateDataPtr nested_place;
-            auto it = merged_maps.find(key);
+            const auto & map_column = assert_cast<const ColumnMap &>(*columns[0]);
+            const auto & map_nested_tuple = map_column.getNestedData();
+            const IColumn::Offsets & map_array_offsets = map_column.getNestedColumn().getOffsets();
 
-            if (it == merged_maps.end())
-            {
-                // create a new place for each key
-                nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
-                nested_func->create(nested_place);
-                merged_maps.emplace(key, nested_place);
-            }
-            else
-                nested_place = it->second;
+            const size_t offset = map_array_offsets[row_num - 1];
+            const size_t size = (map_array_offsets[row_num] - offset);
+
+            const auto & key_column = map_nested_tuple.getColumn(0);
+            const auto & val_column = map_nested_tuple.getColumn(1);
 
             const IColumn * nested_columns[1] = {&val_column};
-            nested_func->add(nested_place, nested_columns, offset + i, arena);
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                addSingleKey(place, key_column, nested_columns, offset + i, arena);
+            }
+
         }
     }
 
@@ -304,7 +333,7 @@ public:
         {
             keys.push_back(it.first);
         }
-        ::sort(keys.begin(), keys.end());
+        ::sort(keys.begin(), keys.end(), CompareHelperLess<KeyType>{});
 
         // insert using sorted keys to result column
         for (auto & key : keys)
@@ -358,6 +387,7 @@ public:
             return DataTypes({map_type->getValueType()});
         }
 
+
         // we need this part just to pass to redirection for mapped arrays
         auto check_func = [](DataTypePtr t) { return t->getTypeId() == TypeIndex::Array; };
 
@@ -382,7 +412,7 @@ public:
             }
         }
 
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires map as argument", getName());
+        return DataTypes(arguments.begin(), arguments.end() - 1);
     }
 
     AggregateFunctionPtr transformAggregateFunction(
@@ -391,69 +421,69 @@ public:
         const DataTypes & arguments,
         const Array & params) const override
     {
+
+
+        auto nested_func_name = nested_function->getName();
+
+        if (nested_func_name == "sum" || nested_func_name == "min" || nested_func_name == "max")
+        {
+            const auto * tup_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
+
+            auto check_func = [](DataTypePtr t) { return t->getTypeId() == TypeIndex::Array; };
+
+            AggregateFunctionProperties out_properties;
+            auto & aggr_func_factory = AggregateFunctionFactory::instance();
+            auto action = NullsAction::EMPTY;
+
+            if (tup_type)
+            {
+                const auto & types = tup_type->getElements();
+                bool arrays_match = arguments.size() == 1 && types.size() >= 2 && std::all_of(types.begin(), types.end(), check_func);
+                if (arrays_match)
+                {
+                    return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
+                }
+            }
+            else
+            {
+                bool arrays_match = arguments.size() >= 2 && std::all_of(arguments.begin(), arguments.end(), check_func);
+                if (arrays_match)
+                {
+                    return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
+                }
+            }
+
+        }
+
         const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+
         if (map_type)
         {
-            const auto & key_type = map_type->getKeyType();
+            const DataTypePtr & key_type = map_type->getKeyType();
 
-            switch (key_type->getTypeId())
-            {
-                case TypeIndex::Enum8:
-                case TypeIndex::Int8:
-                    return std::make_shared<AggregateFunctionMap<Int8>>(nested_function, arguments);
-                case TypeIndex::Enum16:
-                case TypeIndex::Int16:
-                    return std::make_shared<AggregateFunctionMap<Int16>>(nested_function, arguments);
-                case TypeIndex::Int32:
-                    return std::make_shared<AggregateFunctionMap<Int32>>(nested_function, arguments);
-                case TypeIndex::Int64:
-                    return std::make_shared<AggregateFunctionMap<Int64>>(nested_function, arguments);
-                case TypeIndex::Int128:
-                    return std::make_shared<AggregateFunctionMap<Int128>>(nested_function, arguments);
-                case TypeIndex::Int256:
-                    return std::make_shared<AggregateFunctionMap<Int256>>(nested_function, arguments);
-                case TypeIndex::UInt8:
-                    return std::make_shared<AggregateFunctionMap<UInt8>>(nested_function, arguments);
-                case TypeIndex::Date:
-                case TypeIndex::UInt16:
-                    return std::make_shared<AggregateFunctionMap<UInt16>>(nested_function, arguments);
-                case TypeIndex::DateTime:
-                case TypeIndex::UInt32:
-                    return std::make_shared<AggregateFunctionMap<UInt32>>(nested_function, arguments);
-                case TypeIndex::UInt64:
-                    return std::make_shared<AggregateFunctionMap<UInt64>>(nested_function, arguments);
-                case TypeIndex::UInt128:
-                    return std::make_shared<AggregateFunctionMap<UInt128>>(nested_function, arguments);
-                case TypeIndex::UInt256:
-                    return std::make_shared<AggregateFunctionMap<UInt256>>(nested_function, arguments);
-                case TypeIndex::UUID:
-                    return std::make_shared<AggregateFunctionMap<UUID>>(nested_function, arguments);
-                case TypeIndex::IPv4:
-                    return std::make_shared<AggregateFunctionMap<IPv4>>(nested_function, arguments);
-                case TypeIndex::IPv6:
-                    return std::make_shared<AggregateFunctionMap<IPv6>>(nested_function, arguments);
-                case TypeIndex::FixedString:
-                case TypeIndex::String:
-                    return std::make_shared<AggregateFunctionMap<String>>(nested_function, arguments);
-                default:
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
-            }
+            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, false>(*key_type, nested_function, arguments))
+                return AggregateFunctionPtr(res);
+
+            if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
+                return std::make_shared<AggregateFunctionMap<String, false>>(nested_function, arguments);
+
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
         }
         else
         {
-            // in case of tuple of arrays or just arrays (checked in transformArguments), try to redirect to sum/min/max-MappedArrays to implement old behavior
-            auto nested_func_name = nested_function->getName();
-            if (nested_func_name == "sum" || nested_func_name == "min" || nested_func_name == "max")
-            {
-                AggregateFunctionProperties out_properties;
-                auto & aggr_func_factory = AggregateFunctionFactory::instance();
-                auto action = NullsAction::EMPTY;
-                return aggr_func_factory.get(nested_func_name + "MappedArrays", action, arguments, params, out_properties);
-            }
+            const DataTypePtr & key_type = arguments.back();
+
+            if (auto * res = createWithNumericBasedType<AggregateFunctionMap, true>(*key_type, nested_function, arguments))
+                return AggregateFunctionPtr(res);
+
+            if (key_type->getTypeId() == TypeIndex::FixedString || key_type->getTypeId() == TypeIndex::String)
+                return std::make_shared<AggregateFunctionMap<String, true>>(nested_function, arguments);
+
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregation '{}Map' is not implemented for mapped arrays", nested_func_name);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Map key type {} is not is not supported by combinator {}", key_type->getName(), getName());
         }
     }
 };
