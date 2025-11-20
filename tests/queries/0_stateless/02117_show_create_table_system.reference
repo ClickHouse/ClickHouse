@@ -660,6 +660,7 @@ CREATE TABLE system.processes
     `normalized_query_hash` UInt64,
     `query_kind` String,
     `thread_ids` Array(UInt64),
+    `peak_threads_usage` UInt64,
     `ProfileEvents` Map(String, UInt64),
     `Settings` Map(String, String),
     `current_database` String,
