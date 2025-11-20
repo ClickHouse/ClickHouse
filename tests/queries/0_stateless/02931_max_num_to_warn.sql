@@ -70,16 +70,14 @@ INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_9 VALUES (1, 'Hello'
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_10 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_11 VALUES (1, 'Hello');
 
-SELECT * FROM system.warnings ORDER BY message;
+CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_1 AS a = 1;
+CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_2 AS a = 1;
+CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_3 AS a = 1;
+CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_4 AS a = 1;
+CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_5 AS a = 1;
+CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_6 AS a = 1;
 
-SELECT * FROM system.warnings where message in (
-    'The number of attached tables is more than 5.',
-    'The number of attached views is more than 5.',
-    'The number of attached dictionaries is more than 5.',
-    'The number of attached databases is more than 2.',
-    'The number of named collections is more than 2.',
-    'The number of active parts is more than 10.'
-) ORDER BY message;
+SELECT replaceRegexpAll(message, '\(\d+\)', ''), message_format_string FROM system.warnings WHERE message LIKE 'The number of%' ORDER BY message;
 
 DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
 DROP DATABASE IF EXISTS test_max_num_to_warn_1;
@@ -93,3 +91,10 @@ DROP DATABASE IF EXISTS test_max_num_to_warn_8;
 DROP DATABASE IF EXISTS test_max_num_to_warn_9;
 DROP DATABASE IF EXISTS test_max_num_to_warn_10;
 DROP DATABASE IF EXISTS test_max_num_to_warn_11;
+
+DROP NAMED COLLECTION test_max_named_collection_num_to_warn_1;
+DROP NAMED COLLECTION test_max_named_collection_num_to_warn_2;
+DROP NAMED COLLECTION test_max_named_collection_num_to_warn_3;
+DROP NAMED COLLECTION test_max_named_collection_num_to_warn_4;
+DROP NAMED COLLECTION test_max_named_collection_num_to_warn_5;
+DROP NAMED COLLECTION test_max_named_collection_num_to_warn_6;
