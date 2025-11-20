@@ -290,15 +290,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"apply_patch_parts", trueOrFalseSetting},
     {"apply_settings_from_server", trueOrFalseSettingNoOracle},
     {"any_join_distinct_right_table_keys", trueOrFalseSetting},
-    {"cluster_table_function_split_granularity",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &)
-         {
-             static const DB::Strings & choices = {"'path'", "'command'"};
-             return rg.pickRandomly(choices);
-         },
-         {},
-         false)},
     {"asterisk_include_alias_columns", trueOrFalseSettingNoOracle},
     {"asterisk_include_materialized_columns", trueOrFalseSettingNoOracle},
     {"async_insert", trueOrFalseSettingNoOracle},
