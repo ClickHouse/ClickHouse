@@ -23,6 +23,7 @@ Columns:
   - `0` — Current user can change the setting.
   - `1` — Current user can't change the setting.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
+- `alias_for` ([String](../../sql-reference/data-types/string.md)) — Flag that shows whether this name is an alias to another setting.
 - `is_obsolete` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) - Shows whether a setting is obsolete.
 - `tier` ([Enum8](../../sql-reference/data-types/enum.md)) — Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their development and the expectations one might have when using them. Values:
   - `'Production'` — The feature is stable, safe to use and does not have issues interacting with other **production** features. .
