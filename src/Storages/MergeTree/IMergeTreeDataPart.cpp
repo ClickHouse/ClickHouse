@@ -1799,7 +1799,6 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         old_part_with_no_metadata_version_on_disk = true;
     }
 
-    LOG_DEBUG(storage.log, "Loaded metadata version {}", *loaded_metadata_version);
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
