@@ -10,11 +10,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Common/AlignedBuffer.h>
+#include <absl/container/inlined_vector.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include "absl/container/inlined_vector.h"
 
 namespace DB
 {
