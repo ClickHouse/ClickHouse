@@ -135,17 +135,9 @@ void InstrumentationManager::patchFunctionIfNeeded(Int32 function_id)
 
 void InstrumentationManager::unpatchFunctionIfNeeded(Int32 function_id)
 {
-    auto it = instrumented_points.get<FunctionId>().find(function_id);
-    const auto end_it = instrumented_points.get<FunctionId>().end();
-    if (it == end_it)
+    size_t count = instrumented_points.get<FunctionId>().count(function_id);
+    if (count == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Function id {} to unpatch not previously patched", function_id);
-
-    size_t count = 0;
-    while (it != end_it)
-    {
-        count++;
-        it++;
-    }
 
     if (count <= 1)
         __xray_unpatch_function(function_id);
