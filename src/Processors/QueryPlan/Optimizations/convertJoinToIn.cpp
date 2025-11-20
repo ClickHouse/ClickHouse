@@ -1,18 +1,19 @@
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
-#include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/TableJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 
 
 namespace DB::ErrorCodes
@@ -38,14 +39,14 @@ struct NamePair
 using NamePairs = std::vector<NamePair>;
 
 InConversion buildInConversion(
-    const SharedHeader & header,
+    const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
     bool transform_null_in,
     SizeLimits size_limits,
     size_t max_size_for_index)
 {
-    ActionsDAG lhs_dag(header->getColumnsWithTypeAndName());
+    ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
     for (const auto & output : lhs_dag.getOutputs())
         lhs_outputs.emplace(output->result_name, output);
@@ -67,7 +68,7 @@ InConversion buildInConversion(
 
         auto jt = rhs_outputs.find(name_pair.rhs_name);
         if (jt == rhs_outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find right key {} in JOIN step", name_pair.lhs_name);
         rhs_dag.getOutputs().push_back(jt->second);
     }
 
@@ -82,7 +83,7 @@ InConversion buildInConversion(
         left_columns.front() :
         &lhs_dag.addFunction(func_tuple_builder, std::move(left_columns), {});
 
-    auto generateRandomHash =[]()
+    auto get_random_hash = []()
     {
         auto uuid = UUIDHelpers::generateV4();
         return FutureSet::Hash(UUIDHelpers::getLowBytes(uuid), UUIDHelpers::getHighBytes(uuid));
@@ -90,14 +91,7 @@ InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        generateRandomHash(),
-        nullptr,
-        std::move(in_source),
-        nullptr,
-        nullptr,
-        transform_null_in,
-        size_limits,
-        max_size_for_index);
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
 
     ColumnPtr set_col = ColumnSet::create(1, future_set);
     const ActionsDAG::Node * in_rhs_arg =
@@ -246,7 +240,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         nullptr);
 
     auto join_output_actions_dag = cloneSubDAGWithHeader(output_header, JoinExpressionActions::getSubDAG(join_output_actions));
-    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimiation");
+    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimization");
     parent = std::move(creating_sets_step);
     parent_node->children = {lhs_in_node};
 
