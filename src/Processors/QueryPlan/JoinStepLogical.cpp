@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
+#include <base/scope_guard.h>
+
 #include <Common/JSONBuilder.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
@@ -27,8 +29,6 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
-#include <Interpreters/JoinOperator.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -36,7 +36,6 @@
 #include <IO/Operators.h>
 
 #include <Planner/PlannerJoins.h>
-
 #include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -61,15 +60,12 @@
 #include <unordered_map>
 #include <unordered_set>
 
+namespace
+{
+constexpr std::string_view join_dummy_result_name = "__join_result_dummy";
+}
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsBool join_any_take_last_row;
-    extern const SettingsUInt64 default_max_bytes_in_join;
-}
 
 namespace ErrorCodes
 {
@@ -110,7 +106,7 @@ static void addToNullableIfNeeded(
     bool to_null_right = use_nulls && isLeftOrFull(join_kind);
     for (const auto * node : actions_dag->getInputs())
     {
-        if (!required_output_columns.contains(node->result_name) && node->result_name != "__join_result_dummy")
+        if (!required_output_columns.contains(node->result_name) && node->result_name != join_dummy_result_name)
             continue;
 
         String original_name = node->result_name;
@@ -138,7 +134,7 @@ static void addToNullableIfNeeded(
     if (outputs.empty())
     {
         auto column_type = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, "__join_result_dummy");
+        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, String(join_dummy_result_name));
         const auto * node = &actions_dag->addColumn(std::move(column));
         actions_after_join.push_back(node);
         outputs.push_back(node);
@@ -330,6 +326,156 @@ void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Actions", ExpressionActions(std::move(actions_dag)).toTree());
 }
 
+bool JoinStepLogical::canRemoveUnusedColumns() const
+{
+    return !hasDuplicatedNamesInInputOrOutputs(*expression_actions.getActionsDAG());
+}
+
+IQueryPlanStep::RemovedUnusedColumns JoinStepLogical::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
+{
+    auto & actions_dag = *expression_actions.getActionsDAG();
+    const auto input_count_before = actions_dag.getInputs().size();
+    ActionsDAG::NodeRawConstPtrs required_nodes;
+    ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
+
+    bool removed_any_output = false;
+    for (const auto * output_node : actions_dag.getOutputs())
+    {
+        if (auto it = required_outputs.find(output_node->result_name); it != required_outputs.end())
+        {
+            required_nodes.push_back(output_node);
+            required_outputs.erase(it);
+        }
+        else if (!isDummyColumnOfThisStep(output_node))
+        {
+            /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one output column
+            removed_any_output = true;
+            new_actions_after_join.erase(
+                std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
+        }
+    }
+
+    if (required_nodes.empty())
+    {
+        auto column_type = std::make_shared<DataTypeUInt8>();
+        ColumnWithTypeAndName column(column_type->createColumnConst(1, 0), column_type, String(join_dummy_result_name));
+        const auto * node = &actions_dag.addColumn(std::move(column));
+        new_actions_after_join.push_back(node);
+        required_nodes.push_back(node);
+        actions_dag.getOutputs().push_back(node);
+    }
+
+    ActionsDAG::NodeRawConstPtrs new_outputs = required_nodes;
+
+    for (const auto & join_action : join_operator.expression)
+        required_nodes.push_back(join_action.getNode());
+
+    for (const auto & join_action : join_operator.residual_filter)
+        required_nodes.push_back(join_action.getNode());
+
+    if (required_nodes.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No required output nodes, actions_dag: {}", actions_dag.dumpDAG());
+
+    bool has_required_input_from_left = false;
+    bool has_required_input_from_right = false;
+    for (const auto * required_node : required_nodes)
+    {
+        const auto source_relations = JoinActionRef(required_node, expression_actions).getSourceRelations();
+        has_required_input_from_left |= source_relations.test(0);
+        has_required_input_from_right |= source_relations.test(1);
+        if (has_required_input_from_left && has_required_input_from_right)
+            break;
+    }
+
+    /// The inputs should be in the same order as input headers
+    if (!has_required_input_from_left && !actions_dag.getInputs().empty() && !getInputHeaders().at(0)->empty())
+    {
+        const auto * maybe_left_input = actions_dag.getInputs().front();
+        if (JoinActionRef(maybe_left_input, expression_actions).fromLeft())
+            required_nodes.push_back(maybe_left_input);
+    }
+
+    const auto number_of_left_inputs = input_headers.at(0)->columns();
+    if (!has_required_input_from_right && actions_dag.getInputs().size() >= number_of_left_inputs && !getInputHeaders().at(1)->empty())
+    {
+        const auto * maybe_right_input = actions_dag.getInputs().at(number_of_left_inputs);
+        if (JoinActionRef(maybe_right_input, expression_actions).fromRight())
+            required_nodes.push_back(maybe_right_input);
+    }
+
+    const auto removed_any_actions = std::invoke(
+        [&]()
+        {
+            actions_dag.getOutputs().swap(required_nodes);
+            SCOPE_EXIT({ actions_dag.getOutputs().swap(required_nodes); });
+            return actions_dag.removeUnusedActions(remove_inputs);
+        });
+
+    if (!removed_any_actions && !removed_any_output)
+        return RemovedUnusedColumns::None;
+
+    actions_dag.getOutputs().swap(new_outputs);
+    actions_after_join = std::move(new_actions_after_join);
+
+    const auto removed_any_input = actions_dag.getInputs().size() < input_count_before;
+
+    const auto update_source_mapping = [&]()
+    {
+        JoinExpressionActions::NodeToSourceMapping node_sources;
+
+        for (const auto & node : actions_dag.getNodes())
+        {
+            const auto action_ref = JoinActionRef(&node, expression_actions);
+            node_sources[&node] = action_ref.getSourceRelations();
+        }
+
+        expression_actions.resetNodeSources(std::move(node_sources));
+    };
+
+    if (!removed_any_input)
+    {
+        update_source_mapping();
+        updateOutputHeader();
+        return RemovedUnusedColumns::OutputOnly;
+    }
+
+    /// Once we support repeated input/output names, we have to make sure the order of columns in input headers
+    /// are the same as for the inputs for the ActionsDAG
+    NameMultiSet required_input_names;
+    for (const auto * input_node : actions_dag.getInputs())
+        required_input_names.insert(input_node->result_name);
+
+    const auto remove_unused_inputs_from_header = [&required_input_names](const Block & header)
+    {
+        Block new_header;
+        for (const auto & column : header)
+        {
+            if (required_input_names.contains(column.name))
+                new_header.insert(column);
+        }
+        return std::make_shared<const Block>(std::move(new_header));
+    };
+
+    SharedHeaders new_input_headers;
+    for (const auto & input_header : input_headers)
+        new_input_headers.push_back(remove_unused_inputs_from_header(*input_header));
+
+    update_source_mapping();
+
+    updateInputHeaders(std::move(new_input_headers));
+    updateOutputHeader();
+
+    return RemovedUnusedColumns::OutputAndInput;
+}
+
+bool JoinStepLogical::canRemoveColumnsFromOutput() const
+{
+    if (output_header == nullptr)
+        return false;
+
+    return canRemoveUnusedColumns() && output_header->columns() > 1;
+}
+
 void JoinStepLogical::updateOutputHeader()
 {
     auto actions_dag = expression_actions.getActionsDAG();
@@ -345,6 +491,11 @@ void JoinStepLogical::updateOutputHeader()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
 
     output_header = std::make_shared<const Block>(std::move(header));
+}
+
+bool JoinStepLogical::isDummyColumnOfThisStep(const ActionsDAG::Node * node) const
+{
+    return node->result_name == join_dummy_result_name && JoinActionRef(node, expression_actions).fromNone();
 }
 
 JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)

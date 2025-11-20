@@ -91,7 +91,8 @@ changed (see below) but doing so is not recommended for security reasons.
 
 Query results are referenced in the query cache by the [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) of
 their query. This means that caching is agnostic to upper/lowercase, for example `SELECT 1` and `select 1` are treated as the same query. To
-make the matching more natural, all query-level settings related to the query cache are removed from the AST.
+make the matching more natural, all query-level settings related to the query cache and [output formatting](settings/settings-formats.md))
+are removed from the AST.
 
 If the query was aborted due to an exception or user cancellation, no entry is written into the query cache.
 
