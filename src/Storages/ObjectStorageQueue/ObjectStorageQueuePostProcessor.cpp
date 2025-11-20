@@ -324,7 +324,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::secret_access_key] = move_secret_access_key;
             std::shared_ptr<S3::Client> dst_client = getClient(
                 move_uri,
-                *s3_settings.get(),
+                *s3_settings,
                 contextPtr,
                 /* for_disk_s3 */ false
             );
