@@ -116,6 +116,11 @@
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \
+    M(QueryCacheReadRows, "The number of rows read from the query cache.", ValueType::Number) \
+    M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
+    M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \
+    M(QueryCacheWrittenBytes, "The number of (uncompressed) bytes saved into the query cache", ValueType::Bytes) \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.", ValueType::Number) \
@@ -154,6 +159,9 @@
     M(S3PutRequestThrottlerCount, "Number of S3 PUT, COPY, POST and LIST requests passed through throttler: blocked and not blocked.", ValueType::Number) \
     M(S3PutRequestThrottlerBlocked, "Number of S3 PUT, COPY, POST and LIST requests blocked by throttler.", ValueType::Number) \
     M(S3PutRequestThrottlerSleepMicroseconds, "Total time a query was sleeping to conform S3 PUT, COPY, POST and LIST request throttling.", ValueType::Microseconds) \
+    /* ACME profile events */ \
+    M(ACMEAPIRequests, "Number of ACME API requests issued.", ValueType::Number) \
+    M(ACMECertificateOrders, "Number of ACME certificate orders issued.", ValueType::Number) \
     /* Azure profile events */ \
     M(DiskAzureReadMicroseconds, "Total time spent waiting for Azure disk read requests.", ValueType::Microseconds) \
     M(DiskAzureReadRequestsCount, "Number of Azure disk read requests.", ValueType::Number) \
@@ -528,6 +536,10 @@ The server successfully detected this situation and will download merged part fr
     M(DNSError, "Total count of errors in DNS resolution", ValueType::Number) \
     M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables", ValueType::Microseconds) \
+    M(PartsLocks, "Number of times data parts lock has been acquired for MergeTree tables", ValueType::Number) \
+    M(SharedPartsLockHoldMicroseconds, "Total time spent holding shared data parts lock in MergeTree tables", ValueType::Microseconds) \
+    M(SharedPartsLockWaitMicroseconds, "Total time spent waiting for shared data parts lock in MergeTree tables", ValueType::Microseconds) \
+    M(SharedPartsLocks, "Number of times shared data parts lock has been acquired for MergeTree tables", ValueType::Number) \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (note that this is a sum).", ValueType::Microseconds) \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user mode. This includes time CPU pipeline was stalled due to main memory access, cache misses, branch mispredictions, hyper-threading, etc.", ValueType::Microseconds) \
@@ -543,8 +555,8 @@ The server successfully detected this situation and will download merged part fr
     M(OSCPUVirtualTimeMicroseconds, "CPU time spent seen by OS. Does not include involuntary waits due to virtualization.", ValueType::Microseconds) \
     M(OSReadBytes, "Number of bytes read from disks or block devices. Doesn't include bytes read from page cache. May include excessive data due to block size, readahead, etc.", ValueType::Bytes) \
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.", ValueType::Bytes) \
-    M(OSReadChars, "Number of bytes read from filesystem, including page cache.", ValueType::Bytes) \
-    M(OSWriteChars, "Number of bytes written to filesystem, including page cache.", ValueType::Bytes) \
+    M(OSReadChars, "Number of bytes read from filesystem, including page cache, as well as network and other files.", ValueType::Bytes) \
+    M(OSWriteChars, "Number of bytes written to filesystem, including page cache, as well as network and other files.", ValueType::Bytes) \
     \
     M(ParallelReplicasHandleRequestMicroseconds, "Time spent processing requests for marks from replicas", ValueType::Microseconds) \
     M(ParallelReplicasHandleAnnouncementMicroseconds, "Time spent processing replicas announcements", ValueType::Microseconds) \
@@ -640,7 +652,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
     M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
-    M(S3GetObjectAttributes, "Number of S3 API GetObjectAttributes calls.", ValueType::Number) \
+    M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
     M(S3UploadPart, "Number of S3 API UploadPart calls.", ValueType::Number) \
@@ -653,7 +665,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskS3CopyObject, "Number of DiskS3 API CopyObject calls.", ValueType::Number) \
     M(DiskS3ListObjects, "Number of DiskS3 API ListObjects calls.", ValueType::Number) \
     M(DiskS3HeadObject,  "Number of DiskS3 API HeadObject calls.", ValueType::Number) \
-    M(DiskS3GetObjectAttributes, "Number of DiskS3 API GetObjectAttributes calls.", ValueType::Number) \
+    M(DiskS3GetObjectTagging, "Number of DiskS3 API GetObjectTagging calls.", ValueType::Number) \
     M(DiskS3CreateMultipartUpload, "Number of DiskS3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(DiskS3UploadPartCopy, "Number of DiskS3 API UploadPartCopy calls.", ValueType::Number) \
     M(DiskS3UploadPart, "Number of DiskS3 API UploadPart calls.", ValueType::Number) \
@@ -1233,6 +1245,9 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    \
+    M(S3CachedCredentialsProvidersReused, "Total number of reused credentials provider from the cache", ValueType::Number) \
+    M(S3CachedCredentialsProvidersAdded, "Total number of newly added credentials providers to the cache", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

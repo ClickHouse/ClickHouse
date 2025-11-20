@@ -46,6 +46,8 @@ class Field;
 struct FormatSettings;
 struct NameAndTypePair;
 
+struct MergeTreeSettings;
+
 /** Represents serialization of data type.
  *  Has methods to serialize/deserialize column in binary and several text formats.
  *  Every data type has default serialization, but can be serialized in different representations.
@@ -527,6 +529,13 @@ public:
     /// If method will throw an exception, then column will be in same state as before call to method.
     virtual void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
+    /// Method that is used to serialize value for generic hash calculation of a value in the column.
+    /// Note that this method should respect compatibility.
+    virtual void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+    {
+        serializeBinary(column, row_num, ostr, {});
+    }
+
     /** Text serialization with escaping but without quoting.
       */
     virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
@@ -586,8 +595,16 @@ public:
 
     virtual void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
 
-    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
-    static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
+    struct StreamFileNameSettings
+    {
+        StreamFileNameSettings() = default;
+        explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
+
+        bool escape_variant_substreams = true;
+    };
+
+    static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings);
+    static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings);
     static String getFileNameForRenamedColumnStream(const NameAndTypePair & column_from, const NameAndTypePair & column_to, const String & file_name);
     static String getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name);
 

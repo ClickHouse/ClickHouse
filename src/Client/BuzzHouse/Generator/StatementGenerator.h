@@ -493,16 +493,17 @@ private:
         uint32_t added_structure = 0;
         uint32_t added_storage_class_name = 0;
         const uint32_t toadd_path = 1;
-        const uint32_t toadd_format = (b.file_format.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 91;
-        const uint32_t toadd_compression = (b.file_comp.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy
-            = (b.partition_strategy.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
-            && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_format = (b.file_format.has_value() && !this->allow_not_deterministic)
+            || (this->allow_not_deterministic && rg.nextMediumNumber() < 91);
+        const uint32_t toadd_compression
+            = (b.file_comp.has_value() && !this->allow_not_deterministic) || (this->allow_not_deterministic && rg.nextMediumNumber() < 51);
+        const uint32_t toadd_partition_strategy = (b.partition_strategy.has_value() && !this->allow_not_deterministic)
+            || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
         const uint32_t toadd_partition_columns_in_data_file
-            = (b.partition_columns_in_data_file.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
-            && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_storage_class_name
-            = (b.storage_class_name.has_value() || (b.isS3Engine() && this->allow_not_deterministic)) && rg.nextMediumNumber() < 21;
+            = (b.partition_columns_in_data_file.has_value() && !this->allow_not_deterministic)
+            || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
+        const uint32_t toadd_storage_class_name = (b.storage_class_name.has_value() && !this->allow_not_deterministic)
+            || (b.isS3Engine() && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!this->allow_not_deterministic || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_storage_class_name + toadd_structure;

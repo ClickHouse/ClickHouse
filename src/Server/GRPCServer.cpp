@@ -835,7 +835,7 @@ namespace
     {
         try
         {
-            setThreadName("GRPCServerCall");
+            DB::setThreadName(ThreadName::GRPC_SERVER_CALL);
             receiveQuery();
             executeQuery();
             processInput();
@@ -1435,7 +1435,7 @@ namespace
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entry.reset();
+        io.process_list_entries.clear();
         if (query_context)
             query_context->setProcessListElement(nullptr);
         if (session)
@@ -1900,7 +1900,7 @@ private:
 
     void run()
     {
-        setThreadName("GRPCServerQueue");
+        DB::setThreadName(ThreadName::GRPC_SERVER_QUEUE);
 
         bool ok = false;
         void * tag = nullptr;

@@ -1294,7 +1294,7 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         format_settings,
         args.getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, args.getContext(), format_settings, PartitionStrategyFactory::StrategyType::NONE, sample_path));
     setInMemoryMetadata(storage_metadata);
 
     supports_prewhere = format_name != "Distributed" && FormatFactory::instance().checkIfFormatSupportsPrewhere(format_name, args.getContext(), format_settings);
@@ -1323,7 +1323,7 @@ StorageFileSource::FilesIterator::FilesIterator(
 {
     std::optional<ActionsDAG> filter_dag;
     if (!distributed_processing && !archive_info && !files.empty())
-        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
+        filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context_, hive_columns);
 
     if (filter_dag)
     {
@@ -2433,6 +2433,9 @@ void registerStorageFile(StorageFactory & factory)
 
             if (0 <= source_fd) /// File descriptor
                 return std::make_shared<StorageFile>(source_fd, storage_args);
+
+            if (!file_source)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument must be path or file descriptor");
 
             /// User's file
             return std::make_shared<StorageFile>(*file_source, storage_args);

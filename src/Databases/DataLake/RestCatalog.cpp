@@ -1,5 +1,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include "config.h"
 
@@ -129,6 +130,32 @@ RestCatalog::RestCatalog(
 
     config = loadConfig();
 }
+
+RestCatalog::RestCatalog(
+    const std::string & warehouse_,
+    const std::string & base_url_,
+    const std::string & onelake_tenant_id,
+    const std::string & onelake_client_id,
+    const std::string & onelake_client_secret,
+    const std::string & auth_scope_,
+    const std::string & oauth_server_uri_,
+    bool oauth_server_use_request_body_,
+    DB::ContextPtr context_)
+    : ICatalog(warehouse_)
+    , DB::WithContext(context_)
+    , base_url(correctAPIURI(base_url_))
+    , log(getLogger("RestCatalog(" + warehouse_ + ")"))
+    , tenant_id(onelake_tenant_id)
+    , client_id(onelake_client_id)
+    , client_secret(onelake_client_secret)
+    , auth_scope(auth_scope_)
+    , oauth_server_uri(oauth_server_uri_)
+    , oauth_server_use_request_body(oauth_server_use_request_body_)
+{
+    update_token_if_expired = true;
+    config = loadConfig();
+}
+
 
 RestCatalog::Config RestCatalog::loadConfig()
 {
@@ -332,7 +359,7 @@ bool RestCatalog::empty() const
 DB::Names RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
-    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, "RestCatalog");
+    DB::ThreadPoolCallbackRunnerLocal<void> runner(pool, DB::ThreadName::DATALAKE_REST_CATALOG);
 
     DB::Names tables;
     std::mutex mutex;

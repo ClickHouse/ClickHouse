@@ -2950,6 +2950,11 @@ CONV_FN(IndexParam, ip)
         case IndexParamType::kUnescapedSval:
             ret += ip.unescaped_sval();
             break;
+        case IndexParamType::kKval:
+            ret += ip.kval().key();
+            ret += " = ";
+            ExprToString(ret, ip.kval().value());
+            break;
         default:
             ret += "0";
     }
@@ -3494,7 +3499,7 @@ CONV_FN(CreateTable, create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
+    if (create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4006,7 +4011,7 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
+    if (create_view.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4953,9 +4958,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kUnloadPk:
             SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
-        case CmdType::kRefreshViews:
-            ret += "REFRESH VIEWS";
-            break;
         case CmdType::kRefreshView:
             ret += "REFRESH VIEW ";
             ExprSchemaTableToString(ret, cmd.refresh_view());
@@ -5061,6 +5063,18 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kReconnectKeeper:
             ret += "RECONNECT ZOOKEEPER";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexDictionaryCache:
+            ret += "DROP TEXT INDEX DICTIONARY CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexHeaderCache:
+            ret += "DROP TEXT INDEX HEADER CACHE";
+            can_set_cluster = true;
+            break;
+        case CmdType::kDropTextIndexPostingsCache:
+            ret += "DROP TEXT INDEX POSTINGS CACHE";
             can_set_cluster = true;
             break;
         default:
