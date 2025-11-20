@@ -17,6 +17,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <cstring> // memcpy
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
