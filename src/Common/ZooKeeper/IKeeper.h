@@ -265,7 +265,7 @@ struct GetACLResponse : virtual Response
 
 struct CheckWatchRequest : virtual Request
 {
-    enum class CheckWatchType : int32_t 
+    enum class CheckWatchType : int32_t
     {
         ANY = 0,
         DATA = 1,
@@ -278,7 +278,7 @@ struct CheckWatchRequest : virtual Request
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
 
-    size_t bytesSize() const override 
+    size_t bytesSize() const override
     {
         return path.size() + sizeof(type);
     }
@@ -303,7 +303,7 @@ struct RemoveWatchRequest : virtual Request
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
 
-    size_t bytesSize() const override 
+    size_t bytesSize() const override
     {
         return path.size() + sizeof(type);
     }
@@ -327,7 +327,7 @@ struct AddWatchRequest : virtual Request
     String getPath() const override { return path; }
     void addRootPath(const String & root_path) override { path = root_path; }
 
-    size_t bytesSize() const override 
+    size_t bytesSize() const override
     {
         return path.size() + sizeof(mode);
     }
@@ -346,21 +346,21 @@ struct SetWatchRequest : virtual Request
 
     String getPath() const override { return data_watches[0]; }
     void addRootPath(const String &) override {}
-    size_t bytesSize() const override 
+    size_t bytesSize() const override
     {
         size_t result = sizeof(zxid);
         result += pathesSize(data_watches);
         result += pathesSize(exist_watches);
         result += pathesSize(child_watches);
 
-        return result;  
+        return result;
     }
 
 protected:
-    static size_t pathesSize(const std::vector<String> & pathes)
+    static size_t pathesSize(const std::vector<String> & paths)
     {
         size_t result = sizeof(Int32);
-        for (const auto & elem : pathes)
+        for (const auto & elem : paths)
             result += sizeof(Int32) + elem.size();
         return result;
     }
@@ -378,7 +378,7 @@ struct SetWatch2Request : virtual SetWatchRequest
 
     String getPath() const override { return data_watches[0]; }
     void addRootPath(const String &) override {}
-    size_t bytesSize() const override 
+    size_t bytesSize() const override
     {
         size_t result = SetWatchRequest::bytesSize();
         result += pathesSize(persistent_watches);

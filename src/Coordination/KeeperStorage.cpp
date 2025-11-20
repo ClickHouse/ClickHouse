@@ -164,7 +164,6 @@ KeeperResponsesForSessions processWatchesImplBase(
     Coordination::Event event_type,
     bool should_delete)
 {
-    std::cerr << "processWatchesImplBase\n";
     KeeperResponsesForSessions result;
 
     auto watch_it = watches.find(path);
@@ -206,7 +205,7 @@ KeeperResponsesForSessions processWatchesImplBase(
             paths_to_check_for_list_watches.push_back(parent_path); /// And for parent path
         }
     }
-    else 
+    else
     {
         auto current_path = path;
         while (current_path.size() > 1)
@@ -269,7 +268,6 @@ KeeperResponsesForSessions processWatchesImpl(
     KeeperStorageBase::SessionAndWatcher & sessions_and_watchers,
     Coordination::Event event_type)
 {
-    std::cerr << "processWatchesImpl\n";
     KeeperResponsesForSessions result;
 
     if (event_type == Coordination::Event::CREATED || event_type == Coordination::Event::DELETED)
@@ -292,7 +290,7 @@ KeeperResponsesForSessions processWatchesImpl(
             }
 
             exist_watches.erase(watch_it);
-        }    
+        }
     }
 
     auto process_non_persistent_watches = processWatchesImplBase(path, watches, list_watches, sessions_and_watchers, event_type, true);
@@ -2699,7 +2697,6 @@ template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr
 processImpl(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    std::cerr << "processImpl\n";
     auto response = zk_request.makeResponse();
     if constexpr (!local)
     {
@@ -2717,7 +2714,6 @@ processImpl(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage &
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    std::cerr << "process\n";
     return processImpl<false>(zk_request, storage, std::move(deltas), session_id);
 }
 
@@ -2725,7 +2721,6 @@ template <typename Storage>
 Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperAddWatchRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas, int64_t session_id)
 {
-    std::cerr << "processLocal\n";
     ProfileEvents::increment(ProfileEvents::KeeperSetWatchRequest);
     return processImpl<true>(zk_request, storage, std::move(deltas), session_id);
 }
@@ -4216,7 +4211,7 @@ void KeeperStorageBase::clearDeadWatches(int64_t session_id)
             if (watches_for_path.empty())
                 watches.erase(watch);
         }
-        else 
+        else
         {
             auto watch = exist_watches.find(watch_path);
             chassert(watch != exist_watches.end());
@@ -4365,7 +4360,7 @@ bool KeeperStorageBase::containsWatch(const String & path, Coordination::CheckWa
     switch (check_type)
     {
         case Coordination::CheckWatchRequest::CheckWatchType::ANY:
-            return containsWatch(path, Coordination::CheckWatchRequest::CheckWatchType::DATA) || 
+            return containsWatch(path, Coordination::CheckWatchRequest::CheckWatchType::DATA) ||
                 containsWatch(path, Coordination::CheckWatchRequest::CheckWatchType::CHILDREN);
 
         case Coordination::CheckWatchRequest::CheckWatchType::DATA:
@@ -4483,7 +4478,7 @@ void KeeperStorageBase::removePersistentWatch(const String& path,
         case Coordination::RemoveWatchRequest::WatchType::Children:
         {
             list_watches[path].erase(session_id);
-            sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = false, .trigger_on_exists = false});    
+            sessions_and_watchers[session_id].erase(WatchInfo{.path = path, .is_list_watch = true, .is_persistent = false, .trigger_on_exists = false});
 
             break;
         }
