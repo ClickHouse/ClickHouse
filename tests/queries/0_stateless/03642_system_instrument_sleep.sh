@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: use_xray, no-parallel, no-fasttest
+# Tags: use-xray, no-parallel, no-fasttest
 # no-parallel: avoid other tests trying to add the same instrumentation to the same symbol
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
