@@ -809,7 +809,7 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
     const uint32_t prob_space = cluster_func + remote_func + no_remote_or_cluster;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
-    const bool allCols = rg.nextMediumNumber() < 2;
+    const bool allCols = rg.nextMediumNumber() < 4;
 
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
@@ -984,8 +984,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     std::uniform_int_distribution<uint64_t> string_length_dist(fc.min_string_length, fc.max_string_length);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
     const bool is_url = tableOrFunctionRef(rg, t, ins->mutable_tof());
+    const bool allCols = rg.nextMediumNumber() < 4;
 
-    flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
+    flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     if (!is_url)
     {

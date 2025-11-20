@@ -373,13 +373,13 @@ String SQLBase::getMetadataPath(const FuzzConfig & fc) const
     return has_metadata ? fmt::format("{}/metadatat{}", fc.server_file_path.generic_string(), tname) : "";
 }
 
-size_t SQLTable::numberOfInsertableColumns() const
+size_t SQLTable::numberOfInsertableColumns(const bool all) const
 {
     size_t res = 0;
 
     for (const auto & entry : cols)
     {
-        res += entry.second.canBeInserted() ? 1 : 0;
+        res += entry.second.canBeInserted() || all ? 1 : 0;
     }
     return res;
 }

@@ -423,7 +423,7 @@ public:
     {
     }
 
-    size_t numberOfInsertableColumns() const;
+    size_t numberOfInsertableColumns(bool all) const;
 
     bool supportsFinal() const
     {
