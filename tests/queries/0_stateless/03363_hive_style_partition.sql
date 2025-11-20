@@ -76,8 +76,8 @@ INSERT INTO FUNCTION s3(s3_conn, filename='t_03363_parquet', format=Parquet, par
 -- Schema specified, but the hive partition column is missing in the schema (present in the data tho)
 INSERT INTO FUNCTION s3(s3_conn, filename='half_baked', format=Parquet, partition_strategy='hive') PARTITION BY year SELECT 1 AS key, 2020 AS year;
 
--- Should fail because schema does not match since it is lacking the partition columns and `use_hive_partitioning=1`
-CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=1; -- {serverError BAD_ARGUMENTS}
+-- Should fail because contains only partition columns in schema and `use_hive_partitioning=1`
+CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=1; -- {serverError INCORRECT_DATA}
 
 -- Should succeed because hive is off
 CREATE TABLE s3_table_half_schema_with_format (key UInt64) engine=S3(s3_conn, filename='half_baked/**.parquet', format=Parquet) SETTINGS use_hive_partitioning=0;
