@@ -977,9 +977,10 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
     S3StorageParsableArguments parsable_arguments;
     parsable_arguments.fromASTImpl(args, context, with_structure);
     initializeFromParsableArguments(std::move(parsable_arguments));
-    keys = {parsable_arguments.url.key};
-    static_configuration = !parsable_arguments.s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || parsable_arguments.s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    keys = {url.key};
+    assert(s3_settings != nullptr);
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
