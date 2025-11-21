@@ -116,12 +116,8 @@ def run_fuzz_job(check_name: str):
             info += f"Error:\n{error_output}\n"
 
         patterns = [
-            "BuzzHouse fuzzer exception",
-            "Killed",
             "Let op!",
-            "Received signal",
-            "runtime error:",
-            "Sanitizer:",
+            "Killed",
             "Unknown error",
         ]
         if result.results and any(
@@ -139,7 +135,7 @@ def run_fuzz_job(check_name: str):
         else:
             try:
                 fuzzer_test_generator = FuzzerTestGenerator(
-                    str(server_log), str(fuzzer_log)
+                    str(server_log), str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log)
                 )
                 failed_query = fuzzer_test_generator.get_failed_query()
                 if failed_query:
