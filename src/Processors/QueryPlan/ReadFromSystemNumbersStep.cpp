@@ -553,22 +553,22 @@ Pipe ReadFromSystemNumbersStep::makePipe()
         /// intersection with overflowed_table_range goes back.
         if (overflowed_table_range.has_value())
         {
+            auto step = numbers_storage.step;
+
+            UInt64 offset_mod = numbers_storage.offset % step;
+
+            /// 2^64 % step, computed safely in 128-bit
+            UInt64 wrap_mod = static_cast<UInt64>((static_cast<UInt128>(std::numeric_limits<UInt64>::max()) + 1) % step);
+
+            /// remainder for the wrapped segment: (offset - 2^64) % step
+            UInt128 tmp = static_cast<UInt128>(offset_mod) + step - wrap_mod;
+            UInt64 remainder_overflow = static_cast<UInt64>(tmp % step);
+
             for (auto & r : ranges)
             {
                 auto intersected_range = overflowed_table_range->intersectWith(r);
                 if (intersected_range)
                 {
-                    auto step = numbers_storage.step;
-
-                    UInt64 offset_mod = numbers_storage.offset % step;
-
-                    /// 2^64 % step, computed safely in 128-bit
-                    UInt64 wrap_mod = static_cast<UInt64>((static_cast<UInt128>(std::numeric_limits<UInt64>::max()) + 1) % step);
-
-                    /// remainder for the wrapped segment: (offset - 2^64) % step
-                    UInt128 tmp = static_cast<UInt128>(offset_mod) + step - wrap_mod;
-                    UInt64 remainder_overflow = static_cast<UInt64>(tmp % step);
-
                     auto range_with_step = steppedRangeFromRange(intersected_range.value(), step, remainder_overflow);
                     if (range_with_step)
                         intersected_ranges.push_back(*range_with_step);
