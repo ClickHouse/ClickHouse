@@ -4,7 +4,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Access/MaskingPolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
