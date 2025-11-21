@@ -357,9 +357,7 @@ void filterArraysImplInPlace(
         if (need_copy)
         {
             result_offsets_builder.insertOne(arr_size);
-
-            const auto elems_size_old = res_elems_size;
-            memmove(&elem_pos[elems_size_old], &elem_pos[arr_offset], arr_size * sizeof(T));
+            memmove(&elem_pos[res_elems_size], &elem_pos[arr_offset], arr_size * sizeof(T));
         }
 
         res_elems_size += arr_size;
@@ -389,8 +387,7 @@ void filterArraysImplInPlace(
                 result_offsets_builder.insertChunk<SIMD_BYTES>(offsets_pos, chunk_offset, chunk_size);
 
                 /// copy elements for SIMD_BYTES arrays at once
-                const auto elems_size_old = res_elems_size;
-                memmove(&elem_pos[elems_size_old], &elem_pos[chunk_offset], chunk_size * sizeof(T));
+                memmove(&elem_pos[res_elems_size], &elem_pos[chunk_offset], chunk_size * sizeof(T));
             }
 
             res_elems_size += chunk_size;
