@@ -373,6 +373,12 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
 
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
+    if (columns.empty())
+    {
+        *memory = 0;
+        return memory + 1;
+    }
+
     for (const auto & column : columns)
         memory = column->serializeValueIntoMemory(n, memory);
 
@@ -381,6 +387,9 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 
 std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 {
+    if (columns.empty())
+        return 1;
+
     size_t res = 0;
     for (const auto & column : columns)
     {
@@ -394,38 +403,44 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnTuple::skipSerializedInArena(const char * pos) const
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
 {
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
     for (const auto & column : columns)
-        pos = column->skipSerializedInArena(pos);
-
-    return pos;
+        column->skipSerializedInArena(in);
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
