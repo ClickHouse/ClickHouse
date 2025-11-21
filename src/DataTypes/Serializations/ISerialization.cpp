@@ -9,7 +9,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/assert_cast.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -17,11 +16,6 @@
 
 namespace DB
 {
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool escape_variant_subcolumn_filenames;
-}
 
 namespace ErrorCodes
 {
@@ -260,8 +254,7 @@ String getNameForSubstreamPath(
     SubstreamIterator begin,
     SubstreamIterator end,
     bool escape_for_file_name,
-    bool encode_sparse_stream,
-    bool escape_variant_substreams)
+    bool encode_sparse_stream)
 {
     using Substream = ISerialization::Substream;
 
@@ -308,19 +301,9 @@ String getNameForSubstreamPath(
         else if (it->type == Substream::VariantOffsets)
             stream_name += ".variant_offsets";
         else if (it->type == Substream::VariantElement)
-        {
-            if (escape_for_file_name && escape_variant_substreams)
-                stream_name += "." + escapeForFileName(it->variant_element_name);
-            else
-                stream_name += "." + it->variant_element_name;
-        }
+            stream_name += "." + it->variant_element_name;
         else if (it->type == Substream::VariantElementNullMap)
-        {
-            if (escape_for_file_name && escape_variant_substreams)
-                stream_name += "." + escapeForFileName(it->variant_element_name) + ".null";
-            else
-                stream_name += "." + it->variant_element_name + ".null";
-        }
+            stream_name += "." + it->variant_element_name + ".null";
         else if (it->type == SubstreamType::DynamicStructure)
             stream_name += ".dynamic_structure";
         else if (it->type == SubstreamType::ObjectStructure)
@@ -364,9 +347,9 @@ String getNameForSubstreamPath(
 
 }
 
-String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path, const StreamFileNameSettings & settings)
+String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path)
 {
-    return getFileNameForStream(column.getNameInStorage(), path, settings);
+    return getFileNameForStream(column.getNameInStorage(), path);
 }
 
 static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path)
@@ -389,7 +372,7 @@ static bool isPossibleOffsetsOfNested(const ISerialization::SubstreamPath & path
     return false;
 }
 
-String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path, const StreamFileNameSettings & settings)
+String ISerialization::getFileNameForStream(const String & name_in_storage, const SubstreamPath & path)
 {
     String stream_name;
     auto nested_storage_name = Nested::extractTableName(name_in_storage);
@@ -398,7 +381,7 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     else
         stream_name = escapeForFileName(name_in_storage);
 
-    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false, settings.escape_variant_substreams);
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true, false);
 }
 
 String ISerialization::getFileNameForRenamedColumnStream(const String & name_from, const String & name_to, const String & file_name)
@@ -426,7 +409,7 @@ String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, boo
 
 String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len, bool encode_sparse_stream)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream, false);
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false, encode_sparse_stream);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -468,7 +451,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
     if (!cache || path.empty())
         return;
 
-    cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
+    cache->emplace(getSubcolumnNameForStream(path, true), std::move(element));
 }
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
@@ -708,11 +691,6 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
         ostr.str());
 }
 
-ISerialization::StreamFileNameSettings::StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings)
-{
-    escape_variant_substreams = merge_tree_settings[MergeTreeSetting::escape_variant_subcolumn_filenames];
-}
-
 void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, ISerialization::Substream substream) const
 {
     path.push_back(substream);
@@ -726,11 +704,11 @@ bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache,
     if (!cached_column_with_num_read_rows)
         return false;
 
-    insertDataFromCachedColumn(settings, result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second, cache);
+    insertDataFromCachedColumn(settings, result_column, cached_column_with_num_read_rows->first, cached_column_with_num_read_rows->second);
     return true;
 }
 
-void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache)
+void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows)
 {
     /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
     /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
@@ -738,16 +716,9 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     /// constructing another column). In this case we need to insert data into resulting column from cached column.
     /// To determine what case we have we store number of read rows in last range in cache.
     if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
-    {
         result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-        /// Replace column in the cache with the new column to avoid inserting into it again
-        /// from currently cached range if this substream will be read again in current range.
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, result_column, num_read_rows);
-    }
     else
-    {
         result_column = cached_column;
-    }
 }
 
 }

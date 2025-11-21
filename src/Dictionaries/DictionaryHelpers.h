@@ -544,7 +544,7 @@ template <DictionaryKeyType dictionary_key_type>
 Block mergeBlockWithPipe(
     size_t key_columns_size,
     const Block & block_to_update,
-    BlockIO && io)
+    QueryPipeline pipeline)
 {
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
@@ -594,48 +594,45 @@ Block mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    PullingPipelineExecutor executor(io.pipeline);
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
 
-    io.executeWithCallbacks([&]()
+    while (executor.pull(block))
     {
-        Block block;
-        while (executor.pull(block))
+        removeSpecialColumnRepresentations(block);
+        block.checkNumberOfRows();
+
+        Columns block_key_columns;
+        block_key_columns.reserve(key_columns_size);
+
+        /// Split into keys columns and attribute columns
+        for (size_t i = 0; i < key_columns_size; ++i)
+            block_key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+        DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
+        PaddedPODArray<KeyType> update_keys = update_keys_extractor.extractAllKeys();
+
+        for (auto update_key : update_keys)
         {
-            removeSpecialColumnRepresentations(block);
-            block.checkNumberOfRows();
-
-            Columns block_key_columns;
-            block_key_columns.reserve(key_columns_size);
-
-            /// Split into keys columns and attribute columns
-            for (size_t i = 0; i < key_columns_size; ++i)
-                block_key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-            DictionaryKeysExtractor<dictionary_key_type> update_keys_extractor(block_key_columns, arena_holder.getComplexKeyArena());
-            PaddedPODArray<KeyType> update_keys = update_keys_extractor.extractAllKeys();
-
-            for (auto update_key : update_keys)
+            const auto * it = saved_key_to_index.find(update_key);
+            if (it != nullptr)
             {
-                const auto * it = saved_key_to_index.find(update_key);
-                if (it != nullptr)
-                {
-                    size_t index_to_filter = it->getMapped();
-                    filter[index_to_filter] = false;
-                    ++indexes_to_remove_count;
-                }
-            }
-
-            size_t rows = block.rows();
-
-            for (size_t column_index = 0; column_index < block.columns(); ++column_index)
-            {
-                const auto update_column = block.safeGetByPosition(column_index).column;
-                MutableColumnPtr & result_fetched_column = result_fetched_columns[column_index];
-
-                result_fetched_column->insertRangeFrom(*update_column, 0, rows);
+                size_t index_to_filter = it->getMapped();
+                filter[index_to_filter] = false;
+                ++indexes_to_remove_count;
             }
         }
-    });
+
+        size_t rows = block.rows();
+
+        for (size_t column_index = 0; column_index < block.columns(); ++column_index)
+        {
+            const auto update_column = block.safeGetByPosition(column_index).column;
+            MutableColumnPtr & result_fetched_column = result_fetched_columns[column_index];
+
+            result_fetched_column->insertRangeFrom(*update_column, 0, rows);
+        }
+    }
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
     size_t filter_hint = filter.size() - indexes_to_remove_count;

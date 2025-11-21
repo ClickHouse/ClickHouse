@@ -106,7 +106,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"initial_port", std::make_shared<DataTypeUInt16>(), "The client port that was used to make the parent query."},
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Initial query starting time (for distributed query execution)."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Initial query starting time with microseconds precision (for distributed query execution)."},
-        {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
         {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag whether a query was executed over a secure interface"},
         {"os_user", low_cardinality_string, "Operating system username who runs clickhouse-client."},
@@ -156,8 +155,6 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"query_cache_usage", std::move(query_result_cache_usage_datatype), "Usage of the query cache during query execution. Values: 'Unknown' = Status unknown, 'None' = The query result was neither written into nor read from the query result cache, 'Write' = The query result was written into the query result cache, 'Read' = The query result was read from the query result cache."},
 
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
-
-        {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
     };
 }
 
@@ -333,8 +330,6 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
         async_read_counters->dumpToMapColumn(columns[i++].get());
     else
         columns[i++]->insertDefault();
-
-    columns[i++]->insert(is_internal);
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)
@@ -352,8 +347,6 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(client_info.initial_address->port());
     typeid_cast<ColumnUInt32 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time);
     typeid_cast<ColumnDateTime64 &>(*columns[i++]).getData().push_back(client_info.initial_query_start_time_microseconds);
-
-    columns[i++]->insertData(client_info.authenticated_user);
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.interface));
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(static_cast<UInt8>(client_info.is_secure));

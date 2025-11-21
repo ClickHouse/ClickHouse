@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -204,7 +205,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     ColumnsDescription fake_column_descriptions{};
     // Add columns from index to ensure names are unique in case of duplicated columns.
     for (const auto & column : header.getIndexByName())
-        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type), /*after_column=*/ "", /*first=*/false, /*add_subcolumns=*/false);
+        fake_column_descriptions.add(ColumnDescription(column.first, header.getByPosition(column.second).type));
     auto storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, fake_column_descriptions);
     QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
 
@@ -298,14 +299,13 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         if (res_columns[i] == nullptr || isColumnConst(*res_columns[i]))
             continue;
 
-        auto serialization_info = available_column->type->getSerializationInfo(*res_columns[i]);
-        auto serialization = available_column->type->getSerialization(serialization_info->getKindStack(), IDataType::getSerialization(*available_column));
+        auto serialization = IDataType::getSerialization(*available_column);
         serialization->enumerateStreams([&](const auto & subpath)
         {
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -424,13 +424,10 @@ void fillMissingColumns(
         const auto * array_type = typeid_cast<const DataTypeArray *>(requested_column->type.get());
         if (array_type && !offsets_columns.empty())
         {
-            num_dimensions = array_type->getNumberOfDimensions();
+            num_dimensions = getNumberOfDimensions(*array_type);
             current_offsets.resize(num_dimensions);
 
-            SerializationPtr serialization = IDataType::getSerialization(*requested_column);
-            if (res_columns[i])
-                serialization = requested_column->type->getSerialization(requested_column->type->getSerializationInfo(*res_columns[i])->getKindStack(), serialization);
-
+            auto serialization = IDataType::getSerialization(*requested_column);
             serialization->enumerateStreams([&](const auto & subpath)
             {
                 if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
@@ -441,7 +438,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
@@ -460,9 +457,7 @@ void fillMissingColumns(
         if (!current_offsets.empty())
         {
             Names tuple_elements;
-            SerializationPtr serialization = IDataType::getSerialization(*requested_column);
-            if (res_columns[i])
-                serialization = requested_column->type->getSerialization(requested_column->type->getSerializationInfo(*res_columns[i])->getKindStack(), serialization);
+            auto serialization = IDataType::getSerialization(*requested_column);
 
             /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
             IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)

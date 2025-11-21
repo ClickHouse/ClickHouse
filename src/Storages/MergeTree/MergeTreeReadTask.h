@@ -173,7 +173,7 @@ public:
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        ReadStepsPerformanceCounters & read_steps_performance_counters);
 
     void initializeIndexReader(const MergeTreeIndexBuildContext & index_build_context);
 
@@ -200,7 +200,7 @@ public:
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        ReadStepsPerformanceCounters & read_steps_performance_counters);
 
 private:
     UInt64 estimateNumRows() const;

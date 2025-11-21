@@ -63,7 +63,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Constraint {} does not return a value of type UInt8",
                     backQuote(constraint_ptr->name));
 
-            auto result_column = res_column.column->convertToFullIfNeeded();
+            auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {

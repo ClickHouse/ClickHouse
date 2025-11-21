@@ -14,21 +14,13 @@ from ci.settings.settings import S3_REPORT_BUCKET_NAME
 
 def extract_test_name(title: str, body: str) -> Optional[str]:
     """
-    Best-effort extraction of a test identifier from an issue title/body.
-
-    Heuristics (in order):
-    - A 5-digit test id followed by an underscore and non-space characters,
-      e.g. "01234_test_name".
-    - A pytest-style name starting with "test_" followed by any characters
-      except whitespace or common closing punctuation/quotes.
-
-    Returns the raw match with trailing quotes/punctuation stripped, or None if
-    no pattern matches.
+    Extract test name from issue title or body.
+    Pattern: starts with 5-digit number + _* OR test_*
     """
     # Combine title and body for searching
     text = f"{title}\n{body}"
 
-    # Pattern 1: five digits + underscore + non-space chars (covers numbered tests)
+    # Pattern 1: 5-digit number followed by underscore and anything
     pattern1 = r"\b(\d{5}_\S+)"
     match1 = re.search(pattern1, text)
     if match1:
@@ -36,9 +28,8 @@ def extract_test_name(title: str, body: str) -> Optional[str]:
         # Strip trailing quotes, backticks, and other punctuation
         return test_name.rstrip("`'\",.;:!?)")
 
-    # Pattern 2: pytest-style names that start with test_, allowing rich suffixes
-    # Use a negated class to stop at whitespace or closing punctuation/quotes.
-    pattern2 = r"\b(test_[^\s`'\",]+)"
+    # Pattern 2: test_ followed by anything (word characters, underscores)
+    pattern2 = r"\b(test_\w+)"
     match2 = re.search(pattern2, text)
     if match2:
         test_name = match2.group(1)
@@ -94,7 +85,7 @@ def fetch_github_issues(
         all_issues.extend(issues)
         print(f"  Found {len(all_issues)} issues")
 
-        # If the limit was hit, print a warning — there may be more issues to page
+        # Check if we hit the limit and warn user
         if len(issues) == limit_per_request:
             print(
                 f"  WARNING: Reached limit of {limit_per_request} issues. There may be more issues not fetched."
@@ -193,7 +184,7 @@ if __name__ == "__main__":
         Result.from_commands_run(name="Fetch flaky test issues", command=fetch_catalog)
     )
 
-    if results[-1].is_ok() and catalog is not None:
+    if results[-1].is_ok():
         # Print summary
         print("\n=== Flaky Test Issues Summary ===")
         print(f"Active issues: {len(catalog.active_test_issues)}")
@@ -212,13 +203,9 @@ if __name__ == "__main__":
                 print(
                     f"  Issue #{issue.issue}: {issue.test_name} - {issue.title} (closed: {issue.closed_at})"
                 )
-    elif not results[-1].is_ok():
-        print("ERROR: Fetch flaky test issues step failed")
-    else:
-        print("ERROR: Catalog is None after fetch; nothing to report")
 
     link = None
-    if results[-1].is_ok() and catalog is not None:
+    if results[-1].is_ok():
 
         def upload():
             local_name = catalog.file_name_static("flaky_test_catalog")

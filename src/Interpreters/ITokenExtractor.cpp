@@ -248,12 +248,11 @@ void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t len
     size_t token_len = 0;
 
     while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
-    {
-        /// In order to avoid filter updates with incomplete tokens, first token is ignored unless substring is prefix,
-        /// and last token is ignored, unless substring is suffix. See comment below for example
+        // In order to avoid filter updates with incomplete tokens,
+        // first token is ignored, unless substring is prefix and
+        // last token is ignored, unless substring is suffix
         if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
             bloom_filter.add(data + token_start, token_len);
-    }
 }
 
 void DefaultTokenExtractor::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
@@ -264,10 +263,9 @@ void DefaultTokenExtractor::substringToTokens(const char * data, size_t length, 
 
     while (cur < length && nextInString(data, length, &cur, &token_start, &token_len))
     {
-        /// In order to avoid adding incomplete tokens, first token is ignored unless substring is prefix and last token is ignored, unless substring is suffix.
-        /// Ex: If we want to match row "Service is not ready", and substring is "Serv" or "eady", we don't want to add either
-        /// of these substrings as tokens since they will not match any of the real tokens. However if our token string is
-        /// "Service " or " not ", we want to add these full tokens to our tokens vector.
+        // In order to avoid filter updates with incomplete tokens,
+        // first token is ignored, unless substring is prefix and
+        // last token is ignored, unless substring is suffix
         if ((token_start > 0 || is_prefix) && (token_start + token_len < length || is_suffix))
             tokens.push_back({data + token_start, token_len});
     }
