@@ -20,7 +20,7 @@ def started_cluster():
 
 def test_sql_impersonate():
 
-    node.get_query_request(
+    node.query(
         "CREATE  USER user1 IDENTIFIED WITH plaintext_password BY 'password1';"
         "CREATE  USER user2 IDENTIFIED WITH plaintext_password BY 'password2';"
     )
@@ -36,11 +36,11 @@ def test_sql_impersonate():
 
     errors = []
     for q in queries:
-        err = node.get_query_request(q).get_error()
+        err = node.query_and_get_error(q)
         errors.append((q, err))
 
-    node.get_query_request("DROP USER IF EXISTS user1;")
-    node.get_query_request("DROP USER IF EXISTS user2;")
+    node.query("DROP USER IF EXISTS user1;")
+    node.query("DROP USER IF EXISTS user2;")
 
     for q, err in errors:
         assert "IMPERSONATE feature is disabled" in err, f"Unexpected error for query:\n{q}\nError: {err}"
