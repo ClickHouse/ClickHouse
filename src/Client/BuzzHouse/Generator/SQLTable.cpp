@@ -258,7 +258,6 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
-            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_row_number"}));
@@ -270,9 +269,10 @@ StatementGenerator::createTableRelation(RandomGenerator & rg, const bool allow_i
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_headers"}));
             }
-            else
+            else if (!t.isFileEngine())
             {
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_tags"}));
             }
         }
         else if (t.isDistributedEngine())
