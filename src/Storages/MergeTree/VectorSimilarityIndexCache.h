@@ -62,8 +62,10 @@ public:
     static UInt128 hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
     {
         SipHash hash;
-        hash.update(path_to_data_part.data(), path_to_data_part.size() + 1);
-        hash.update(index_name.data(), index_name.size() + 1);
+        hash.update(path_to_data_part.size());
+        hash.update(path_to_data_part.data(), path_to_data_part.size());
+        hash.update(index_name.size());
+        hash.update(index_name.data(), index_name.size());
         hash.update(index_mark);
         return hash.get128();
     }
@@ -89,9 +91,11 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called for each individual entry being evicted from cache
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr & mapped_ptr) override
     {
         ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
+        UNUSED(mapped_ptr);
     }
 };
 

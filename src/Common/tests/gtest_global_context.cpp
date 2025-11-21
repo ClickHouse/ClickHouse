@@ -1,4 +1,4 @@
-#include "gtest_global_context.h"
+#include <Common/tests/gtest_global_context.h>
 
 #include <Core/Settings.h>
 

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 select 'TEST toVectorCompactArray';
 
 DROP TABLE IF EXISTS uin_value_details;

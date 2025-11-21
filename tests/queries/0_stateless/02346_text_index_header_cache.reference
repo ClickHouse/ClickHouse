@@ -1,0 +1,16 @@
+--- cache miss on the first run.
+1
+cache_hits = 0, cache_misses = 4
+--- cache hit on the second run.
+1
+cache_hits = 4, cache_misses = 0
+--- no profile events when cache is disabled.
+1
+cache_hits = 0, cache_misses = 0
+Clear text index header cache
+--- cache miss on the first run.
+1
+cache_hits = 0, cache_misses = 4
+--- cache hit on the second run.
+1
+cache_hits = 4, cache_misses = 0

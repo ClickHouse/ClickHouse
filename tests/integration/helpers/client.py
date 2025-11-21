@@ -1,5 +1,6 @@
 import logging
 import os
+import signal
 import subprocess as sp
 import tempfile
 from threading import Timer
@@ -178,7 +179,7 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
         stdin_file = tempfile.TemporaryFile(mode="w+")
@@ -192,7 +193,6 @@ class CommandRequest:
 
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
-        env = {}
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
         self.process = sp.Popen(
@@ -304,3 +304,9 @@ class CommandRequest:
             raise QueryTimeoutExceedException("Client timed out!")
 
         return (stdout, stderr)
+
+    def pause_process(self):
+        self.process.send_signal(signal.SIGSTOP)
+
+    def resume_process(self):
+        self.process.send_signal(signal.SIGCONT)

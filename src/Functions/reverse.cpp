@@ -63,7 +63,7 @@ public:
             reversed_types.reserve(element_count);
             reversed_types.assign(original_elements.rbegin(), original_elements.rend());
 
-            if (data_type_tuple.haveExplicitNames())
+            if (data_type_tuple.hasExplicitNames())
             {
                 const auto & original_names = data_type_tuple.getElementNames();
                 Names reversed_names;
@@ -98,6 +98,13 @@ public:
         if (const ColumnTuple * col_tuple = checkAndGetColumn<ColumnTuple>(column.get()))
         {
             size_t tuple_size = col_tuple->tupleSize();
+
+            if (tuple_size == 0)
+            {
+                /// Preserve the number of rows for empty tuple columns
+                return ColumnTuple::create(col_tuple->size());
+            }
+
             Columns tuple_columns(tuple_size);
             for (size_t i = 0; i < tuple_size; ++i)
             {
@@ -146,14 +153,14 @@ REGISTER_FUNCTION(Reverse)
     FunctionDocumentation::Description description = "Reverses the order of the elements in the input array or the characters in the input string.";
     FunctionDocumentation::Syntax syntax = "reverse(arr | str)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr | str", "The source array or string. [`Array(T)`](/sql-reference/data-types/array), [`String`](/sql-reference/data-types/string)."}
+        {"arr | str", "The source array or string.", {"Array(T)", "String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array or string with the order of elements or characters reversed.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array or string with the order of elements or characters reversed."};
     FunctionDocumentation::Examples examples = {
         {"Reverse array", "SELECT reverse([1, 2, 3, 4]);", "[4, 3, 2, 1]"},
         {"Reverse string", "SELECT reverse('abcd');", "'dcba'"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in = FunctionDocumentation::VERSION_UNKNOWN;
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 

@@ -93,7 +93,7 @@ public:
     using Base = ICachePolicy<Key, Mapped, HashFunction, WeightFunction>;
     using typename Base::MappedPtr;
     using typename Base::KeyMapped;
-    using typename Base::OnWeightLossFunction;
+    using typename Base::OnRemoveEntryFunction;
 
     explicit TTLCachePolicy(CurrentMetrics::Metric size_in_bytes_metric_, CurrentMetrics::Metric count_metric_, CachePolicyUserQuotaPtr quotas_)
         : Base(std::move(quotas_))
@@ -228,6 +228,7 @@ public:
         {
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
+            {
                 if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
@@ -238,6 +239,7 @@ public:
                 }
                 else
                     ++it;
+            }
         }
 
         if (sufficient_space_in_cache() && sufficient_space_in_cache_for_user())
@@ -288,7 +290,7 @@ private:
 
     WeightFunction weight_function;
     IsStaleFunction is_stale_function;
-    /// TODO support OnWeightLossFunction callback
+    /// TODO support OnRemoveEntryFunction callback
 
     void clearImpl()
     {
@@ -300,6 +302,7 @@ private:
 
         size_in_bytes = 0;
     }
+
 };
 
 }

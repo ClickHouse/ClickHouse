@@ -61,29 +61,29 @@ def test_settings_from_server(started_cluster):
     node.query("drop user u")
 
     # apply_settings_from_server = false
-    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=0 format JSON")
-    assert '"x": "42"' in res, "should be quoted"
+    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=0 format JSON", user="second_user")
+    assert '"x": 42' in res, "should be unquoted"
 
     # apply_settings_from_server = false using SET query.
-    res = node.query("set apply_settings_from_server=0; select 42::UInt64 as x format JSON;")
-    assert '"x": "42"' in res, "should be quoted"
+    res = node.query("set apply_settings_from_server=0; select 42::UInt64 as x format JSON;", user="second_user")
+    assert '"x": 42' in res, "should be quoted"
 
     # apply_settings_from_server = false in user profile.
     res = node.query("select 42::UInt64 as x format JSON", user="no_apply_user")
-    assert '"x": "42"' in res, "should be quoted"
+    assert '"x": 42' in res, "should be unquoted"
 
     # apply_settings_from_server = false received from server, unsuccessfully overridden by the query.
     res = node.query("select 42::UInt64 as x settings apply_settings_from_server=1 format JSON", user="no_apply_user")
-    assert '"x": "42"' in res, "should be unquoted"
+    assert '"x": 42' in res, "should be unquoted"
 
     # apply_settings_from_server = false implicitly set using compatibility setting.
     res = node.query("select 42::UInt64 as x format JSON", user="compat_user")
-    assert '"x": "42"' in res, "should be quoted"
+    assert '"x": 42' in res, "should be quoted"
 
     # Multiple queries in one session with different value of apply_settings_from_server.
-    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=0 format JSON; select 42::UInt64 as x format JSON;")
-    quoted_pos = res.find('"x": "42"')
-    unquoted_pos = res.find('"x": 42')
+    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=0 format JSON; select 42::UInt64 as x format JSON;", user="second_user")
+    quoted_pos = res.find('"x": 42')
+    unquoted_pos = res.find('"x": "42"')
     assert quoted_pos != -1, "first query should return quoted number"
     assert unquoted_pos != -1, "second query should return unquoted number"
     assert quoted_pos < unquoted_pos, "should be quoted for first query, unquoted for second"

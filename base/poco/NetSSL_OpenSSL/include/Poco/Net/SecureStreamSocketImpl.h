@@ -43,6 +43,9 @@ namespace Net
         void setSendTimeout(const Poco::Timespan & timeout);
         void setReceiveTimeout(const Poco::Timespan & timeout);
 
+        void setSendThrottler(const Poco::Net::ThrottlerPtr & throttler = {});
+        void setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler = {});
+
         SocketImpl * acceptConnection(SocketAddress & clientAddr);
         /// Not supported by a SecureStreamSocket.
         ///

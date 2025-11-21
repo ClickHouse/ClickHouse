@@ -24,17 +24,28 @@ public:
     void addColumn(const String & column);
     /// Add new stream for last added column.
     void addSubstreamToLastColumn(const String & substream);
+    void addSubstreamsToLastColumn(const std::vector<String> & substreams);
 
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;
     std::optional<size_t> tryGetSubstreamPosition(const String & substream) const;
     size_t getFirstSubstreamPosition(size_t column_position) const;
     size_t getLastSubstreamPosition(size_t column_position) const;
 
+    const std::vector<String> & getColumnSubstreams(size_t column_position) const;
+
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
+    String toString() const;
 
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }
+
+    /// Check that we have substreams for all columns and they have the same order as in provided list.
+    void validateColumns(const std::vector<String> & columns) const;
+
+    /// Merge 2 sets of columns substreams with specified columns order.
+    /// If some column exists in both left and right we keep only substreams from the left.
+    static ColumnsSubstreams merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order);
 
 private:
     std::vector<std::pair<String, std::vector<String>>> columns_substreams;

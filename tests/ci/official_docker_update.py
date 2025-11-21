@@ -43,23 +43,14 @@ def run(cmd: str, dry_run: bool = False, **kwargs: Any) -> str:
     return git_runner(cmd, **kwargs)
 
 
-def repo_merge_upstream(repo: Repository, branch: str) -> None:
-    """A temporary hack to implement the following patch in out code base:
-    https://github.com/PyGithub/PyGithub/pull/3175"""
-    post_parameters = {"branch": branch}
-    repo._requester.requestJsonAndCheck(  # pylint:disable=protected-access
-        "POST", f"{repo.url}/merge-upstream", input=post_parameters
-    )
-
-
 @dataclass
 class LibraryRepos:
     """A dataclass to store repositories to process"""
 
     gh: GitHub
-    ldf: Repository
-    images: Repository
-    docs: Repository
+    ldf: Repository  # Library Definition File repository with Dockerfiles for tags
+    images: Repository  # A fork of docker-library/official-images
+    docs: Repository  # A fork of docker-library/docs
 
     @staticmethod
     def get_repos(gh: GitHub, args: argparse.Namespace) -> "LibraryRepos":
@@ -107,7 +98,7 @@ def update_docs(repos: LibraryRepos, dry_run: bool = True) -> None:
         rmtree(docs_dir)
 
     if not dry_run:
-        repo_merge_upstream(repos.docs, repos.docs.default_branch)
+        repos.docs.merge_upstream(repos.docs.default_branch)
 
     run(f"{GIT_PREFIX} clone {repos.docs.ssh_url}", cwd=temp_path)
 
@@ -208,6 +199,93 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
     #############################################################
 
     ldf_dir = temp_path / repos.ldf.name
+    update_ldf_repo(repos, dry_run)
+
+    #############################
+    # LDF repository is updated #
+    #############################
+
+    #########################################################################
+    # Check the fork of docker-library/official-images is up-to-date or not #
+    #########################################################################
+    images_dir = temp_path / repos.images.name
+    if images_dir.is_dir():
+        rmtree(images_dir)
+
+    if not dry_run:
+        repos.images.merge_upstream(repos.images.default_branch)
+        logging.info(
+            "The %s repository is updated to the latest upstream state",
+            repos.images.parent.full_name,
+        )
+
+    run(f"{GIT_PREFIX} clone {repos.images.ssh_url}", cwd=temp_path)
+
+    pr_head = f"{org}:{LIBRARY_BRANCH}"
+    open_images_prs = repos.images.parent.get_pulls(state="open", head=pr_head)
+    try:
+        images_pr = open_images_prs[0]
+        logging.info("There's open PRs in upstream repo, will update it if needed")
+        run(f"{GIT_PREFIX} checkout {LIBRARY_BRANCH}", cwd=images_dir)
+    except IndexError:
+        images_pr = None
+        run(f"{GIT_PREFIX} checkout -B {LIBRARY_BRANCH} --no-track", cwd=images_dir)
+
+    ch_ldf = images_dir / "library/clickhouse"
+    copy2(ldf_dir / "clickhouse", ch_ldf)
+    if not path_is_changed(ch_ldf):
+        logging.info(
+            "Nothing is changed in %s, finishing", repos.images.parent.full_name
+        )
+        return
+
+    logging.info("The diff:\n%s", run("git diff", cwd=images_dir))
+
+    if dry_run:
+        logging.info(
+            "The %s file in %s is changed, would update the upstream",
+            ch_ldf,
+            repos.images.parent.full_name,
+        )
+
+    run(
+        f"{GIT_PREFIX} commit -m 'Update clickhouse according the the latest tags' "
+        f"{ch_ldf}",
+        dry_run,
+        cwd=images_dir,
+    )
+    # --force-with-lease is safe, because either the branch existed for the images_pr,
+    # or it was just created, so no one could change it
+    run(
+        f"{GIT_PREFIX} push --set-upstream --force-with-lease origin {LIBRARY_BRANCH}",
+        dry_run,
+        cwd=images_dir,
+    )
+
+    if images_pr is not None:
+        logging.info("The branch for PR %s is updated", images_pr.html_url)
+        return
+
+    if dry_run:
+        logging.info("Dry running, would create a PR from %s", pr_head)
+        return
+
+    images_pr = repos.images.parent.create_pull(
+        base=repos.images.parent.default_branch,
+        head=pr_head,
+        title=f"Update {ch_ldf.name} to the latest state",
+        body=f"This is an automatic PR to update `{ch_ldf.name}` according to the latest "
+        f"releases.\n\n{MAINTAINERS_HEADER}",
+    )
+    logging.info(
+        "The PR %s is created, please check it and merge if everything is fine",
+        images_pr.html_url,
+    )
+
+
+def update_ldf_repo(repos: LibraryRepos, dry_run: bool = True) -> None:
+    """We need to update the LDF repository with the latest changes"""
+    ldf_dir = temp_path / repos.ldf.name
     if ldf_dir.is_dir():
         rmtree(ldf_dir)
 
@@ -251,77 +329,6 @@ def update_library_images(repos: LibraryRepos, dry_run: bool = True) -> None:
     # Yes, right to the `main`
     run(f"{GIT_PREFIX} push", dry_run, cwd=ldf_dir)
 
-    #############################
-    # LDF repository is updated #
-    #############################
-
-    #########################################################################
-    # Check the fork of docker-library/official-images is up-to-date or not #
-    #########################################################################
-    images_dir = temp_path / repos.images.name
-    if images_dir.is_dir():
-        rmtree(images_dir)
-
-    if not dry_run:
-        repo_merge_upstream(repos.images, repos.images.default_branch)
-
-    run(f"{GIT_PREFIX} clone {repos.images.ssh_url}", cwd=temp_path)
-
-    pr_head = f"{org}:{LIBRARY_BRANCH}"
-    open_images_prs = repos.images.parent.get_pulls(state="open", head=pr_head)
-    try:
-        images_pr = open_images_prs[0]
-        logging.info("There's open PRs in upstream repo, will update it if needed")
-        run(f"{GIT_PREFIX} checkout {LIBRARY_BRANCH}", cwd=images_dir)
-    except IndexError:
-        images_pr = None
-        run(f"{GIT_PREFIX} checkout -B {LIBRARY_BRANCH} --no-track", cwd=images_dir)
-
-    ch_ldf = images_dir / "library/clickhouse"
-    copy2(ldf_dir / "clickhouse", ch_ldf)
-    if not path_is_changed(ch_ldf):
-        logging.info(
-            "Nothing is changed in %s, finishing", repos.images.parent.full_name
-        )
-        return
-
-    logging.info("The diff:\n%s", run("git diff", cwd=images_dir))
-
-    if dry_run:
-        logging.info(
-            "The %s file in %s is changed, would update the upstream",
-            ch_ldf,
-            repos.images.parent.full_name,
-        )
-
-    run(
-        f"{GIT_PREFIX} commit -m 'Update clickhouse according the the latest tags' "
-        f"{ch_ldf}",
-        dry_run,
-        cwd=images_dir,
-    )
-    run(
-        f"{GIT_PREFIX} push --set-upstream origin {LIBRARY_BRANCH}",
-        dry_run,
-        cwd=images_dir,
-    )
-
-    if images_pr is not None:
-        logging.info("The branch for PR %s is updated", images_pr.html_url)
-        return
-
-    if dry_run:
-        logging.info("Dry running, would create a PR from %s", pr_head)
-        return
-
-    repos.images.parent.create_pull(
-        base=repos.images.parent.default_branch,
-        head=pr_head,
-        title=f"Update {ch_ldf.name} to the latest state",
-        body=f"This is an automatic PR to update `{ch_ldf.name}` according to the latest "
-        f"releases.\n\n{MAINTAINERS_HEADER}",
-    )
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -359,7 +366,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     log_levels = [logging.CRITICAL, logging.WARN, logging.INFO, logging.DEBUG]
-    logging.basicConfig(level=log_levels[min(args.verbose, 3)])
+    logging.basicConfig(
+        level=log_levels[min(args.verbose, 3)], format="%(asctime)s %(message)s"
+    )
     logging.debug("Arguments are %s", pformat(args.__dict__))
     token = args.token or get_best_robot_token()
 

@@ -222,7 +222,7 @@ private:
 
     void cleanThread()
     {
-        setThreadName("SessionCleaner");
+        DB::setThreadName(ThreadName::SESSION_CLEANUP);
         std::unique_lock lock{mutex};
         while (!quit)
         {
@@ -320,7 +320,7 @@ Session::~Session()
 
     if (notified_session_log_about_login)
     {
-        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(*user_id));
+        LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
             session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
@@ -403,6 +403,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
 
     prepared_client_info->current_user = credentials_.getUserName();
+    prepared_client_info->authenticated_user = credentials_.getUserName();
     prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
 }
 

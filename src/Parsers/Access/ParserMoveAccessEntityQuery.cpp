@@ -55,7 +55,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     if ((type == AccessEntityType::USER) || (type == AccessEntityType::ROLE))
     {
-        if (!parseUserNames(pos, expected, names))
+        if (!parseUserNames(pos, expected, names, /*allow_query_parameter=*/ false))
             return false;
     }
     else if (type == AccessEntityType::ROW_POLICY)

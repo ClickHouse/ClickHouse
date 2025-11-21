@@ -1,4 +1,5 @@
 import dataclasses
+import re
 import traceback
 from typing import List
 
@@ -17,6 +18,14 @@ DATABASE_SIGN = "Database: "
 SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
 
 RETRIES_SIGN = "Some tests were restarted"
+
+# Regex pattern to match test result lines
+# Format: "2025-10-21 04:08:13 test_name: [ STATUS ] time sec."
+# This ensures we only match actual test result lines, not patterns embedded in error messages
+# Note: Test names can contain letters, digits, underscores, hyphens, and dots
+TEST_RESULT_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ([\w\-\.]+):\s+(\[ (?:OK|FAIL|SKIPPED|UNKNOWN|Timeout!) \])\s+([\d.]+) sec\."
+)
 
 
 # def write_results(results_file, status_file, results, status):
@@ -76,40 +85,43 @@ class FTResultsProcessor:
                     server_died = True
                 if RETRIES_SIGN in line:
                     retries = True
-                if any(
-                    sign in line
-                    for sign in (OK_SIGN, FAIL_SIGN, UNKNOWN_SIGN, SKIPPED_SIGN)
-                ):
-                    test_name = line.split(" ")[2].split(":")[0]
 
-                    test_time = ""
-                    try:
-                        time_token = line.split("]")[1].strip().split()[0]
-                        float(time_token)
-                        test_time = time_token
-                    except:
-                        pass
+                # Use regex to match test result lines precisely
+                # This prevents false matches from error messages containing test patterns
+                match = TEST_RESULT_PATTERN.match(line)
+                if match:
+                    test_name = match.group(1)
+                    status_marker = match.group(2)
+                    test_time = match.group(3)
+
+                    if test_name == "+":
+                        # TODO: investigate and remove
+                        # https://github.com/ClickHouse/ClickHouse/issues/81888
+                        print(
+                            f"ERROR: incorrect test name: {test_name} in line:\n{line}"
+                        )
+                        continue
 
                     total += 1
-                    if TIMEOUT_SIGN in line:
+                    if TIMEOUT_SIGN in status_marker:
                         failed += 1
                         test_results.append((test_name, "Timeout", test_time, []))
-                    elif FAIL_SIGN in line:
+                    elif FAIL_SIGN in status_marker:
                         failed += 1
                         test_results.append((test_name, "FAIL", test_time, []))
-                    elif UNKNOWN_SIGN in line:
+                    elif UNKNOWN_SIGN in status_marker:
                         unknown += 1
                         test_results.append((test_name, "FAIL", test_time, []))
-                    elif SKIPPED_SIGN in line:
+                    elif SKIPPED_SIGN in status_marker:
                         skipped += 1
                         test_results.append((test_name, "SKIPPED", test_time, []))
                     else:
-                        success += int(OK_SIGN in line)
+                        success += int(OK_SIGN in status_marker)
                         test_results.append((test_name, "OK", test_time, []))
                     test_end = False
                 elif (
                     len(test_results) > 0
-                    and test_results[-1][1] == "FAIL"
+                    and test_results[-1][1] in ("FAIL", "SKIPPED")
                     and not test_end
                 ):
                     test_results[-1][3].append(original_line)
@@ -133,9 +145,9 @@ class FTResultsProcessor:
                     )
                 )
             except Exception as e:
-                print(f"ERROR: Failed to parse test results: [{test}]")
+                print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
-                self.debug_files += self.tests_output_file
+                self.debug_files.append(self.tests_output_file)
                 if test[0] == "+":
                     # TODO: investigate and remove
                     # https://github.com/ClickHouse/ClickHouse/issues/81888
@@ -226,23 +238,7 @@ class FTResultsProcessor:
         if not info:
             info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
-        # TODO: !!!
-        # def test_result_comparator(item):
-        #     # sort by status then by check name
-        #     order = {
-        #         "FAIL": 0,
-        #         "SERVER_DIED": 1,
-        #         "Timeout": 2,
-        #         "NOT_FAILED": 3,
-        #         "BROKEN": 4,
-        #         "OK": 5,
-        #         "SKIPPED": 6,
-        #     }
-        #     return order.get(item[1], 10), str(item[0]), item[1]
-        #
-        # test_results.sort(key=test_result_comparator)
-
-        return Result.create_from(
+        result = Result.create_from(
             name="Tests",
             results=test_results,
             status=state,
@@ -251,28 +247,16 @@ class FTResultsProcessor:
             with_info_from_results=False,
         )
 
+        if not result.is_ok():
+            order = {
+                "FAIL": 0,
+                "SERVER_DIED": 1,
+                "Timeout": 2,
+                "NOT_FAILED": 3,
+                "BROKEN": 4,
+                "OK": 5,
+                "SKIPPED": 6,
+            }
+            result.results.sort(key=lambda x: order.get(x.status, -1))
 
-# if __name__ == "__main__":
-#     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-#     parser = argparse.ArgumentParser(
-#         description="ClickHouse script for parsing results of functional tests"
-#     )
-#
-#     parser.add_argument("--out-results-file", default="/test_output/test_results.tsv")
-#     parser.add_argument("--out-status-file", default="/test_output/check_status.tsv")
-#     args = parser.parse_args()
-#
-#     broken_tests = []
-#     state, description, test_results = process_result(
-#         args.in_results_dir,
-#         broken_tests,
-#         args.in_test_result_file,
-#         args.in_results_file,
-#     )
-#     logging.info("Result parsed")
-#     status = (state, description)
-#
-#
-#
-#     write_results(args.out_results_file, args.out_status_file, test_results, status)
-#     logging.info("Result written")
+        return result

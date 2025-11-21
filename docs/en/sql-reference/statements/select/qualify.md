@@ -3,6 +3,7 @@ description: 'Documentation for QUALIFY Clause'
 sidebar_label: 'QUALIFY'
 slug: /sql-reference/statements/select/qualify
 title: 'QUALIFY Clause'
+doc_type: 'reference'
 ---
 
 # QUALIFY Clause

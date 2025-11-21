@@ -40,12 +40,12 @@ static ITransformingStep::Traits getTraits()
 }
 
 CreatingSetStep::CreatingSetStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     SetAndKeyPtr set_and_key_,
     StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
-    : ITransformingStep(input_header_, Block{}, getTraits())
+    : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
     , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
@@ -65,7 +65,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
 void CreatingSetStep::updateOutputHeader()
 {
-    output_header = Block{};
+    output_header = std::make_shared<const Block>(Block{});
 }
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
@@ -86,7 +86,7 @@ void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
 }
 
 
-CreatingSetsStep::CreatingSetsStep(Headers input_headers_)
+CreatingSetsStep::CreatingSetsStep(SharedHeaders input_headers_)
 {
     if (input_headers_.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "CreatingSetsStep cannot be created with no inputs");
@@ -95,9 +95,9 @@ CreatingSetsStep::CreatingSetsStep(Headers input_headers_)
     output_header = input_headers.front();
 
     for (size_t i = 1; i < input_headers.size(); ++i)
-        if (input_headers[i])
+        if (!input_headers[i]->empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Creating set input must have empty header. Got: {}",
-                            input_headers[i].dumpStructure());
+                            input_headers[i]->dumpStructure());
 }
 
 QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
@@ -136,7 +136,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
 
 void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
 {
-    Headers input_headers;
+    SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());
 
     std::vector<std::unique_ptr<QueryPlan>> plans;
@@ -172,8 +172,8 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
 
 QueryPipelineBuilderPtr addCreatingSetsTransform(QueryPipelineBuilderPtr pipeline, PreparedSets::Subqueries subqueries, ContextPtr context)
 {
-    Headers input_headers;
-    input_headers.emplace_back(pipeline->getHeader());
+    SharedHeaders input_headers;
+    input_headers.emplace_back(pipeline->getSharedHeader());
 
     QueryPipelineBuilders pipelines;
     pipelines.reserve(1 + subqueries.size());
@@ -238,7 +238,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, 
 }
 
 DelayedCreatingSetsStep::DelayedCreatingSetsStep(
-    Header input_header,
+    SharedHeader input_header,
     PreparedSets::Subqueries subqueries_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)

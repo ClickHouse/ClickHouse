@@ -21,14 +21,14 @@ public:
         const std::string & url_,
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
-        ASTPtr table_engine_definition_);
+        ASTPtr table_engine_definition_,
+        UUID uuid);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
+    UUID getUUID() const override { return db_uuid; }
 
-    bool canContainMergeTreeTables() const override { return false; }
-    bool canContainDistributedTables() const override { return false; }
-    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
+    bool isDatalakeCatalog() const override { return true; }
 
     bool empty() const override;
 
@@ -50,9 +50,21 @@ public:
 
     void shutdown() override {}
 
-    ASTPtr getCreateDatabaseQuery() const override;
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
+
+    void createTable(
+        ContextPtr /*context*/,
+        const String & /*name*/,
+        const StoragePtr & /*table*/,
+        const ASTPtr & /*query*/) override {}
+
+    void dropTable( /// NOLINT
+        ContextPtr context_,
+        const String & name,
+        bool /*sync*/) override;
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -72,7 +84,7 @@ private:
     void validateSettings();
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
-    std::shared_ptr<StorageObjectStorage::Configuration> getConfiguration(
+    std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,
         DataLakeStorageSettingsPtr storage_settings) const;
 
@@ -81,6 +93,8 @@ private:
     /// Can return nullptr in case of *expected* issues with response from catalog. Sometimes
     /// catalogs can produce completely unexpected responses. In such cases this function may throw.
     StoragePtr tryGetTableImpl(const String & name, ContextPtr context, bool lightweight, bool ignore_if_not_iceberg) const;
+
+    const UUID db_uuid;
 };
 
 }

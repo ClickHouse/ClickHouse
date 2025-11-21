@@ -1,4 +1,4 @@
-#include "arrayPush.h"
+#include <Functions/array/arrayPush.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -18,7 +18,7 @@ REGISTER_FUNCTION(ArrayPushBack)
     FunctionDocumentation::Description description = "Adds one item to the end of the array.";
     FunctionDocumentation::Syntax syntax = "arrayPushBack(arr, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array for which to add value `x` to the end of. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr", "The array for which to add value `x` to the end of.", {"Array(T)"}},
         {"x", R"(
 - Single value to add to the end of the array. [`Array(T)`](/sql-reference/data-types/array).
 
@@ -31,7 +31,7 @@ For more information about the types of data in ClickHouse, see [Data types](/sq
 :::
     )"},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array identical to `arr` but with an additional value `x` at the end of the array. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array identical to `arr` but with an additional value `x` at the end of the array", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayPushBack(['a'], 'b') AS res;", "['a','b']"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

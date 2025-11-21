@@ -22,10 +22,16 @@ EXCEPTION_BEFORE_START_QUERY="WITH
 
 # For this query the system.query_log needs to show ExceptionBeforeStart and elapsed seconds <= 1.0
 QUERY_ID="${CLICKHOUSE_DATABASE}_$(date +%s)_02883_q1"
-${CLICKHOUSE_CLIENT} -m --query "$EXCEPTION_BEFORE_START_QUERY" --query_id="$QUERY_ID" >/dev/null 2>&1
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} --query "SELECT type == 'ExceptionBeforeStart' as expected_type, query_duration_ms <= 1000 as elapsed_more_than_one_second FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id='$QUERY_ID'"
+# Check that it happens at least once. So that the query has a chance to finish in less than a second despite the sleep in the subquery.
+# Occasional longer times are possible due to high system load, the usage of thread fuzzer and sanitizers.
+for _ in {1..100}
+do
+    ${CLICKHOUSE_CLIENT} --query "$EXCEPTION_BEFORE_START_QUERY" --query_id="$QUERY_ID" >/dev/null 2>&1
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    [[ "1" == "$(${CLICKHOUSE_CLIENT} --query "SELECT type == 'ExceptionBeforeStart' AND query_duration_ms <= 1000 FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id='$QUERY_ID' ORDER BY event_time_microseconds DESC LIMIT 1")" ]] && echo 'Ok' && break
+    sleep 0.1
+done
 
 # Now we test with a query that will take 1+ seconds. The CLI should show that as part of the output format
 OK_QUERY_JSON="

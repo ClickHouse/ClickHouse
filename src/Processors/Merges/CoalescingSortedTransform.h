@@ -16,12 +16,13 @@ class CoalescingSortedTransform final : public IMergingTransform<SummingSortedAl
 public:
 
     CoalescingSortedTransform(
-        const Block & header, size_t num_inputs,
+        SharedHeader header, size_t num_inputs,
         SortDescription description_,
         const Names & partition_and_sorting_required_columns,
         const Names & partition_key_columns,
         size_t max_block_size_rows,
-        size_t max_block_size_bytes
+        size_t max_block_size_bytes,
+        std::optional<size_t> max_dynamic_subcolumns_
         )
         : IMergingTransform(
             num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
@@ -32,7 +33,11 @@ public:
             partition_key_columns,
             max_block_size_rows,
             max_block_size_bytes,
-            "last_value")
+            max_dynamic_subcolumns_,
+            "last_value",
+            "last_value",
+            /*remove_default_values*/ false,
+            /*aggregate_all_columns*/ true)
     {
     }
 

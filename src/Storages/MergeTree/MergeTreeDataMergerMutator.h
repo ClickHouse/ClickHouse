@@ -31,7 +31,7 @@ struct SelectMergeFailure
  */
 class MergeTreeDataMergerMutator
 {
-    void updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time);
+    void updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time);
 
 public:
     explicit MergeTreeDataMergerMutator(MergeTreeData & data_);
@@ -51,7 +51,7 @@ public:
       *  - Parts between which another part can still appear can not be merged. Refer to METR-7001.
       *  - A part that already merges with something in one place, you can not start to merge into something else in another place.
       */
-    std::expected<MergeSelectorChoice, SelectMergeFailure> selectPartsToMerge(
+    std::expected<MergeSelectorChoices, SelectMergeFailure> selectPartsToMerge(
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,
         const MergeSelectorApplier & selector,
@@ -62,7 +62,7 @@ public:
       * but if setting optimize_skip_merged_partitions is true than single part with level > 0
       * and without expired TTL won't be merged with itself.
       */
-    std::expected<MergeSelectorChoice, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
+    std::expected<MergeSelectorChoices, SelectMergeFailure> selectAllPartsToMergeWithinPartition(
         const StorageMetadataPtr & metadata_snapshot,
         const PartsCollectorPtr & parts_collector,
         const MergePredicatePtr & merge_predicate,

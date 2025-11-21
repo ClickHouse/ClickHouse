@@ -13,7 +13,6 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse-keeper-converter-lib
         clickhouse-keeper-client-lib
         clickhouse_functions
-        dbms
 )
 
 clickhouse_program_add(keeper)
@@ -23,7 +22,7 @@ install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-ke
 if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_SOURCES})
-
+    target_include_directories(clickhouse-keeper PRIVATE .)
     target_link_libraries(clickhouse-keeper PUBLIC ${CLICKHOUSE_KEEPER_LINK})
 
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)

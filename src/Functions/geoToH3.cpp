@@ -173,7 +173,38 @@ public:
 
 REGISTER_FUNCTION(GeoToH3)
 {
-    factory.registerFunction<FunctionGeoToH3>();
+    FunctionDocumentation::Description description = R"(
+Returns [H3](https://h3geo.org/docs/core-library/h3Indexing/) point index for the given latitude, longitude, and resolution.
+
+:::note
+In ClickHouse v25.4 or older, `geoToH3()` arguments are in the order `(lon, lat)`. As per ClickHouse v25.5, the input values are ordered `(lat, lon)`.
+The previous behavior can be restored using setting `geotoh3_argument_order = 'lon_lat'`.
+    )";
+    FunctionDocumentation::Syntax syntax = "geoToH3(lat, lon, resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"lat", "Latitude in degrees.", {"Float64"}},
+        {"lon", "Longitude in degrees.", {"Float64"}},
+        {"resolution", "Index resolution with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the H3 index number, or `0` in case of error.",
+        {"UInt64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Convert coordinates to H3 index",
+            "SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index",
+            R"(
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionGeoToH3>(documentation);
 }
 
 }

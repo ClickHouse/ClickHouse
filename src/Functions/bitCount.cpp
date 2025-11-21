@@ -60,16 +60,16 @@ REGISTER_FUNCTION(BitCount)
     FunctionDocumentation::Description description = "Calculates the number of bits set to one in the binary representation of a number.";
     FunctionDocumentation::Syntax syntax = "bitCount(x)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "An integer or float value. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
+        {"x", "An integer or float value.", {"(U)Int*", "Float*"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the number of bits set to one in `x`. [`UInt8`](../data-types/int-uint.md).
 
 :::note
 The function does not convert the input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).
 For example: `bitCount(toUInt8(-1)) = 8`.
 :::
-)";
+)"};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT bin(333), bitCount(333);",
         R"(
 ┌─bin(333)─────────┬─bitCount(333)─┐

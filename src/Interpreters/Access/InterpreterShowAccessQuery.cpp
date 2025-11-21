@@ -37,7 +37,7 @@ QueryPipeline InterpreterShowAccessQuery::executeImpl() const
         column->insert(format({getContext(), *query}));
 
     String desc = "ACCESS";
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}})));
 }
 
 

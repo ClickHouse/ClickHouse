@@ -1,4 +1,6 @@
 #include <Processors/Executors/ExecutorTasks.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -16,10 +18,24 @@ void ExecutorTasks::finish()
         async_task_queue.finish();
     }
 
+    freeCPU();
+
     std::lock_guard guard(executor_contexts_mutex);
 
     for (auto & context : executor_contexts)
         context->wakeUp();
+}
+
+void ExecutorTasks::freeCPU()
+{
+    SlotAllocationPtr slots;
+    {
+        std::lock_guard lock(mutex);
+        slots = std::exchange(cpu_slots, nullptr);
+    }
+    if (!slots)
+        return;
+    slots->free();
 }
 
 void ExecutorTasks::rethrowFirstThreadException()
@@ -52,12 +68,11 @@ ExecutorTasks::SpawnStatus ExecutorTasks::tryWakeUpAnyOtherThreadWithTasksInQueu
     else
         thread_to_wake = threads_queue.popAny();
 
-    idle_threads--;
     if (thread_to_wake >= use_threads)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
 
     // Do not spawn new threads if there are already a lot of idle threads
-    SpawnStatus result = idle_threads <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+    SpawnStatus result = threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
 
     lock.unlock();
     executor_contexts[thread_to_wake]->wakeUp();
@@ -104,7 +119,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         /// This thread has no tasks to do and is going to wait.
         /// Finish execution if this was the last active thread.
         chassert(task_queue.empty() && fast_task_queue.empty());
-        if (threads_queue.size() + 1 == use_threads && async_task_queue.empty())
+        if (threads_queue.size() + 1 == total_slots && async_task_queue.empty())
         {
             lock.unlock();
             finish();
@@ -130,7 +145,6 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
 
         /// Enqueue thread into stack of waiting threads.
         threads_queue.push(context.thread_number);
-        idle_threads++;
     }
 
     context.wait(finished);
@@ -177,13 +191,21 @@ ExecutorTasks::SpawnStatus ExecutorTasks::pushTasks(Queue & queue, Queue & async
     return DO_NOT_SPAWN; // No new tasks -- no need for new threads
 }
 
-void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
+void ExecutorTasks::init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, ReadProgressCallback * callback)
 {
     num_threads = num_threads_;
     use_threads = use_threads_;
     threads_queue.init(num_threads);
     task_queue.init(num_threads);
     fast_task_queue.init(num_threads);
+
+    {
+        std::lock_guard lock(mutex); // In case finish() is executed concurrently with init() due to exception
+        cpu_slots = cpu_slots_;
+    }
+
+    // Initialize slot counters with zeros up to max_threads
+    slot_count.resize(num_threads, 0);
 
     {
         std::lock_guard guard(executor_contexts_mutex);
@@ -229,11 +251,66 @@ void ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
     }
 }
 
-ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t use_threads_)
+ExecutorTasks::SpawnStatus ExecutorTasks::upscale(size_t slot_id)
 {
     std::lock_guard lock(mutex);
-    use_threads = std::max(use_threads, use_threads_);
-    return idle_threads <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+
+    chassert(slot_id < slot_count.size());
+    ++slot_count[slot_id];
+    ++total_slots;
+    use_threads = std::max(use_threads, slot_id + 1);
+
+    return threads_queue.size() <= TOO_MANY_IDLE_THRESHOLD ? SHOULD_SPAWN : DO_NOT_SPAWN;
+}
+
+void ExecutorTasks::downscale(size_t slot_id)
+{
+    std::lock_guard lock(mutex);
+
+    if (slot_id >= slot_count.size() || slot_count[slot_id] == 0)
+        return;
+    --slot_count[slot_id];
+
+    if (slot_id + 1 == use_threads)
+    {
+        // The highest slot was downscaled, find new highest
+        for (size_t i = use_threads; i > 0; --i)
+        {
+            if (slot_count[i - 1] > 0)
+            {
+                use_threads = i;
+                break;
+            }
+        }
+    }
+}
+
+void ExecutorTasks::preempt(size_t slot_id)
+{
+    std::unique_lock lock(mutex);
+    --total_slots;
+
+    /// We should make sure that preempted thread has no local task inside context.
+    /// It is allowed to have tasks in `task_queue` or `fast_task_queue` because they can be stealed by other threads.
+    auto & context = executor_contexts[slot_id];
+    if (auto * task = context->popTask())
+    {
+        task_queue.push(task, slot_id);
+        /// Wake up at least one thread to avoid deadlocks (all other threads maybe idle)
+        tryWakeUpAnyOtherThreadWithTasks(*context, lock); // this releases the lock if it wakes up a thread
+    }
+    else if (task_queue.empty() && fast_task_queue.empty() && async_task_queue.empty() && threads_queue.size() == total_slots)
+    {
+        /// Finish pipeline if preempted thread was the last non-idle thread executed the last task of the whole pipeline
+        lock.unlock();
+        finish();
+    }
+}
+
+void ExecutorTasks::resume(size_t)
+{
+    std::lock_guard lock(mutex);
+    ++total_slots;
 }
 
 void ExecutorTasks::processAsyncTasks()
@@ -261,7 +338,6 @@ void ExecutorTasks::processAsyncTasks()
                 else
                     thread_to_wake = threads_queue.popAny();
 
-                idle_threads--;
                 if (thread_to_wake >= use_threads)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Non-empty queue without allocated thread");
 
@@ -270,6 +346,31 @@ void ExecutorTasks::processAsyncTasks()
         }
     }
 #endif
+}
+
+String ExecutorTasks::dump()
+{
+    std::scoped_lock lock(mutex);
+
+    WriteBufferFromOwnString buffer;
+
+    buffer << "ExecutorTasks:\n";
+    buffer << "  num_threads: " << num_threads << "\n";
+    buffer << "  use_threads: " << use_threads << "\n";
+    buffer << "  total_slots: " << total_slots << "\n";
+    buffer << "  finished: " << static_cast<int>(finished) << "\n";
+    buffer << "  has_fast_tasks: " << has_fast_tasks.load(std::memory_order_relaxed) << "\n";
+
+    for (size_t i = 0; i < slot_count.size(); ++i)
+        buffer << "  slot_count[" << i << "]: " << slot_count[i] << "\n";
+
+    // Dump task queues
+    buffer << "  task_queue size: " << task_queue.size() << "\n";
+    buffer << "  fast_task_queue size: " << fast_task_queue.size() << "\n";
+    buffer << "  async_task_queue size: " << async_task_queue.size() << "\n";
+    buffer << "  threads_queue size: " << threads_queue.size() << "\n";
+
+    return buffer.str();
 }
 
 }

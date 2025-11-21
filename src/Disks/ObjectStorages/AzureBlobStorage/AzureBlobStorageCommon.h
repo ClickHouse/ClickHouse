@@ -8,7 +8,6 @@
 #include <azure/storage/blobs/blob_client.hpp>
 #include <azure/storage/blobs/blob_options.hpp>
 #include <azure/storage/blobs/blob_service_client.hpp>
-#include <azure/core/http/curl_transport.hpp>
 
 #endif
 
@@ -16,7 +15,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/strong_typedef.h>
+
 #include <filesystem>
 #include <variant>
 
@@ -54,11 +53,8 @@ struct RequestSettings
     bool use_native_copy = false;
     bool check_objects_after_upload = false;
     bool read_only = false;
-
-#if USE_AZURE_BLOB_STORAGE
-    using CurlOptions = Azure::Core::Http::CurlTransportOptions;
-    CurlOptions::CurlOptIPResolve curl_ip_resolve = CurlOptions::CURL_IPRESOLVE_WHATEVER;
-#endif
+    size_t http_keep_alive_timeout = DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT;
+    size_t http_keep_alive_max_requests = DEFAULT_HTTP_KEEP_ALIVE_MAX_REQUEST;
 };
 
 struct Endpoint
@@ -68,6 +64,7 @@ struct Endpoint
     String container_name;
     String prefix;
     String sas_auth;
+    String additional_params;
     std::optional<bool> container_already_exists;
 
     String getContainerEndpoint() const
@@ -85,6 +82,9 @@ struct Endpoint
         if (!sas_auth.empty())
             url += "?" + sas_auth;
 
+        if (!additional_params.empty())
+            url += "?" + additional_params;
+
         return url;
     }
 
@@ -97,6 +97,9 @@ struct Endpoint
 
         if (!sas_auth.empty())
             url += "?" + sas_auth;
+
+        if (!additional_params.empty())
+            url += "?" + additional_params;
 
         return url;
     }
@@ -147,15 +150,21 @@ struct ConnectionParams
     std::unique_ptr<ContainerClient> createForContainer() const;
 };
 
-Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly);
 
-BlobClientOptions getClientOptions(const RequestSettings & settings, bool for_disk);
+BlobClientOptions getClientOptions(
+    const ContextPtr & context,
+    const Settings & settings,
+    const RequestSettings & request_settings,
+    bool for_disk);
+
 AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 #endif
+
+Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings);
 std::unique_ptr<RequestSettings> getRequestSettingsForBackup(ContextPtr context, String endpoint, bool use_native_copy);

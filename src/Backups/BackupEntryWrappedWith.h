@@ -23,6 +23,10 @@ public:
     bool isEncryptedByDisk() const override { return entry->isEncryptedByDisk(); }
     bool isFromFile() const override { return entry->isFromFile(); }
     bool isFromImmutableFile() const override { return entry->isFromImmutableFile(); }
+    bool isFromRemoteFile() const override { return entry->isFromRemoteFile(); }
+    String getEndpointURI() const override { return entry->getEndpointURI(); }
+    String getNamespace() const override { return entry->getNamespace(); }
+    String getRemotePath() const override { return entry->getRemotePath(); }
     String getFilePath() const override { return entry->getFilePath(); }
     DiskPtr getDisk() const override { return entry->getDisk(); }
 

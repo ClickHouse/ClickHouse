@@ -1,5 +1,6 @@
 #include <unordered_map>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnMap.h>
@@ -14,7 +15,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
-#include "AggregateFunctionCombinatorFactory.h"
 
 
 namespace DB
@@ -340,6 +340,8 @@ class AggregateFunctionCombinatorMap final : public IAggregateFunctionCombinator
 {
 public:
     String getName() const override { return "Map"; }
+
+    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

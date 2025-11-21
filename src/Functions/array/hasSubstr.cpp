@@ -1,4 +1,4 @@
-#include "hasAllAny.h"
+#include <Functions/array/hasAllAny.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 
@@ -31,10 +31,10 @@ Raises a `NO_COMMON_TYPE` exception if any of the elements of the two arrays do 
 )";
     FunctionDocumentation::Syntax syntax = "hasSubstr(arr1, arr2)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr1", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
-        {"arr2", "Array of any type with a set of elements. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr1", "Array of any type with a set of elements.", {"Array(T)"}},
+        {"arr2", "Array of any type with a set of elements.", {"Array(T)"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns `1` if array `arr1` contains array `arr2`. Otherwise, returns `0`.";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if array `arr1` contains array `arr2`. Otherwise, returns `0`.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
         {"Both arrays are empty", "SELECT hasSubstr([], [])", "1"},
         {"Arrays containing NULL values", "SELECT hasSubstr([1, Null], [Null])", "1"},

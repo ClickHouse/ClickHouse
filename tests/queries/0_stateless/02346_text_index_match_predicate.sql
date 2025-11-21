@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 
--- Tests that match() utilizes the inverted index
+-- Tests that match() utilizes the text index
 
 SET allow_experimental_full_text_index = true;
 
@@ -10,7 +10,7 @@ CREATE TABLE tab
 (
     id UInt32,
     str String,
-    INDEX inv_idx(str) TYPE text(tokenizer = 'default') GRANULARITY 1
+    INDEX inv_idx(str) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY id

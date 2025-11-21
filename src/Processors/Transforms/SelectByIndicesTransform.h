@@ -16,7 +16,7 @@ namespace DB
 class SelectByIndicesTransform : public ISimpleTransform
 {
 public:
-    explicit SelectByIndicesTransform(const Block & header)
+    explicit SelectByIndicesTransform(SharedHeader header)
         : ISimpleTransform(header, header, true)
     {
     }

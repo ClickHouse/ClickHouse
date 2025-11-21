@@ -350,7 +350,7 @@ TEST(AsyncLoader, CancelExecutingJob)
     AsyncLoaderTest t;
     t.loader.unpause();
 
-    std::barrier sync(2);
+    std::barrier<std::__empty_completion> sync(2);
 
     auto job_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
@@ -381,7 +381,7 @@ TEST(AsyncLoader, CancelExecutingTask)
 {
     AsyncLoaderTest t(16);
     t.loader.unpause();
-    std::barrier sync(2);
+    std::barrier<std::__empty_completion> sync(2);
 
     auto blocker_job_func = [&] (AsyncLoader &, const LoadJobPtr &)
     {
@@ -587,7 +587,7 @@ TEST(AsyncLoader, CustomDependencyFailure)
     AsyncLoaderTest t(16);
     int error_count = 0;
     std::atomic<size_t> good_count{0};
-    std::barrier canceled_sync(4);
+    std::barrier<std::__empty_completion> canceled_sync(4);
     t.loader.unpause();
 
     std::string_view error_message = "test job failure";
@@ -674,7 +674,7 @@ TEST(AsyncLoader, WaitersLimit)
         waiters_total.fetch_sub(1);
     };
 
-    std::barrier sync(2);
+    std::barrier<std::__empty_completion> sync(2);
     t.loader.unpause();
 
     auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
@@ -727,7 +727,7 @@ TEST(AsyncLoader, TestConcurrency)
 
     for (int concurrency = 1; concurrency <= 10; concurrency++)
     {
-        std::barrier sync(concurrency);
+        std::barrier<std::__empty_completion> sync(concurrency);
 
         std::atomic<int> executing{0};
         auto job_func = [&] (AsyncLoader &, const LoadJobPtr &)
@@ -882,7 +882,7 @@ TEST(AsyncLoader, DynamicPriorities)
     for (bool prioritize : {false, true})
     {
         // Although all pools have max_threads=1, workers from different pools can run simultaneously just after `prioritize()` call
-        std::barrier sync(2);
+        std::barrier<std::__empty_completion> sync(2);
         bool wait_sync = prioritize;
         std::mutex schedule_mutex;
         std::string schedule;
@@ -974,7 +974,7 @@ TEST(AsyncLoader, JobPrioritizedWhileWaited)
         {.max_threads = 1, .priority{-1}},
     });
 
-    std::barrier sync(2);
+    std::barrier<std::__empty_completion> sync(2);
 
     LoadJobPtr job_to_wait; // and then to prioritize
 

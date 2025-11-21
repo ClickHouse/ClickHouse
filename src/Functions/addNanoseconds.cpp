@@ -9,18 +9,18 @@ using FunctionAddNanoseconds = FunctionDateOrDateTimeAddInterval<AddNanosecondsI
 
 REGISTER_FUNCTION(AddNanoseconds)
 {
-    FunctionDocumentation::Description description_addNanoseconds = R"(
+    FunctionDocumentation::Description description = R"(
 Adds a specified number of nanoseconds to a date with time or a string-encoded date with time.
     )";
-    FunctionDocumentation::Syntax syntax_addNanoseconds = R"(
+    FunctionDocumentation::Syntax syntax = R"(
 addNanoseconds(datetime, num)
     )";
-    FunctionDocumentation::Arguments arguments_addNanoseconds = {
-        {"datetime", "Date with time to add specified number of nanoseconds to. [`DateTime`](../data-types/datetime.md)/[`DateTime64`](../data-types/datetime64.md)/[`String`](../data-types/string.md)."},
-        {"num", "Number of nanoseconds to add. [`(U)Int*`](../data-types/int-uint.md)/[`Float*`](../data-types/float.md)."}
+    FunctionDocumentation::Arguments arguments = {
+        {"datetime", "Date with time to add specified number of nanoseconds to.", {"DateTime", "DateTime64", "String"}},
+        {"num", "Number of nanoseconds to add.", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_addNanoseconds = "Returns `datetime` plus `num` nanoseconds. [`DateTime64`](../data-types/datetime64.md).";
-    FunctionDocumentation::Examples examples_addNanoseconds = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `datetime` plus `num` nanoseconds", {"DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Add nanoseconds to different date time types", R"(
 WITH
     toDateTime('2024-01-01 00:00:00') AS date_time,
@@ -43,19 +43,11 @@ SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 1000 nanosecond)
 └───────────────────────────────┘
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_addNanoseconds = {22, 6};
-    FunctionDocumentation::Category category_addNanoseconds = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_addNanoseconds = {
-        description_addNanoseconds,
-        syntax_addNanoseconds,
-        arguments_addNanoseconds,
-        returned_value_addNanoseconds,
-        examples_addNanoseconds,
-        introduced_in_addNanoseconds,
-        category_addNanoseconds
-    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionAddNanoseconds>(documentation_addNanoseconds);
+    factory.registerFunction<FunctionAddNanoseconds>(documentation);
 }
 
 }

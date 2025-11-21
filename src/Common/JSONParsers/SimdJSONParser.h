@@ -6,7 +6,7 @@
 #    include <base/types.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
-#    include "ElementTypes.h"
+#    include <Common/JSONParsers/ElementTypes.h>
 #    include <Common/PODArray_fwd.h>
 #    include <Common/PODArray.h>
 #    include <charconv>
@@ -369,6 +369,16 @@ struct SimdJSONParser
         bool find(std::string_view key, Element & result) const
         {
             auto x = object.at_key(key);
+            if (x.error())
+                return false;
+
+            result = x.value_unsafe();
+            return true;
+        }
+
+        bool findCaseInsensitive(std::string_view key, Element & result) const
+        {
+            auto x = object.at_key_case_insensitive(key);
             if (x.error())
                 return false;
 

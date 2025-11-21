@@ -4,6 +4,7 @@ description: 'Return an intersection of given arrays (Return all items of arrays
 sidebar_position: 141
 slug: /sql-reference/aggregate-functions/reference/grouparrayintersect
 title: 'groupArrayIntersect'
+doc_type: 'reference'
 ---
 
 # groupArrayIntersect
@@ -41,7 +42,7 @@ Consider table `numbers`:
 Query with column name as argument:
 
 ```sql
-SELECT groupArrayIntersect(a) as intersection FROM numbers;
+SELECT groupArrayIntersect(a) AS intersection FROM numbers;
 ```
 
 Result:

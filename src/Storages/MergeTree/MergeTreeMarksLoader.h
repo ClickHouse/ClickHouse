@@ -3,6 +3,7 @@
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Common/ThreadPool_fwd.h>
+#include <IO/ReadSettings.h>
 
 #include <atomic>
 #include <future>

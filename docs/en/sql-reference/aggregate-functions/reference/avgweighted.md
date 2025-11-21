@@ -3,6 +3,7 @@ description: 'Calculates the weighted arithmetic mean.'
 sidebar_position: 113
 slug: /sql-reference/aggregate-functions/reference/avgweighted
 title: 'avgWeighted'
+doc_type: 'reference'
 ---
 
 # avgWeighted
@@ -37,7 +38,7 @@ Query:
 
 ```sql
 SELECT avgWeighted(x, w)
-FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
+FROM VALUES('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 ```
 
 Result:
@@ -54,7 +55,7 @@ Query:
 
 ```sql
 SELECT avgWeighted(x, w)
-FROM values('x Int8, w Float64', (4, 1), (1, 0), (10, 2))
+FROM VALUES('x Int8, w Float64', (4, 1), (1, 0), (10, 2))
 ```
 
 Result:
@@ -71,7 +72,7 @@ Query:
 
 ```sql
 SELECT avgWeighted(x, w)
-FROM values('x Int8, w Int8', (0, 0), (1, 0), (10, 0))
+FROM VALUES('x Int8, w Int8', (0, 0), (1, 0), (10, 0))
 ```
 
 Result:
@@ -87,7 +88,7 @@ Result:
 Query:
 
 ```sql
-CREATE table test (t UInt8) ENGINE = Memory;
+CREATE TABLE test (t UInt8) ENGINE = Memory;
 SELECT avgWeighted(t) FROM test
 ```
 

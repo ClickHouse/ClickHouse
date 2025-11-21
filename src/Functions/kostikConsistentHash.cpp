@@ -1,4 +1,4 @@
-#include "FunctionsConsistentHashing.h"
+#include <Functions/FunctionsConsistentHashing.h>
 #include <Functions/FunctionFactory.h>
 
 #include <consistent_hashing.h>
@@ -27,7 +27,31 @@ using FunctionKostikConsistentHash = FunctionConsistentHashImpl<KostikConsistent
 
 REGISTER_FUNCTION(KostikConsistentHash)
 {
-    factory.registerFunction<FunctionKostikConsistentHash>();
+    FunctionDocumentation::Description description = R"(
+An O(1) time and space consistent hash algorithm by Konstantin 'Kostik' Oblakov.
+Only efficient with `n <= 32768`.
+)";
+    FunctionDocumentation::Syntax syntax = "kostikConsistentHash(input, n)";
+    FunctionDocumentation::Arguments arguments = {
+        {"input", "An integer key.", {"UInt64"}},
+        {"n", "The number of buckets.", {"UInt16"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the computed hash value.", {"UInt16"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT kostikConsistentHash(16045690984833335023, 2);",
+        R"(
+┌─kostikConsistentHash(16045690984833335023, 2)─┐
+│                                             1 │
+└───────────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionKostikConsistentHash>(documentation);
     factory.registerAlias("yandexConsistentHash", "kostikConsistentHash");
 }
 

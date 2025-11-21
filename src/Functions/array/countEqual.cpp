@@ -1,4 +1,4 @@
-#include "arrayIndex.h"
+#include <Functions/array/arrayIndex.h>
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -16,10 +16,10 @@ Returns the number of elements in the array equal to `x`. Equivalent to `arrayCo
 )";
     FunctionDocumentation::Syntax syntax = "countEqual(arr, x)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "Array to search. [`Array(T)`](/sql-reference/data-types/array)."},
+        {"arr", "Array to search.", {"Array(T)"}},
         {"x", "Value in the array to count. Any type."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the number of elements in the array equal to `x`. [UInt64](/sql-reference/data-types/int-uint).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of elements in the array equal to `x`", {"UInt64"}};
     FunctionDocumentation::Examples example = {{"Usage example", "SELECT countEqual([1, 2, NULL, NULL], NULL)", "2"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;

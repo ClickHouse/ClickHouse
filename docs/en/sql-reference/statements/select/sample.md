@@ -3,6 +3,7 @@ description: 'Documentation for SAMPLE Clause'
 sidebar_label: 'SAMPLE'
 slug: /sql-reference/statements/select/sample
 title: 'SAMPLE Clause'
+doc_type: 'reference'
 ---
 
 # SAMPLE Clause
@@ -34,7 +35,6 @@ For the `SAMPLE` clause the following syntax is supported:
 | `SAMPLE k`   | Here `k` is the number from 0 to 1. The query is executed on `k` fraction of data. For example, `SAMPLE 0.1` runs the query on 10% of data. [Read more](#sample-k)                                                                             |
 | `SAMPLE n`    | Here `n` is a sufficiently large integer. The query is executed on a sample of at least `n` rows (but not significantly more than this). For example, `SAMPLE 10000000` runs the query on a minimum of 10,000,000 rows. [Read more](#sample-n) |
 | `SAMPLE k OFFSET m`  | Here `k` and `m` are the numbers from 0 to 1. The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#sample-k-offset-m)                                           |
-
 
 ## SAMPLE K {#sample-k}
 

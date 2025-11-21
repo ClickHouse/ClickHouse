@@ -14,13 +14,14 @@ Calculates the remainder when dividing `a` by `b`. Similar to function `modulo` 
 if the right argument is 0.
     )";
     FunctionDocumentation::Syntax syntax = "moduloOrNull(x, y)";
-    FunctionDocumentation::Arguments arguments = {
-        {"x", "The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
-        {"y", "The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."}
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"x", "The dividend.", {"(U)Int*", "Float*"}},
+        {"y", "The divisor (modulus).", {"(U)Int*", "Float*"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the remainder of the division of `x` by `y`, or null when the divisor is zero.
-    )";
+    )"};
     FunctionDocumentation::Examples examples = {{"moduloOrNull by zero", "SELECT moduloOrNull(5, 0)", "\\N"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;
@@ -47,10 +48,10 @@ if the right argument is 0.
         {"x", "The dividend. [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."},
         {"x", "The divisor (modulus). [`(U)Int*`](/sql-reference/data-types/int-uint)/[`Float32/64`](/sql-reference/data-types/float)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = R"(
+    FunctionDocumentation::ReturnedValue returned_value = {R"(
 Returns the difference between `x` and the nearest integer not greater than
 `x` divisible by `y`, `null` when the divisor is zero.
-    )";
+    )"};
     FunctionDocumentation::Examples examples = {{"positiveModuloOrNull", "SELECT positiveModuloOrNull(5, 0)", "\\N"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 5};
     FunctionDocumentation::Category categories = FunctionDocumentation::Category::Arithmetic;

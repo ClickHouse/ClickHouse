@@ -4,6 +4,7 @@ description: 'Computes an approximate quantile of a numeric data sequence using 
 sidebar_position: 178
 slug: /sql-reference/aggregate-functions/reference/quantiletdigest
 title: 'quantileTDigest'
+doc_type: 'reference'
 ---
 
 # quantileTDigest

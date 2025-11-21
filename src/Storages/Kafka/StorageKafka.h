@@ -22,7 +22,6 @@ namespace DB
 
 struct KafkaSettings;
 class ReadFromStorageKafka;
-class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
 template <typename TStorageKafka>
@@ -51,6 +50,8 @@ public:
     ~StorageKafka() override;
 
     std::string getName() const override { return Kafka::TABLE_ENGINE_NAME; }
+
+    bool isMessageQueue() const override { return true; }
 
     bool noPushingToViewsOnInserts() const override { return true; }
 
@@ -160,6 +161,7 @@ private:
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
+    size_t getSchemaRegistrySkipBytes() const;
 
     bool streamToViews();
 

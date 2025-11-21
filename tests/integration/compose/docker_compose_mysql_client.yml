@@ -10,3 +10,4 @@ services:
       interval: 1s
       timeout: 2s
       retries: 100
+    stop_grace_period: 5s

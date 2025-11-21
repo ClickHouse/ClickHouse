@@ -29,13 +29,15 @@ public:
         AzureBlobStorage::AuthMethod auth_method,
         ClientPtr && client_,
         SettingsPtr && settings_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
         const String & object_namespace_,
-        const String & description_);
+        const String & description_,
+        const String & common_key_prefix_);
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -44,7 +46,7 @@ public:
     std::string getRootPrefix() const override { return object_namespace; }
 
     /// Object keys are unique within the object namespace (container + prefix).
-    std::string getCommonKeyPrefix() const override { return ""; }
+    std::string getCommonKeyPrefix() const override { return common_key_prefix; }
 
     std::string getDescription() const override { return description; }
 
@@ -55,8 +57,13 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const override;
+        std::optional<size_t> read_hint = {}) const override;
+
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -70,7 +77,9 @@ public:
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -91,12 +100,6 @@ public:
 
     String getObjectsNamespace() const override { return object_namespace ; }
 
-    std::unique_ptr<IObjectStorage> cloneObjectStorage(
-        const std::string & new_namespace,
-        const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix,
-        ContextPtr context) override;
-
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool areObjectKeysRandom() const override { return true; }
@@ -109,6 +112,11 @@ public:
     bool isReadOnly() const override { return settings.get()->read_only; }
 
     bool supportParallelWrite() const override { return true; }
+
+    const AzureBlobStorage::ConnectionParams & getConnectionParameters() const
+    {
+        return connection_params;
+    }
 
 private:
     void removeObjectImpl(
@@ -125,6 +133,10 @@ private:
 
     /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
     const String description;
+
+    const String common_key_prefix;
+
+    const AzureBlobStorage::ConnectionParams connection_params;
 
     LoggerPtr log;
 };

@@ -975,12 +975,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
     function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
-/** Returns:
-  * {_, false} - multiple sources
-  * {nullptr, true} - no sources (for constants)
-  * {source, true} - single source
-  */
-std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr & node)
+std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
 {
     if (const auto * column = node->as<ColumnNode>())
     {
@@ -996,7 +991,7 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr
         const auto & args = func->getArguments().getNodes();
         for (const auto & arg : args)
         {
-            auto [arg_source, is_ok] = getExpressionSourceImpl(arg);
+            auto [arg_source, is_ok] = getExpressionSource(arg);
             if (!is_ok)
                 return {nullptr, false};
 
@@ -1013,14 +1008,6 @@ std::pair<QueryTreeNodePtr, bool> getExpressionSourceImpl(const QueryTreeNodePtr
         return {nullptr, true};
 
     return {nullptr, false};
-}
-
-QueryTreeNodePtr getExpressionSource(const QueryTreeNodePtr & node)
-{
-    auto [source, is_ok] = getExpressionSourceImpl(node);
-    if (!is_ok)
-        return nullptr;
-    return source;
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -1122,7 +1109,9 @@ bool hasUnknownColumn(const QueryTreeNodePtr & node, QueryTreeNodePtr table_expr
             {
                 auto * column_node = current->as<ColumnNode>();
                 auto source = column_node->getColumnSourceOrNull();
-                if (source && table_expression && !source->isEqual(*table_expression))
+                /// Column source can be nullptr if JOIN node was replaced with a table expression.
+                /// In that case column is not from the specified table expression.
+                if (source != table_expression)
                     return true;
                 break;
             }
@@ -1336,6 +1325,8 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             size_t end = shared_data_offsets[row];
             auto dynamic_type = std::make_shared<DataTypeDynamic>();
             auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+
+            FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
                 String path = shared_paths->getDataAt(i).toString();
@@ -1343,7 +1334,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
                 ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
-                dynamic_serialization->deserializeBinary(*tmp_column, buf, {});
+                dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
                 object[path] = getFieldFromColumnForASTLiteralImpl(std::move(tmp_column), 0, dynamic_type, true);
             }
 

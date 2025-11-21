@@ -41,7 +41,7 @@ ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
     if (const auto & prewhere_info = source.getPrewhereInfo())
         return prewhere_info->prewhere_actions.clone();
 
-    return ActionsDAG(source.getOutputHeader().getColumnsWithTypeAndName());
+    return ActionsDAG(source.getOutputHeader()->getColumnsWithTypeAndName());
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.

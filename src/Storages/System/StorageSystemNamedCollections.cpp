@@ -1,4 +1,4 @@
-#include "StorageSystemNamedCollections.h"
+#include <Storages/System/StorageSystemNamedCollections.h>
 
 #include <base/EnumReflection.h>
 #include <Columns/ColumnArray.h>

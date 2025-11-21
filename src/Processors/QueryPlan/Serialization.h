@@ -22,8 +22,8 @@ struct IQueryPlanStep::Deserialization
     DeserializedSetsRegistry & registry;
     const ContextPtr & context;
 
-    const Headers & input_headers;
-    const Header * output_header;
+    const SharedHeaders & input_headers;
+    const SharedHeader & output_header;
     const QueryPlanSerializationSettings & settings;
 };
 

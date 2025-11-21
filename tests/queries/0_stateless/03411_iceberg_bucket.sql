@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-random-settings,
+-- Tags: no-random-settings,
 -- Test is taken both from Iceberg spec (https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements) and reference Iceberg repo (https://github.com/apache/iceberg/blob/6e8718113c08aebf76d8e79a9e2534c89c73407a/api/src/test/java/org/apache/iceberg/transforms/TestBucketing.java)
 SELECT 'icebergHash';
 SELECT icebergHash(true);

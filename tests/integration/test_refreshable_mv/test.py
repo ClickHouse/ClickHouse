@@ -6,7 +6,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
+from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
 
 cluster = ClickHouseCluster(__file__)
 
@@ -97,7 +97,7 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
         name = "append" if coordinated else "append_uncoordinated"
         refresh_settings = "" if coordinated else " settings all_replicas = 1"
         node2.query(
-            f"create materialized view re.{name} refresh every 1 year{refresh_settings} append (x Int64) engine ReplicatedMergeTree order by x as select rand() as x"
+            f"create materialized view re.{name} refresh every 1 year{refresh_settings} append (x Int64) engine ReplicatedMergeTree order by x as select rand64() as x"
         )
         # Stop the clocks.
         for node in nodes:
@@ -111,9 +111,10 @@ def test_refreshable_mv_in_replicated_db(started_cluster, cleanup):
             node.query(
                 f"system wait view re.{name};\
                 system refresh view re.{name};\
-                system wait view re.{name};\
-                system sync replica re.{name};"
+                system wait view re.{name};"
             )
+        for node in nodes:
+            node.query(f"system sync replica re.{name};")
         rows_before = int(nodes[randint(0, 1)].query(f"select count() from re.{name}"))
         # Advance the clocks.
         for node in nodes:
@@ -413,11 +414,11 @@ def test_pause(started_cluster, cleanup):
         "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
         "insert into re.src values (1);"
     )
+    node2.query("system sync database replica re")
+    node2.query_with_retry("system sync replica re.src")
     node2.query(
-        "system sync database replica re;"
-        "system sync replica re.src;"
         "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select x from re.src;"
-        "system wait view re.a"
+        "system wait view re.a;"
     )
     assert node2.query("select * from re.a") == "1\n"
     node2.query("system stop replicated view re.a")
@@ -471,11 +472,13 @@ def do_test_backup(to_table):
         "create table re.src (x Int64) engine ReplicatedMergeTree order by x;"
         "insert into re.src values (1);"
     )
+    node2.query("system sync database replica re")
+    # Retry because this sometimes fails with "Table is in readonly mode" because the table wasn't
+    # fully initialized yet. Apparently `system sync database replica` doesn't prevent that.
+    node2.query_with_retry("system sync replica re.src")
     node2.query(
-        "system sync database replica re;"
-        "system sync replica re.src;"
         f"create materialized view re.rmv refresh every 1 second {'TO re.tgt' if to_table else '(x Int64) engine ReplicatedMergeTree order by x'} as select x from re.src;"
-        "system wait view re.rmv"
+        "system wait view re.rmv;"
     )
     assert node2.query(f"select * from re.{target}") == "1\n"
 
@@ -578,3 +581,36 @@ def test_replicated_db_startup_race(started_cluster, cleanup):
     node1.query("system disable failpoint database_replicated_startup_pause")
     _, err = drop_query_handle.get_answer_and_error()
     assert err == ""
+
+
+def test_system_view_refreshes_on_not_running_replica(started_cluster):
+    for node in nodes:
+        node.query("DROP DATABASE IF EXISTS test SYNC")
+        node.query(
+            r"CREATE DATABASE test ENGINE = Replicated('/db/test', '{shard}', '{replica}')"
+        )
+
+    node1.query(
+        "CREATE MATERIALIZED VIEW test.rmv REFRESH EVERY 1 HOUR (x Int64) ENGINE ReplicatedMergeTree ORDER BY x AS SELECT number*10 AS x FROM numbers(2)"
+    )
+    node1.query("SYSTEM REFRESH VIEW test.rmv")
+
+    def get_view_refresh_value(node, column_name: str):
+        return node.query(
+            f"SELECT {column_name} FROM system.view_refreshes WHERE view='rmv' SETTINGS format_tsv_null_representation='NULL'"
+        ).strip()
+
+    assert get_view_refresh_value(node1, "read_rows") != "NULL"
+    assert get_view_refresh_value(node1, "read_bytes") != "NULL"
+    assert get_view_refresh_value(node1, "total_rows") != "NULL"
+    assert get_view_refresh_value(node1, "written_rows") != "NULL"
+    assert get_view_refresh_value(node1, "written_bytes") != "NULL"
+
+    assert get_view_refresh_value(node2, "read_rows") == "NULL"
+    assert get_view_refresh_value(node2, "read_bytes") == "NULL"
+    assert get_view_refresh_value(node2, "total_rows") == "NULL"
+    assert get_view_refresh_value(node2, "written_rows") == "NULL"
+    assert get_view_refresh_value(node2, "written_bytes") == "NULL"
+
+    for node in nodes:
+        node.query("DROP DATABASE IF EXISTS test SYNC")

@@ -41,9 +41,6 @@ struct URI
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
-
-private:
-    std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source);
 };
 
 }

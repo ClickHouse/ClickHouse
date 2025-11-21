@@ -154,12 +154,12 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
     {
         if (itr.key != "/")
         {
-            auto parent_path = parentNodePath(itr.key);
+            auto parent_path = Coordination::parentNodePath(itr.key);
             storage.container.updateValue(
                 parent_path,
                 [my_path = itr.key](typename Storage::Node & value)
                 {
-                    value.addChild(getBaseNodeName(my_path));
+                    value.addChild(Coordination::getBaseNodeName(my_path));
                     value.stats.increaseNumChildren();
                 });
         }

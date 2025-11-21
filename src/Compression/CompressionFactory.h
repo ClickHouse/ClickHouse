@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/IFactoryWithAliases.h>
+#include <Columns/IColumn_fwd.h>
 
 #include <functional>
 #include <memory>
@@ -73,6 +74,9 @@ public:
 
     /// Get codec by name with optional params. Example: LZ4, ZSTD(3)
     CompressionCodecPtr get(const String & compression_codec) const;
+
+    /// Insert codec information into MutableColumns to show in the system table
+    void fillCodecDescriptions(MutableColumns & res_columns) const;
 
     /// Register codec with parameters and column type
     void registerCompressionCodecWithType(const String & family_name, std::optional<uint8_t> byte_code, CreatorWithType creator);

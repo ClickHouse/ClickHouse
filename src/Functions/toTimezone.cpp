@@ -138,18 +138,19 @@ private:
 
 REGISTER_FUNCTION(ToTimeZone)
 {
-    FunctionDocumentation::Description description_to_timezone = R"(
+    FunctionDocumentation::Description description = R"(
 Converts a `DateTime` or `DateTime64` to the specified time zone.
 The internal value (number of unix seconds) of the data doesn't change.
 Only the value's time zone attribute and the value's string representation changes.
         )";
-    FunctionDocumentation::Syntax syntax_to_timezone = "toTimeZone(datetime, timezone)";
-    FunctionDocumentation::Arguments arguments_to_timezone = {
-        {"date", "The value to convert. [`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64)."},
-        {"timezone", "The target time zone name as a [`String`](/sql-reference/data-types/string)."}
+    FunctionDocumentation::Syntax syntax = "toTimeZone(datetime, timezone)";
+    FunctionDocumentation::Arguments arguments =
+    {
+        {"date", "The value to convert.", {"DateTime", "DateTime64"}},
+        {"timezone", "The target time zone name.", {"String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_to_timezone = "Returns the same timestamp as the input, but with the specified time zone. [`DateTime`](/sql-reference/data-types/datetime)/[`DateTime64`](/sql-reference/data-types/datetime64).";
-    FunctionDocumentation::Examples examples_to_timezone = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the same timestamp as the input, but with the specified time zone", {"DateTime", "DateTime64"}};
+    FunctionDocumentation::Examples examples = {
         {"Usage example", R"(
 SELECT toDateTime('2019-01-01 00:00:00', 'UTC') AS time_utc,
 toTypeName(time_utc) AS type_utc,
@@ -176,11 +177,11 @@ type_samoa: DateTime('US/Samoa')
 int32samoa: 1546300800
         )"}
     };
-    FunctionDocumentation::IntroducedIn introduced_in_to_timezone = {1, 1};
-    FunctionDocumentation::Category category_to_timezone = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_to_timezone = {description_to_timezone, syntax_to_timezone, arguments_to_timezone, returned_value_to_timezone, examples_to_timezone, introduced_in_to_timezone, category_to_timezone};
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<ToTimeZoneOverloadResolver>(documentation_to_timezone);
+    factory.registerFunction<ToTimeZoneOverloadResolver>(documentation);
     factory.registerAlias("toTimeZone", "toTimezone");
 }
 

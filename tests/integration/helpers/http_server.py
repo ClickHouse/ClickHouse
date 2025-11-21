@@ -3,6 +3,8 @@ import argparse
 import csv
 import socket
 import ssl
+import logging
+import signal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -26,13 +28,24 @@ def check_auth(fn):
 
 def start_server(server_address, data_path, schema, cert_path, address_family):
     class TSVHTTPHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            logging.info(
+                "%s:%s - - [%s] %s",
+                self.address_string(),
+                self.server.server_port,
+                self.log_date_time_string(),
+                format % args,
+            )
+
         @check_auth
         def do_GET(self):
+            self.log_message("Processing '%s'", self.requestline)
             self.__send_headers()
             self.__send_data()
 
         @check_auth
         def do_POST(self):
+            self.log_message("Processing '%s'", self.requestline)
             ids = self.__read_and_decode_post_ids()
             print("ids=", ids)
             self.__send_headers()
@@ -77,10 +90,17 @@ def start_server(server_address, data_path, schema, cert_path, address_family):
         httpd.socket = ssl.wrap_socket(
             httpd.socket, certfile=cert_path, server_side=True
         )
+    logging.info("Starting serving on %s", httpd.server_address)
     httpd.serve_forever()
+    # Never reaches here
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.NOTSET,
+        format="%(process)d %(asctime)s %(levelname)s: %(message)s",
+    )
+
     parser = argparse.ArgumentParser(
         description="Simple HTTP server returns data from file"
     )

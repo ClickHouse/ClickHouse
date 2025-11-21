@@ -4,7 +4,7 @@
 namespace DB
 {
 
-ISink::ISink(Block header)
+ISink::ISink(SharedHeader header)
     : IProcessor({std::move(header)}, {}), input(inputs.front())
 {
 }

@@ -8,32 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-namespace
-{
-
-struct DisableCompressionInScope
-{
-    explicit DisableCompressionInScope(DB::WriteBuffer & buffer_)
-        : buffer(buffer_)
-    {
-        if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&buffer))
-        {
-            original_codec = compressed_buf->getCodec();
-            compressed_buf->setCodec(DB::CompressionCodecFactory::instance().get("NONE"));
-        }
-    }
-
-    ~DisableCompressionInScope()
-    {
-        if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&buffer))
-            compressed_buf->setCodec(original_codec);
-    }
-
-    DB::WriteBuffer & buffer;
-    DB::CompressionCodecPtr original_codec;
-};
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -45,14 +19,30 @@ SerializationDetached::SerializationDetached(const SerializationPtr & nested_) :
 {
 }
 
+ISerialization::KindStack SerializationDetached::getKindStack() const
+{
+    auto kind_stack = nested->getKindStack();
+    kind_stack.push_back(Kind::DETACHED);
+    return kind_stack;
+}
+
+
 void SerializationDetached::serializeBinaryBulk(
     const IColumn & column, WriteBuffer & ostr, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t limit) const
 {
-    DisableCompressionInScope codec_switcher(ostr);
+    DB::CompressionCodecPtr original_codec;
+    if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&ostr))
+    {
+        original_codec = compressed_buf->getCodec();
+        compressed_buf->setCodec(DB::CompressionCodecFactory::instance().get("NONE"));
+    }
 
     const auto & blob = typeid_cast<const ColumnBLOB &>(column).getBLOB();
     writeVarUInt(blob.size(), ostr);
     ostr.write(blob.data(), blob.size());
+
+    if (auto * compressed_buf = typeid_cast<DB::CompressedWriteBuffer *>(&ostr))
+        compressed_buf->setCodec(original_codec);
 }
 
 void SerializationDetached::deserializeBinaryBulk(
@@ -80,12 +70,11 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     auto task = [wrapped_column = column,
                  nested_serialization = nested,
                  limit,
-                 format_settings = settings.format_settings,
-                 avg_value_size_hint = settings.avg_value_size_hint](const ColumnBLOB::BLOB & blob)
+                 format_settings = settings.format_settings](const ColumnBLOB::BLOB & blob)
     {
         // In case of alias columns, `column` might be a reference to the same column for a number of calls to this function.
         // To avoid deserializing into the same column multiple times, we clone the column here one more time.
-        return ColumnBLOB::fromBLOB(blob, wrapped_column->cloneEmpty(), nested_serialization, limit, format_settings, avg_value_size_hint);
+        return ColumnBLOB::fromBLOB(blob, wrapped_column->cloneEmpty(), nested_serialization, limit, format_settings);
     };
 
     auto column_blob = ColumnPtr(ColumnBLOB::create(std::move(task), column, limit));

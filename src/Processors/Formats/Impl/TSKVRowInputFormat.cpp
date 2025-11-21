@@ -20,7 +20,7 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
+TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(getPort().getHeader().columns())
 {
     const auto & sample_block = getPort().getHeader();
@@ -296,7 +296,7 @@ void registerInputFormatTSKV(FormatFactory & factory)
         IRowInputFormat::Params params,
         const FormatSettings & settings)
     {
-        return std::make_shared<TSKVRowInputFormat>(buf, sample, std::move(params), settings);
+        return std::make_shared<TSKVRowInputFormat>(buf, std::make_shared<const Block>(sample), std::move(params), settings);
     });
 
     factory.markFormatSupportsSubsetOfColumns("TSKV");

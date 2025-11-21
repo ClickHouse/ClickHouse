@@ -65,10 +65,9 @@ void DatabaseMemory::dropTable(
     }
     try
     {
-        /// Remove table without lock since:
+        /// Remove table without lock since
         /// - it does not require it
-        /// - it may cause lock-order-inversion if underlying storage need to
-        ///   resolve tables (like StorageLiveView)
+        /// - it may cause lock-order-inversion if underlying storage need to resolve tables
         table->drop();
 
         if (table->storesDataOnDisk())
@@ -87,22 +86,23 @@ void DatabaseMemory::dropTable(
     std::lock_guard lock{mutex};
     table->is_dropped = true;
     create_queries.erase(table_name);
+    snapshot_detached_tables.erase(table_name);
     UUID table_uuid = table->getStorageID().uuid;
     if (table_uuid != UUIDHelpers::Nil)
         DatabaseCatalog::instance().removeUUIDMappingFinally(table_uuid);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
+ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     auto engine = makeASTFunction(getEngineName());
     engine->no_empty_args = true;
     create_query->storage->set(create_query->storage->engine, engine);
 
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+    if (!comment.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment));
 
     return create_query;
 }
@@ -139,21 +139,26 @@ void DatabaseMemory::drop(ContextPtr local_context)
     removeDataPath(local_context);
 }
 
-void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
     /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
-        auto it = create_queries.find(table_id.table_name);
-        if (it == create_queries.end() || !it->second)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
-        create_query = it->second;
+        auto it = tables.find(table_id.table_name);
+        if (it == tables.end() || (table_id.uuid != UUIDHelpers::Nil && it->second->getStorageID().uuid != table_id.uuid))
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
+
+        auto it_query = create_queries.find(table_id.table_name);
+        if (it_query == create_queries.end() || !it_query->second)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+
+        create_query = it_query->second;
     }
 
     /// Apply metadata changes without holding a lock to avoid possible deadlock
     /// (i.e. when ALTER contains IN (table))
-    applyMetadataChangesToCreateQuery(create_query, metadata, local_context);
+    applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
@@ -212,11 +217,6 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     }
 
     return res;
-}
-
-void DatabaseMemory::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
 }
 
 void registerDatabaseMemory(DatabaseFactory & factory)

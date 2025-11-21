@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
+#include <Core/Settings.h>
 
 namespace ProfileEvents
 {
@@ -16,6 +17,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsSeconds receive_timeout;
+}
 
 namespace MergeTreeSetting
 {
@@ -124,7 +130,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     Strings mutation_ids;
     commands = std::make_shared<MutationCommands>(storage.queue.getMutationCommands(source_part, new_part_info.mutation, mutation_ids));
     LOG_TRACE(log, "Mutating part {} with mutation commands from {} mutations ({}): {}",
-              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString());
+              entry.new_part_name, commands->size(), fmt::join(mutation_ids, ", "), commands->toString(true));
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
@@ -230,7 +236,14 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 bool MutateFromLogEntryTask::finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log)
 {
     new_part = mutate_task->getFuture().get();
+
     auto & data_part_storage = new_part->getDataPartStorage();
+
+#if CLICKHOUSE_CLOUD
+    new_part->is_prewarmed = true;
+    data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+#endif
+
     if (data_part_storage.hasActiveTransaction())
         data_part_storage.precommitTransaction();
 

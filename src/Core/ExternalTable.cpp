@@ -22,8 +22,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/MessageHeader.h>
-
 
 namespace DB
 {
@@ -128,7 +128,7 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
 
 void BaseExternalTable::initSampleBlock()
 {
-    if (sample_block)
+    if (!sample_block.empty())
         return;
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
@@ -154,24 +154,24 @@ void ExternalTable::initReadBuffer()
 
 ExternalTable::ExternalTable(const boost::program_options::variables_map & external_options)
 {
-    if (external_options.count("file"))
+    if (external_options.contains("file"))
         file = external_options["file"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--file field have not been provided for external table");
 
-    if (external_options.count("name"))
+    if (external_options.contains("name"))
         name = external_options["name"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--name field have not been provided for external table");
 
-    if (external_options.count("format"))
+    if (external_options.contains("format"))
         format = external_options["format"].as<std::string>();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "--format field have not been provided for external table");
 
-    if (external_options.count("structure"))
+    if (external_options.contains("structure"))
         parseStructureFromStructureField(external_options["structure"].as<std::string>());
-    else if (external_options.count("types"))
+    else if (external_options.contains("types"))
         parseStructureFromTypesField(external_options["types"].as<std::string>());
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Neither --structure nor --types have not been provided for external table");
@@ -217,11 +217,26 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
 
     ExternalTableDataPtr data = getData(getContext());
 
-    /// Create table
-    NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
-    auto storage = temporary_table.getTable();
-    getContext()->addExternalTable(data->table_name, std::move(temporary_table));
+    auto temporary_id = StorageID::createEmpty();
+    temporary_id.table_name = data->table_name;
+
+    auto resolved = getContext()->tryResolveStorageID(temporary_id, Context::ResolveExternal);
+
+    StoragePtr storage;
+    if (resolved)
+    {
+        LOG_TEST(getLogger("ExternalTablesHandler"), "Using existing table {} for external data", temporary_id.getNameForLogs());
+        storage = DatabaseCatalog::instance().getTable(resolved, getContext());
+    }
+    else
+    {
+        LOG_TEST(getLogger("ExternalTablesHandler"), "Creating temporary table {} for external data", temporary_id.getNameForLogs());
+        NamesAndTypesList columns = sample_block.getNamesAndTypesList();
+        auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
+        storage = temporary_table.getTable();
+        getContext()->addExternalTable(temporary_id.table_name, std::move(temporary_table));
+    }
+
     auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext(), /*async_insert=*/false);
 
     /// Write data
