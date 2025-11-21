@@ -13,13 +13,13 @@ def get_array(query_result: str):
     print(arr)
     return arr
 
-def patch_metadata():
+def patch_metadata(table_name):
     # HACK This is terribly ugly hack, because of the issue:https://github.com/apache/iceberg/issues/13634
     # Iceberg sort order looks relatively new feature. There are no writer implementations which support it properly.
     # For example pyiceberg doesn't support it at all, you can specify sort order, but data will be written unsorted.
     # Spark implementation supports it, i.e. writes sorted data, but doesn't write proper sort_order_id in manifest files (always writes 0).
     # Here we manually modify metadata file to set actual sort order to id 0.
-    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v4.metadata.json", "rb") as f:
+    with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata/v4.metadata.json", "rb") as f:
         content = json.load(f)
         for order in content['sort-orders']:
             if order['order-id'] == 1:
@@ -31,7 +31,7 @@ def patch_metadata():
         content['sort-orders'] = [order_found]
         content['default-sort-order-id'] = 0
 
-        with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/v4.metadata.json", "w") as out_f:
+        with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata/v4.metadata.json", "w") as out_f:
             json.dump(content, out_f)
     # HACK END
 
@@ -57,7 +57,7 @@ def test_read_in_order(started_cluster_iceberg_with_spark,  storage_type):
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
 
-    patch_metadata()
+    patch_metadata(TABLE_NAME)
 
     files = default_upload_directory(
         started_cluster_iceberg_with_spark,
@@ -139,7 +139,7 @@ def test_read_in_order_with_complex(started_cluster_iceberg_with_spark,  storage
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (1,'a'), (3, 'c')")
     spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (2,'d'), (4, 'f')")
 
-    patch_metadata()
+    patch_metadata(TABLE_NAME)
 
     files = default_upload_directory(
         started_cluster_iceberg_with_spark,
