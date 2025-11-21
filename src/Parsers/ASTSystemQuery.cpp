@@ -488,6 +488,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
         case Type::DROP_TEXT_INDEX_HEADER_CACHE:
         case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::DROP_TEXT_INDEX_CACHES:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::DROP_ICEBERG_METADATA_CACHE:

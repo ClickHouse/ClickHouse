@@ -916,20 +916,23 @@ std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
                 auto storage_id = getStorageID();
 
                 auto dead_letter_queue = getContext()->getDeadLetterQueue();
-                dead_letter_queue->add(
-                    DeadLetterQueueElement{
-                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                        .event_time = timeInSeconds(time_now),
-                        .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database = storage_id.database_name,
-                        .table = storage_id.table_name,
-                        .raw_message = msg_info.currentPayload(),
-                        .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::KafkaDetails{
-                            .topic_name = msg_info.currentTopic(),
-                            .partition = msg_info.currentPartition(),
-                            .offset = msg_info.currentPartition(),
-                            .key = msg_info.currentKey()}});
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+                else
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = msg_info.currentPayload(),
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::KafkaDetails{
+                                .topic_name = msg_info.currentTopic(),
+                                .partition = msg_info.currentPartition(),
+                                .offset = msg_info.currentPartition(),
+                                .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
