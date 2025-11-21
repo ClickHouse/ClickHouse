@@ -95,7 +95,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & dependencies_inner_array_column = assert_cast<ColumnArray &>(dependencies_outer_array_column.getData());
     auto & dependencies_table = assert_cast<ColumnString &>(dependencies_inner_array_column.getData());
 
-    auto & dependencies_table_outer_offset = dependencies_outer_array_column.getOffsets();      // Outer array boundaries
+    auto & dependencies_table_outer_offset = dependencies_outer_array_column.getOffsets(); // Outer array boundaries
     auto & dependencies_table_inner_offset = dependencies_inner_array_column.getOffsets(); // Inner array boundaries
 
 
@@ -103,7 +103,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
     auto & missing_dependencies_inner_array_column = assert_cast<ColumnArray &>(missing_dependencies_outer_array_column.getData());
     auto & missing_dependencies_table = assert_cast<ColumnString &>(missing_dependencies_inner_array_column.getData());
 
-    auto & missing_dependencies_table_outer_offset = missing_dependencies_outer_array_column.getOffsets();      // Outer array boundaries
+    auto & missing_dependencies_table_outer_offset = missing_dependencies_outer_array_column.getOffsets(); // Outer array boundaries
     auto & missing_dependencies_table_inner_offset = missing_dependencies_inner_array_column.getOffsets(); // Inner array boundaries
 
 
@@ -201,7 +201,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             };
 
             // traversing dependent views
-            auto check_a_table = [&](const auto & self_, StorageID storage_, std::vector<String> route_) -> void
+            auto check_a_table = [&](const auto & self_, StorageID storage_, std::vector<String> & route_) -> void
             {
                 checkStackSize();
                 const auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_);
@@ -223,6 +223,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                             auto target_table_ptr = materialized_view->tryGetTargetTable();
                             if (!target_table_ptr)
                             {
+                                // missing target table - MV not ready
                                 auto copy_route = route_;
                                 copy_route.push_back(storage_.getFullNameNotQuoted());
                                 copy_route.push_back(view_id.getFullNameNotQuoted());
@@ -235,7 +236,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
                                 auto copy_route = route_;
                                 copy_route.push_back(storage_.getFullNameNotQuoted());
                                 copy_route.push_back(view_id.getFullNameNotQuoted());
-                                self_(self_, target_table_ptr->getStorageID(), std::move(copy_route));
+                                self_(self_, target_table_ptr->getStorageID(), copy_route);
                             }
                         }
                     }
@@ -243,7 +244,8 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             };
 
             auto storage_id = StorageID(database_str, table_str);
-            check_a_table(check_a_table, storage_id, {});
+            std::vector<String> empty_route;
+            check_a_table(check_a_table, storage_id, empty_route);
 
             dependencies_table_outer_offset.push_back(added_routes);
             missing_dependencies_table_outer_offset.push_back(missing_added_routes);

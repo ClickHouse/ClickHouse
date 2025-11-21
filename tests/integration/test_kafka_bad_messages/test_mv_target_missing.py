@@ -15,11 +15,6 @@ instance = cluster.add_instance(
     with_zookeeper=True,
     macros={
         "kafka_broker": "kafka1",
-        "kafka_topic_old": "old",
-        "kafka_group_name_old": "old",
-        "kafka_topic_new": "new",
-        "kafka_group_name_new": "new",
-        "kafka_client_id": "instance",
         "kafka_format_json_each_row": "JSONEachRow",
     },
 )
@@ -32,16 +27,6 @@ def kafka_cluster():
         yield cluster
     finally:
         cluster.shutdown()
-
-
-@pytest.fixture(autouse=True)
-def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-    topics = [t for t in admin_client.list_topics() if not t.startswith("_")]
-    if topics:
-        admin_client.delete_topics(topics)
-    yield
 
 
 @pytest.mark.parametrize(
