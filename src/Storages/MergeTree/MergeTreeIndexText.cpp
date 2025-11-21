@@ -306,7 +306,7 @@ TextIndexHeaderPtr deserializeHeader(
     const MergeTreeIndexTextParams & params,
     const MergeTreeIndexDeserializationState & state)
 {
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(state.condition);
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     /// Either retrieves a text index header from cache or from disk when cache is disabled.
     const auto load_header = [&]
     {
@@ -337,7 +337,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     header = deserializeHeader(*index_stream->getDataBuffer(), params, state);
 
-    analyzeBloomFilter(state.condition);
+    analyzeBloomFilter(*state.condition);
     analyzeDictionary(*dictionary_stream, state);
 }
 
@@ -438,7 +438,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
     if (remaining_tokens.empty())
         return;
 
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(state.condition);
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     auto global_search_mode = condition_text.getGlobalSearchMode();
     std::map<size_t, std::vector<StringRef>> block_to_tokens;
 

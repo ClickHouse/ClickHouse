@@ -51,7 +51,7 @@ using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, Merge
 struct MergeTreeIndexDeserializationState
 {
     MergeTreeIndexVersion version;
-    const IMergeTreeIndexCondition & condition;
+    const IMergeTreeIndexCondition * condition;
     const IMergeTreeDataPart & part;
     const IMergeTreeIndex & index;
     size_t index_mark;

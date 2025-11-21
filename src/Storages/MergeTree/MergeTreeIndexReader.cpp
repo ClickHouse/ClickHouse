@@ -147,7 +147,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         MergeTreeIndexDeserializationState state
         {
             .version = version,
-            .condition = *condition,
+            .condition = condition,
             .part = *part,
             .index = *index,
             .index_mark = mark
