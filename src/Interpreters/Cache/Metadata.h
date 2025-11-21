@@ -283,8 +283,6 @@ private:
 
 class CacheMetadata::Iterator
 {
-    friend IteratorPtr CacheMetadata::getIterator(const UserID &);
-    friend class CacheMetadata;
 public:
     using ImplPtr = std::shared_ptr<CacheMetadata::IteratorImpl>;
     explicit Iterator(ImplPtr impl_) : impl(std::move(impl_)) {}
