@@ -77,7 +77,8 @@ CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_4 AS a = 1;
 CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_5 AS a = 1;
 CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_6 AS a = 1;
 
-SELECT replaceRegexpAll(message, '\(\d+\)', ''), message_format_string FROM system.warnings WHERE message LIKE 'The number of%' ORDER BY message;
+SELECT value FROM system.metrics WHERE name = 'NamedCollection';
+SELECT replaceRegexpAll(message, '\(\d+\)', '_'), message_format_string FROM system.warnings WHERE message LIKE 'The number of%' ORDER BY message;
 
 DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
 DROP DATABASE IF EXISTS test_max_num_to_warn_1;
