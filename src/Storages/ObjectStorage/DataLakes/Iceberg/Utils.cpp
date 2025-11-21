@@ -692,8 +692,6 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
     return {result, partition_iter};
 }
 
-
-
 std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
 {
     if (auto * identifier = object->as<ASTIdentifier>(); identifier)
