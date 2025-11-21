@@ -214,6 +214,8 @@ public:
 
     void freeSpaceRatioKeepingThreadFunc();
 
+    const String & getName() const { return name; }
+
 private:
     using KeyAndOffset = FileCacheKeyAndOffset;
 
@@ -233,6 +235,7 @@ private:
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
 
+    String name;
     LoggerPtr log;
 
     std::exception_ptr init_exception;

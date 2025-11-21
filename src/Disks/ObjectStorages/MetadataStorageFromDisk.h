@@ -50,8 +50,6 @@ public:
 
     bool supportsStat() const override { return disk->supportsStat(); }
 
-    bool supportsPartitionCommand(const PartitionCommand & command) const override;
-
     struct stat stat(const String & path) const override { return disk->stat(path); }
 
     std::vector<std::string> listDirectory(const std::string & path) const override;

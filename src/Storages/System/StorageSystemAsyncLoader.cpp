@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/Context.h>
 #include <base/EnumReflection.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace DB

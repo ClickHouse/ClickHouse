@@ -3,7 +3,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 
-#include <deque>
+#include <base/scope_guard.h>
+
 #include <mutex>
 #include <filesystem>
 #include <memory>
@@ -110,6 +111,21 @@ std::filesystem::path InMemoryDirectoryTree::determineNodePath(std::shared_ptr<I
     return nodes_path;
 }
 
+std::shared_ptr<InMemoryDirectoryTree::INode> InMemoryDirectoryTree::trimDanglingVirtualPath(std::shared_ptr<INode> node)
+{
+    while (!node->isRoot() && node->isVirtual())
+    {
+        if (!node->subdirectories.empty())
+            break;
+
+        auto parent = node->parent.lock();
+        parent->subdirectories.erase(node->last_directory_name);
+        node = parent;
+    }
+
+    return node;
+}
+
 InMemoryDirectoryTree::InMemoryDirectoryTree(CurrentMetrics::Metric metric_directories_name, CurrentMetrics::Metric metric_files_name)
     : remote_layout_directories_count(metric_directories_name)
     , remote_layout_files_count(metric_files_name)
@@ -197,9 +213,6 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
     if (!inode)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_path.string());
 
-    if (inode->isVirtual())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_path.string());
-
     if (inode->isRoot())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_path.string());
 
@@ -215,6 +228,7 @@ void InMemoryDirectoryTree::unlinkTree(const std::string & path)
 
     auto inode_parent = inode->parent.lock();
     inode_parent->subdirectories.erase(normalized_path.filename());
+    trimDanglingVirtualPath(inode_parent);
 }
 
 void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::string & to)
@@ -224,19 +238,17 @@ void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::s
     const auto normalized_to = normalizePath(to);
 
     const auto inode_from = walk(normalized_from);
-    const auto inode_to_parent = walk(normalized_to.parent_path());
+    const auto inode_to_parent = walk(normalized_to.parent_path(), /*create_missing=*/true);
 
     if (!inode_from)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_from.string());
 
-    if (inode_from->isVirtual())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", normalized_from.string());
-
     if (inode_from->isRoot())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is root", normalized_from.string());
 
-    if (!inode_to_parent)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", normalized_to.parent_path().string());
+    const auto inode_from_parent = inode_from->parent.lock();
+    scope_guard trim_from = [&]() TSA_REQUIRES(mutex) { trimDanglingVirtualPath(inode_from_parent); };
+    scope_guard trim_to = [&]() TSA_REQUIRES(mutex) { trimDanglingVirtualPath(inode_to_parent); };
 
     if (inode_to_parent->subdirectories.contains(normalized_to.filename()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a subdirectory '{}' under the path '{}', can't move", normalized_to.filename().string(), normalized_to.parent_path().string());
@@ -245,7 +257,6 @@ void InMemoryDirectoryTree::moveDirectory(const std::string & from, const std::s
         if (inode_to_parent->remote_info->file_names.contains(normalized_to.filename()))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a file '{}' under the path '{}', can't move", normalized_to.filename().string(), normalized_to.parent_path().string());
 
-    const auto inode_from_parent = inode_from->parent.lock();
     inode_from_parent->subdirectories.erase(normalized_from.filename());
     inode_to_parent->subdirectories.emplace(normalized_to.filename(), inode_from);
 
