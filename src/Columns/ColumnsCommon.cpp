@@ -210,7 +210,13 @@ namespace
         {
             /// difference between current and actual offset
             const auto diff_offset = chunk_offset - current_src_offset;
-            chassert(diff_offset);
+
+            if (!diff_offset)
+            {
+                size += SIMD_BYTES;
+                current_src_offset += chunk_size;
+                return;
+            }
 
             memmove(&res_offsets[size], src_offsets_pos, SIMD_BYTES * sizeof(IColumn::Offset));
 
@@ -352,13 +358,11 @@ void filterArraysImplInPlace(
     {
         const auto arr_offset = offset_ptr[-1];
         const auto arr_size = *offset_ptr - arr_offset;
-        const auto need_copy = arr_offset != res_elems_size;
 
-        if (need_copy)
-        {
-            result_offsets_builder.insertOne(arr_size);
+        result_offsets_builder.insertOne(arr_size);
+
+        if (arr_offset != res_elems_size)
             memmove(&elem_pos[res_elems_size], &elem_pos[arr_offset], arr_size * sizeof(T));
-        }
 
         res_elems_size += arr_size;
     };
@@ -380,12 +384,11 @@ void filterArraysImplInPlace(
             /// SIMD_BYTES consecutive rows pass the filter
             const auto chunk_offset = offsets_pos[-1];
             const auto chunk_size = offsets_pos[SIMD_BYTES - 1] - chunk_offset;
-            const auto need_copy = chunk_offset != res_elems_size;
 
-            if (need_copy)
+            result_offsets_builder.insertChunk<SIMD_BYTES>(offsets_pos, chunk_offset, chunk_size);
+
+            if (chunk_offset != res_elems_size)
             {
-                result_offsets_builder.insertChunk<SIMD_BYTES>(offsets_pos, chunk_offset, chunk_size);
-
                 /// copy elements for SIMD_BYTES arrays at once
                 memmove(&elem_pos[res_elems_size], &elem_pos[chunk_offset], chunk_size * sizeof(T));
             }

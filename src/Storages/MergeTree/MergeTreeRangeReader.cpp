@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const IColumn::Filter & filter, size_t /* filter_bytes */)
+static void filterColumns(Columns & columns, const IColumn::Filter & filter)
 {
     for (auto & column : columns)
     {
@@ -71,19 +71,19 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter, siz
 
 void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
-    if (filter.alwaysTrue())
-        return;
+    // if (filter.alwaysTrue())
+    //     return;
 
-    if (filter.alwaysFalse())
-    {
-        for (auto & col : columns)
-            if (col)
-                col = col->cloneEmpty();
+    // if (filter.alwaysFalse())
+    // {
+    //     for (auto & col : columns)
+    //         if (col)
+    //             col = col->cloneEmpty();
 
-        return;
-    }
+    //     return;
+    // }
 
-    DB::filterColumns(columns, filter.getData(), filter.countBytesInFilter());
+    DB::filterColumns(columns, filter.getData());
 }
 
 void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter)
