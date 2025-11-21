@@ -94,7 +94,7 @@ struct SchedulerNodeInfo
 ///                         |                       |
 ///             RESOURCE:   | CPU, IO, QuerySlot    | MemoryReservation
 /// ________________________|_______________________|__________________________
-class ISchedulerNode : public boost::intrusive::list_base_hook<>, private boost::noncopyable // TODO(serxa): make hook private to EventQueue
+class ISchedulerNode : private boost::noncopyable
 {
 public:
     explicit ISchedulerNode(
@@ -148,6 +148,12 @@ public:
     SchedulerNodeInfo info;
     ISchedulerNode * parent = nullptr;
     EventId activation_event_id = 0; // Non-zero for `ISchedulerNode` placed in EventQueue::activations
+
+private:
+    friend class EventQueue;
+    boost::intrusive::list_member_hook<> activation_hook;
+    using ActivationHook = boost::intrusive::member_hook<ISchedulerNode, boost::intrusive::list_member_hook<>, &ISchedulerNode::activation_hook>;
+    using ActivationList = boost::intrusive::list<ISchedulerNode, ActivationHook>;
 };
 
 using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;

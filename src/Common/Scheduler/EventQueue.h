@@ -5,7 +5,6 @@
 #include <base/types.h>
 
 #include <boost/noncopyable.hpp>
-#include <boost/intrusive/list.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -115,7 +114,7 @@ private:
     // `events` and `activations` logically represent one ordered queue. To preserve the common order we use `EventId`
     // Activations are stored in a separate queue for performance reasons (mostly to avoid any allocations)
     std::deque<Event> events;
-    boost::intrusive::list<ISchedulerNode> activations;
+    ISchedulerNode::ActivationList activations;
 
     std::vector<Postponed> postponed;
     EventId last_event_id = 0;

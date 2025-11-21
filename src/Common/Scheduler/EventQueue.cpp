@@ -60,7 +60,7 @@ void EventQueue::enqueueActivation(ISchedulerNode & node)
 void EventQueue::cancelActivation(ISchedulerNode & node)
 {
     std::unique_lock lock{mutex};
-    if (node.is_linked())
+    if (node.activation_hook.is_linked())
         activations.erase(activations.iterator_to(node));
     node.activation_event_id = 0;
 }
