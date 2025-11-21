@@ -265,6 +265,7 @@ def main():
         res
         and JobStages.PACKAGE in stages
         and build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE
+        and not info.is_local_run
     ):
         if "amd" in build_type:
             deb_arch = "amd64"
