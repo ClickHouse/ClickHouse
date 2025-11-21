@@ -760,10 +760,10 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
-        const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
+        const Int64 max_attempts = client_configuration.retry_strategy.max_retries;
         chassert(max_attempts > 0);
 
-        Int64 attempt_no = 0;
+        Int64 attempt_no = 1;
         std::invoke_result_t<RequestFn, RequestType &> outcome;
 
         auto net_exception_handler = [&]() -> bool /// return true if we should retry
@@ -785,13 +785,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             return client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1);
         };
 
-        for (attempt_no = 0; attempt_no < max_attempts; ++attempt_no)
+        for (attempt_no = 1; attempt_no <= max_attempts; ++attempt_no)
         {
             incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestAttempts, ProfileEvents::S3WriteRequestAttempts);
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestAttempts, ProfileEvents::DiskS3WriteRequestAttempts);
 
-            if (attempt_no > 0)
+            if (attempt_no > 1)
             {
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestRetryableErrors, ProfileEvents::S3WriteRequestRetryableErrors);
                 if (isClientForDisk())
@@ -816,11 +816,9 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (outcome.IsSuccess())
                     break;
 
-                incrementProfileEvents<IsReadMethod>(ProfileEvents::S3ReadRequestsErrors, ProfileEvents::S3WriteRequestsErrors);
-                if (isClientForDisk())
-                    incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
+                // do not increment S3ReadRequestsErrors/S3WriteRequestsErrors here, it has been accounted in IO/S3/PocoHTTPClient.cpp
 
-                    /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
+                /// Retry attempts are managed by the outer loop, so the attemptedRetries argument can be ignored.
                 if (!client_configuration.retryStrategy->ShouldRetry(outcome.GetError(), /*attemptedRetries*/ -1))
                     break;
             }

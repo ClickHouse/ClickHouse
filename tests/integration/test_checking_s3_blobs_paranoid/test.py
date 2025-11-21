@@ -54,16 +54,6 @@ def cluster():
             with_minio=True,
             stay_alive=True,
         )
-        cluster.add_instance(
-            "node_with_adaptive_timeouts",
-            main_configs=[],
-            user_configs=[
-                "configs/setting.xml",
-                "configs/s3_retries_with_adaptive_timeout.xml",
-            ],
-            with_minio=True,
-            stay_alive=True,
-        )
         logging.info("Starting cluster...")
         cluster.start()
 
@@ -475,9 +465,8 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
 
     assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
-        in error
+        "Connection reset by peer." in error
+        or "Code: 1000, e.code() = 104, Connection reset by peer" in error
     ), error
 
 
@@ -558,8 +547,8 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
 
     assert "Code: 1000" in error, error
     assert (
-        "DB::Exception: Connection reset by peer." in error
-        or "DB::Exception: Poco::Exception. Code: 1000, e.code() = 104, Connection reset by peer"
+        "Connection reset by peer." in error
+        or "Code: 1000, e.code() = 104, Connection reset by peer"
         in error
     ), error
 
@@ -567,7 +556,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
 def test_when_s3_timeout_at_listing(
     cluster, broken_s3
 ):
-    node = cluster.instances["node_with_adaptive_timeouts"]
+    node = cluster.instances["node_with_inf_s3_retries"]
 
     insert_query_id = randomize_query_id(
         f"TEST_WHEN_S3_TIMEOUT_AT_LISTING_INSERT"
@@ -809,7 +798,7 @@ def test_no_key_found_disk(cluster, broken_s3):
     error = node.query_and_get_error("SELECT * FROM no_key_found_disk").strip()
 
     assert (
-        "DB::Exception: The specified key does not exist. This error happened for S3 disk"
+        "The specified key does not exist. This error happened for S3 disk"
         in error
     )
 
