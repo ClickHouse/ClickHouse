@@ -57,7 +57,6 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            /// column = column->filter(filter, filter_bytes);
             column->assumeMutable()->filter(filter);
 
             if (column->empty())
@@ -71,17 +70,17 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
 
 void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
-    // if (filter.alwaysTrue())
-    //     return;
+    if (filter.alwaysTrue())
+        return;
 
-    // if (filter.alwaysFalse())
-    // {
-    //     for (auto & col : columns)
-    //         if (col)
-    //             col = col->cloneEmpty();
+    if (filter.alwaysFalse())
+    {
+        for (auto & col : columns)
+            if (col)
+                col = col->cloneEmpty();
 
-    //     return;
-    // }
+        return;
+    }
 
     DB::filterColumns(columns, filter.getData());
 }
