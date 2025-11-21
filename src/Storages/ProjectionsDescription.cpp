@@ -328,7 +328,8 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
         /// Subcolumns can be used in projection only when the original column is used.
         if (columns.hasSubcolumn(column_with_type_name.name))
         {
-            if (!block.has(Nested::splitName(column_with_type_name.name).first))
+            auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
+            if (!block.has(subcolumn.getNameInStorage()))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain individual subcolumns: {}", column_with_type_name.name);
             /// Also remove this subcolumn from the required columns as we have the original column.
             std::erase_if(result.required_columns, [&](const String & column_name){ return column_name == column_with_type_name.name; });

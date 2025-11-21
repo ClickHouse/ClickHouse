@@ -4219,56 +4219,88 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & table_expression)
+static NameSet getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression)
 {
     NameSet existing_columns;
-    switch (table_expression->getNodeType())
+    std::stack<const IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push(root_table_expression.get());
+
+    while (!nodes_to_process.empty())
     {
-        case QueryTreeNodeType::TABLE: {
-            const auto * table_node = table_expression->as<TableNode>();
-            chassert(table_node);
+        const auto * table_expression = nodes_to_process.top();
+        nodes_to_process.pop();
 
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-            for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
-                existing_columns.insert(column.name);
+        switch (table_expression->getNodeType())
+        {
+            case QueryTreeNodeType::TABLE:
+            {
+                const auto * table_node = table_expression->as<TableNode>();
+                chassert(table_node);
 
-            return existing_columns;
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
+                    existing_columns.insert(column.name);
+
+                break;
+            }
+            case QueryTreeNodeType::TABLE_FUNCTION:
+            {
+                const auto * table_function_node = table_expression->as<TableFunctionNode>();
+                chassert(table_function_node);
+
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
+                    existing_columns.insert(column.name);
+
+                break;
+            }
+            case QueryTreeNodeType::QUERY:
+            {
+                const auto * query_node = table_expression->as<QueryNode>();
+                chassert(query_node);
+
+                for (const auto & column : query_node->getProjectionColumns())
+                    existing_columns.insert(column.name);
+
+                break;
+            }
+            case QueryTreeNodeType::UNION:
+            {
+                const auto * union_node = table_expression->as<UnionNode>();
+                chassert(union_node);
+
+                for (const auto & column : union_node->computeProjectionColumns())
+                    existing_columns.insert(column.name);
+                break;
+            }
+            case QueryTreeNodeType::JOIN:
+            {
+                const auto * join_node = table_expression->as<JoinNode>();
+                chassert(join_node);
+
+                nodes_to_process.push(join_node->getLeftTableExpression().get());
+                nodes_to_process.push(join_node->getRightTableExpression().get());
+                break;
+            }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                const auto * cross_join_node = table_expression->as<CrossJoinNode>();
+                chassert(cross_join_node);
+                for (const auto & table_expr : cross_join_node->getTableExpressions())
+                    nodes_to_process.push(table_expr.get());
+                break;
+            }
+            default:
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
+                    table_expression->getNodeTypeName(),
+                    table_expression->formatASTForErrorMessage());
+            }
         }
-        case QueryTreeNodeType::TABLE_FUNCTION: {
-            const auto * table_function_node = table_expression->as<TableFunctionNode>();
-            chassert(table_function_node);
-
-            auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-            for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
-                existing_columns.insert(column.name);
-
-            return existing_columns;
-        }
-        case QueryTreeNodeType::QUERY: {
-            const auto * query_node = table_expression->as<QueryNode>();
-            chassert(query_node);
-
-            for (const auto & column : query_node->getProjectionColumns())
-                existing_columns.insert(column.name);
-
-            return existing_columns;
-        }
-        case QueryTreeNodeType::UNION: {
-            const auto * union_node = table_expression->as<UnionNode>();
-            chassert(union_node);
-
-            for (const auto & column : union_node->computeProjectionColumns())
-                existing_columns.insert(column.name);
-
-            return existing_columns;
-        }
-        default:
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Expected TableNode, TableFunctionNode, QueryNode or UnionNode, got {}: {}",
-                table_expression->getNodeTypeName(),
-                table_expression->formatASTForErrorMessage());
     }
+    return existing_columns;
 }
 
 /// Resolve join node in scope
@@ -4362,8 +4394,14 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             while (existing_columns.contains(column_name_type.name))
                                 column_name_type.name = "_" + column_name_type.name;
 
+                            auto [expression_source, is_single_source] = getExpressionSource(resolved_nodes.front());
+                            /// Do not support `SELECT t1.a + t2.a AS id ... USING id`
+                            if (!is_single_source)
+                                return nullptr;
+
                             /// Create ColumnNode with expression from parent projection
-                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(), left_table_expression);
+                            return std::make_shared<ColumnNode>(std::move(column_name_type), resolved_nodes.front(),
+                                expression_source ? expression_source : left_table_expression);
                         }
                     }
                 }

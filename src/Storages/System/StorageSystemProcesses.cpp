@@ -68,6 +68,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"query_kind", std::make_shared<DataTypeString>(), "The type of the query - SELECT, INSERT, etc."},
 
         {"thread_ids", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The list of identifiers of all threads which participated in this query."},
+        {"peak_threads_usage", std::make_shared<DataTypeUInt64>(), "Maximum count of simultaneous threads executing the query."},
         {"ProfileEvents", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>()), "ProfileEvents calculated for this query."},
         {"Settings", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "The list of modified user-level settings."},
 
@@ -145,6 +146,8 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
                 threads_array.emplace_back(thread_id);
             res_columns[i++]->insert(threads_array);
         }
+
+        res_columns[i++]->insert(process.peak_threads_usage);
 
         {
             IColumn * column = res_columns[i++].get();
