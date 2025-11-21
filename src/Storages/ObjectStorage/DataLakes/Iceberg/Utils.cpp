@@ -697,7 +697,7 @@ std::pair<Poco::JSON::Object::Ptr, Int32> getPartitionSpec(
 
 std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
 {
-    if (auto identifier = object->as<ASTIdentifier>(); identifier)
+    if (auto * identifier = object->as<ASTIdentifier>(); identifier)
         return {"identity", identifier->name()};
 
     static const std::unordered_map<String, String> clickhouse_name_to_iceberg = {
@@ -711,7 +711,7 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
     };
 
     auto parse_function = [] (ASTPtr func_object) -> std::pair<String, String> {
-        auto func = func_object->as<ASTFunction>();
+        auto * func = func_object->as<ASTFunction>();
         String clickhouse_name = func->name;
         auto args = func->children[0]->children;
         std::optional<size_t> arg;
@@ -737,13 +737,13 @@ std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i)
         return {transform, column_name};
     };
 
-    if (auto func = object->as<ASTFunction>(); func->name != "tuple")
+    if (auto * func = object->as<ASTFunction>(); func->name != "tuple")
     {
         return parse_function(object);
     }
 
     auto function_desc = object->children[0]->children[i]->children[0];
-    if (auto identifier = function_desc->as<ASTIdentifier>(); identifier)
+    if (auto * identifier = function_desc->as<ASTIdentifier>(); identifier)
         return {"identity", identifier->name()};
 
     return parse_function(function_desc);
@@ -1141,7 +1141,7 @@ void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_descri
         initial_column_names_set.insert(column_name);
     }
     ASTPtr combined_expr_list = sort_description.expression_list_ast;
-    
+
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, block.getNamesAndTypesList());
     auto analyzer = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
     analyzer->execute(block);
