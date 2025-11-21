@@ -509,24 +509,24 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
 void StatementGenerator::generateNextTTL(
     RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr)
 {
-    const uint32_t nttls = rg.randomInt<uint32_t>(1, 3);
+    const uint32_t nttls = rg.nextSmallNumber() < 9 ? 1 : rg.randomInt<uint32_t>(1, 3);
 
     for (uint32_t i = 0; i < nttls; i++)
     {
-        const uint32_t nopt = rg.nextSmallNumber();
+        const uint32_t nopt = rg.nextMediumNumber();
         TTLEntry * entry = i == 0 ? ttl_expr->mutable_ttl_expr() : ttl_expr->add_other_ttl();
 
         generateTTLExpression(rg, t, entry->mutable_time_expr());
-        if (nopt < 5)
+        if (nopt < 26)
         {
             TTLUpdate * tupt = entry->mutable_update();
-            const uint32_t nopt2 = rg.nextSmallNumber();
+            const uint32_t nopt2 = rg.nextMediumNumber();
 
-            if (nopt2 < 5)
+            if (nopt2 < 16)
             {
                 generateNextCodecs(rg, tupt->mutable_codecs());
             }
-            else if (!fc.disks.empty() && nopt2 < 9)
+            else if (!fc.disks.empty() && nopt2 < 31)
             {
                 generateStorage(rg, tupt->mutable_storage());
             }
@@ -555,7 +555,7 @@ void StatementGenerator::generateNextTTL(
             }
         }
         else if (
-            nopt < 9 && te && !entries.empty()
+            nopt < 41 && te && !entries.empty()
             && ((te->has_order() && te->order().exprs_size()) || (te->has_primary_key() && te->primary_key().exprs_size())))
         {
             TTLGroupBy * gb = entry->mutable_group_by();

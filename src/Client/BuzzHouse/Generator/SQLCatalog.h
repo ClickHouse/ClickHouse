@@ -224,7 +224,7 @@ public:
 
     static void setDeterministic(RandomGenerator & rg, SQLBase & b)
     {
-        b.is_deterministic = rg.nextSmallNumber() < 8;
+        b.is_deterministic = rg.nextSmallNumber() < 7;
         b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 16;
     }
 
