@@ -90,8 +90,6 @@ SELECT number FROM system.numbers_mt WHERE number < 10;
 
 SELECT * FROM system.numbers_mt LIMIT 0;
 
-SET max_threads = 10;
-
 SELECT number FROM system.numbers_mt WHERE number < 100 LIMIT 5;
 
 SELECT number FROM system.numbers_mt WHERE number < 1000 LIMIT 5;
