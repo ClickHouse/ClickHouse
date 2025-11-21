@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <numeric>
 #include <deque>
+#include <ranges>
 #include <iterator>
 
 using namespace DB;
@@ -695,6 +696,9 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
                 },
                 getData(hash_joins[0])->maps.at(0));
+
+            auto & current_columns = getData(hash_joins[0])->columns;
+            current_columns.splice(current_columns.end(), getData(hash_joins[i])->columns);
         }
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that
@@ -794,11 +798,30 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
     if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
+        auto common_used_flags = hash_joins[0]->data->getUsedFlags();
+
+        bool use_per_row_flags = std::ranges::any_of(
+            hash_joins,
+            [&](const auto & hash_join)
+            {
+                auto used_flags = hash_join->data->getUsedFlags();
+                return !used_flags->per_row_flags.empty();
+            });
+
         //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
         for (size_t i = 1; i < slots; ++i)
         {
             getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
-            hash_joins[i]->data->setUsedFlags(hash_joins[0]->data->getUsedFlags());
+
+            if (use_per_row_flags)
+            {
+                /// In case flag per row is used, we need to merge flags, rows in different slots can differ.
+                auto current_used_flags = hash_joins[i]->data->getUsedFlags();
+                common_used_flags->per_row_flags.merge(current_used_flags->per_row_flags);
+                if (!current_used_flags->per_row_flags.empty())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "ConcurrentHashJoin: unexpected non-disjoint per_row_flags in slot {}", i);
+            }
+            hash_joins[i]->data->setUsedFlags(common_used_flags);
         }
     }
 
