@@ -4,6 +4,7 @@
 
 #include <base/sleep.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/OAuth20Credentials.h>
 
 #include <set>
 
@@ -21,12 +22,12 @@ struct HTTPAuthClientParams
 };
 
 template <typename TResponseParser>
-class HTTPAuthClient
+class HTTPAuthClientBase
 {
 public:
     using Result = TResponseParser::Result;
 
-    explicit HTTPAuthClient(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
+    explicit HTTPAuthClientBase(const HTTPAuthClientParams & params, const TResponseParser & parser_ = TResponseParser{})
         : timeouts{params.timeouts}
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
@@ -94,27 +95,44 @@ private:
 
 
 template <typename TResponseParser>
-class HTTPBasicAuthClient : private HTTPAuthClient<TResponseParser>
+class HTTPAuthClient : private HTTPAuthClientBase<TResponseParser>
 {
 public:
-    using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
-    using Result = HTTPAuthClient<TResponseParser>::Result;
+    using HTTPAuthClientBase<TResponseParser>::HTTPAuthClientBase;
+    using Result = HTTPAuthClientBase<TResponseParser>::Result;
 
-    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> & headers) const
+    Result authenticateBasic(const String & user_name, const String & password, const std::unordered_map<String, String> & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
-
-        for (const auto & k : headers)
-        {
-            if (this->getForwardHeaders().contains(k.first))
-                request.add(k.first, k.second);
-        }
+        setHeaders(request, headers);
 
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};
         basic_credentials.authenticate(request);
 
         return this->authenticateRequest(request);
+    }
+
+    Result authenticateBearer(const String & token, const std::unordered_map<String, String> & headers) const
+    {
+        Poco::Net::HTTPRequest request{
+            Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
+        setHeaders(request, headers);
+
+        Poco::Net::OAuth20Credentials credentials{token};
+        credentials.authenticate(request);
+
+        return this->authenticateRequest(request);
+    }
+
+private:
+    void setHeaders(Poco::Net::HTTPRequest & request, const std::unordered_map<String, String> & headers) const
+    {
+        for (const auto & [name, value] : headers)
+        {
+            if (this->getForwardHeaders().contains(name))
+                request.add(name, value);
+        }
     }
 };
 
