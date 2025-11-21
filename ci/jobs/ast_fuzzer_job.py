@@ -116,12 +116,18 @@ def run_fuzz_job(check_name: str):
             info += f"Error:\n{error_output}\n"
 
         patterns = [
-            "Let op!",
+            "BuzzHouse fuzzer exception",
             "Killed",
+            "Let op!",
+            "Received signal",
+            "runtime error:",
+            "Sanitizer:",
             "Unknown error",
         ]
-        if result.results and any(
-            pattern in result.results[-1].name for pattern in patterns
+        if (
+            result.results
+            and not "Logical error" in result.results[-1].name
+            and any(pattern in result.results[-1].name for pattern in patterns)
         ):
             info += f"---\n\nIssue found in the {'client' if result.is_error() else 'server'}\n"
             info += f"---\n\n{'Fuzzer' if result.is_error() else 'Server'} log (last 200 lines):\n"
@@ -135,7 +141,8 @@ def run_fuzz_job(check_name: str):
         else:
             try:
                 fuzzer_test_generator = FuzzerTestGenerator(
-                    str(server_log), str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log)
+                    str(server_log),
+                    str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
                 )
                 failed_query = fuzzer_test_generator.get_failed_query()
                 if failed_query:
