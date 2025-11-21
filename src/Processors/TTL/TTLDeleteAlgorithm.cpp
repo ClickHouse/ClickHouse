@@ -16,7 +16,7 @@ TTLDeleteAlgorithm::TTLDeleteAlgorithm(
 
 void TTLDeleteAlgorithm::execute(Block & block)
 {
-    if (block.empty() || !isMinTTLExpired())
+    if (!block || !isMinTTLExpired())
         return;
 
     auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
@@ -34,16 +34,12 @@ void TTLDeleteAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            UInt32 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
             bool where_filter_passed = !where_column || where_column->getBool(i);
 
             if (!isTTLExpired(cur_ttl) || !where_filter_passed)
             {
-                /// Update ttl info only if row passes the filter.
-                /// Rows that don't pass the filter should not affect TTL.
-                if (where_filter_passed)
-                    new_ttl_info.update(cur_ttl);
-
+                new_ttl_info.update(cur_ttl);
                 result_column->insertFrom(*values_column, i);
             }
             else if (it == column_names.begin())

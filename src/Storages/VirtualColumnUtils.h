@@ -7,6 +7,9 @@
 #include <Storages/VirtualColumnsDescription.h>
 #include <Formats/FormatSettings.h>
 
+#include <unordered_set>
+
+
 namespace DB
 {
 
@@ -40,9 +43,6 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
-/// Builds ordered sets used by ActionsDAG inplace.
-void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
-
 /// Checks if all functions used in DAG are deterministic.
 bool isDeterministic(const ActionsDAG::Node * node);
 
@@ -58,7 +58,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 /// The predicate will be `_partition_id = '0' AND rowNumberInBlock() = 1`, and `rowNumberInBlock()` is
 /// non-deterministic. If we still extract the part `_partition_id = '0'` for filtering parts, then trivial
 /// count optimization will be mistakenly applied to the query.
-std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, const ContextPtr & context, bool allow_partial_result = true);
+std::optional<ActionsDAG> splitFilterDagForAllowedInputs(const ActionsDAG::Node * predicate, const Block * allowed_inputs, bool allow_partial_result = true);
 
 /// Extract from the input stream a set of `name` column values
 template <typename T>
@@ -73,16 +73,21 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
-VirtualColumnsDescription getVirtualsForFileLikeStorage(ColumnsDescription & storage_columns);
+VirtualColumnsDescription getVirtualsForFileLikeStorage(
+    ColumnsDescription & storage_columns,
+    const ContextPtr & context,
+    const std::string & sample_path = "",
+    std::optional<FormatSettings> format_settings_ = std::nullopt,
+    bool is_data_lake = false);
 
-std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const ContextPtr & context, const NamesAndTypesList & hive_columns = {});
+std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns);
 
-ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context);
 
 template <typename T>
-void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
+void filterByPathOrFile(std::vector<T> & sources, const std::vector<String> & paths, const ExpressionActionsPtr & actions, const NamesAndTypesList & virtual_columns, const ContextPtr & context)
 {
-    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, hive_columns, context);
+    auto indexes_column = getFilterByPathAndFileIndexes(paths, actions, virtual_columns, context);
     const auto & indexes = typeid_cast<const ColumnUInt64 &>(*indexes_column).getData();
     if (indexes.size() == sources.size())
         return;
@@ -101,14 +106,11 @@ struct VirtualsForFileLikeStorage
     const String * filename { nullptr };
     std::optional<Poco::Timestamp> last_modified { std::nullopt };
     const String * etag { nullptr };
-    const std::map<String, String> * tags { nullptr };
-    std::optional<UInt64> data_lake_snapshot_version { std::nullopt };
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk, const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values, ContextPtr context);
-
 }
 
 }

@@ -15,21 +15,41 @@
 namespace DB
 {
 
-namespace S3RequestSetting
+struct S3ObjectStorageSettings
 {
-    extern const S3RequestSettingsBool read_only;
-}
+    S3ObjectStorageSettings() = default;
 
+    S3ObjectStorageSettings(
+        const S3::S3RequestSettings & request_settings_,
+        const S3::S3AuthSettings & auth_settings_,
+        uint64_t min_bytes_for_seek_,
+        int32_t list_object_keys_size_,
+        int32_t objects_chunk_size_to_delete_,
+        bool read_only_)
+        : request_settings(request_settings_)
+        , auth_settings(auth_settings_)
+        , min_bytes_for_seek(min_bytes_for_seek_)
+        , list_object_keys_size(list_object_keys_size_)
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , read_only(read_only_)
+    {}
+
+    S3::S3RequestSettings request_settings;
+    S3::S3AuthSettings auth_settings;
+
+    uint64_t min_bytes_for_seek;
+    int32_t list_object_keys_size;
+    int32_t objects_chunk_size_to_delete;
+    bool read_only;
+};
 
 class S3ObjectStorage : public IObjectStorage
 {
 private:
-    friend class S3PlainObjectStorage;
-
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
-        std::unique_ptr<S3Settings> && s3_settings_,
+        std::unique_ptr<S3ObjectStorageSettings> && s3_settings_,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeysGeneratorPtr key_generator_,
@@ -66,13 +86,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
-
-    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
-        const StoredObject & object,
-        const ReadSettings & read_settings,
-        size_t max_size_bytes,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -84,7 +99,7 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
@@ -93,9 +108,9 @@ public:
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -126,20 +141,25 @@ public:
 
     bool isRemote() const override { return true; }
 
+    std::unique_ptr<IObjectStorage> cloneObjectStorage(
+        const std::string & new_namespace,
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context) override;
+
     bool supportParallelWrite() const override { return true; }
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
 
     bool areObjectKeysRandom() const override;
 
-    bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
+    bool isReadOnly() const override { return s3_settings.get()->read_only; }
 
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
-
-    S3::URI getURI() const { return uri; }
-    S3Settings getS3Settings() const { return *s3_settings.get(); }
 private:
+    void setNewSettings(std::unique_ptr<S3ObjectStorageSettings> && s3_settings_);
+
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
 
@@ -148,7 +168,7 @@ private:
     std::string disk_name;
 
     MultiVersion<S3::Client> client;
-    MultiVersion<S3Settings> s3_settings;
+    MultiVersion<S3ObjectStorageSettings> s3_settings;
     S3Capabilities s3_capabilities;
 
     ObjectStorageKeysGeneratorPtr key_generator;

@@ -7,14 +7,13 @@
 
 #include <Common/HashTable/HashSet.h>
 #include <Common/Arena.h>
-#include <QueryPipeline/Pipe.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Block_fwd.h>
 
-#include <Dictionaries/DictionaryStructure.h>
-#include <Dictionaries/IDictionary.h>
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryHelpers.h>
+#include "DictionaryStructure.h"
+#include "IDictionary.h"
+#include "IDictionarySource.h"
+#include "DictionaryHelpers.h"
 
 namespace DB
 {

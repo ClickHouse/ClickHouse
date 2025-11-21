@@ -5,7 +5,7 @@
 namespace DB
 {
 
-ReadNothingStep::ReadNothingStep(SharedHeader output_header_)
+ReadNothingStep::ReadNothingStep(Block output_header_)
     : ISourceStep(std::move(output_header_))
 {
 }

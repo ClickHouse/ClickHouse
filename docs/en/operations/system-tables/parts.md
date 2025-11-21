@@ -3,7 +3,6 @@ description: 'System table containing information about parts of MergeTree'
 keywords: ['system table', 'parts']
 slug: /operations/system-tables/parts
 title: 'system.parts'
-doc_type: 'reference'
 ---
 
 # system.parts
@@ -18,8 +17,8 @@ Columns:
 
     Formats:
 
-  - `YYYYMM` for automatic partitioning by month.
-  - `any_string` when partitioning manually.
+    - `YYYYMM` for automatic partitioning by month.
+    - `any_string` when partitioning manually.
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part. The part naming structure can be used to determine many aspects of the data, ingest, and merge patterns. The part naming format is the following:
 
@@ -28,11 +27,11 @@ Columns:
 ```
 
 * Definitions:
-  - `partition_id` - identifies the partition key
-  - `minimum_block_number` - identifies the minimum block number in the part. ClickHouse always merges continuous blocks
-  - `maximum_block_number` - identifies the maximum block number in the part
-  - `level` - incremented by one with each additional merge on the part. A level of 0 indicates this is a new part that has not been merged. It is important to remember that all parts in ClickHouse are always immutable
-  - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
+     - `partition_id` - identifies the partition key
+     - `minimum_block_number` - identifies the minimum block number in the part. ClickHouse always merges continuous blocks
+     - `maximum_block_number` - identifies the maximum block number in the part
+     - `level` - incremented by one with each additional merge on the part. A level of 0 indicates this is a new part that has not been merged. It is important to remember that all parts in ClickHouse are always immutable
+     - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
 
 - `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) -  The UUID of data part.
 
@@ -40,8 +39,8 @@ Columns:
 
     Possible Values:
 
-  - `Wide` — Each column is stored in a separate file in a filesystem.
-  - `Compact` — All columns are stored in one file in a filesystem.
+    - `Wide` — Each column is stored in a separate file in a filesystem.
+    - `Compact` — All columns are stored in one file in a filesystem.
 
     Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
 
@@ -91,9 +90,9 @@ Columns:
 
 - `data_version` ([UInt64](../../sql-reference/data-types/int-uint.md)) – Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than `data_version`).
 
-- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) used by primary key values (will be `0` in case of `primary_key_lazy_load=1` and `use_primary_key_cache=1`).
+- `primary_key_bytes_in_memory` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) used by primary key values.
 
-- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values (will be `0` in case of `primary_key_lazy_load=1` and `use_primary_key_cache=1`).
+- `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
 - `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition)
 
@@ -107,11 +106,11 @@ Columns:
 
 - `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
-- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#sipHash128) of compressed files.
+- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of compressed files.
 
-- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#sipHash128) of uncompressed files (files with marks, index file etc.).
+- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of uncompressed files (files with marks, index file etc.).
 
-- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#sipHash128) of data in the compressed files as if they were uncompressed.
+- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of data in the compressed files as if they were uncompressed.
 
 - `delete_ttl_info_min` ([DateTime](../../sql-reference/data-types/datetime.md)) — The minimum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 
@@ -133,11 +132,11 @@ The `move_ttl_info.expression` array is kept mostly for backward compatibility, 
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.parts LIMIT 1 FORMAT Vertical;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 partition:                             tuple()

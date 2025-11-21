@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <memory>
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -48,18 +49,17 @@ public:
 
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
-    void refresh(UInt64 not_sooner_than_milliseconds) override;
+    void refresh() override;
 
 private:
     const std::string metadata_key_prefix;
-    std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    AtomicStopwatch previous_refresh;
+    std::shared_ptr<InMemoryDirectoryPathMap> path_map;
 
-    void load(bool is_initial_load);
-    std::mutex load_mutex;
+    void load();
 
     std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
-    std::shared_ptr<InMemoryDirectoryTree> getFsTree() const override { return fs_tree; }
+    std::shared_ptr<InMemoryDirectoryPathMap> getPathMap() const override { return path_map; }
+    std::unordered_set<std::string> getDirectChildrenOnDisk(const std::filesystem::path & local_path) const;
 };
 
 }
