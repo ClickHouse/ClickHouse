@@ -1232,6 +1232,7 @@ public:
 
             bool has_nullable = false;
             bool has_null = false;
+            bool has_nothing = false;
 
             const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
             size_t size = any_tuple->getElements().size();
@@ -1245,8 +1246,16 @@ public:
                     element_type = func->build(args)->getResultType();
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
+
+                /// Nullable(Nothing)
                 has_null = has_null || element_type->onlyNull();
+
+                /// Nothing
+                has_nothing = has_nothing || isNothing(element_type);
             }
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNothing>();
 
             /// If any element comparison is nullable, return type will also be nullable.
             /// We useDefaultImplementationForNulls, but it doesn't work for tuples.
