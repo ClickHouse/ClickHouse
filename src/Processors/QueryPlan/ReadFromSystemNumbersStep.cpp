@@ -198,19 +198,18 @@ public:
     String getName() const override { return "NumbersRange"; }
 
 private:
-    /// Find the data range in ranges and return how many item found.
-    /// If no data left in ranges return 0.
-    UInt64 findRanges(RangesPos & start)
+    /// Find the data range in ranges and return (start position, how many items found).
+    /// If no data left in ranges return 0 items found
+    std::pair<RangesPos, UInt64> findRanges()
     {
         std::lock_guard lock(ranges_state->mutex);
 
 
         UInt64 maximum_can_take = base_block_size;
-        UInt64 size = 0; /// How many items found
 
         /// `start` is the current global position.
-        RangesPos end = ranges_state->pos;
-        start = end;
+        RangesPos start = ranges_state->pos;
+        RangesPos end = start;
 
         /// Find end
         while (maximum_can_take != 0)
@@ -241,14 +240,15 @@ private:
                 end.offset_in_range = 0;
             }
 
-            size += take;
             maximum_can_take -= take;
         }
 
         /// Publish new global position.
         ranges_state->pos = end;
 
-        return size;
+        UInt64 block_size = base_block_size - maximum_can_take;
+
+        return {start, block_size};
     }
 
 protected:
@@ -259,8 +259,7 @@ protected:
 
         /// Find the data range.
         /// If data left is small, shrink block size.
-        RangesPos start;
-        auto block_size = findRanges(start);
+        auto [start, block_size] = findRanges();
 
         chassert(block_size <= base_block_size);
 
