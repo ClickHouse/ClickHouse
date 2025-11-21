@@ -1,6 +1,6 @@
 services:
     mysql80:
-        image: ubuntu/mysql:8.0-22.04_edge
+        image: clickhouse/test-mysql80
         stop_grace_period: 5s
         restart: always
         environment:
