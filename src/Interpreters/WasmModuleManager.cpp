@@ -18,6 +18,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <Common/UniqueLock.h>
+#include <Common/SharedLockGuard.h>
 
 #include <expected>
 
@@ -56,7 +58,7 @@ static String trimAndEscape(std::string_view name, size_t max_length = 128)
     return escapeForFileName(std::string(name));
 }
 
-UInt256 caclculateHash(std::string_view data [[maybe_unused]])
+UInt256 calculateHash(std::string_view data [[maybe_unused]])
 {
 #if USE_SSL
     UInt256 hash;
@@ -150,25 +152,25 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
     if (auto res = checkValidWasmCode(module_name, wasm_code); !res)
         throw Exception(std::move(res.error()), ErrorCodes::INCORRECT_DATA);
 
-    UInt256 actual_hash = caclculateHash(wasm_code);
+    UInt256 actual_hash = calculateHash(wasm_code);
     if (expected_hash && actual_hash != expected_hash)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Hash mismatch for WebAssembly module '{}', expected {}, got {}",
             module_name, hashToHex(expected_hash), hashToHex(actual_hash));
 
     {
-        std::unique_lock lock(modules_mutex);
+        UniqueLock lock(modules_mutex);
         auto [existing_module, inserted] = modules.insert({std::string(module_name), ModuleRef{std::weak_ptr<WasmModule>{}, actual_hash}});
         if (!inserted)
         {
             UInt256 existing_hash = existing_module->second.hash;
             if (!existing_hash)
             {
-                existing_hash = caclculateHash(loadModuleImpl(module_name));
+                existing_hash = calculateHash(loadModuleImpl(module_name));
                 existing_module->second.hash = existing_hash;
             }
             if (!actual_hash)
-                actual_hash = caclculateHash(wasm_code);
+                actual_hash = calculateHash(wasm_code);
 
             if (existing_hash == actual_hash)
             {
@@ -183,7 +185,7 @@ void WasmModuleManager::saveModule(std::string_view module_name, std::string_vie
     SCOPE_EXIT_SAFE({
         if (is_written)
             return;
-        std::unique_lock lock(modules_mutex);
+        UniqueLock lock(modules_mutex);
         if (auto it = modules.find(module_name); it != modules.end())
             modules.erase(it);
     });
@@ -222,7 +224,7 @@ std::string WasmModuleManager::loadModuleImpl(std::string_view module_name)
 std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std::string_view module_name)
 {
     {
-        std::shared_lock lock(modules_mutex);
+        SharedLockGuard lock(modules_mutex);
 
         auto it = modules.find(module_name);
         if (it == modules.end())
@@ -237,11 +239,11 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
             return {module, it->second.hash};
     }
 
-    std::unique_lock write_lock(modules_mutex);
+    UniqueLock write_lock(modules_mutex);
 
     auto wasm_code = loadModuleImpl(module_name);
     std::shared_ptr<WasmModule> module = engine->compileModule(wasm_code);
-    UInt256 module_hash = caclculateHash(wasm_code);
+    UInt256 module_hash = calculateHash(wasm_code);
 
     modules[std::string(module_name)] = {module, module_hash};
     addImportsTo(*module);
@@ -251,7 +253,7 @@ std::pair<std::shared_ptr<WasmModule>, UInt256> WasmModuleManager::getModule(std
 
 void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
 {
-    std::unique_lock lock(modules_mutex);
+    UniqueLock lock(modules_mutex);
     auto it = modules.find(module_name);
     if (it == modules.end())
         return;
@@ -269,7 +271,7 @@ void WasmModuleManager::deleteModuleIfExists(std::string_view module_name)
 
 void WasmModuleManager::registerExistingModules()
 {
-    std::unique_lock lock(modules_mutex);
+    UniqueLock lock(modules_mutex);
     LOG_DEBUG(log, "Loading WASM modules from '{}/{}' at disk '{}'", user_scripts_disk->getPath(), user_scripts_path, user_scripts_disk->getName());
 
     auto files_it = user_scripts_disk->iterateDirectory(user_scripts_path);
@@ -302,7 +304,7 @@ std::string WasmModuleManager::getFilePath(std::string_view module_name) const
 
 std::vector<std::pair<std::string, UInt256>> WasmModuleManager::getModulesList() const
 {
-    std::shared_lock lock(modules_mutex);
+    SharedLockGuard lock(modules_mutex);
 
     std::vector<std::pair<std::string, UInt256>> result;
     result.reserve(modules.size());

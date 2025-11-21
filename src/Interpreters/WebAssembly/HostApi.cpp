@@ -21,7 +21,7 @@ namespace
 {
 /// API exported to guest WebAssembly code.
 
-void wasmExportAlert(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
+void wasmExportLog(WasmCompartment * compartment, WasmPtr wasm_ptr, WasmSizeT size)
 {
     const auto * host_ptr = compartment->getMemory(wasm_ptr, size);
     LOG_TRACE(getLogger("WasmUdf"), "{}", std::string_view(reinterpret_cast<const char *>(host_ptr), size));
@@ -113,7 +113,7 @@ std::unique_ptr<WasmHostFunction> getHostFunction(std::string_view function_name
     std::array exported_functions{
         makeHostFunction("clickhouse_server_version", wasmExportServerVer),
         makeHostFunction("clickhouse_terminate", wasmExportTerminate),
-        makeHostFunction("clickhouse_log", wasmExportAlert),
+        makeHostFunction("clickhouse_log", wasmExportLog),
         makeHostFunction("clickhouse_random", wasmExportRandom),
     };
     for (auto && function : exported_functions)

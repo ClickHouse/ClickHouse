@@ -22,7 +22,7 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromTrackedString.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -254,210 +254,6 @@ private:
     WasmCompartment * compartment;
 };
 
-/// Deserializer for MessagePack string sequences
-/// We use specialization for specific data types is more performant than generic row msgpack deserializer
-class MsgPackStringDeserializer
-{
-protected:
-    const char * pos;
-    const char * end;
-
-    uint8_t readUInt8()
-    {
-        if (pos >= end)
-            throw Exception(ErrorCodes::WASM_ERROR, "Unexpected end of data");
-
-        return static_cast<uint8_t>(*pos++);
-    }
-
-    uint16_t readUInt16()
-    {
-        if (pos + 2 > end)
-            throw Exception(ErrorCodes::WASM_ERROR, "Unexpected end of data");
-
-        uint16_t value = (static_cast<uint16_t>(static_cast<uint8_t>(pos[0])) << 8) |
-                          static_cast<uint16_t>(static_cast<uint8_t>(pos[1]));
-        pos += 2;
-        return value;
-    }
-
-    uint32_t readUInt32()
-    {
-        if (pos + 4 > end)
-            throw Exception(ErrorCodes::WASM_ERROR, "Unexpected end of data");
-
-        uint32_t value = (static_cast<uint32_t>(static_cast<uint8_t>(pos[0])) << 24) |
-                         (static_cast<uint32_t>(static_cast<uint8_t>(pos[1])) << 16) |
-                         (static_cast<uint32_t>(static_cast<uint8_t>(pos[2])) << 8)  |
-                          static_cast<uint32_t>(static_cast<uint8_t>(pos[3]));
-        pos += 4;
-        return value;
-    }
-
-    std::string_view deserializeString()
-    {
-        if (pos >= end)
-            throw Exception(ErrorCodes::WASM_ERROR, "No data to deserialize");
-
-        uint8_t format = readUInt8();
-        size_t length = 0;
-
-        if ((format & 0xe0) == 0xa0)
-            length = format & 0x1f;
-        else if (format == 0xd9)
-            length = readUInt8();
-        else if (format == 0xda)
-            length = readUInt16();
-        else if (format == 0xdb)
-            length = readUInt32();
-        else if (format == 0xc4)
-            length = readUInt8();
-        else if (format == 0xc5)
-            length = readUInt16();
-        else if (format == 0xc6)
-            length = readUInt32();
-        else
-            throw Exception(ErrorCodes::WASM_ERROR, "Invalid MessagePack string format: {}", format);
-
-        if (pos + length > end)
-            throw Exception(ErrorCodes::WASM_ERROR, "String length exceeds available data");
-
-        std::string_view result(pos, length);
-        pos += length;
-        return result;
-    }
-
-public:
-    explicit MsgPackStringDeserializer(std::span<uint8_t> data)
-        : pos(reinterpret_cast<const char *>(data.data()))
-        , end(reinterpret_cast<const char *>(data.data() + data.size()))
-    {
-    }
-
-    explicit MsgPackStringDeserializer(std::string_view data)
-        : pos(data.data())
-        , end(data.data() + data.size())
-    {
-    }
-
-    bool isDone() const
-    {
-        return pos >= end;
-    }
-
-    size_t getBytesRemaining() const
-    {
-        return end - pos;
-    }
-
-    void deserializeAll(ColumnString & column)
-    {
-        column.reserve(getBytesRemaining());
-        while (!isDone())
-        {
-            auto s = deserializeString();
-            column.insertData(s.data(), s.size());
-        }
-    }
-
-    static void deserializeAll(ColumnString & column, std::span<uint8_t> data)
-    {
-        MsgPackStringDeserializer deserializer(data);
-        deserializer.deserializeAll(column);
-    }
-};
-
-class MsgPackArrayStringDeserializer : public MsgPackStringDeserializer
-{
-public:
-    using MsgPackStringDeserializer::MsgPackStringDeserializer;
-    explicit MsgPackArrayStringDeserializer(std::span<uint8_t> data)
-        : MsgPackStringDeserializer(data)
-    {
-    }
-
-    explicit MsgPackArrayStringDeserializer(std::string_view data)
-        : MsgPackStringDeserializer(data)
-    {
-    }
-
-    void deserializeAll(ColumnString & column1, ColumnString & column2)
-    {
-        column1.reserve(getBytesRemaining());
-        column2.reserve(getBytesRemaining());
-
-        while (!isDone())
-        {
-            uint8_t array_format = readUInt8();
-            if (array_format != 0x92)
-            {
-                throw Exception(ErrorCodes::WASM_ERROR, "Invalid array format: {}", array_format);
-            }
-            auto s = deserializeString();
-            column1.insertData(s.data(), s.size());
-
-            auto s2 = deserializeString();
-            column2.insertData(s2.data(), s2.size());
-        }
-    }
-
-    static void deserializeAll(ColumnString & column1, ColumnString & column2, std::span<uint8_t> data)
-    {
-        MsgPackArrayStringDeserializer deserializer(data);
-        deserializer.deserializeAll(column1, column2);
-    }
-};
-
-class MsgPackBinStringSerializer
-{
-protected:
-    WriteBuffer & out;
-
-public:
-    explicit MsgPackBinStringSerializer(WriteBuffer & out_) : out(out_) { }
-
-    template<typename... Args>
-    void serializeAll(Args &&... columns)
-    {
-        auto serializeData = [this](const auto & data)
-        {
-            auto len = data.size;
-
-            if (len <= 0xff)
-            {
-                out.write(0xc4);
-                out.write(static_cast<uint8_t>(len));
-            }
-            else if (len <= 0xffff)
-            {
-                out.write(0xc5);
-                out.write(static_cast<uint8_t>(len >> 8));
-                out.write(static_cast<uint8_t>(len & 0xff));
-            }
-            else if (len <= 0xffffffff)
-            {
-                out.write(0xc6);
-                out.write(static_cast<uint8_t>(len >> 24));
-                out.write(static_cast<uint8_t>(len >> 16));
-                out.write(static_cast<uint8_t>(len >> 8));
-                out.write(static_cast<uint8_t>(len & 0xff));
-            }
-            else
-            {
-                throw Exception(ErrorCodes::WASM_ERROR, "String length exceeds available data");
-            }
-            out.write(data.data, data.size);
-        };
-
-        auto size = std::get<0>(std::forward_as_tuple(columns...))->size();
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            (serializeData(columns->getDataAt(i)), ...);
-        }
-    }
-};
-
 class UserDefinedWebAssemblyFunctionV01 : public UserDefinedWebAssemblyFunction
 {
 public:
@@ -527,7 +323,7 @@ public:
         if (!block.empty())
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
-            std::string input_data;
+            TrackedString input_data;
 
             std::vector<const ColumnString *> string_columns;
             for (const auto & col : block)
@@ -539,26 +335,8 @@ public:
                     string_columns.clear();
             }
 
-            // {
-            //     size_t total_size = std::ranges::fold_left(string_columns | std::views::transform([](const auto & col)
-            //     {
-            //         return col->byteSize();
-            //     }), 0, std::plus{});
-            //     input_data.reserve(total_size + total_size / 2 );
-            // }
-
-            if (!string_columns.empty() && format_name == "MsgPack")
             {
-                WriteBufferFromString buf(input_data);
-                MsgPackBinStringSerializer serializer(buf);
-                if (string_columns.size() == 1)
-                    serializer.serializeAll(string_columns[0]);
-                else if (string_columns.size() == 2)
-                    serializer.serializeAll(string_columns[0], string_columns[1]);
-            }
-            else
-            {
-                WriteBufferFromString buf(input_data);
+                WriteBufferFromTrackedString buf(input_data);
                 auto out = context->getOutputFormat(format_name, buf, block.cloneEmpty());
                 formatBlock(out, block);
             }
@@ -586,25 +364,6 @@ public:
         ProfileEventTimeIncrement<Microseconds> timer_deserialize(ProfileEvents::WasmDeserializationMicroseconds);
 
         Block result_header({ColumnWithTypeAndName(nullptr, result_type, "result")});
-        if (result_type->equals(DataTypeString()) && format_name == "MsgPack")
-        {
-            auto res_column = ColumnString::create();
-            MsgPackStringDeserializer::deserializeAll(*res_column, result_data);
-            return res_column;
-        }
-
-        if (result_type->equals(DataTypeTuple({std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()})) && format_name == "MsgPack")
-        {
-            MutableColumns tuple_columns(2);
-            tuple_columns[0] = ColumnString::create();
-            tuple_columns[1] = ColumnString::create();
-            MsgPackArrayStringDeserializer::deserializeAll(
-                assert_cast<ColumnString &>(*tuple_columns[0]),
-                assert_cast<ColumnString &>(*tuple_columns[1]),
-                result_data);
-            return ColumnTuple::create(std::move(tuple_columns));
-        }
-
 
         auto pipeline = QueryPipeline(
             Pipe(context->getInputFormat(format_name, inbuf, result_header, /* max_block_size */ DBMS_DEFAULT_BUFFER_SIZE)));
@@ -833,7 +592,7 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
     auto * create_query = typeid_cast<ASTCreateWasmFunctionQuery *>(create_function_query.get());
     if (!create_query)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
+            ErrorCodes::LOGICAL_ERROR,
             "Expected definition of WebAssembly function, got {}",
             create_function_query ? create_function_query->formatForErrorMessage() : "nullptr");
 

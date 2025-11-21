@@ -54,11 +54,13 @@ protected:
 
     struct ModuleRef
     {
+        /// Module is stored in UserDefinedWebAssemblyFunctions, so we keep only weak_ptr here
+        /// Once no functions refer to the module, it can be released from memory
         std::weak_ptr<WebAssembly::WasmModule> ptr;
         UInt256 hash;
     };
 
-    std::map<std::string, ModuleRef, std::less<>> modules;
+    std::map<std::string, ModuleRef, std::less<>> modules TSA_GUARDED_BY(modules_mutex);
 
     std::unique_ptr<WebAssembly::IWasmEngine> engine;
 
