@@ -287,8 +287,13 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
         }
         else
         {
-            chassert(col.name == prewhere_info->prewhere_column_name);
-            chassert(!prewhere_info->remove_prewhere_column);
+            /// New columns can be added by prewhere actions:
+            /// 1. The prewhere final column (with remove_prewhere_column=false)
+            /// 2. Intermediate columns from the prewhere expression that are needed elsewhere (e.g. for ORDER BY) (with remove_prewhere_column=true)
+            chassert(
+                (!prewhere_info->remove_prewhere_column && col.name == prewhere_info->prewhere_column_name) ||
+                (prewhere_info->remove_prewhere_column && col.name != prewhere_info->prewhere_column_name)
+            );
             new_info.columns_description.add(ColumnDescription(col.name, col.type));
         }
     }

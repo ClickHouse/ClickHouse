@@ -1,5 +1,3 @@
--- FIXME
--- Tags: xfail
 INSERT INTO FUNCTION file('00001_prewhere_intermediate_columns.parquet') SETTINGS engine_file_truncate_on_insert = 1, max_threads = 1, output_format_parquet_row_group_size = 5 SELECT number * 10 AS x FROM numbers(20) SETTINGS max_threads = 1, output_format_parquet_row_group_size = 5;
 -- Reproduces prewhere optimization bug where intermediate columns are kept in outputs:
 -- 1. Virtual column (_row_number) in SELECT affects optimizer cost calculations
