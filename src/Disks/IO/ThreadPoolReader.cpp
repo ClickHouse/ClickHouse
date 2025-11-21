@@ -204,7 +204,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
 
     ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMiss);
 
-    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, ThreadName::READ_THREAD_POOL);
+    auto schedule = threadPoolCallbackRunnerUnsafe<Result>(*pool, "ThreadPoolRead");
 
     return schedule([request, fd]() -> Result
     {

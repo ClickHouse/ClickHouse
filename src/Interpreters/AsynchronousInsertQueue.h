@@ -5,13 +5,11 @@
 #include <Processors/Chunk.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
-#include <Common/SharedMutex.h>
 #include <Common/ThreadPool.h>
-#include <Common/TrackedString.h>
 #include <Interpreters/AsynchronousInsertQueueDataKind.h>
-#include <Interpreters/StorageID.h>
 
 #include <future>
+#include <shared_mutex>
 #include <variant>
 
 namespace DB
@@ -55,7 +53,6 @@ public:
 
     /// Force flush the whole queue.
     void flushAll();
-    void flush(const std::vector<std::pair<String, String>> & table_names);
 
     PushResult pushQueryWithInlinedData(ASTPtr query, ContextPtr query_context);
     PushResult pushQueryWithBlock(ASTPtr query, Block && block, ContextPtr query_context);
@@ -87,7 +84,6 @@ public:
         InsertQuery(const InsertQuery & other);
         InsertQuery & operator=(const InsertQuery & other);
         bool operator==(const InsertQuery & other) const;
-        StorageID getStorageID() const;
 
     private:
         auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, setting_changes); }
@@ -96,9 +92,9 @@ public:
     };
 
 private:
-    struct DataChunk : public std::variant<TrackedString, Block>
+    struct DataChunk : public std::variant<String, Block>
     {
-        using std::variant<TrackedString, Block>::variant;
+        using std::variant<String, Block>::variant;
 
         size_t byteSize() const
         {
@@ -129,7 +125,7 @@ private:
             }, *this);
         }
 
-        const TrackedString * asString() const { return std::get_if<TrackedString>(this); }
+        const String * asString() const { return std::get_if<String>(this); }
         const Block * asBlock() const { return std::get_if<Block>(this); }
     };
 
@@ -226,7 +222,7 @@ private:
         void updateWithCurrentTime();
 
     private:
-        mutable SharedMutex mutex;
+        mutable std::shared_mutex mutex;
         TimePoints time_points;
     };
 
@@ -287,7 +283,6 @@ private:
     static Chunk processPreprocessedEntries(
         const InsertDataPtr & data,
         const Block & header,
-        const ContextPtr & context_,
         LogFunc && add_to_async_insert_log);
 
     template <typename E>
