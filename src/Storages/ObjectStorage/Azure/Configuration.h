@@ -16,7 +16,9 @@ class BackupFactory;
 
 struct AzureStorageParsableArguments : private StorageParsableArguments
 {
+    using Path = StorageObjectStorageConfiguration::Path;
     friend class StorageAzureConfiguration;
+
     static constexpr auto max_number_of_arguments_with_structure = 10;
     static constexpr auto signatures_with_structure
         = " - connection_string, container_name, blobpath, structure \n"
@@ -52,9 +54,16 @@ struct AzureStorageParsableArguments : private StorageParsableArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
+    void fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix);
+
+    static bool collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context);
+
     void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
     void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
+    void initializeForOneLake(
+        ASTs & args,
+        ContextPtr context);
 
     Path blob_path;
     AzureBlobStorage::ConnectionParams connection_params;
@@ -65,6 +74,7 @@ class StorageAzureConfiguration : public StorageObjectStorageConfiguration
     friend class BackupReaderAzureBlobStorage;
     friend class BackupWriterAzureBlobStorage;
     friend void registerBackupEngineAzureBlobStorage(BackupFactory & factory);
+    friend class StorageAzureConfigurationFriend;
 
 public:
     static constexpr auto type = ObjectStorageType::Azure;
@@ -99,18 +109,29 @@ public:
         ContextPtr context,
         bool with_structure) override;
 
+    void setInitializationAsOneLake(const String & client_id_, const String & client_secret_, const String & tenant_id_)
+    {
+        onelake_client_id = client_id_;
+        onelake_client_secret = client_secret_;
+        onelake_tenant_id = tenant_id_;
+    }
+
+protected:
+    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
+private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
-    void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
-    static bool collectCredentials(
-        ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context);
+    ASTPtr extractExtraCredentials(ASTs & args);
 
     Path blob_path;
     Paths blobs_paths;
     AzureBlobStorage::ConnectionParams connection_params;
     DiskPtr disk;
 
-private:
+    String onelake_client_id;
+    String onelake_client_secret;
+    String onelake_tenant_id;
+
     void initializeFromParsableArguments(const AzureStorageParsableArguments & parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);

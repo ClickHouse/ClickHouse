@@ -1,14 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
-
+#include <Storages/IPartitionStrategy.h>
+#include <Common/Exception.h>
 
 namespace DB {
-struct StorageParsableArguments {
-
-    using Paths = StorageObjectStorageConfiguration::Paths;
-    using Path = StorageObjectStorageConfiguration::Path;
+struct StorageParsableArguments
+{
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";

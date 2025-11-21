@@ -121,6 +121,7 @@ max_uncompressed_bytes_in_patches	32212254720
 merge_max_block_size	8192
 merge_max_block_size_bytes	10485760
 merge_max_bytes_to_prewarm_cache	1073741824
+merge_max_dynamic_subcolumns_in_wide_part	auto
 merge_selecting_sleep_ms	5000
 merge_selecting_sleep_slowdown_factor	1.2
 merge_selector_algorithm	Simple
@@ -196,6 +197,7 @@ primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns	0.9
 ratio_of_defaults_for_sparse_serialization	0.9375
 reduce_blocking_parts_sleep_ms	5000
 refresh_parts_interval	0
+refresh_statistics_interval	0
 remote_fs_execute_merges_on_single_replica_time_threshold	10800
 remote_fs_zero_copy_path_compatible_mode	0
 remote_fs_zero_copy_zookeeper_path	/clickhouse/zero_copy

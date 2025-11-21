@@ -713,7 +713,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 
             if (size != 36)
             {
-                s[size] = 0;
+                s[std::min(size, size_t(36))] = 0;
 
                 if constexpr (throw_exception)
                 {
@@ -730,7 +730,7 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
         return ReturnType(true);
     }
 
-    s[size] = 0;
+    s[std::min(size, size_t(36))] = 0;
 
     if constexpr (throw_exception)
     {
@@ -1131,8 +1131,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         }
         else
         {
-            auto ok = readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters);
-            if (!ok && (buf.eof() || *buf.position() != '.'))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters))
                 return ReturnType(false);
         }
     }

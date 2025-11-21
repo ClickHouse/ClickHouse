@@ -827,48 +827,51 @@ StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena
     return res;
 }
 
-const char * ColumnVariant::deserializeAndInsertFromArena(const char * pos)
+void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
-    pos += sizeof(global_discr);
+    Discriminator global_discr;
+    readBinaryLittleEndian<Discriminator>(global_discr, in);
+
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
     {
         getOffsets().emplace_back();
-        return pos;
+        return;
     }
 
     getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertFromArena(pos);
+    variants[local_discr]->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
-    pos += sizeof(global_discr);
+    Discriminator global_discr;
+    readBinaryLittleEndian<Discriminator>(global_discr, in);
+
     Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
     getLocalDiscriminators().push_back(local_discr);
     if (local_discr == NULL_DISCRIMINATOR)
     {
         getOffsets().emplace_back();
-        return pos;
+        return;
     }
 
     getOffsets().push_back(variants[local_discr]->size());
-    return variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(pos);
+    variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnVariant::skipSerializedInArena(const char * pos) const
+void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
 {
-    Discriminator global_discr = unalignedLoad<Discriminator>(pos);
-    pos += sizeof(global_discr);
+    Discriminator global_discr;
+    readBinaryLittleEndian<Discriminator>(global_discr, in);
+
     if (global_discr == NULL_DISCRIMINATOR)
-        return pos;
+        return;
 
-    return variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(pos);
+    variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
 
 char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
@@ -1757,7 +1760,7 @@ bool ColumnVariant::hasDynamicStructure() const
     return false;
 }
 
-void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     /// List of source columns for each variant. In global order.
     std::vector<Columns> variants_source_columns;
@@ -1774,7 +1777,7 @@ void ColumnVariant::takeDynamicStructureFromSourceColumns(const Columns & source
     }
 
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i]);
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromSourceColumns(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnVariant::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

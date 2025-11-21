@@ -256,6 +256,11 @@ static ASTPtr extractExtraCredentials(ASTs & args)
 
 bool StorageS3Configuration::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
 {
+    return S3StorageParsableArguments::collectCredentials(maybe_credentials, auth_settings_, local_context);
+}
+
+bool S3StorageParsableArguments::collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context)
+{
     if (!maybe_credentials)
         return false;
 
@@ -580,7 +585,7 @@ void S3StorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bo
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    StorageS3Configuration::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+    S3StorageParsableArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {

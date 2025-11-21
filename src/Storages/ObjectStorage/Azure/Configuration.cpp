@@ -1,9 +1,11 @@
-#include <Storages/ObjectStorage/Azure/Configuration.h>
+#include "config.h"
 #include <Poco/URI.h>
+
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Common/assert_cast.h>
+#include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <azure/storage/common/storage_credential.hpp>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
@@ -16,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <azure/identity/managed_identity_credential.hpp>
 #include <azure/identity/workload_identity_credential.hpp>
+#include <azure/identity/client_secret_credential.hpp>
 #include <Core/Settings.h>
 #include <Common/RemoteHostFilter.h>
 #include <Parsers/ASTIdentifier.h>
@@ -151,6 +154,54 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     return connection_params;
 }
 
+void AzureStorageParsableArguments::fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix)
+{
+    String container_name;
+
+    auto pos_container = connection_url.find(suffix);
+
+    if (pos_container != std::string::npos)
+    {
+        String container_blob_path = connection_url.substr(pos_container+5);
+        connection_url = connection_url.substr(0,pos_container+4);
+        container_name = connection_url.substr(pos_container+4);
+        auto pos_blob_path = container_blob_path.find('/');
+
+        if (pos_blob_path != std::string::npos)
+        {
+            container_name = container_blob_path.substr(0, pos_blob_path);
+            blob_path = container_blob_path.substr(pos_blob_path);
+        }
+    }
+
+    /// Added for Unity Catalog on top of AzureBlobStorage
+    // Sample abfss url : abfss://mycontainer@mydatalakestorage.dfs.core.windows.net/subdirectory/file.txt
+    if (connection_url.starts_with("abfss"))
+    {
+        auto pos_slash = connection_url.find("://");
+        auto pos_at = connection_url.find('@');
+        auto pos_dot = connection_url.find('.');
+        auto pos_net = connection_url.find(suffix);
+
+        if (pos_slash == std::string::npos || pos_at == std::string::npos|| pos_dot == std::string::npos || pos_net == std::string::npos
+            || pos_at-pos_slash-3 <= 0 || pos_dot-pos_at-1 <= 0)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Incorrect url format for a abfss url {}", connection_url);
+        }
+        auto container_name_abfss = connection_url.substr(pos_slash+3, pos_at-pos_slash-3);
+        auto name = connection_url.substr(pos_at+1, pos_dot-pos_at-1);
+
+        connection_params.endpoint.storage_account_url = "https://" + name + full_suffix;
+
+        if (!container_name.empty())
+        {
+            blob_path.path = container_name + blob_path.path;
+        }
+        connection_params.endpoint.container_name = container_name_abfss;
+    }
+}
+
+
 void AzureStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
@@ -220,7 +271,7 @@ static ASTPtr extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool StorageAzureConfiguration::collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
+bool AzureStorageParsableArguments::collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
 {
     if (!maybe_credentials)
         return false;
@@ -285,6 +336,20 @@ void AzureStorageParsableArguments::fromDiskImpl(DiskPtr disk, ASTs & args, Cont
         compression_method = *parsing_result.compression_method;
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
+}
+
+void AzureStorageParsableArguments::initializeForOneLake(ASTs & args, ContextPtr context)
+{
+    if (args.size() != 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
+
+    String connection_url = checkAndGetLiteralArgument<String>(args[0], "connection_string/storage_account_url");
+
+    fillBlobsFromURLCommon(connection_url, ".com", ".dfs.fabric.microsoft.com");
+
+    connection_params.endpoint.additional_params = "resource=REDACTED&directory=REDACTED&recursive=REDACTED";
+    auto request_settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
+    connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
 }
 
 void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr context, bool with_structure)
@@ -360,6 +425,7 @@ void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr c
             }
             connection_params.endpoint.container_name = container_name_abfss;
         }
+        fillBlobsFromURLCommon(connection_url, ".net", ".blob.core.windows.net");
         connection_params.endpoint.sas_auth = sas_token;
 
         return;
@@ -377,7 +443,7 @@ void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr c
     std::optional<String> client_id;
     std::optional<String> tenant_id;
 
-    StorageAzureConfiguration::collectCredentials(extra_credentials, client_id, tenant_id, context);
+    collectCredentials(extra_credentials, client_id, tenant_id, context);
 
     auto is_format_arg = [] (const std::string & s) -> bool
     {
@@ -624,29 +690,13 @@ void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr c
 }
 
 void addStructureAndFormatToArgsIfNeededImpl(
-    const StorageAzureConfiguration & entity_to_initialize,
     ASTs & args,
     const String & structure_,
     const String & format_,
     ContextPtr context,
     bool with_structure)
 {
-    if (entity_to_initialize.disk)
-    {
-        if (entity_to_initialize.format == "auto")
-        {
-            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
-            args.push_back(format_equal_func);
-        }
-        if (entity_to_initialize.structure == "auto")
-        {
-            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
-            args.push_back(structure_equal_func);
-        }
-    }
-    else if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -814,7 +864,22 @@ void addStructureAndFormatToArgsIfNeededImpl(
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
-    addStructureAndFormatToArgsIfNeededImpl(*this, args, structure_, format_, context, with_structure);
+    if (disk)
+    {
+        if (format == "auto")
+        {
+            ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            args.push_back(format_equal_func);
+        }
+        if (structure == "auto")
+        {
+            ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            args.push_back(structure_equal_func);
+        }
+    }
+    addStructureAndFormatToArgsIfNeededImpl(args, structure_, format_, context, with_structure);
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -827,7 +892,18 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     AzureStorageParsableArguments parsable_arguments;
-    parsable_arguments.fromASTImpl(engine_args, context, with_structure);
+    if (!onelake_client_id.empty())
+    {
+        parsable_arguments.initializeForOneLake(engine_args, context);
+        parsable_arguments.connection_params.auth_method = std::make_shared<Azure::Identity::ClientSecretCredential>(
+            onelake_tenant_id,
+            onelake_client_id,
+            onelake_client_secret
+        );
+    } else {
+        parsable_arguments.fromASTImpl(engine_args, context, with_structure);
+
+    }
     initializeFromParsableArguments(parsable_arguments);
     blobs_paths = {parsable_arguments.blob_path};
 }

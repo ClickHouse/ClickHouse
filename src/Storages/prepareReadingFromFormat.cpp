@@ -39,9 +39,14 @@ ReadFromFormatInfo prepareReadingFromFormat(
     for (const auto & column_name : requested_columns)
     {
         if (auto virtual_column = storage_snapshot->virtual_columns->tryGet(column_name))
+        {
             info.requested_virtual_columns.emplace_back(std::move(*virtual_column));
-        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name); it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        }
+        else if (auto it = hive_parameters.hive_partition_columns_to_read_from_file_path_map.find(column_name);
+                 it != hive_parameters.hive_partition_columns_to_read_from_file_path_map.end())
+        {
             info.hive_partition_columns_to_read_from_file_path.emplace_back(it->first, it->second);
+        }
         else
             columns_to_read.push_back(column_name);
     }

@@ -112,7 +112,7 @@ void RuntimeFilter::addAllFrom(const RuntimeFilter & source)
     }
 }
 
-ColumnPtr RuntimeFilter::find(ColumnPtr values) const
+ColumnPtr RuntimeFilter::find(const ColumnWithTypeAndName & values) const
 {
     if (!inserts_are_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to lookup values in runtime filter before builiding it was finished");
@@ -120,33 +120,33 @@ ColumnPtr RuntimeFilter::find(ColumnPtr values) const
     if (no_elements_in_set)
     {
         /// If the set is empty just return Const False column
-        return result_type->createColumnConst(values->size(), false);
+        return result_type->createColumnConst(values.column->size(), false);
     }
     else if (single_element_in_set)
     {
         /// If only 1 element in the set then use "value == const" instead of set lookup
-        auto const_column = filter_column_target_type->createColumnConst(values->size(), *single_element_in_set);
+        auto const_column = filter_column_target_type->createColumnConst(values.column->size(), *single_element_in_set);
         ColumnsWithTypeAndName equals_args = {
-            ColumnWithTypeAndName(values, filter_column_target_type, String()),
+            values,
             ColumnWithTypeAndName(const_column, filter_column_target_type, String())
         };
         auto single_element_equals_function = FunctionFactory::instance().get("equals", nullptr)->build(equals_args);
-        return single_element_equals_function->execute(equals_args, single_element_equals_function->getResultType(), values->size(), /* dry_run = */ false);
+        return single_element_equals_function->execute(equals_args, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
     }
     else if (exact_values)
     {
-        return exact_values->execute({ColumnWithTypeAndName(values, filter_column_target_type, String())}, false);
+        return exact_values->execute({values}, false);
     }
     else
     {
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
-        dst_data.resize(values->size());
+        dst_data.resize(values.column->size());
 
-        for (size_t row = 0; row < values->size(); ++row)
+        for (size_t row = 0; row < values.column->size(); ++row)
         {
             /// TODO: optimize: consider replacing hash calculation with vectorized version
-            const auto & value = values->getDataAt(row);
+            const auto & value = values.column->getDataAt(row);
             dst_data[row] = bloom_filter->find(value.data, value.size);
         }
 

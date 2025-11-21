@@ -70,6 +70,9 @@ struct S3StorageParsableArguments : private StorageParsableArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
+    static bool collectCredentials(ASTPtr maybe_credentials, S3::S3AuthSettings & auth_settings_, ContextPtr local_context);
+
+
     S3::URI url;
     std::unique_ptr<S3Settings> s3_settings;
     std::unique_ptr<S3Capabilities> s3_capabilities;

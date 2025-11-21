@@ -85,11 +85,10 @@ public:
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
     }
 
-protected:
+private:
     void setURL(const std::string & url_);
     void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
 
-private:
     void fromNamedCollection(const NamedCollection &, ContextPtr context) override;
 
     String url;

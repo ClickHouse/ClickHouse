@@ -347,6 +347,16 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
+enum class AlterColumnSecondaryIndexMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+    COMPATIBILITY,
+};
+
+DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
+
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
@@ -394,6 +404,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     UNITY,
     GLUE,
     ICEBERG_HIVE,
+    ICEBERG_ONELAKE,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -494,4 +505,20 @@ enum class IcebergMetadataLogLevel : uint8_t
 };
 
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
+
+enum class ObjectStorageGranularityLevel : uint8_t
+{
+    FILE = 0,
+    BUCKET = 1,
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
+enum class ArrowFlightDescriptorType : uint8_t
+{
+    Path = 0,
+    Command
+};
+
+DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
 }

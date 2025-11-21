@@ -93,6 +93,8 @@ public:
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
+    bool isObjectStorage() const override { return true; }
+
     bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
 
     /// Things required for PREWHERE.
@@ -181,6 +183,7 @@ protected:
     /// (One of the reading replicas, not the initiator).
     const bool distributed_processing;
     bool supports_prewhere = false;
+    bool supports_tuple_elements = false;
     /// Whether we need to call `configuration->update()`
     /// (e.g. refresh configuration) on each read() method call.
     bool update_configuration_on_read_write = true;

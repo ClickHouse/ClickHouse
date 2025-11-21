@@ -1,27 +1,30 @@
 #pragma once
 
-#include <Databases/DataLake/ICatalog.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Formats/FormatSettings.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/StorageID.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Storages/AlterCommands.h>
 #include <Storages/IPartitionStrategy.h>
+#include <Formats/FormatSettings.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <Storages/prepareReadingFromFormat.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
+#include <Interpreters/StorageID.h>
+#include <Databases/DataLake/ICatalog.h>
+#include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/prepareReadingFromFormat.h>
 #include <Common/Exception.h>
+#include <Formats/FormatFilterInfo.h>
 
-namespace DB
-{
+namespace DB {
 
 class NamedCollection;
 class SinkToStorage;
+class IDataLakeMetadata;
+struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
+using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
 struct StorageParsableArguments;
 
@@ -137,6 +140,10 @@ public:
 
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual std::optional<size_t> totalBytes(ContextPtr) { return {}; }
+    /// NOTE: In this function we are going to check is data which we are going to read sorted by sorting key specified in StorageMetadataPtr.
+    /// It may look confusing that this function checks only StorageMetadataPtr, and not StorageSnapshot.
+    /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
+    virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
     // This function is used primarily for datalake storages to check if we need to update metadata
     // snapshot before executing operation (SELECT, INSERT, etc) to enforce that schema in operation metadata snapshot

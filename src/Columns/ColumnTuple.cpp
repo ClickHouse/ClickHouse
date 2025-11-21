@@ -14,7 +14,6 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/ObjectUtils.h>
 #include <base/sort.h>
 
 
@@ -374,6 +373,12 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
 
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 {
+    if (columns.empty())
+    {
+        *memory = 0;
+        return memory + 1;
+    }
+
     for (const auto & column : columns)
         memory = column->serializeValueIntoMemory(n, memory);
 
@@ -382,6 +387,9 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
 
 std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 {
+    if (columns.empty())
+        return 1;
+
     size_t res = 0;
     for (const auto & column : columns)
     {
@@ -395,38 +403,44 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     ++column_length;
 
     if (columns.empty())
-        return pos + 1;
+    {
+        in.ignore(1);
+        return;
+    }
 
     for (auto & column : columns)
-        pos = column->deserializeAndInsertAggregationStateValueFromArena(pos);
-
-    return pos;
+        column->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnTuple::skipSerializedInArena(const char * pos) const
+void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const
 {
+    if (columns.empty())
+    {
+        in.ignore(1);
+        return;
+    }
+
     for (const auto & column : columns)
-        pos = column->skipSerializedInArena(pos);
-
-    return pos;
+        column->skipSerializedInArena(in);
 }
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
@@ -887,7 +901,7 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
+void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
     std::vector<Columns> nested_source_columns;
     nested_source_columns.resize(columns.size());
@@ -902,7 +916,7 @@ void ColumnTuple::takeDynamicStructureFromSourceColumns(const Columns & source_c
     }
 
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i]);
+        columns[i]->takeDynamicStructureFromSourceColumns(nested_source_columns[i], max_dynamic_subcolumns);
 }
 
 void ColumnTuple::takeDynamicStructureFromColumn(const ColumnPtr & source_column)
