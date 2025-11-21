@@ -23,3 +23,6 @@ services:
               source: ${MYSQL_LOGS:-}
               target: /var/log/mysql/
         user: ${MYSQL_DOCKER_USER}
+        cap_add:
+          - NET_ADMIN
+        privileged: true
