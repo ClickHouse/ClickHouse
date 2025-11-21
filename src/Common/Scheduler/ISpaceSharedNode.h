@@ -6,11 +6,16 @@
 #include <Common/Scheduler/IncreaseRequest.h>
 #include <Common/Scheduler/DecreaseRequest.h>
 
+#include <boost/intrusive/list.hpp>
+#include <boost/intrusive/set.hpp>
+#include <boost/intrusive/options.hpp>
+
 
 namespace DB
 {
 
 /// Base class for all scheduler nodes that manage space-shared resource.
+/// NOTE: All fields and methods can only be accessed from the scheduler thread.
 class ISpaceSharedNode : public ISchedulerNode
 {
 public:
@@ -22,14 +27,8 @@ public:
         : ISchedulerNode(event_queue_, info_)
     {}
 
-    /// NOTE: All fields and methods can only be accessed from the scheduler thread.
-
-    ResourceCost allocated = 0; /// Currently allocated amount of resource.
-
-    std::pair<double, size_t> parent_key{-1, 0}; /// for FairAllocation: (allocated + increase.size) / weight and tie breaker
-    boost::intrusive::set_member_hook<> running_hook; /// for parent: set of children with running allocations
-    boost::intrusive::set_member_hook<> increasing_hook; /// for parent: set of children with pending increase request
-    boost::intrusive::list_member_hook<> decreasing_hook; /// for parent: list of children with pending decrease request
+    ResourceCost allocated = 0; /// Currently allocated amount of resource under this node.
+    ResourceCost demand = 0; // Total demand by all pending allocations under this node.
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic
@@ -97,7 +96,69 @@ public:
     ///    <-- killing order --
     virtual ResourceAllocation * selectAllocationToKill() = 0;
 
+    /// For parent only. Sets the usage key.
+    void setUsageKey(double value, size_t tie_breaker)
+    {
+        chassert(!running_hook.is_linked());
+        chassert(!increasing_hook.is_linked());
+        usage_key.first = value;
+        usage_key.second = tie_breaker;
+    }
+
+    /// For parent only. Sets the demand key.
+    void setDemandKey(double value, size_t tie_breaker)
+    {
+        chassert(!pending_hook.is_linked());
+        demand_key.first = value;
+        demand_key.second = tie_breaker;
+    }
+
+    /// For parent only. Checks the usage key.
+    bool usageKeyEquals(double value) const
+    {
+        return usage_key.first == value;
+    }
+
+    /// For parent only. Checks the demand key.
+    bool demandKeyEquals(double value) const
+    {
+        return demand_key.first == value;
+    }
+
+    /// For parent only. Checks the child state.
+    bool isPending() const noexcept { return pending_hook.is_linked(); }
+    bool isRunning() const noexcept { return running_hook.is_linked(); }
+    bool isIncreasing() const noexcept { return increasing_hook.is_linked(); }
+    bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
+
+private:
+    /// Hooks for intrusive data structures
+    boost::intrusive::set_member_hook<> pending_hook;
+    boost::intrusive::set_member_hook<> running_hook;
+    boost::intrusive::set_member_hook<> increasing_hook;
+    boost::intrusive::list_member_hook<> decreasing_hook;
+    using PendingHook    = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::pending_hook>;
+    using RunningHook    = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::running_hook>;
+    using IncreasingHook = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::increasing_hook>;
+    using DecreasingHook = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::list_member_hook<>, &ISpaceSharedNode::decreasing_hook>;
+
+    /// Keys and comparators for intrusive sets
+    std::pair<double, size_t> demand_key{-1, 0}; /// (allocated + increase.size + demand) / weight and tie breaker
+    std::pair<double, size_t> usage_key{-1, 0};  /// (allocated + increase.size) / weight and tie breaker
+    struct ByDemand { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.demand_key < rhs.demand_key; } };
+    struct ByUsage { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.usage_key < rhs.usage_key; } };
+    struct ByPriority { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.info.priority < rhs.info.priority; } };
+
 protected:
+    /// Intrusive data structures for managing sets of nodes for parent nodes (e.g. PriorityAllocation and FairAllocation)
+    /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
+    using PendingSetByDemand = boost::intrusive::set<ISpaceSharedNode, PendingHook, boost::intrusive::compare<ByDemand>>;
+    using RunningSetByUsage = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByUsage>>;
+    using RunningSetByPriority = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByPriority>>;
+    using IncreasingSetByUsage = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByUsage>>;
+    using IncreasingSetByPriority = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByPriority>>;
+    using DecreasingList = boost::intrusive::list<ISpaceSharedNode, DecreasingHook>;
+
     ISpaceSharedNode & castParent() const
     {
         return static_cast<ISpaceSharedNode &>(*parent);

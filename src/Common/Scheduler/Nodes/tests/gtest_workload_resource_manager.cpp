@@ -2305,11 +2305,11 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
 
         // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
         // Note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd.
-        // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload)
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload)
         // dev: 10 20 50 50            ~ fair_key
-        //      10 30 80 130 <-- (sum) ~ parent_key
+        //      10 30 80 130 <-- (sum) ~ usage_key
         // prd: 15 20 30 40            ~ fair_key
-        //      15 35 65 105 <-- (sum) ~ parent_key
+        //      15 35 65 105 <-- (sum) ~ usage_key
         // We also check that parent key is based on target size = `allocated + increase.size`, not current size = `allocated`:
         // * After: 10 15 20 20, we would have dev demanding 30 -> 80, and prd demanding 35 -> 65
         // * so prd wins (65 < 80) while based on current size dev would win (30 < 35)
@@ -2335,11 +2335,11 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
 
         // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
-        // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload).
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload).
         // dev: 50 20 50  10         FIFO order
-        //       0 50 70 120 130 <-- (sum) ~ parent_key
+        //       0 50 70 120 130 <-- (sum) ~ usage_key
         // prd: 40 20 30  15         FIFO order
-        //       0 40 60  90 105 <-- (sum) ~ parent_key
+        //       0 40 60  90 105 <-- (sum) ~ usage_key
         a.assertApproveOrder("40 50 20 20 30 50 15 10");
     }
 }
@@ -2363,12 +2363,12 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
 
         // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
         // Note that all allocations start from size 1 in this test, so total initial size is 4 both for dev and prd.
-        // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload)
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload)
         // dev: 4 10 20 50 50             ~ fair_key
-        //        14 34 84 134 <-- (sum)  ~ parent_key
+        //        14 34 84 134 <-- (sum)  ~ usage_key
         // prd: 4 15 20 30 40             ~ fair_key
-        //        19 39 69 109 <-- (sum) ~ parent_key
-        //        6  13 23 36 <-- (sum/3) ~ parent_key
+        //        19 39 69 109 <-- (sum) ~ usage_key
+        //        6  13 23 36 <-- (sum/3) ~ usage_key
         a.assertApproveOrder("15 20 10 30 20 40 50 50");
     }
 }
@@ -2395,12 +2395,12 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderBetweenWorkload
         TestAllocation vip(c_vip->get("memory"), "VIP", 5);
         vip.waitSync();
 
-        // Workload `all` kills its children by parent_key DESC, while `prd` and `dev` kill their allocations by fair_key DESC
+        // Workload `all` kills its children by usage_key DESC, while `prd` and `dev` kill their allocations by fair_key DESC
         // dev:  32 31 30 10            ~ fair_key
-        //      103 71 40 10 <-- (sum) ~ parent_key
+        //      103 71 40 10 <-- (sum) ~ usage_key
         //        3  2  1  0 <-- (idx)
         // prd:  40 30 20 15            ~ fair_key
-        //      105 65 35 15 <-- (sum) ~ parent_key
+        //      105 65 35 15 <-- (sum) ~ usage_key
         //        7  6  5  4 <-- (idx)
         ResourceCost vip_size = 5;
         for (size_t idx_to_be_killed : {7, 3, 2, 6, 1, 5, 4, 0})

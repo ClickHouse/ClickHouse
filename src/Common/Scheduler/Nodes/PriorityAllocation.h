@@ -2,10 +2,6 @@
 
 #include <Common/Scheduler/ISpaceSharedNode.h>
 
-#include <boost/intrusive/list.hpp>
-#include <boost/intrusive/set.hpp>
-#include <boost/intrusive/options.hpp>
-
 namespace DB
 {
 
@@ -34,28 +30,9 @@ private:
 
     /// Ordering by priority. Used for both running and increasing children for consistent ordering.
     /// NOTE: According to IWorkloadNode::updateRequiresDetach() any change in priority will lead to child
-    /// NOTE: detach and reattach. So we may not worry about keys being updated when child's priority changes.
-    struct CompareNodes
-    {
-        bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept
-        {
-            return lhs.info.priority < rhs.info.priority;
-        }
-    };
-
-    /// Hooks for intrusive data structures
-    using RunningHook    = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::running_hook>;
-    using IncreasingHook = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::set_member_hook<>, &ISpaceSharedNode::increasing_hook>;
-    using DecreasingHook = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::list_member_hook<>, &ISpaceSharedNode::decreasing_hook>;
-
-    /// Intrusive data structures for managing children nodes
-    /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
-    using RunningSet     = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<CompareNodes>>;
-    using IncreasingSet  = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<CompareNodes>>;
-    using DecreasingList = boost::intrusive::list<ISpaceSharedNode, DecreasingHook>;
-
-    RunningSet running_children; /// Children with currently running allocations
-    IncreasingSet increasing_children; /// Children with pending increase request
+    /// NOTE: detach and reattach, thus we may assume keys to be constant.
+    RunningSetByPriority running_children; /// Children with currently running allocations
+    IncreasingSetByPriority increasing_children; /// Children with pending increase request
     DecreasingList decreasing_children; /// Children with pending decrease request
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`

@@ -69,7 +69,7 @@ void PriorityAllocation::approveIncrease()
 {
     chassert(increase);
     allocated += increase->size;
-    if (!increase_child->running_hook.is_linked()) // We are adding the first allocation
+    if (!increase_child->isRunning()) // We are adding the first allocation
         running_children.insert(*increase_child);
     increase = nullptr;
     increase_child->approveIncrease();
@@ -81,7 +81,7 @@ void PriorityAllocation::approveDecrease()
 {
     chassert(decrease);
     allocated -= decrease->size;
-    chassert(decrease_child->running_hook.is_linked());
+    chassert(decrease_child->isRunning());
     if (decrease_child->allocated == decrease->size) // We are removing the last allocation
         running_children.erase(running_children.iterator_to(*decrease_child));
     decrease = nullptr;
@@ -94,13 +94,13 @@ void PriorityAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update &
     if (update.attached)
     {
         allocated += update.attached->allocated;
-        if (!from_child.running_hook.is_linked() && from_child.allocated > 0)
+        if (!from_child.isRunning() && from_child.allocated > 0)
             running_children.insert(from_child);
     }
     if (update.detached)
     {
         allocated -= update.detached->allocated;
-        if (from_child.running_hook.is_linked() && from_child.allocated == 0)
+        if (from_child.isRunning() && from_child.allocated == 0)
             running_children.erase(running_children.iterator_to(from_child));
     }
     if (update.increase)
@@ -124,7 +124,7 @@ void PriorityAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update &
 bool PriorityAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
 {
     // Update intrusive sets of increasing children
-    if (from_child.increasing_hook.is_linked())
+    if (from_child.isIncreasing())
     {
         if (!new_increase)
             increasing_children.erase(increasing_children.iterator_to(from_child));
@@ -142,7 +142,7 @@ bool PriorityAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequ
 bool PriorityAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease)
 {
     // Update intrusive list of decreasing children
-    if (from_child.decreasing_hook.is_linked())
+    if (from_child.isDecreasing())
     {
         if (!new_decrease)
             decreasing_children.erase(decreasing_children.iterator_to(from_child));

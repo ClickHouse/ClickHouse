@@ -31,7 +31,8 @@ void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_b
             "Can't add another child with the same path: {}",
             it->second->getPath());
     child->setParentNode(this);
-    child->parent_key = {-1, 0}; // force key update
+    child->setUsageKey(-1, 0); // force key update
+    child->setDemandKey(-1, 0); // force key update
     propagateUpdate(*child, Update()
         .setAttached(child.get())
         .setIncrease(child->increase)
@@ -47,7 +48,8 @@ void FairAllocation::removeChild(ISchedulerNode * child_base)
             .setDetached(child.get())
             .setIncrease(nullptr)
             .setDecrease(nullptr));
-        child->parent_key = {-1, 0}; // do not leave garbage
+        child->setUsageKey(-1, 0); // do not leave garbage
+        child->setDemandKey(-1, 0); // do not leave garbage
         child->setParentNode(nullptr);
         children.erase(iter);
     }
@@ -64,7 +66,6 @@ ResourceAllocation * FairAllocation::selectAllocationToKill()
 {
     if (running_children.empty())
         return nullptr;
-    // Kill the allocation from the most overcommited child. It is the last as the set is ordered by parent_key.
     return running_children.rbegin()->selectAllocationToKill();
 }
 
@@ -92,12 +93,12 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
     if (update.attached)
     {
         allocated += update.attached->allocated;
-        reset_increase = true; // child's allocation changed, we need change parent_key
+        reset_increase = true; // child's allocation changed, we need change the key
     }
     if (update.detached)
     {
         allocated -= update.detached->allocated;
-        reset_increase = true; // child's allocation changed, we need change parent_key
+        reset_increase = true; // child's allocation changed, we need change the key
     }
     if (reset_increase || update.increase)
     {
@@ -133,7 +134,7 @@ bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest 
     updateKey(from_child, from_child.increase);
 
     // Update intrusive list of decreasing children
-    if (from_child.decreasing_hook.is_linked())
+    if (from_child.isDecreasing())
     {
         if (!new_decrease)
             decreasing_children.erase(decreasing_children.iterator_to(from_child));
@@ -156,20 +157,19 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
     // - Pending: We only take into account increase requests of non-pending allocations, because pending allocations do not consume resources yet.
     ResourceCost increase_size = new_increase && !new_increase->pending_allocation ? new_increase->size : 0;
     double new_key = double(from_child.allocated + increase_size) / from_child.info.weight;
-    if (from_child.parent_key.first != new_key)
+    if (!from_child.usageKeyEquals(new_key))
     {
         SCHED_DBG("{} -- updateKey(from_child={}, new_increase={}): key = {}, allocated = {}, weight = {}, increase.size = {}",
             getPath(), from_child.basename, new_increase ? new_increase->allocation.id : String(),
             new_key, from_child.allocated, from_child.info.weight, increase_size);
 
         // Remove from intrusive sets to update the key
-        if (from_child.increasing_hook.is_linked())
+        if (from_child.isIncreasing())
             increasing_children.erase(increasing_children.iterator_to(from_child));
-        if (from_child.running_hook.is_linked())
+        if (from_child.isRunning())
             running_children.erase(running_children.iterator_to(from_child));
 
-        from_child.parent_key.first = new_key;
-        from_child.parent_key.second = ++tie_breaker;
+        from_child.setUsageKey(new_key, ++tie_breaker);
 
         // Reinsert into intrusive sets
         if (new_increase)
@@ -179,7 +179,7 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
     }
     else // The key has not been changed - do less work if possible (this is the common case on approve)
     {
-        if (!from_child.increasing_hook.is_linked())
+        if (!from_child.isIncreasing())
         {
             if (new_increase)
                 increasing_children.insert(from_child);
@@ -187,7 +187,7 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
         else if (!new_increase)
             increasing_children.erase(increasing_children.iterator_to(from_child));
 
-        if (!from_child.running_hook.is_linked())
+        if (!from_child.isRunning())
         {
             if (from_child.allocated > 0)
                 running_children.insert(from_child);
