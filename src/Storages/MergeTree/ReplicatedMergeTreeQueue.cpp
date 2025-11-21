@@ -2618,13 +2618,13 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
                 buf.str(),
                 entry.create_time,
                 entry.block_numbers,
+                parts_in_progress,
                 parts_to_mutate,
                 status.is_done,
                 status.latest_failed_part,
                 status.latest_fail_time,
                 status.latest_fail_reason,
                 status.latest_fail_error_code_name,
-                parts_in_progress,
             });
         }
     }

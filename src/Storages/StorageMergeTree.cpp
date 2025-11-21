@@ -1006,13 +1006,13 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
                 command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
                 block_numbers_map,
+                parts_in_progress_names,
                 parts_to_do_names,
                 /* is_done = */parts_to_do_names.empty(),
                 entry.latest_failed_part,
                 entry.latest_fail_time,
                 entry.latest_fail_reason,
                 entry.latest_fail_error_code_name,
-                parts_in_progress_names,
             });
         }
     }

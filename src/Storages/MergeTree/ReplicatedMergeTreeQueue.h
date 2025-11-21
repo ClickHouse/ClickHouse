@@ -147,7 +147,7 @@ private:
         /// covered parts.
         ActiveDataPartSet parts_to_do;
 
-        /// Current parts which are being mutated.
+        /// Current parts that are currently being mutated.
         ActiveDataPartSet parts_in_progress;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
