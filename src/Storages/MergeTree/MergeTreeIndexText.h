@@ -9,7 +9,6 @@
 #include <Common/logger_useful.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/ITokenExtractor.h>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -269,6 +268,9 @@ private:
 /// Save BulkContext to optimize consecutive insertions into the posting list.
 using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
 using SortedTokensAndPostings = std::vector<std::pair<StringRef, PostingListBuilder *>>;
+
+struct ITokenExtractor;
+using TokenExtractorPtr = const ITokenExtractor *;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
