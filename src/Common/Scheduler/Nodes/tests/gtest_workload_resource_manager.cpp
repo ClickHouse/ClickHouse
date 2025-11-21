@@ -2336,11 +2336,11 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
 
         // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
         // Workload `all` orders its children by parent_key (resulting total size of all allocations in child workload).
-        // dev: 50 20  50  10             FIFO order
-        //      50 70 120 130 <-- (sum) ~ parent_key
-        // prd: 40 20  30  15             FIFO order
-        //      40 60  90 105 <-- (sum) ~ parent_key
-        a.assertApproveOrder("40 50 20 20 30 15 50 10");
+        // dev: 50 20 50  10         FIFO order
+        //       0 50 70 120 130 <-- (sum) ~ parent_key
+        // prd: 40 20 30  15         FIFO order
+        //       0 40 60  90 105 <-- (sum) ~ parent_key
+        a.assertApproveOrder("40 50 20 20 30 50 15 10");
     }
 }
 
@@ -2413,3 +2413,40 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderBetweenWorkload
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillsRunningInAnotherWorkload)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+
+    ClassifierPtr c_dev = t.manager->acquire("dev");
+    ClassifierPtr c_prd = t.manager->acquire("prd");
+    ResourceLink l_dev = c_dev->get("memory");
+    ResourceLink l_prd = c_prd->get("memory");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocation a1(l_dev, "D1-running", 60);
+        TestAllocation a2(l_dev, "D2-running", 10);
+        TestAllocation a3(l_prd, "P3-running", 20);
+        a1.waitSync();
+        a2.waitSync();
+
+        // Workload `dev` has 70, which is more than fair 50, so D4 is pending and should not kill others
+        TestAllocation a4(l_dev, "D4-pending", 40);
+        a4.assertIncreaseEnqueued();
+
+        // Workload `prd` has 20, which is less than fair 50, so P5 should kill `dev` allocations even while pending
+        TestAllocation a5(l_prd, "P5-pending", 40);
+        a1.waitKilled();
+        a5.waitSync();
+
+        // Now `dev` has 10 and `prd` has 60, so D4 hits the limit and will kill P5
+        // This is weird - P5 started only to be killed right away. Kill chain: D4 -> P5 -> D1.
+        a5.waitKilled();
+        a4.waitSync();
+    }
+}
