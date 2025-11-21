@@ -284,6 +284,10 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     {
         interpreter_name = "InterpreterCreateRowPolicyQuery";
     }
+    else if (query->as<ASTCreateMaskingPolicyQuery>())
+    {
+        interpreter_name = "InterpreterCreateMaskingPolicyQuery";
+    }
     else if (query->as<ASTCreateSettingsProfileQuery>())
     {
         interpreter_name = "InterpreterCreateSettingsProfileQuery";

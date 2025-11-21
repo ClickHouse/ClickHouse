@@ -55,6 +55,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCreateRoleQuery create_role_p;
     ParserCreateQuotaQuery create_quota_p;
     ParserCreateRowPolicyQuery create_row_policy_p;
+    ParserCreateMaskingPolicy create_masking_policy_p;
     ParserCreateSettingsProfileQuery create_settings_profile_p;
     ParserCreateFunctionQuery create_function_p;
     ParserDropFunctionQuery drop_function_p;
@@ -87,6 +88,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || create_role_p.parse(pos, node, expected)
         || create_quota_p.parse(pos, node, expected)
         || create_row_policy_p.parse(pos, node, expected)
+        || create_masking_policy_p.parse(pos, node, expected)
         || create_settings_profile_p.parse(pos, node, expected)
         || create_function_p.parse(pos, node, expected)
         || drop_function_p.parse(pos, node, expected)

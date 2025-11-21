@@ -79,6 +79,17 @@ Syntax:
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
+## DROP MASKING POLICY {#drop-masking-policy}
+
+Deletes a masking policy.
+
+Syntax:
+
+```sql
+DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+
 ## DROP QUOTA {#drop-quota}
 
 Deletes a quota. The deleted quota is revoked from all the entities where it was assigned.
