@@ -1983,7 +1983,7 @@ bool IMergeTreeDataPart::wasInvolvedInTransaction() const
 
 bool IMergeTreeDataPart::isInvolvedInTransaction() const
 {
-    assert(!storage.data_parts_loading_finished || !version.creation_tid.isEmpty() || (state == MergeTreeDataPartState::Temporary /* && std::uncaught_exceptions() */));
+    assert(storage.data_parts_loading_finished);
     bool created_in_transaction = !version.creation_tid.isPrehistoric() && version.creation_csn == Tx::UnknownCSN;
     bool removed_in_transaction = version.isRemovalTIDLocked() && version.removal_tid_lock != Tx::PrehistoricTID.getHash() && version.removal_csn == Tx::UnknownCSN;
 
