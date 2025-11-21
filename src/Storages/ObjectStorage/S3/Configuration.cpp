@@ -951,9 +951,9 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     S3StorageParsableArguments parsable_arguments;
     parsable_arguments.fromNamedCollectionImpl(collection, context);
     initializeFromParsableArguments(std::move(parsable_arguments));
-    keys = {parsable_arguments.url.key};
-    static_configuration = !parsable_arguments.s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || parsable_arguments.s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+    keys = {url.key};
+    static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
 }
 
 void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -961,12 +961,12 @@ void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, Con
     S3StorageParsableArguments parsable_arguments;
     auto disk = context->getDisk(disk_name);
     parsable_arguments.fromDiskImpl(disk, args, context, with_structure);
+    fs::path suffix = parsable_arguments.path_suffix;
     initializeFromParsableArguments(std::move(parsable_arguments));
     if (auto object_storage_disk = std::static_pointer_cast<DiskObjectStorage>(disk); object_storage_disk)
     {
         String path = object_storage_disk->getObjectsKeyPrefix();
         fs::path root = path;
-        fs::path suffix = parsable_arguments.path_suffix;
         setPathForRead(String(root / suffix));
         keys = {String(root / suffix)};
     }
