@@ -62,9 +62,9 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
 
         return std::make_unique<SplitByStringTokenExtractor>(separators);
     }
-    if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
+    if (tokenizer_arg == ArrayTokenExtractor::getExternalName())
     {
-        return std::make_unique<NoOpTokenExtractor>();
+        return std::make_unique<ArrayTokenExtractor>();
     }
     if (tokenizer_arg == NgramsTokenExtractor::getExternalName())
     {

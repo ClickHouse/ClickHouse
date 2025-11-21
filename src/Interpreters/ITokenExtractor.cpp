@@ -324,7 +324,7 @@ bool SplitByStringTokenExtractor::nextInStringLike(const char * /*data*/, size_t
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
-bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
+bool ArrayTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     if (*pos == 0)
     {
@@ -336,9 +336,9 @@ bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size
     return false;
 }
 
-bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
+bool ArrayTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NoOpTokenExtractor::nextInStringLike is not implemented");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenExtractor::nextInStringLike is not implemented");
 }
 
 SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)

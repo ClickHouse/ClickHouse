@@ -19,7 +19,7 @@ public:
         SplitByNonAlpha,
         Ngrams,
         SplitByString,
-        NoOp,
+        Array,
         SparseGram,
     };
 
@@ -212,9 +212,9 @@ private:
 };
 
 /// Parser doing "no operation". Returns the entire input as a single token.
-struct NoOpTokenExtractor final : public ITokenExtractorHelper<NoOpTokenExtractor>
+struct ArrayTokenExtractor final : public ITokenExtractorHelper<ArrayTokenExtractor>
 {
-    NoOpTokenExtractor() : ITokenExtractorHelper(Type::NoOp) {}
+    ArrayTokenExtractor() : ITokenExtractorHelper(Type::Array) {}
 
     static const char * getName() { return "array"; }
     static const char * getExternalName() { return getName(); }
@@ -304,7 +304,7 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
             forEachTokenImpl<is_padded>(split_by_string_extractor, data, length, callback);
             return;
         }
-        case ITokenExtractor::Type::NoOp:
+        case ITokenExtractor::Type::Array:
         {
             callback(data, length);
             return;

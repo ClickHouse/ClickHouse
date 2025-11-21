@@ -1209,9 +1209,9 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         auto separators = extractSplitByStringParam(params);
         token_extractor = std::make_unique<SplitByStringTokenExtractor>(separators);
     }
-    else if (tokenizer == NoOpTokenExtractor::getExternalName())
+    else if (tokenizer == ArrayTokenExtractor::getExternalName())
     {
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
+        token_extractor = std::make_unique<ArrayTokenExtractor>();
     }
     else if (tokenizer == SparseGramTokenExtractor::getExternalName())
     {
@@ -1253,7 +1253,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     const bool is_supported_tokenizer = (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName()
                                       || tokenizer == NgramsTokenExtractor::getExternalName()
                                       || tokenizer == SplitByStringTokenExtractor::getExternalName()
-                                      || tokenizer == NoOpTokenExtractor::getExternalName()
+                                      || tokenizer == ArrayTokenExtractor::getExternalName()
                                       || tokenizer == SparseGramTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
@@ -1264,7 +1264,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             tokenizer);
     }
 
-    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName() || tokenizer == NoOpTokenExtractor::getExternalName())
+    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName() || tokenizer == ArrayTokenExtractor::getExternalName())
     {
         assertParamsCount(tokenizer, params.size(), 0);
     }
