@@ -144,8 +144,6 @@ ClusterDiscovery::ClusterDiscovery(
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
-    multicluster_discovery_paths = std::make_shared<std::vector<std::shared_ptr<MulticlusterDiscovery>>>();
-
     for (const auto & key : config_keys)
     {
         String cluster_config_prefix = config_prefix + "." + key + ".discovery";
@@ -177,18 +175,16 @@ ClusterDiscovery::ClusterDiscovery(
             String zk_root = zkutil::extractZooKeeperPath(zk_multicluster_name_and_root, true);
             String zk_name = zkutil::extractZooKeeperName(zk_multicluster_name_and_root);
 
-            auto mcd = std::make_shared<MulticlusterDiscovery>(
-                    /* zk_name */ zk_name,
-                    /* zk_path */ zk_root,
-                    /* is_secure_connection */ config.getBool(cluster_config_prefix + ".secure", false),
-                    /* username */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
-                    /* password */ password,
-                    /* cluster_secret */ cluster_secret
-                );
-
-            multicluster_discovery_paths->push_back(
-                mcd
+            MulticlusterDiscovery mcd(
+                /* zk_name */ zk_name,
+                /* zk_path */ zk_root,
+                /* is_secure_connection */ config.getBool(cluster_config_prefix + ".secure", false),
+                /* username */ config.getString(cluster_config_prefix + ".user", context->getUserName()),
+                /* password */ password,
+                /* cluster_secret */ cluster_secret
             );
+
+            multicluster_discovery_paths.push_back(std::move(mcd));
             continue;
         }
 
@@ -233,12 +229,12 @@ ClusterDiscovery::ClusterDiscovery(
                 my_clusters_to_update->set(cluster_name);
             });
 
-    for (auto & path : *multicluster_discovery_paths)
+    for (auto & path : multicluster_discovery_paths)
     {
-        path->watch_callback = std::make_shared<Coordination::WatchCallback>(
-            [path, my_flag = clusters_to_update](auto)
+        path.watch_callback = std::make_shared<Coordination::WatchCallback>(
+            [my_need_update = path.need_update, my_flag = clusters_to_update](auto)
             {
-                path->need_update = true;
+                my_need_update->store(true);
                 my_flag->set();
             }
         );
@@ -263,12 +259,11 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
         {
             auto watch_dynamic_callback = std::make_shared<Coordination::WatchCallback>([
                 cluster_name,
-                zk_root_index,
                 my_clusters_to_update = clusters_to_update,
-                my_discovery_paths = multicluster_discovery_paths
+                my_discovery_paths_need_update = multicluster_discovery_paths[zk_root_index - 1].need_update
                 ](auto)
                 {
-                    my_discovery_paths->at(zk_root_index - 1)->need_update = true;
+                    my_discovery_paths_need_update->store(true);
                     my_clusters_to_update->set(cluster_name);
                 });
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
@@ -499,12 +494,12 @@ void ClusterDiscovery::initialUpdate()
             throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Failpoint cluster_discovery_faults is triggered");
     });
 
-    for (auto & path : (*multicluster_discovery_paths))
+    for (const auto & path : multicluster_discovery_paths)
     {
-        auto zk = context->getDefaultOrAuxiliaryZooKeeper(path->zk_name);
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
 
-        zk->createAncestors(path->zk_path);
-        zk->createIfNotExists(path->zk_path, "");
+        zk->createAncestors(path.zk_path);
+        zk->createIfNotExists(path.zk_path, "");
     }
 
     findDynamicClusters(clusters_info);
@@ -536,16 +531,16 @@ void ClusterDiscovery::findDynamicClusters(
 
     size_t zk_root_index = 0;
 
-    for (auto & path : (*multicluster_discovery_paths))
+    for (const auto & path : multicluster_discovery_paths)
     {
         ++zk_root_index;
 
         if (unchanged_roots)
         {
-            if (!path->need_update.exchange(false))
+            if (!path.need_update->exchange(false))
             {
                 /// force updating periodically
-                bool force_update = path->watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
+                bool force_update = path.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
                 if (!force_update)
                 {
                     unchanged_roots->insert(zk_root_index);
@@ -554,9 +549,9 @@ void ClusterDiscovery::findDynamicClusters(
             }
         }
 
-        auto zk = context->getDefaultOrAuxiliaryZooKeeper(path->zk_name);
+        auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
 
-        auto clusters = zk->getChildrenWatch(path->zk_path, nullptr, path->watch_callback);
+        auto clusters = zk->getChildrenWatch(path.zk_path, nullptr, path.watch_callback);
 
         for (const auto & cluster : clusters)
         {
@@ -572,7 +567,7 @@ void ClusterDiscovery::findDynamicClusters(
             {
                 /// Possible with several root paths, it's a configuration error
                 LOG_WARNING(log, "Found dynamic duplicate of cluster '{}' in Keeper, skipped record by path {}:{}",
-                    cluster, path->zk_name, path->zk_path);
+                    cluster, path.zk_name, path.zk_path);
                 continue;
             }
 
@@ -580,14 +575,14 @@ void ClusterDiscovery::findDynamicClusters(
                 cluster,
                 ClusterInfo(
                     /* name_= */ cluster,
-                    /* zk_name_= */ path->zk_name,
-                    /* zk_root_= */ path->zk_path + "/" + cluster,
+                    /* zk_name_= */ path.zk_name,
+                    /* zk_root_= */ path.zk_path + "/" + cluster,
                     /* host_name= */ "",
-                    /* username= */ path->username,
-                    /* password= */ path->password,
-                    /* cluster_secret= */ path->cluster_secret,
+                    /* username= */ path.username,
+                    /* password= */ path.password,
+                    /* cluster_secret= */ path.cluster_secret,
                     /* port= */ context->getTCPPort(),
-                    /* secure= */ path->is_secure_connection,
+                    /* secure= */ path.is_secure_connection,
                     /* shard_id= */ 0,
                     /* observer_mode= */ true,
                     /* invisible= */ false,
@@ -596,13 +591,13 @@ void ClusterDiscovery::findDynamicClusters(
             );
         }
 
-        path->watch.restart();
+        path.watch.restart();
     }
 }
 
 void ClusterDiscovery::start()
 {
-    if (clusters_info.empty() && multicluster_discovery_paths->empty())
+    if (clusters_info.empty() && multicluster_discovery_paths.empty())
     {
         LOG_DEBUG(log, "No defined clusters for discovery");
         return;
