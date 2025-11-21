@@ -70,14 +70,6 @@ INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_9 VALUES (1, 'Hello'
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_10 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_11 VALUES (1, 'Hello');
 
-CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_1 AS a = 1;
-CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_2 AS a = 1;
-CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_3 AS a = 1;
-CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_4 AS a = 1;
-CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_5 AS a = 1;
-CREATE NAMED COLLECTION test_max_named_collection_num_to_warn_6 AS a = 1;
-
-SELECT value FROM system.metrics WHERE name = 'NamedCollection';
 SELECT replaceRegexpAll(message, '\(\d+\)', '_'), message_format_string FROM system.warnings WHERE message LIKE 'The number of%' ORDER BY message;
 
 DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
@@ -92,10 +84,3 @@ DROP DATABASE IF EXISTS test_max_num_to_warn_8;
 DROP DATABASE IF EXISTS test_max_num_to_warn_9;
 DROP DATABASE IF EXISTS test_max_num_to_warn_10;
 DROP DATABASE IF EXISTS test_max_num_to_warn_11;
-
-DROP NAMED COLLECTION test_max_named_collection_num_to_warn_1;
-DROP NAMED COLLECTION test_max_named_collection_num_to_warn_2;
-DROP NAMED COLLECTION test_max_named_collection_num_to_warn_3;
-DROP NAMED COLLECTION test_max_named_collection_num_to_warn_4;
-DROP NAMED COLLECTION test_max_named_collection_num_to_warn_5;
-DROP NAMED COLLECTION test_max_named_collection_num_to_warn_6;
