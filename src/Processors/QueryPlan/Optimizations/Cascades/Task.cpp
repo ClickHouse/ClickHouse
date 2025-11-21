@@ -20,10 +20,40 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
         optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(group_id, cost_limit));
     }
-    else
+    else if (!group->isImplemented())
     {
+        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
+
         for (auto & expression : group->logical_expressions)
             optimizer_context.pushTask(std::make_shared<OptimizeExpressionTask>(expression, required_properties, cost_limit));
+
+        group->setImplemented();
+    }
+    else if (!group->getBestImplementation(required_properties).expression)
+    {
+        /// Copy the list of physical expression because we are going to add new ones while iterating
+        auto existing_implementations = group->physical_expressions;
+        for (auto & expression : existing_implementations)
+        {
+            if (required_properties.isSatisfiedBy(expression->properties))
+            {
+                optimizer_context.updateBestPlan(expression);
+                continue;
+            }
+
+            /// Try to add enfrocer to satisfy the required properties
+            for (const auto & enforcer : optimizer_context.getEnforcerRules())
+            {
+                /// TODO: how to handle a combination of enforcers, e.g. modify both sorting and distribution?
+                if (enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+                {
+                    /// TODO: apply in a separate task?
+                    auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
+                    for (const auto & new_expression : new_expressions)
+                        optimizer_context.updateBestPlan(new_expression);
+                }
+            }
+        }
     }
 }
 
