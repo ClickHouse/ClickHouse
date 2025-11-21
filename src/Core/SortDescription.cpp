@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include "config.h"
 
@@ -156,9 +157,12 @@ void compileSortDescriptionIfNeeded(SortDescription & description, const DataTyp
 
     for (const auto & type : sort_description_types)
     {
-        if (!type->createColumn()->isComparatorCompilable() || !canBeNativeType(*type))
+        auto nested_type = removeNullable(type);
+        if (!type->createColumn()->isComparatorCompilable() ||
+            (!canBeNativeType(*type) && !WhichDataType(nested_type).isString() && !WhichDataType(nested_type).isFixedString()))
             return;
     }
+
 
     auto description_dump = getSortDescriptionDump(description, sort_description_types);
 

@@ -18,6 +18,12 @@
 #    include <emmintrin.h>
 #endif
 
+#if USE_EMBEDDED_COMPILER
+#    include <llvm/IR/Function.h>
+#    include <llvm/IR/IRBuilder.h>
+#    include <llvm/IR/Module.h>
+#endif
+
 
 namespace DB
 {
@@ -160,6 +166,41 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(n);
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
+
+#if USE_EMBEDDED_COMPILER
+bool ColumnFixedString::isComparatorCompilable() const { return true; }
+llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const
+{
+    llvm::Value * lhs_chars_ptr = b.CreateExtractValue(lhs, {0});
+    llvm::Value * lhs_row_index = b.CreateExtractValue(lhs, {1});
+    llvm::Value * rhs_chars_ptr = b.CreateExtractValue(rhs, {0});
+    llvm::Value * rhs_row_index = b.CreateExtractValue(rhs, {1});
+
+    auto * size_type = b.getInt64Ty();
+    auto * n_value = llvm::ConstantInt::get(size_type, n);
+
+    auto * lhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), lhs_chars_ptr, b.CreateMul(lhs_row_index, n_value));
+    auto * rhs_current_ptr = b.CreateInBoundsGEP(b.getInt8Ty(), rhs_chars_ptr, b.CreateMul(rhs_row_index, n_value));
+
+    llvm::Module * module = b.GetInsertBlock()->getModule();
+    auto * memcmp_func_type = llvm::FunctionType::get(b.getInt32Ty(),
+        {lhs_current_ptr->getType(), n_value->getType(), rhs_current_ptr->getType(), n_value->getType()}, false);
+    llvm::Function * memcmp_func = llvm::dyn_cast<llvm::Function>(
+        module->getOrInsertFunction("memcmpSmallCharsAllowOverflow15", memcmp_func_type).getCallee()
+    );
+    auto * compare_result = b.CreateCall(memcmp_func, {lhs_current_ptr, n_value, rhs_current_ptr, n_value});
+
+    auto * lhs_greater_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 1);
+    auto * lhs_less_than_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), -1);
+    auto * lhs_equals_rhs_result = llvm::ConstantInt::getSigned(b.getInt8Ty(), 0);
+
+    auto * is_greater = b.CreateICmpSGT(compare_result, b.getInt32(0));  // compare_result > 0
+    auto * is_less = b.CreateICmpSLT(compare_result, b.getInt32(0));     // compare_result < 0
+    auto * result_if_not_greater = b.CreateSelect(is_less, lhs_less_than_rhs_result, lhs_equals_rhs_result);
+    auto * final_result = b.CreateSelect(is_greater, lhs_greater_than_rhs_result, result_if_not_greater);
+    return final_result;
+}
+#endif
 
 struct ColumnFixedString::ComparatorBase
 {

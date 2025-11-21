@@ -21,6 +21,7 @@ struct ColumnData
 {
     const char * data = nullptr;
     const char * null_data = nullptr;
+    const char * offset_data = nullptr; // For String type, points to offsets data
 };
 
 /** Returns ColumnData for column.
