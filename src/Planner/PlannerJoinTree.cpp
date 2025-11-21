@@ -25,6 +25,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageValues.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -1069,7 +1070,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 };
 
                 /// query_plan can be empty if there is nothing to read
-                if (query_plan.isInitialized() && !select_query_options.build_logical_plan && parallel_replicas_enabled_for_storage(storage, settings))
+                if (query_plan.isInitialized() && !select_query_options.build_logical_plan
+                    && parallel_replicas_enabled_for_storage(storage, settings))
                 {
                     auto allow_parallel_replicas_for_table_expression
                         = [](const QueryTreeNodePtr current_table_expression, const QueryTreeNodePtr & join_tree_node)
@@ -1081,13 +1083,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (!join_node)
                             return true;
 
+                        const auto & left_table_expr = join_node->getLeftTableExpression();
                         const auto join_kind = join_node->getKind();
                         const auto join_strictness = join_node->getStrictness();
-
                         if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
                         {
-
-                            const auto & left_table_expr = join_node->getLeftTableExpression();
                             if (current_table_expression.get() == left_table_expr.get())
                                 // here current table expression is table or table function
                                 return true;
@@ -1104,7 +1104,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         if (join_kind == JoinKind::Right)
                         {
                             // parallel replicas is allowed only simple RIGHT JOINs i.e. t1 RIGHT JOIN t2
-                            const auto & left_table_expr = join_node->getLeftTableExpression();
                             if (left_table_expr->getNodeType() != QueryTreeNodeType::TABLE
                                 && left_table_expr->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION)
                                 return false;
@@ -1439,7 +1438,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
                 expected_block.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Position,
-                true /*ignore_constant_values*/);
+                planner_context->getQueryContext(),
+                true /*ignore_constant_values*/,
+                false /*add_cast_columns*/,
+                nullptr /*new_names*/);
             auto rename_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(rename_actions_dag));
             if (table_expression_data.isRemote())
                 rename_step->setStepDescription("Change remote column names to local column names");
@@ -1575,11 +1577,19 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
 
     table_join->setInputColumns(columns_from_left_table, columns_from_right_table);
 
+    ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
+
+    if (join_clauses_and_actions.residual_join_expressions_actions)
+    {
+        for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
+            required_columns_after_join.insert(input->result_name);
+    }
+
     for (auto & column_from_joined_table : columns_from_left_table)
     {
         /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
+            required_columns_after_join.contains(column_from_joined_table.name))
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Left);
     }
 
@@ -1587,7 +1597,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     {
         /// Add columns to output only if they are presented in outer scope, otherwise they can be dropped
         if (planner_context->getGlobalPlannerContext()->hasColumnIdentifier(column_from_joined_table.name) &&
-            outer_scope_columns.contains(column_from_joined_table.name))
+            required_columns_after_join.contains(column_from_joined_table.name))
             table_join->setUsedColumn(column_from_joined_table, JoinTableSide::Right);
     }
 
@@ -1701,14 +1711,6 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
         }
 
         auto join_pipeline_type = join_algorithm->pipelineType();
-
-        ColumnIdentifierSet required_columns_after_join = outer_scope_columns;
-
-        if (join_clauses_and_actions.residual_join_expressions_actions)
-        {
-            for (const auto * input : join_clauses_and_actions.residual_join_expressions_actions->getInputs())
-                required_columns_after_join.insert(input->result_name);
-        }
 
         if (required_columns_after_join.empty())
         {
@@ -2056,7 +2058,7 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
                 continue;
 
             const auto & cast_type = it->second;
-            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name);
+            output_node = &cast_actions_dag.addCast(*output_node, cast_type, output_node->result_name, planner_context->getQueryContext());
         }
 
         cast_actions_dag.appendInputsForUnusedColumns(*plan_to_add_cast.getCurrentHeader());

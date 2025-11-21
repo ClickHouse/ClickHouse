@@ -7,12 +7,9 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenExtractor.h>
-#include <Parsers/ExpressionListParsers.h>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -146,7 +143,6 @@ public:
     /// Information required to read the posting list.
     struct FuturePostings
     {
-        MergeTreeIndexDeserializationState state;
         UInt64 header = 0;
         UInt64 offset_in_file = 0;
         UInt32 cardinality = 0;
@@ -248,8 +244,9 @@ public:
     bool empty() const override { return header->numberOfTokens() == 0; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
-    bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
+    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
+    bool hasAllQueryTokens(const TextSearchQuery & query) const;
+    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
@@ -260,11 +257,14 @@ private:
     /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
     void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     /// Header of the text index contains the number of tokens, bloom filter and sparse index.
     TextIndexHeaderPtr header;
     /// Tokens that are in the index granule after analysis.
     TokenToPostingsInfosMap remaining_tokens;
+    /// ---------------------------------------
 };
 
 /// Save BulkContext to optimize consecutive insertions into the posting list.
@@ -291,18 +291,20 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return tokens_and_postings.empty(); }
-    size_t memoryUsageBytes() const override { return 0; }
+    size_t memoryUsageBytes() const override;
 
+    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
+    /// ---------------------------------------
     MergeTreeIndexTextParams params;
     BloomFilter bloom_filter;
     /// Pointers to tokens and posting lists in the granule.
     SortedTokensAndPostings tokens_and_postings;
-
     /// tokens_and_postings has references to data held in the fields below.
     TokenToPostingsMap tokens_map;
     std::list<PostingList> posting_lists;
     std::unique_ptr<Arena> arena;
     LoggerPtr logger;
+    /// ---------------------------------------
 };
 
 struct MergeTreeIndexTextGranuleBuilder
@@ -331,33 +333,7 @@ struct MergeTreeIndexTextGranuleBuilder
     std::unique_ptr<Arena> arena;
 };
 
-class MergeTreeIndexTextPreprocessor
-{
-public:
-    MergeTreeIndexTextPreprocessor(const String & expression, const IndexDescription & index_description);
-
-    /// Processes n_rows rows of the column in index_column_with_type_and_name starting at start_row.
-    /// The transformation is only applied in the range [start_row, start_row + n_rows)
-    /// If the expression is empty this functions is just a no-op.
-    /// Returns a pair with the result column and the starting position where results were written.
-    /// If the expression is empty this just returns the input column and start_row.
-    /// The input column is not modified.
-    std::pair<ColumnPtr, size_t> processColumn(const ColumnWithTypeAndName & index_column_with_type_and_name, size_t start_row, size_t n_rows) const;
-
-    /// Applies the modification expression to an input string.
-    /// This is somehow equivalent to: SELECT expression(input)
-    String process(const String & input) const;
-
-    /// This function parses an string to build an ExpressionActions.
-    /// The conversion is not direct and requires many steps and validations, but long story short
-    /// String -> ParserExpression => AST -> ActionsVisitor => ActionsDAG -> ExpressionActions
-    static ExpressionActions parseExpression(const IndexDescription & index, const String & expression);
-private:
-    ExpressionActions expression;
-    DataTypePtr column_type;
-    String column_name;
-};
-
+class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
@@ -396,7 +372,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.

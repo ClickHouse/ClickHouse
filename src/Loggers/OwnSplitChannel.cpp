@@ -57,7 +57,7 @@ void OwnSplitChannel::log(Poco::Message && msg)
     if (const auto & masker = SensitiveDataMasker::getInstance())
     {
         auto message_text = msg.getText();
-        auto matches = masker->wipeSensitiveData(message_text);
+        auto matches = masker->wipeSensitiveDataThrow(message_text);
         if (matches > 0)
         {
             msg.setText(message_text);
@@ -94,7 +94,7 @@ void pushExtendedMessageToInternalTCPTextLogQueue(
 void logToSystemTextLogQueue(
     const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked,
     const ExtendedLogMessage & msg_ext,
-    const std::string & msg_thread_name)
+    ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
     TextLogElement elem;
@@ -137,7 +137,7 @@ void logToSystemTextLogQueue(
 }
 
 void OwnSplitChannel::logSplit(
-    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, const std::string & msg_thread_name)
+    const ExtendedLogMessage & msg_ext, const std::shared_ptr<InternalTextLogsQueue> & logs_queue, ThreadName msg_thread_name)
 {
     const Poco::Message & msg = *msg_ext.base;
 
@@ -296,7 +296,7 @@ public:
         if (const auto & masker = SensitiveDataMasker::getInstance())
         {
             auto message_text = msg.getText();
-            auto matches = masker->wipeSensitiveData(message_text);
+            auto matches = masker->wipeSensitiveDataThrow(message_text);
             if (matches > 0)
                 msg.setText(message_text);
         }
@@ -304,7 +304,7 @@ public:
 
     Message msg; /// Need to keep a copy until we finish logging
     ExtendedLogMessage msg_ext;
-    std::string msg_thread_name;
+    ThreadName msg_thread_name;
 };
 
 
@@ -476,7 +476,7 @@ AsyncLogQueueSizes OwnAsyncSplitChannel::getAsynchronousMetrics()
 
 void OwnAsyncSplitChannel::runChannel(size_t i)
 {
-    setThreadName("AsyncLog");
+    DB::setThreadName(ThreadName::ASYNC_LOGGER);
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     auto notification = queues[i]->waitDequeueMessage();
     const auto & extended_channel = channels[i];
@@ -540,7 +540,7 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
 void OwnAsyncSplitChannel::runTextLog()
 {
-    setThreadName("AsyncTextLog", true);
+    DB::setThreadName(ThreadName::ASYNC_TEXT_LOG);
 
     auto log_notification = [](auto & message, const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {

@@ -747,6 +747,32 @@ public:
         return *this;
     }
 
+    HashTable & operator=(const HashTable & rhs) noexcept
+    {
+        if (this == &rhs)
+            return *this;
+
+        size_t new_buffer_size = rhs.getBufferSizeInBytes();
+        size_t old_buffer_size = getBufferSizeInBytes();
+        destroyElements();
+        if (new_buffer_size != old_buffer_size)
+        {
+            free();
+            buf = reinterpret_cast<Cell *>(Allocator::alloc(new_buffer_size));
+        }
+
+        grower = rhs.grower;
+        m_size = rhs.m_size;
+        static_assert(std::is_trivially_copyable_v<Cell>);
+        std::memcpy(buf, rhs.buf, new_buffer_size);
+
+        Hash::operator=(rhs);
+        Cell::State::operator=(rhs);
+        ZeroValueStorage<Cell::need_zero_value_storage, Cell>::operator=(rhs);
+
+        return *this;
+    }
+
     class Reader final : private Cell::State
     {
     public:
@@ -975,6 +1001,24 @@ public:
         if (!emplaceIfZero(Cell::getKey(x), res.first, res.second, hash_value))
         {
             emplaceNonZero(Cell::getKey(x), res.first, res.second, hash_value);
+        }
+
+        if (res.second)
+            res.first->setMapped(x);
+
+        return res;
+    }
+
+    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const Cell & cell)
+    {
+        std::pair<LookupResult, bool> res;
+        auto hash = cell.getHash(*this);
+        const value_type & x = cell.getValue();
+        const Key & key = cell.getKey();
+
+        if (!emplaceIfZero(key, res.first, res.second, hash))
+        {
+            emplaceNonZero(key, res.first, res.second, hash);
         }
 
         if (res.second)

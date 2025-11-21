@@ -1,5 +1,7 @@
 #include <cstdio>
 
+#include <Common/checkStackSize.h>
+
 #include <Client/BuzzHouse/Generator/QueryOracle.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -112,6 +114,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
         ssc2->set_allocated_groupby(ssc1.release_groupby());
         ssc2->set_allocated_where(ssc1.release_where());
+        ssc2->set_allocated_pre_where(ssc1.release_pre_where());
     }
     else
     {
@@ -124,30 +127,6 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
-}
-
-void QueryOracle::addLimitOrOffset(RandomGenerator & rg, StatementGenerator & gen, SelectStatementCore * ssc) const
-{
-    const uint32_t noption = rg.nextSmallNumber();
-
-    if (noption < 3)
-    {
-        gen.setAllowNotDetermistic(false);
-        gen.enforceFinal(true);
-        gen.setAllowEngineUDF(false);
-        if (noption == 1)
-        {
-            gen.generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
-        }
-        else
-        {
-            gen.generateOffset(rg, ssc->has_orderby(), ssc->mutable_offset());
-        }
-        gen.setAllowNotDetermistic(true);
-        gen.enforceFinal(false);
-        gen.setAllowEngineUDF(true);
-        gen.levels.clear();
-    }
 }
 
 void QueryOracle::insertOnTableOrCluster(
@@ -210,7 +189,6 @@ void QueryOracle::dumpTableContent(
     }
     gen.entries.clear();
 
-    addLimitOrOffset(rg, gen, ssc);
     if (test_content)
     {
         /// Don't write statistics
@@ -493,7 +471,7 @@ bool QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     /// Most of the times use SET command, other times SYSTEM
     if (use_settings)
     {
-        std::uniform_int_distribution<uint32_t> settings_range(1, 10);
+        std::uniform_int_distribution<uint32_t> settings_range(1, 20);
         const uint32_t nsets = settings_range(rg.generator);
         SettingValues * sv = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_setting_values();
 
@@ -703,7 +681,6 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
-        addLimitOrOffset(rg, gen, nsel);
     }
 
     /// Don't write statistics
@@ -738,7 +715,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
 }
 
-void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & mes)
+void QueryOracle::swapQuery(RandomGenerator & rg, StatementGenerator & gen, google::protobuf::Message & mes)
 {
     checkStackSize();
 
@@ -748,23 +725,23 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
 
         if (sel.has_select_core())
         {
-            swapQuery(rg, const_cast<SelectStatementCore &>(sel.select_core()));
+            swapQuery(rg, gen, const_cast<SelectStatementCore &>(sel.select_core()));
         }
         else if (sel.has_set_query())
         {
-            swapQuery(rg, const_cast<SetQuery &>(sel.set_query()));
+            swapQuery(rg, gen, const_cast<SetQuery &>(sel.set_query()));
         }
         if (sel.has_ctes())
         {
             if (sel.ctes().cte().has_cte_query())
             {
-                swapQuery(rg, const_cast<Select &>(sel.ctes().cte().cte_query().query()));
+                swapQuery(rg, gen, const_cast<Select &>(sel.ctes().cte().cte_query().query()));
             }
             for (int i = 0; i < sel.ctes().other_ctes_size(); i++)
             {
                 if (sel.ctes().other_ctes(i).has_cte_query())
                 {
-                    swapQuery(rg, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()));
+                    swapQuery(rg, gen, const_cast<Select &>(sel.ctes().other_ctes(i).cte_query().query()));
                 }
             }
         }
@@ -773,25 +750,16 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
     {
         auto & setq = static_cast<SetQuery &>(mes);
 
-        swapQuery(rg, const_cast<Select &>(setq.sel1().inner_query().select().sel()));
-        swapQuery(rg, const_cast<Select &>(setq.sel2().inner_query().select().sel()));
+        swapQuery(rg, gen, const_cast<Select &>(setq.sel1().inner_query().select().sel()));
+        swapQuery(rg, gen, const_cast<Select &>(setq.sel2().inner_query().select().sel()));
     }
     else if (mes.GetTypeName() == "BuzzHouse.SelectStatementCore")
     {
         auto & ssc = static_cast<SelectStatementCore &>(mes);
 
-        if ((ssc.has_pre_where() || ssc.has_where()) && rg.nextSmallNumber() < 5)
-        {
-            /// Swap WHERE and PREWHERE
-            auto * prewhere = ssc.release_pre_where();
-            auto * where = ssc.release_where();
-
-            ssc.set_allocated_pre_where(where);
-            ssc.set_allocated_where(prewhere);
-        }
         if (ssc.has_from())
         {
-            swapQuery(rg, const_cast<JoinedQuery &>(ssc.from().tos()));
+            swapQuery(rg, gen, const_cast<JoinedQuery &>(ssc.from().tos()));
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinedQuery")
@@ -800,9 +768,9 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
 
         for (int i = 0; i < jquery.tos_list_size(); i++)
         {
-            swapQuery(rg, const_cast<TableOrSubquery &>(jquery.tos_list(i)));
+            swapQuery(rg, gen, const_cast<TableOrSubquery &>(jquery.tos_list(i)));
         }
-        swapQuery(rg, const_cast<JoinClause &>(jquery.join_clause()));
+        swapQuery(rg, gen, const_cast<JoinClause &>(jquery.join_clause()));
     }
     else if (mes.GetTypeName() == "BuzzHouse.JoinClause")
     {
@@ -812,10 +780,10 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
         {
             if (jclause.clauses(i).has_core())
             {
-                swapQuery(rg, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()));
+                swapQuery(rg, gen, const_cast<TableOrSubquery &>(jclause.clauses(i).core().tos()));
             }
         }
-        swapQuery(rg, const_cast<TableOrSubquery &>(jclause.tos()));
+        swapQuery(rg, gen, const_cast<TableOrSubquery &>(jclause.tos()));
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableOrSubquery")
     {
@@ -825,11 +793,11 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
         {
             auto & jtf = const_cast<JoinedTableOrFunction &>(tos.joined_table());
 
-            swapQuery(rg, const_cast<TableOrFunction &>(jtf.tof()));
+            swapQuery(rg, gen, const_cast<TableOrFunction &>(jtf.tof()));
         }
         else if (tos.has_joined_query())
         {
-            swapQuery(rg, const_cast<JoinedQuery &>(tos.joined_query()));
+            swapQuery(rg, gen, const_cast<JoinedQuery &>(tos.joined_query()));
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
@@ -838,29 +806,58 @@ void QueryOracle::swapQuery(RandomGenerator & rg, google::protobuf::Message & me
 
         if (tfunc.has_loop())
         {
-            swapQuery(rg, const_cast<TableOrFunction &>(tfunc.loop()));
+            swapQuery(rg, gen, const_cast<TableOrFunction &>(tfunc.loop()));
         }
         else if (tfunc.has_remote() || tfunc.has_cluster())
         {
-            swapQuery(rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()));
+            swapQuery(rg, gen, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()));
         }
     }
     else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
     {
         auto & torfunc = static_cast<TableOrFunction &>(mes);
 
-        if (torfunc.has_tfunc())
+        if (torfunc.has_est() && !compare_explain)
         {
-            swapQuery(rg, const_cast<TableFunction &>(torfunc.tfunc()));
+            const ExprSchemaTable & est = torfunc.est();
+
+            if ((!est.has_database()
+                 || (est.database().database() != "system" && est.database().database() != "INFORMATION_SCHEMA"
+                     && est.database().database() != "information_schema"))
+                && est.table().table().at(0) == 't')
+            {
+                const uint32_t tname = gen.getIdentifierFromString(est.table().table());
+
+                if (gen.tables.contains(tname))
+                {
+                    /// Replace table with table function call
+                    const SQLTable & t = gen.tables.at(tname);
+
+                    gen.setAllowNotDetermistic(false);
+                    if (t.isEngineReplaceable() && rg.nextSmallNumber() < 5)
+                    {
+                        gen.setTableFunction(rg, TableFunctionUsage::EngineReplace, t, torfunc.mutable_tfunc());
+                    }
+                    else if (rg.nextSmallNumber() < 3)
+                    {
+                        gen.setTableFunction(rg, TableFunctionUsage::RemoteCall, t, torfunc.mutable_tfunc());
+                    }
+                    gen.setAllowNotDetermistic(true);
+                }
+            }
+        }
+        else if (torfunc.has_tfunc())
+        {
+            swapQuery(rg, gen, const_cast<TableFunction &>(torfunc.tfunc()));
         }
         else if (torfunc.has_select())
         {
-            swapQuery(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()));
+            swapQuery(rg, gen, const_cast<Select &>(torfunc.select().inner_query().select().sel()));
         }
     }
 }
 
-void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQuery & sq1, SQLQuery & sq2)
+void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLQuery & sq1, SQLQuery & sq2)
 {
     sq2.CopyFrom(sq1);
     chassert(!compare_explain);
@@ -870,7 +867,7 @@ void QueryOracle::maybeUpdateOracleSelectQuery(RandomGenerator & rg, const SQLQu
         const SQLQueryInner & sq2inner = sq2.single_query().explain().inner_query();
         Select & nsel = const_cast<Select &>(measure_performance ? sq2inner.select().sel() : sq2inner.insert().select().select());
 
-        swapQuery(rg, nsel);
+        swapQuery(rg, gen, nsel);
     }
 }
 
@@ -1143,18 +1140,21 @@ void QueryOracle::setIntermediateStepSuccess(const bool success)
 
 void QueryOracle::processFirstOracleQueryResult(const int errcode, ExternalIntegrations & ei)
 {
-    if (!errcode)
+    if (can_test_oracle_result)
     {
-        if (measure_performance)
+        if (!errcode)
         {
-            other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
+            if (measure_performance)
+            {
+                other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
+            }
+            else
+            {
+                md5_hash1.hashFile(qcfile.generic_string(), first_digest);
+            }
         }
-        else
-        {
-            md5_hash1.hashFile(qcfile.generic_string(), first_digest);
-        }
+        first_errcode = errcode;
     }
-    first_errcode = errcode;
 }
 
 void QueryOracle::processSecondOracleQueryResult(const int errcode, ExternalIntegrations & ei, const String & oracle_name)

@@ -3,6 +3,7 @@
 #include <Core/Field.h>
 #include <Common/Arena.h>
 #include <Common/iota.h>
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -48,15 +49,15 @@ StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, cha
     return { res, 1 };
 }
 
-const char * IColumnDummy::deserializeAndInsertFromArena(const char * pos)
+void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     ++s;
-    return pos + 1;
+    in.ignore(1);
 }
 
-const char * IColumnDummy::skipSerializedInArena(const char * pos) const
+void IColumnDummy::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos;
+    in.ignore(1);
 }
 
 ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/) const

@@ -11,9 +11,6 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
-#include <base/TypeName.h>
-#include <base/sort.h>
-
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
@@ -22,6 +19,11 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+
+#include <base/TypeName.h>
+#include <base/sort.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -78,16 +80,17 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    data.push_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T dec;
+    readBinaryLittleEndian(dec, in);
+    data.push_back(std::move(dec));
 }
 
 template <is_decimal T>
-const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
+void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <is_decimal T>
@@ -531,16 +534,19 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.reserve_exact(offsets.back());
+    res_data.resize_exact(offsets.back());
+
+    const T * src = data.data();
+    T * dst = res_data.data();
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        size_t size_to_replicate = offsets[i] - prev_offset;
+        size_t count = offsets[i] - prev_offset;
         prev_offset = offsets[i];
 
-        for (size_t j = 0; j < size_to_replicate; ++j)
-            res_data.push_back(data[i]);
+        std::fill_n(dst, count, src[i]);
+        dst += count;
     }
 
     return res;
