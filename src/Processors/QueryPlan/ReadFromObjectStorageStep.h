@@ -39,7 +39,7 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
     QueryPlanStepPtr clone() const override;
 
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_) const;
+    bool requestReadingInOrder() const;
 
     // The name of the returned type is misleading, this order has nothing in common with the corresponding SELECT query
     // and is taken from the storage metadata.

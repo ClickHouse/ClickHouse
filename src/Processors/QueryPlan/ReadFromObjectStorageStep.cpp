@@ -151,44 +151,6 @@ void ReadFromObjectStorageStep::createIterator()
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
-/// icebergBucket(16_UInt8, __table1.id) -> icebergBucket(16, id)
-static String normalizeColumnName(const String & column_name)
-{
-    String result = column_name;
-
-    {
-        static const RE2 number_with_type(R"((\d+)_\w+)");
-        RE2::GlobalReplace(&result, number_with_type, "\\1");
-    }
-
-    {
-        static const RE2 table_prefix(R"(__\w+\.)");
-        RE2::GlobalReplace(&result, table_prefix, "");
-    }
-
-    return result;
-}
-
-static bool isPrefixInputOrder(InputOrderInfoPtr small_input_order, InputOrderInfoPtr big_input_order)
-{
-    if (big_input_order->sort_description_for_merging.size() < small_input_order->sort_description_for_merging.size())
-    {
-        return false;
-    }
-
-    for (size_t i = 0; i < small_input_order->sort_description_for_merging.size(); ++i)
-    {
-        if (normalizeColumnName(small_input_order->sort_description_for_merging.at(i).column_name) !=
-                big_input_order->sort_description_for_merging.at(i).column_name)
-            return false;
-
-        int direction = big_input_order->sort_description_for_merging.at(i).direction;
-        if (small_input_order->sort_description_for_merging.at(i).direction != direction)
-            return false;
-    }
-    return true;
-}
-
 static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & key_description)
 {
     SortDescription sort_description_for_merging;
@@ -198,9 +160,9 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
-bool ReadFromObjectStorageStep::requestReadingInOrder(InputOrderInfoPtr order_info_) const
+bool ReadFromObjectStorageStep::requestReadingInOrder() const
 {
-    return isPrefixInputOrder(order_info_, getDataOrder()) && configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
+    return configuration->isDataSortedBySortingKey(storage_snapshot->metadata, getContext());
 }
 
 InputOrderInfoPtr ReadFromObjectStorageStep::getDataOrder() const
