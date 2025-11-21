@@ -32,7 +32,8 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().removeFromSQL(query);
-    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
+    if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > 0)
+        CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 
     return {};
 }
