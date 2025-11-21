@@ -1155,7 +1155,7 @@ QueryPipelineBuilderPtr ReadFromMerge::buildPipeline(
         return nullptr;
 
     QueryPlanOptimizationSettings optimization_settings(context);
-    /// All optimisations will be done at plans creation
+    /// All optimizations will be done at plans creation
     optimization_settings.optimize_plan = false;
     auto builder = child.plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context));
 
@@ -1509,8 +1509,6 @@ void ReadFromMerge::convertAndFilterSourceStream(
     {
         for (const auto & alias : aliases)
         {
-            pipe_columns.emplace_back(NameAndTypePair(alias.name, alias.type));
-
             ActionsDAG actions_dag(pipe_columns);
 
             QueryTreeNodePtr query_tree = buildQueryTree(alias.expression, local_context);

@@ -274,8 +274,8 @@ void executeString(
 {
     if (tokens.empty())
     {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_rows_count, UInt8(1));
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_rows_count, UInt8(0));
         return;
     }
 
@@ -302,8 +302,8 @@ void executeArray(
 
     if (tokens.empty())
     {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_size, UInt8(1));
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_size, UInt8(0));
         return;
     }
 

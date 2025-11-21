@@ -288,7 +288,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
             provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
@@ -313,7 +313,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_COMPAT,
             provides=[ArtifactNames.CH_AMD_COMPAT],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_MUSL,
@@ -438,7 +438,7 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
         Job.ParamSet(
-            parameter="amd_asan, distributed plan, sequential",
+            parameter="amd_asan, db disk, distributed plan, sequential",
             runs_on=RunnerLabels.AMD_SMALL_MEM,
             requires=[ArtifactNames.CH_AMD_ASAN],
         ),
@@ -709,7 +709,7 @@ class JobConfigs:
     integration_test_asan_master_jobs = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, {batch}/{total_batches}",
+                parameter=f"amd_asan, db disk, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
@@ -720,7 +720,7 @@ class JobConfigs:
     integration_test_jobs_required = common_integration_test_job_config.parametrize(
         *[
             Job.ParamSet(
-                parameter=f"amd_asan, old analyzer, {batch}/{total_batches}",
+                parameter=f"amd_asan, db disk, old analyzer, {batch}/{total_batches}",
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_ASAN],
             )
@@ -807,7 +807,6 @@ class JobConfigs:
                 "./ci/docker/fuzzer",
             ],
         ),
-        allow_merge_on_failure=True,
     ).parametrize(
         Job.ParamSet(
             parameter="amd_debug",
@@ -839,11 +838,13 @@ class JobConfigs:
         name=JobNames.BUZZHOUSE,
         runs_on=[],  # from parametrize()
         command="python3 ./ci/jobs/buzzhouse_job.py",
-        run_in_docker="clickhouse/stateless-test",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/docker/stateless-test",
+                "./ci/docker/fuzzer",
                 "./ci/jobs/buzzhouse_job.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
             ],
         ),
         allow_merge_on_failure=True,
