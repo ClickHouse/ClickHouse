@@ -9,22 +9,22 @@ class TC:
 
 
 TEST_CONFIGS = [
-    TC("test_atomic_drop_table/", True, "no idea why i'm sequential"),
-    TC("test_attach_without_fetching/", True, "no idea why i'm sequential"),
-    TC(
-        "test_cleanup_dir_after_bad_zk_conn/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC(
-        "test_consistent_parts_after_clone_replica/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC("test_cross_replication/", True, "no idea why i'm sequential"),
-    TC("test_ddl_worker_non_leader/", True, "no idea why i'm sequential"),
-    TC("test_delayed_replica_failover/", True, "no idea why i'm sequential"),
-    TC("test_disabled_mysql_server/", True, "no idea why i'm sequential"),
+    # TC("test_atomic_drop_table/", True, "no idea why i'm sequential"),
+    # TC("test_attach_without_fetching/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_cleanup_dir_after_bad_zk_conn/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC(
+    #     "test_consistent_parts_after_clone_replica/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC("test_cross_replication/", True, "no idea why i'm sequential"),
+    # TC("test_ddl_worker_non_leader/", True, "no idea why i'm sequential"),
+    # TC("test_delayed_replica_failover/", True, "no idea why i'm sequential"),
+    # TC("test_disabled_mysql_server/", True, "no idea why i'm sequential"),
     TC("test_distributed_respect_user_timeouts/", True, "no idea why i'm sequential"),
     TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
     TC(
