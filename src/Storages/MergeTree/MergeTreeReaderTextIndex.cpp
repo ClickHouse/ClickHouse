@@ -188,6 +188,9 @@ size_t MergeTreeReaderTextIndex::readRows(
         /// `MergeTreeReaderTextIndex` must ensure that the virtual column it reads
         /// contains no more data rows than actually exist in the part
         size_t rows_to_read = std::min(data_part_info_for_read->getIndexGranularity().getMarkRows(from_mark), data_part_info_for_read->getRowCount());
+        size_t total_rows_to_read = read_rows + rows_to_read;
+        if (total_rows_to_read > max_rows_to_read)
+            rows_to_read -= (total_rows_to_read - max_rows_to_read);
 
         /// If our reader is not first in the chain, canSkipMark is not called in RangeReader.
         /// TODO: adjust the code in RangeReader to call canSkipMark for all readers.
