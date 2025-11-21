@@ -1106,7 +1106,10 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.metadata_compression_method);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-    return getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
+    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    result.sort_order_id = sort_order_id;
+    return result;
 }
 
 }

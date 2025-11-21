@@ -831,7 +831,6 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
         Names sort_columns = sort_columns_key_description.column_names;
         std::vector<bool> reverse_flags = sort_columns_key_description.reverse_flags;
 
-        std::cerr << "bp1 " << sort_columns_key_description.definition_ast->dumpTree() << '\n';
         Poco::JSON::Array::Ptr sorting_fields = new Poco::JSON::Array;
         for (size_t i = 0; i < sort_columns.size(); ++i)
         {
@@ -1094,13 +1093,20 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
-            String full_argument = clickhouse_transform_name->transform_name + "(";
-            if (clickhouse_transform_name->argument)
+            String full_argument;
+            if (clickhouse_transform_name->transform_name != "identity")
             {
-                full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
+                full_argument = clickhouse_transform_name->transform_name + "(";
+                if (clickhouse_transform_name->argument)
+                {
+                    full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
+                }
+                full_argument += column_name + ")";
             }
-            full_argument += column_name + ")";
-
+            else
+            {
+                full_argument = column_name;
+            }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);
             else
