@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool NgramsTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -34,7 +34,7 @@ bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return code_points == n;
 }
 
-bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool NgramsTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     token.clear();
 

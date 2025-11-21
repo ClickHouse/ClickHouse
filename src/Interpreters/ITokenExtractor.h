@@ -17,7 +17,7 @@ public:
     enum class Type
     {
         Default,
-        Ngram,
+        Ngrams,
         Split,
         NoOp,
         SparseGram,
@@ -160,9 +160,9 @@ private:
 
 
 /// Parser extracting all ngrams from string.
-struct NgramTokenExtractor final : public ITokenExtractorHelper<NgramTokenExtractor>
+struct NgramsTokenExtractor final : public ITokenExtractorHelper<NgramsTokenExtractor>
 {
-    explicit NgramTokenExtractor(size_t n_) : ITokenExtractorHelper(Type::Ngram), n(n_) {}
+    explicit NgramsTokenExtractor(size_t n_) : ITokenExtractorHelper(Type::Ngrams), n(n_) {}
 
     static const char * getName() { return "ngrambf_v1"; }
     static const char * getExternalName() { return "ngrams"; }
@@ -288,14 +288,14 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
             forEachTokenImpl<is_padded>(default_extractor, data, length, callback);
             return;
         }
-        case ITokenExtractor::Type::Ngram:
+        case ITokenExtractor::Type::Ngrams:
         {
-            const auto & ngram_extractor = assert_cast<const NgramTokenExtractor &>(extractor);
+            const auto & ngrams_tokenizer = assert_cast<const NgramsTokenExtractor &>(extractor);
 
-            if (length < ngram_extractor.getN())
+            if (length < ngrams_tokenizer.getN())
                 return;
 
-            forEachTokenImpl<is_padded>(ngram_extractor, data, length, callback);
+            forEachTokenImpl<is_padded>(ngrams_tokenizer, data, length, callback);
             return;
         }
         case ITokenExtractor::Type::Split:

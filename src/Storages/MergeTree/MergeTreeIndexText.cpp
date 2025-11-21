@@ -1148,7 +1148,7 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
 
 UInt64 extractNgramParam(const std::vector<Field> & params)
 {
-    assertParamsCount(NgramTokenExtractor::getExternalName(), params.size(), 1);
+    assertParamsCount(NgramsTokenExtractor::getExternalName(), params.size(), 1);
     return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params.at(0), "ngram_size");
 }
 
@@ -1199,10 +1199,10 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     {
         token_extractor = std::make_unique<DefaultTokenExtractor>();
     }
-    else if (tokenizer == NgramTokenExtractor::getExternalName())
+    else if (tokenizer == NgramsTokenExtractor::getExternalName())
     {
         auto ngram_size = extractNgramParam(params);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size);
+        token_extractor = std::make_unique<NgramsTokenExtractor>(ngram_size);
     }
     else if (tokenizer == SplitTokenExtractor::getExternalName())
     {
@@ -1251,7 +1251,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
 
     /// Check that tokenizer is supported
     const bool is_supported_tokenizer = (tokenizer == DefaultTokenExtractor::getExternalName()
-                                      || tokenizer == NgramTokenExtractor::getExternalName()
+                                      || tokenizer == NgramsTokenExtractor::getExternalName()
                                       || tokenizer == SplitTokenExtractor::getExternalName()
                                       || tokenizer == NoOpTokenExtractor::getExternalName()
                                       || tokenizer == SparseGramTokenExtractor::getExternalName());
@@ -1268,7 +1268,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         assertParamsCount(tokenizer, params.size(), 0);
     }
-    else if (tokenizer == NgramTokenExtractor::getExternalName())
+    else if (tokenizer == NgramsTokenExtractor::getExternalName())
     {
         auto ngram_size = extractNgramParam(params);
 

@@ -66,12 +66,12 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
     {
         return std::make_unique<NoOpTokenExtractor>();
     }
-    if (tokenizer_arg == NgramTokenExtractor::getExternalName())
+    if (tokenizer_arg == NgramsTokenExtractor::getExternalName())
     {
         auto ngrams = (arguments.size() < 3) ? 3 : arguments[arg_ngrams].column->getUInt(0);
         if (ngrams < 2 || ngrams > 8)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
-        return std::make_unique<NgramTokenExtractor>(ngrams);
+        return std::make_unique<NgramsTokenExtractor>(ngrams);
     }
     if (tokenizer_arg == SparseGramTokenExtractor::getExternalName())
     {
@@ -231,7 +231,7 @@ public:
             {
                 const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
 
-                if (tokenizer == NgramTokenExtractor::getExternalName())
+                if (tokenizer == NgramsTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");

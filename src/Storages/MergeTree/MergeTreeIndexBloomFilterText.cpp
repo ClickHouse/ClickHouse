@@ -770,7 +770,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
 MergeTreeIndexPtr bloomFilterIndexTextCreator(
     const IndexDescription & index)
 {
-    if (index.type == NgramTokenExtractor::getName())
+    if (index.type == NgramsTokenExtractor::getName())
     {
         size_t n = index.arguments[0].safeGet<size_t>();
         BloomFilterParameters params(
@@ -778,7 +778,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
             index.arguments[2].safeGet<size_t>(),
             index.arguments[3].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
+        auto tokenizer = std::make_unique<NgramsTokenExtractor>(n);
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
@@ -850,7 +850,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    if (index.type == NgramTokenExtractor::getName())
+    if (index.type == NgramsTokenExtractor::getName())
     {
         if (index.arguments.size() != 4)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
