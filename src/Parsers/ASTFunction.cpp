@@ -462,12 +462,29 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 written = true;
             }
 
+            auto is_unary_operator = [] (const auto & func) -> bool
+            {
+                return func
+                    && func->arguments
+                    && func->arguments->children.size() == 1
+                    && (func->name == "negate" || func->name == "not");
+            };
+
             if (!written && name == "arrayElement"sv)
             {
                 if (frame.need_parens)
                     ostr << '(';
 
-                arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                /// We need parentheses around unary operator: (-x)[1] should not be formatted as -x[1]
+                /// because -x[1] is parsed as -(x[1])
+                /// We must manually add outer parentheses because the unary operator's logic
+                /// prevents adding outside_parens when inside_parens is already present.
+                auto need_parens_around_first_arg = is_unary_operator(arguments->children[0]->as<ASTFunction>());
+                if (need_parens_around_first_arg)
+                    ostr << '(';
+                arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                if (need_parens_around_first_arg)
+                    ostr << ')';
                 ostr << '[';
                 arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                 ostr << ']';
@@ -520,7 +537,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (frame.need_parens)
                             ostr << '(';
 
-                        arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+                        /// We need parentheses around unary operator: (-x)[1] should not be formatted as -x[1]
+                        /// because -x[1] is parsed as -(x[1])
+                        /// We must manually add outer parentheses because the unary operator's logic
+                        /// prevents adding outside_parens when inside_parens is already present.
+                        auto need_parens_around_first_arg = is_unary_operator(arguments->children[0]->as<ASTFunction>());
+                        if (need_parens_around_first_arg)
+                            ostr << '(';
+                        arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                        if (need_parens_around_first_arg)
+                            ostr << ')';
                         ostr << ".";
                         arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
                         written = true;
