@@ -307,11 +307,37 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='1', 'delta.minWriterVersion'='2', d
     )
 
     assert (
+        "ba\t44\tinsert\t2\n"
+        "bc\t66\tinsert\t2\n"
+        "ca\t77\tinsert\t3\n"
+        "cc\t99\tinsert\t3"
+        == instance.query(
+            f"SELECT {select_columns} FROM {table_function} WHERE age != 55 and age != 88 ORDER BY all",
+            settings={
+                "delta_lake_snapshot_start_version": 1,
+                "delta_lake_snapshot_end_version": 3,
+            },
+        ).strip()
+    )
+    assert (
         "Generic delta kernel error: Failed to build TableChanges: Start and end version schemas are different."
         in instance.query_and_get_error(
             f"SELECT {select_columns} FROM {table_function} ORDER BY all",
             settings={
                 "delta_lake_snapshot_start_version": 1,
+                "delta_lake_snapshot_end_version": 4,
+            },
+        ).strip()
+    )
+
+    assert (
+        "da\t1\tqq\tinsert\t4\n"
+        "db\t2\tqq\tinsert\t4\n"
+        "dc\t3\tqq\tinsert\t4"
+        == instance.query(
+            f"SELECT {select_columns_altered} FROM {table_function} ORDER BY all",
+            settings={
+                "delta_lake_snapshot_start_version": 4,
                 "delta_lake_snapshot_end_version": 4,
             },
         ).strip()

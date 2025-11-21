@@ -111,6 +111,9 @@ def started_cluster():
                 "configs/users.d/users.xml",
                 "configs/users.d/enable_writes.xml",
             ],
+            env_variables={
+                "RUST_BACKTRACE": "1",
+            },
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
