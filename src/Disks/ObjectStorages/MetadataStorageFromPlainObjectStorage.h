@@ -49,6 +49,8 @@ public:
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
     bool areBlobPathsRandom() const override { return false; }
+    bool isPlain() const override { return true; }
+    bool isWriteOnce() const override { return true; }
 
     MetadataTransactionPtr createTransaction() override;
 

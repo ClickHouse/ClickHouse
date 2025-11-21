@@ -24,7 +24,6 @@
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/MetadataStorageMetrics.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
@@ -179,8 +178,6 @@ public:
 
     virtual std::string getDescription() const = 0;
 
-    virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;
-
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
 
@@ -293,8 +290,6 @@ public:
     virtual bool supportsCache() const { return false; }
 
     virtual bool isReadOnly() const { return false; }
-    virtual bool isWriteOnce() const { return false; }
-    virtual bool isPlain() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 

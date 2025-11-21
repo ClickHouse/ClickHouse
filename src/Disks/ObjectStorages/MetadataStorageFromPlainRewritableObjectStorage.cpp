@@ -3,6 +3,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 
 #include <cstddef>
@@ -261,11 +262,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 }
 
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
-    : object_storage(object_storage_)
+    : object_storage(std::move(object_storage_))
+    , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , metadata_key_prefix(fs::path(object_storage->getCommonKeyPrefix()) / METADATA_PATH_TOKEN)
-    , fs_tree(std::make_shared<InMemoryDirectoryTree>(object_storage->getMetadataStorageMetrics().directory_map_size, object_storage->getMetadataStorageMetrics().file_count))
+    , fs_tree(std::make_shared<InMemoryDirectoryTree>(metrics->directory_map_size, metrics->file_count))
     , key_generator(std::make_shared<FlatDirectoryStructureKeyGenerator>(object_storage->getCommonKeyPrefix(), fs_tree))
 {
     load(/*is_initial_load=*/true, /*do_not_load_unchanged_directories=*/false);
@@ -410,7 +412,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createMetadataF
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory(const std::string & path)
@@ -428,7 +431,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
@@ -446,7 +450,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
@@ -457,7 +462,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkMetadata(const std::string & path)
@@ -467,7 +473,8 @@ UnlinkMetadataFileOperationOutcomePtr MetadataStorageFromPlainRewritableObjectSt
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 
     return std::make_shared<UnlinkMetadataFileOperationOutcome>(UnlinkMetadataFileOperationOutcome{0});
 }
@@ -479,7 +486,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path)
@@ -489,7 +497,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
@@ -500,7 +509,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
@@ -512,7 +522,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
@@ -524,7 +535,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
         metadata_storage.metadata_key_prefix,
         metadata_storage.fs_tree,
         metadata_storage.key_generator,
-        metadata_storage.object_storage));
+        metadata_storage.object_storage,
+        metadata_storage.metrics));
 }
 
 const IMetadataStorage & MetadataStorageFromPlainRewritableObjectStorageTransaction::getStorageForNonTransactionalReads() const

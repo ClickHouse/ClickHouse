@@ -85,8 +85,6 @@ public:
 
     ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
-    bool isPlain() const override { return object_storage->isPlain(); }
-
     bool isRemote() const override { return object_storage->isRemote(); }
 
     void removeCacheIfExists(const std::string & path_key_for_cache) override;
@@ -96,8 +94,6 @@ public:
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
-
-    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
 
     const std::string & getCacheConfigName() const { return cache_config_name; }
 
