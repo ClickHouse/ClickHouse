@@ -459,7 +459,7 @@ else ()
                 COMMAND ${CMAKE_COMMAND}
                 "-G${CMAKE_GENERATOR}"
                 "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
-#                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
                 "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                 "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
                 "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
@@ -502,15 +502,15 @@ else ()
         )
 
         execute_process(
-            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}" --target install --target protoc
+            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}" --target protoc
             COMMAND_ECHO STDOUT
             COMMAND_ERROR_IS_FATAL ANY
         )
     endif ()
 
     add_executable(protoc IMPORTED GLOBAL)
-    set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${INSTALL_DIR}/bin/protoc")
-    add_dependencies(protoc "${INSTALL_DIR}/bin/protoc")
+    set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_BUILD_DIR}/protoc")
+    add_dependencies(protoc "${PROTOC_BUILD_DIR}/protoc")
 endif ()
 
 include("${ClickHouse_SOURCE_DIR}/contrib/google-protobuf-cmake/protobuf_generate.cmake")

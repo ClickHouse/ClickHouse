@@ -49,9 +49,8 @@ add_library(ch_contrib::grpc ALIAS _ch_contrib_grpc)
 if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
 
-    # First we need to build openssl for host plaform
+    # First we need to build openssl for host platform
     set(OPENSSL_BUILD_DIR "${_gRPC_BINARY_DIR}/build_openssl")
-
     set(OPENSSL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake")
 
     execute_process(
@@ -101,13 +100,7 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     )
 
     execute_process(
-        COMMAND ${CMAKE_COMMAND} --build "${OPENSSL_BUILD_DIR}"
-        COMMAND_ECHO STDOUT
-        COMMAND_ERROR_IS_FATAL ANY
-    )
-
-    execute_process(
-        COMMAND ${CMAKE_COMMAND} --install "${OPENSSL_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} --build "${OPENSSL_BUILD_DIR}" --target install
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
@@ -164,7 +157,7 @@ if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     )
 
     execute_process(
-        COMMAND ${CMAKE_COMMAND} --build "${GRPC_CPP_PLUGIN_BUILD_DIR}"
+        COMMAND ${CMAKE_COMMAND} --build "${GRPC_CPP_PLUGIN_BUILD_DIR}" --target grpc_cpp_plugin
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
