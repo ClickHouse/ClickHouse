@@ -290,8 +290,7 @@ private:
     /// Applies conditions only to events with strictly increasing timestamps
     bool strict_increase;
 
-    /// Allow reentry to previously completed steps while maintaining strict order
-    /// Only works with strict_order. E.g. 'A->B->A->C' reaches level 3 instead of stopping at 2.
+    // Allow re-entry/skipping of future steps
     bool allow_reentry;
 
     /// Loop through the entire events_list, update the event timestamp value
@@ -315,28 +314,6 @@ private:
             }
             if (event_idx == 0)
             {
-                if (strict_order && first_event && !allow_reentry)
-                {
-                    /// Check if this is a reentry (not just a duplicate)
-                    bool is_reentry = false;
-                    for (size_t j = 1; j < events_timestamp.size(); ++j)
-                    {
-                        if (events_timestamp[j].has_value())
-                        {
-                            is_reentry = true;
-                            break;
-                        }
-                    }
-
-                    if (is_reentry)
-                    {
-                        for (size_t event = 0; event < events_timestamp.size(); ++event)
-                        {
-                            if (!events_timestamp[event].has_value())
-                                return event;
-                        }
-                    }
-                }
                 events_timestamp[0] = std::make_pair(timestamp, timestamp);
                 first_event = true;
             }
@@ -344,35 +321,16 @@ private:
             {
                 return events_list[i - 1].second;
             }
-            else if (strict_order && first_event && event_idx > 0 && !events_timestamp[event_idx - 1].has_value())
+            else if (strict_order && first_event && !events_timestamp[event_idx - 1].has_value())
             {
-                if (!allow_reentry)
-                {
-                    for (size_t event = 0; event < events_timestamp.size(); ++event)
-                    {
-                        if (!events_timestamp[event].has_value())
-                            return event;
-                    }
-                }
-                else
-                {
-                    /// Allow reentry to previously completed step
-                    if (events_timestamp[event_idx].has_value())
-                    {
-                        /// Reset subsequent steps
-                        for (size_t j = event_idx + 1; j < events_timestamp.size(); ++j)
-                            events_timestamp[j].reset();
+                // If allow_reentry is set, we ignore "future steps" that appear too early,
+                if (allow_reentry)
+                    continue;
 
-                        events_timestamp[event_idx] = std::make_pair(timestamp, timestamp);
-                    }
-                    else
-                    {
-                        for (size_t event = 0; event < events_timestamp.size(); ++event)
-                        {
-                            if (!events_timestamp[event].has_value())
-                                return event;
-                        }
-                    }
+                for (size_t event = 0; event < events_timestamp.size(); ++event)
+                {
+                    if (!events_timestamp[event].has_value())
+                        return event;
                 }
             }
             else if (events_timestamp[event_idx - 1].has_value())
@@ -436,28 +394,6 @@ private:
             }
             else if (event_idx == 0)
             {
-                if (strict_order && has_first_event && !allow_reentry)
-                {
-                    /// Check if this is a reentry (not just a duplicate)
-                    bool is_reentry = false;
-                    for (size_t j = 1; j < event_sequences.size(); ++j)
-                    {
-                        if (!event_sequences[j].empty())
-                        {
-                            is_reentry = true;
-                            break;
-                        }
-                    }
-
-                    if (is_reentry)
-                    {
-                        for (size_t event = 0; event < event_sequences.size(); ++event)
-                        {
-                            if (event_sequences[event].empty())
-                                return event;
-                        }
-                    }
-                }
                 auto & event_seq = event_sequences[0].emplace_back(timestamp, timestamp);
                 event_seq.event_path[0] = unique_id;
                 has_first_event = true;
@@ -466,36 +402,16 @@ private:
             {
                 return events_list[i - 1].event_type;
             }
-            else if (strict_order && has_first_event && event_idx > 0 && event_sequences[event_idx - 1].empty())
+            else if (strict_order && has_first_event && event_sequences[event_idx - 1].empty())
             {
-                if (!allow_reentry)
-                {
-                    for (size_t event = 0; event < event_sequences.size(); ++event)
-                    {
-                        if (event_sequences[event].empty())
-                            return event;
-                    }
-                }
-                else
-                {
-                    /// Allow reentry to previously completed step
-                    if (!event_sequences[event_idx].empty())
-                    {
-                        /// Reset subsequent steps
-                        for (size_t j = event_idx + 1; j < event_sequences.size(); ++j)
-                            event_sequences[j].clear();
+                // If allow_reentry is set, ignore strict order violation for this specific match.
+                if (allow_reentry)
+                    continue;
 
-                        auto & event_seq = event_sequences[event_idx].emplace_back(timestamp, timestamp);
-                        event_seq.event_path[event_idx] = unique_id;
-                    }
-                    else
-                    {
-                        for (size_t event = 0; event < event_sequences.size(); ++event)
-                        {
-                            if (event_sequences[event].empty())
-                                return event;
-                        }
-                    }
+                for (size_t event = 0; event < event_sequences.size(); ++event)
+                {
+                    if (event_sequences[event].empty())
+                        return event;
                 }
             }
             else if (!event_sequences[event_idx - 1].empty())

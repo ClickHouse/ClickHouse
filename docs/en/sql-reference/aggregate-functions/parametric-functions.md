@@ -324,7 +324,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
   - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
   - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
   - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times.
-  - `'allow_reentry'` — Allow reentry to previously completed steps while maintaining strict order. E.g. in the case of `A->B->A->C`, it allows finding `A->B->C` by treating the second `A` as reentry. This mode is useful for analyzing funnels where users might revisit previous steps.
+  - `'allow_reentry'` — Ignore events that violate the strict order. E.g. in the case of A->A->B->C, it finds A->B->C by ignoring the redundant A and the max event level is 3.
 
 **Returned value**
 
