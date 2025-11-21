@@ -440,7 +440,9 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     endif()
 else ()
     # Build 'protoc' for host arch
-    set (PROTOC_BUILD_DIR "${protobuf_binary_dir}/build")
+    set (PROTOC_BUILD_DIR "${protobuf_binary_dir}/protoc_build")
+    set (ABSL_BUILD_DIR "${protobuf_binary_dir}/absl_build")
+    set (INSTALL_DIR "${protobuf_binary_dir}/install")
 
     if (NOT EXISTS "${PROTOC_BUILD_DIR}/protoc")
 
@@ -449,7 +451,7 @@ else ()
         # In any case it's not a big deal because it was going to be built for the host platform anyway
         set(abseil_source_dir "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
         execute_process(
-                COMMAND mkdir -p ${PROTOC_BUILD_DIR}/absl_build ${PROTOC_BUILD_DIR}/absl_install
+                COMMAND mkdir -p ${PROTOC_BUILD_DIR} ${ABSL_BUILD_DIR}
                 COMMAND_ECHO STDOUT
                 COMMAND_ERROR_IS_FATAL ANY
         )
@@ -457,16 +459,21 @@ else ()
                 COMMAND ${CMAKE_COMMAND}
                 "-G${CMAKE_GENERATOR}"
                 "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
-                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+#                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
                 "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
                 "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
                 "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
                 "-S ${abseil_source_dir}"
-                "-B ${PROTOC_BUILD_DIR}/absl_build"
-                "-DCMAKE_PREFIX_PATH=${PROTOC_BUILD_DIR}/absl_install"
-                "-DCMAKE_INSTALL_PREFIX=${PROTOC_BUILD_DIR}/absl_install"
+                "-B ${ABSL_BUILD_DIR}"
                 "-DABSL_ENABLE_INSTALL=ON"
-                WORKING_DIRECTORY "${PROTOC_BUILD_DIR}/absl_build"
+                "-DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}"
+                WORKING_DIRECTORY ${ABSL_BUILD_DIR}
+                COMMAND_ECHO STDOUT
+                COMMAND_ERROR_IS_FATAL ANY
+        )
+
+        execute_process(
+                COMMAND ${CMAKE_COMMAND} --build ${ABSL_BUILD_DIR} --target install
                 COMMAND_ECHO STDOUT
                 COMMAND_ERROR_IS_FATAL ANY
         )
@@ -485,7 +492,9 @@ else ()
                 "-Dprotobuf_BUILD_EXAMPLES=0"
                 "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
                 "-Dprotobuf_LOCAL_DEPENDENCIES_ONLY=1"
-                "-DCMAKE_FIND_ROOT_PATH=${PROTOC_BUILD_DIR}/absl_install"
+                "-DCMAKE_MODULE_PATH=${INSTALL_DIR}"
+                "-DCMAKE_PREFIX_PATH=${INSTALL_DIR}"
+                "-DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
             COMMAND_ECHO STDOUT
@@ -493,15 +502,15 @@ else ()
         )
 
         execute_process(
-            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
+            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}" --target install --target protoc
             COMMAND_ECHO STDOUT
             COMMAND_ERROR_IS_FATAL ANY
         )
     endif ()
 
     add_executable(protoc IMPORTED GLOBAL)
-    set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_BUILD_DIR}/protoc")
-    add_dependencies(protoc "${PROTOC_BUILD_DIR}/protoc")
+    set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${INSTALL_DIR}/bin/protoc")
+    add_dependencies(protoc "${INSTALL_DIR}/bin/protoc")
 endif ()
 
 include("${ClickHouse_SOURCE_DIR}/contrib/google-protobuf-cmake/protobuf_generate.cmake")
