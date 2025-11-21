@@ -346,7 +346,7 @@ static void explainStep(
     const ExplainPlanOptions & options,
     size_t max_description_length)
 {
-    std::string prefix(settings.offset, ' ');
+    const std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
@@ -459,6 +459,14 @@ std::string debugExplainStep(IQueryPlanStep & step)
     ExplainPlanOptions options{.actions = true};
     IQueryPlanStep::FormatSettings settings{.out = out};
     explainStep(step, settings, options, 0);
+    return out.str();
+}
+
+std::string debugExplainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.header = true, .actions = true};
+    plan.explainPlan(out, options);
     return out.str();
 }
 

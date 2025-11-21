@@ -2611,6 +2611,8 @@ def test_archive(started_cluster):
     node = started_cluster.instances["dummy"]
     node2 = started_cluster.instances["dummy2"]
     node_old = started_cluster.instances["dummy_old"]
+    if "25.3" not in node_old.query("SELECT version()"):
+        node_old.restart_with_original_version(clear_data_dir=True)
 
     assert (
         "false"
@@ -2848,10 +2850,10 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         f"{table_name}/b=4/c=1",
     ]
 
-    def check_read_files(expected, query_id):
-        node.query("SYSTEM FLUSH LOGS")
+    def check_read_files(expected, query_id, current_node):
+        current_node.query("SYSTEM FLUSH LOGS")
         assert expected == int(
-            node.query(
+            current_node.query(
                 f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' AND type='QueryFinish'"
             )
         )
@@ -2868,7 +2870,7 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         )
     )
     # Check files are pruned.
-    check_read_files(5, query_id)
+    check_read_files(5, query_id, node)
 
     # 2 files, each contains 2 rows
     assert 2 == int(
@@ -2880,7 +2882,7 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         node.query(f"SELECT count() FROM {table_name} WHERE b == 3", query_id=query_id)
     )
     # Check files are pruned.
-    check_read_files(2, query_id)
+    check_read_files(2, query_id, node)
 
     # 1 file with 2 rows.
     assert 1 == int(
@@ -2897,14 +2899,59 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         )
     )
     # Check files are pruned.
-    check_read_files(1, query_id)
+    check_read_files(1, query_id, node)
 
     query_id = f"{table_name}_query_4"
     assert 1 == int(
         node.query(f"SELECT count() FROM {table_name} WHERE a == 1", query_id=query_id)
     )
     # Nothing is pruned, because `a` is not a partition column.
-    check_read_files(10, query_id)
+    check_read_files(10, query_id, node)
+
+    query_id = f"{table_name}_query_5"
+    node.query(
+        f"""
+    CREATE TABLE {table_name}_2 (a Int32, b Int32, c String) ENGINE = S3('{url}/**', format = 'Parquet')
+    """
+    )
+    assert 5 == int(
+        node.query(f"SELECT uniqExact(_path) FROM {table_name}_2 WHERE c == '0'", settings={"use_hive_partitioning": 1}, query_id=query_id)
+    )
+    check_read_files(5, query_id, node)
+
+    query_id = f"{table_name}_query_6"
+    node_old = started_cluster.instances["dummy_old"]
+    if "25.3" not in node_old.query("SELECT version()"):
+        node_old.restart_with_original_version(clear_data_dir=True)
+
+    node_old.query(
+        f"""
+    CREATE TABLE {table_name}_3 (a Int32) ENGINE = S3('{url}/**', 'Parquet')
+    """
+    )
+    assert 5 == int(
+        node_old.query(f"SELECT uniqExact(_path) FROM {table_name}_3 WHERE c == '0'", settings={"use_hive_partitioning": 1}, query_id=query_id)
+    )
+    check_read_files(5, query_id, node_old)
+
+    query_id = f"{table_name}_query_7"
+    node.query(
+        f"""
+    CREATE TABLE {table_name}_4 (a Int32) ENGINE = S3('{url}/**', format = 'Parquet')
+    """
+    )
+    assert 5 == int(
+        node.query(f"SELECT uniqExact(_path) FROM {table_name}_4 WHERE c == '0'", settings={"use_hive_partitioning": 1}, query_id=query_id)
+    )
+    check_read_files(5, query_id, node)
+
+    node_old.restart_with_latest_version()
+    query_id = f"{table_name}_query_8"
+    assert 5 == int(
+        node_old.query(f"SELECT uniqExact(_path) FROM {table_name}_3 WHERE c == '0'", settings={"use_hive_partitioning": 1}, query_id=query_id)
+    )
+    check_read_files(5, query_id, node_old)
+    node_old.restart_clickhouse()
 
 
 def test_partition_by_without_wildcard(started_cluster):
