@@ -250,7 +250,7 @@ void SerializationObjectSharedDataPath::deserializeBinaryBulkWithMultipleStreams
         /// Check if we don't have any paths in shared data in current range.
         const auto & offsets = assert_cast<const ColumnArray &>(*map_column).getOffsets();
         if (offsets.back() == offsets[ssize_t(map_column_offset) - 1])
-            dynamic_column->insertManyDefaults(limit);
+            dynamic_column->insertManyDefaults(num_read_rows);
         else
             ColumnObject::fillPathColumnFromSharedData(*dynamic_column, path, map_column, map_column_offset, map_column->size());
 
