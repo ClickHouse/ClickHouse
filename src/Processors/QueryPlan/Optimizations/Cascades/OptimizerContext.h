@@ -32,15 +32,18 @@ public:
 
     const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
     const std::vector<OptimizationRulePtr> & getImplementationRules() const { return implementation_rules; }
+    const std::vector<OptimizationRulePtr> & getEnforcerRules() const { return enforcer_rules; }
 
     Memo & getMemo() { return memo; }
     const Memo & getMemo() const { return memo; }
 
 private:
     void addRule(OptimizationRulePtr rule);
+    void addEnforcerRule(OptimizationRulePtr rule);
 
     std::vector<OptimizationRulePtr> transformation_rules;
     std::vector<OptimizationRulePtr> implementation_rules;
+    std::vector<OptimizationRulePtr> enforcer_rules;
 
     Memo memo{log};
     std::stack<OptimizationTaskPtr> tasks;

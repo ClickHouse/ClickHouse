@@ -28,8 +28,8 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics)
     addRule(std::make_shared<LocalAggregationImplementation>());
     addRule(std::make_shared<ShuffleAggregationImplementation>());
     addRule(std::make_shared<PartialDistributedAggregationImplementation>());
-    addRule(std::make_shared<DistributionEnforcer>());
-    addRule(std::make_shared<SortingEnforcer>());
+    addEnforcerRule(std::make_shared<DistributionEnforcer>());
+    addEnforcerRule(std::make_shared<SortingEnforcer>());
 }
 
 void OptimizerContext::addRule(OptimizationRulePtr rule)
@@ -38,6 +38,11 @@ void OptimizerContext::addRule(OptimizationRulePtr rule)
         transformation_rules.push_back(std::move(rule));
     else
         implementation_rules.push_back(std::move(rule));
+}
+
+void OptimizerContext::addEnforcerRule(OptimizationRulePtr rule)
+{
+    enforcer_rules.push_back(std::move(rule));
 }
 
 GroupId OptimizerContext::addGroup(QueryPlan::Node & node)

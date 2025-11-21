@@ -33,6 +33,8 @@ public:
     void addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
+    bool isImplemented() const { return is_implemented; }
+    void setImplemented() { is_implemented = true; }
     void updateBestImplementation(GroupExpressionPtr expression);
     ExpressionWithCost getBestImplementation(const ExpressionProperties & required_properties) const;
 
@@ -48,6 +50,7 @@ public:
 private:
     const GroupId group_id;
     bool is_explored = false;
+    bool is_implemented = false;
 };
 
 using GroupPtr = std::shared_ptr<Group>;
