@@ -1982,6 +1982,17 @@ namespace ErrorCodes
     - `drop`
     - `rebuild`
     )", 0) \
+    DECLARE(AlterColumnSecondaryIndexMode, alter_column_secondary_index_mode, AlterColumnSecondaryIndexMode::REBUILD, R"(
+    Configures whether to allow `ALTER` commands that modify columns covered by secondary indices, and what action to take if
+    they are allowed. By default, such `ALTER` commands are allowed and the indices are rebuilt.
+
+    Possible values:
+    - `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
+    - `throw`: Prevents any `ALTER` of columns covered by secondary indices by throwing an exception.
+    - `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
+    - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
+    - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
+    )", 0) \
     /** Part loading settings. */           \
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(
     Calculate columns and secondary indices sizes lazily on first request instead
