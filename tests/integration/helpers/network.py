@@ -26,50 +26,53 @@ class PartitionManager:
         if instance.name in self._prepared_instances:
             return
 
-        # Helper function to correctly run a command inside a shell
-        def check_command_exists(command):
-            # We use 'sh -c' to ensure the command is run within a shell,
-            # allowing us to use shell built-ins like 'command -v'.
-            instance.exec_in_container(['sh', '-c', f'command -v {command}'], user='root')
-
-        # TODO: move it to docker images and remove
-        # Check if iptables exists
-        try:
-            check_command_exists('iptables')
-            logging.info(f"iptables is already available in {instance.name}.")
-            self._prepared_instances.add(instance.name)
+        # Add a missing iptables dependency to some images
+        if str(type(instance)) == 'ClickHouseInstance':
             return
-        except Exception as e:
-            logging.info(e)
-            logging.info(f"iptables not found in {instance.name}. Attempting to install...")
 
-        # Check for apt-get and install if found
-        try:
-            check_command_exists('apt-get')
-            logging.info(f"Found apt-get in {instance.name}. Installing iptables...")
-            instance.exec_in_container(['apt-get', 'update'], user='root')
-            instance.exec_in_container(['apt-get', 'install', '--yes', 'iptables'], user='root')
-            self._prepared_instances.add(instance.name)
-            logging.info(f"iptables installed in {instance.name} using apt-get.")
-            return
-        except Exception as e:
-            logging.info(e)
-            logging.info(f"apt-get not found or failed in {instance.name}. Trying yum...")
-
-        # Check for yum and install if found
-        try:
-            check_command_exists('yum')
-            logging.info(f"Found yum in {instance.name}. Installing iptables...")
-            instance.exec_in_container(['yum', 'install', '--assumeyes', 'iptables'], user='root')
-            self._prepared_instances.add(instance.name)
-            logging.info(f"iptables installed in {instance.name} using yum.")
-            return
-        except Exception as e:
-            logging.error(f"Yum command failed in {instance.name}: {e}")
-
-        # If all attempts fail, raise an error
-        raise Exception(
-            f"Could not find a known package manager (apt-get or yum) in {instance.name} to install iptables.")
+        # def check_command_exists(command):
+        #     # We use 'sh -c' to ensure the command is run within a shell,
+        #     # allowing us to use shell built-ins like 'command -v'.
+        #     instance.exec_in_container(['sh', '-c', f'command -v {command}'], user='root')
+        #
+        # # TODO: move it to docker images and remove
+        # # Check if iptables exists
+        # try:
+        #     check_command_exists('iptables')
+        #     logging.info(f"iptables is already available in {instance.name}.")
+        #     self._prepared_instances.add(instance.name)
+        #     return
+        # except Exception as e:
+        #     logging.info(e)
+        #     logging.info(f"iptables not found in {instance.name}. Attempting to install...")
+        #
+        # # Check for apt-get and install if found
+        # try:
+        #     check_command_exists('apt-get')
+        #     logging.info(f"Found apt-get in {instance.name}. Installing iptables...")
+        #     instance.exec_in_container(['apt-get', 'update'], user='root')
+        #     instance.exec_in_container(['apt-get', 'install', '--yes', 'iptables'], user='root')
+        #     self._prepared_instances.add(instance.name)
+        #     logging.info(f"iptables installed in {instance.name} using apt-get.")
+        #     return
+        # except Exception as e:
+        #     logging.info(e)
+        #     logging.info(f"apt-get not found or failed in {instance.name}. Trying yum...")
+        #
+        # # Check for yum and install if found
+        # try:
+        #     check_command_exists('yum')
+        #     logging.info(f"Found yum in {instance.name}. Installing iptables...")
+        #     instance.exec_in_container(['yum', 'install', '--assumeyes', 'iptables'], user='root')
+        #     self._prepared_instances.add(instance.name)
+        #     logging.info(f"iptables installed in {instance.name} using yum.")
+        #     return
+        # except Exception as e:
+        #     logging.error(f"Yum command failed in {instance.name}: {e}")
+        #
+        # # If all attempts fail, raise an error
+        # raise Exception(
+        #     f"Could not find a known package manager (apt-get or yum) in {instance.name} to install iptables.")
 
     def _iptables_cmd(self, instance, args):
         self._prepare_instance(instance)
@@ -189,9 +192,11 @@ class PartitionManager:
 
     def heal_all(self):
         while self._rules:
-            # Pop and delete to avoid issues if delete_rule fails
-            rule_spec = self._rules[0]
-            self.delete_rule(rule_spec)
+            # Pop first to ensure we don't get stuck in an infinite loop
+            # if delete_rule fails (e.g. container died)
+            if self._rules:
+                rule_spec = self._rules.pop(0)
+                self.delete_rule(rule_spec)
 
         while self._netem_delayed_instances:
             instance = self._netem_delayed_instances.pop()
