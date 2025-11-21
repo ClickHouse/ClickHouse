@@ -89,11 +89,10 @@ def randomize_table_name(table_name, random_suffix_length=10):
 def started_cluster():
     try:
         cluster.add_instance(
-            "node1",
+            "instance1",
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
                 "configs/config.d/disable_s3_retries.xml",
             ],
@@ -123,7 +122,7 @@ def started_cluster():
 
         # Only support local delta tables on the first node for now
         # extend this if testing on other nodes becomes necessary
-        cluster.local_uploader = LocalUploader(cluster.instances["node1"])
+        cluster.local_uploader = LocalUploader(cluster.instances["instance1"])
 
         cluster.spark_session = get_spark()
 
@@ -147,7 +146,7 @@ def started_cluster():
 
 @pytest.mark.parametrize("column_mapping", [""])
 def test_cdf(started_cluster, column_mapping):
-    instance = started_cluster.instances["node1"]
+    instance = started_cluster.instances["instance1"]
     minio_client = started_cluster.minio_client
     bucket = started_cluster.minio_bucket
     table_name = randomize_table_name("test_cdf")
