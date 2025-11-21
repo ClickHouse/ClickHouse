@@ -509,7 +509,7 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin());
 }
 
-bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & query) const
+bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
     {
@@ -519,14 +519,14 @@ bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & que
     return false;
 }
 
-bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & query) const
+bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
     {
         if (!remaining_tokens.contains(token))
             return false;
     }
-    return !query.tokens.empty(); // return false in case of no tokens
+    return !query.tokens.empty(); /// return false in case of no tokens
 }
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const

@@ -77,6 +77,8 @@ SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']);
 0
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, '');
 0
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['','']);
+0
 -- { echoOn }
 SELECT id FROM tab WHERE hasAnyTokens(s, ['hello']) ORDER BY id;
 1

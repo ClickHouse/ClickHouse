@@ -97,6 +97,7 @@ SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']);
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, '');
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['','']);
 -- { echoOff }
 
 DROP TABLE tab;

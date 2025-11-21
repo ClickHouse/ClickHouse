@@ -199,18 +199,29 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE match(message, ' xyz ');
 
 SELECT '';
+SELECT '-- Skip for like with non matching tokens';
+
+SELECT trim(explain)
+FROM (
+    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE like(message, '%rvice is definitely rea%')
+)
+WHERE explain LIKE '%Parts:%';
+
+SELECT * FROM 03165_token_ft WHERE like(message, '%rvice is definitely rea%');
+
+SELECT '';
 SELECT '-- No skip for like with matching substring';
 
 SELECT trim(explain)
 FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE like(message, '%rvice is not rea%')
+    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE like(message, '%rvi%')
 )
 WHERE explain LIKE '%Parts:%';
 
-SELECT * FROM 03165_token_ft WHERE like(message, '%rvice is not rea%');
+SELECT * FROM 03165_token_ft WHERE like(message, '%rvi%');
 
 SELECT '';
-SELECT '-- Skip for like with non-matching string';
+SELECT '-- No skip for like with non-matching string';
 
 SELECT trim(explain)
 FROM (
@@ -221,18 +232,19 @@ WHERE explain LIKE '%Parts:%';
 SELECT * FROM 03165_token_ft WHERE like(message, '%foo%');
 
 SELECT '';
-SELECT '-- No skip for notLike with non-matching substring';
+SELECT '-- No skip for notLike with non-matching token';
 
 SELECT trim(explain)
 FROM (
-    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notLike(message, '%foo%')
+    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is rea%')
 )
 WHERE explain LIKE '%Parts:%';
 
-SELECT * FROM 03165_token_ft WHERE notLike(message, '%foo%');
+SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is rea%');
 
 SELECT '';
-SELECT '-- No skip for notLike with matching string';
+-- could be an optimization in the future
+SELECT '-- No skip for notLike with matching tokens';
 
 SELECT trim(explain)
 FROM (
@@ -241,6 +253,17 @@ FROM (
 WHERE explain LIKE '%Parts:%';
 
 SELECT * FROM 03165_token_ft WHERE notLike(message, '%rvice is not rea%');
+
+SELECT '';
+SELECT '-- No skip for notLike with matching substring';
+
+SELECT trim(explain)
+FROM (
+    EXPLAIN indexes = 1 SELECT * FROM 03165_token_ft WHERE notLike(message, '%ready%')
+)
+WHERE explain LIKE '%Parts:%';
+
+SELECT * FROM 03165_token_ft WHERE notLike(message, '%ready%');
 
 SELECT '';
 SELECT '-- No skip for equals with matching string';
