@@ -2631,10 +2631,10 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t reload_config = 3;
     const uint32_t reload_users = 3;
     /// For merge trees
-    const uint32_t stop_merges = 0 * has_merge_tree;
-    const uint32_t start_merges = 0 * has_merge_tree;
-    const uint32_t stop_ttl_merges = 8 * has_merge_tree;
-    const uint32_t start_ttl_merges = 8 * has_merge_tree;
+    const uint32_t stop_merges = 20 * has_merge_tree;
+    const uint32_t start_merges = 20 * has_merge_tree;
+    const uint32_t stop_ttl_merges = 20 * has_merge_tree;
+    const uint32_t start_ttl_merges = 20 * has_merge_tree;
     const uint32_t stop_moves = 8 * has_merge_tree;
     const uint32_t start_moves = 8 * has_merge_tree;
     const uint32_t wait_loading_parts = 8 * has_merge_tree;
@@ -2686,8 +2686,8 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, const
     const uint32_t stop_distributed_sends = 8 * has_distributed_table;
     const uint32_t start_distributed_sends = 8 * has_distributed_table;
     const uint32_t drop_query_condition_cache = 3;
-    const uint32_t enable_failpoint = 15;
-    const uint32_t disable_failpoint = 15;
+    const uint32_t enable_failpoint = 20;
+    const uint32_t disable_failpoint = 5;
     const uint32_t reconnect_keeper = 5;
     const uint32_t drop_text_index_dictionary_cache = 3;
     const uint32_t drop_text_index_header_cache = 3;
