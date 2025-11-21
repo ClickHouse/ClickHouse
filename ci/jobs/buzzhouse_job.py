@@ -11,12 +11,9 @@ from ci.praktika.utils import Utils
 def main():
     temp_dir = Path(f"{Utils.cwd()}/ci/tmp/")
     workspace_path = temp_dir / "workspace"
-    buzz_out = workspace_path / "fuzzer_out.sql"
     buzz_config_file = workspace_path / "fuzz.json"
 
     workspace_path.mkdir(parents=True, exist_ok=True)
-    buzz_out.touch()
-    buzz_config_file.touch()
 
     # Sometimes disallow SQL types to reduce number of combinations
     disabled_types_str = ""
@@ -151,17 +148,17 @@ def main():
         "enable_fault_injection_settings": random.choice([True, False]),
         "enable_force_settings": random.choice([True, False]),
         # Don't compare for correctness yet, false positives maybe
-        "use_dump_table_oracle": random.randint(0, 1),
+        "use_dump_table_oracle": random.randint(1, 3) == 1,
         "test_with_fill": False,  # Creating too many issues
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
         "allow_hardcoded_inserts": random.choice([True, False]),
         # These are the error codes that I disallow at the moment
-        "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,209,230,231,234,235,246,256,257,261,271,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
+        "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,230,231,234,235,246,256,257,261,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
         "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,321,386,403,467",
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
-        "log_path": str(buzz_out),
+        "log_path": "/workspace/fuzzerout.sql",
         "read_log": False,
         "allow_memory_tables": random.choice([True, False]),
         "allow_client_restarts": random.choice([True, False]),

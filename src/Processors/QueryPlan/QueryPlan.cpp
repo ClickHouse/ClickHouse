@@ -346,7 +346,7 @@ static void explainStep(
     const ExplainPlanOptions & options,
     size_t max_description_lengs)
 {
-    std::string prefix(settings.offset, ' ');
+    const std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
@@ -462,7 +462,15 @@ std::string debugExplainStep(IQueryPlanStep & step)
     return out.str();
 }
 
-void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_lengs) const
+std::string debugExplainPlan(const QueryPlan & plan)
+{
+    WriteBufferFromOwnString out;
+    ExplainPlanOptions options{.header = true, .actions = true};
+    plan.explainPlan(out, options);
+    return out.str();
+}
+
+void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options, size_t indent, size_t max_description_length) const
 {
     checkInitialized();
 
@@ -485,7 +493,7 @@ void QueryPlan::explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & opt
         if (!frame.is_description_printed)
         {
             settings.offset = (indent + stack.size() - 1) * settings.indent;
-            explainStep(*frame.node->step, settings, options, max_description_lengs);
+            explainStep(*frame.node->step, settings, options, max_description_length);
             frame.is_description_printed = true;
         }
 
