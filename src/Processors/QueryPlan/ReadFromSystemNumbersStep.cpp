@@ -200,23 +200,23 @@ public:
 private:
     /// Find the data range in ranges and return how many item found.
     /// If no data left in ranges return 0.
-    UInt64 findRanges(RangesPos & start, RangesPos & end)
+    UInt64 findRanges(RangesPos & start)
     {
         std::lock_guard lock(ranges_state->mutex);
 
 
         UInt64 maximum_can_take = base_block_size;
-        UInt64 size = 0; /// how many item found.
+        UInt64 size = 0; /// How many items found
 
-        /// find start
-        start = ranges_state->pos;
-        end = start;
+        /// `start` is the current global position.
+        RangesPos end = ranges_state->pos;
+        start = end;
 
-        /// find end
+        /// Find end
         while (maximum_can_take != 0)
         {
             if (end.offset_in_ranges == ranges.size())
-                break; /// no ranges left at all
+                break; /// No ranges left at all
 
 
             auto & current_range = ranges[end.offset_in_ranges];
@@ -245,6 +245,7 @@ private:
             maximum_can_take -= take;
         }
 
+        /// Publish new global position.
         ranges_state->pos = end;
 
         return size;
@@ -259,8 +260,7 @@ protected:
         /// Find the data range.
         /// If data left is small, shrink block size.
         RangesPos start;
-        RangesPos end;
-        auto block_size = findRanges(start, end);
+        auto block_size = findRanges(start);
 
         chassert(block_size <= base_block_size);
 
@@ -269,8 +269,6 @@ protected:
             return {};
 
         chassert(start.offset_in_ranges < ranges.size());
-        chassert(end.offset_in_ranges <= ranges.size());
-        chassert(start.offset_in_ranges <= end.offset_in_ranges);
 
         auto column = ColumnUInt64::create(block_size);
         ColumnUInt64::Container & vec = column->getData();
@@ -286,13 +284,12 @@ protected:
 
             auto & range = ranges[cursor.offset_in_ranges];
 
-            /// How many items from the current range belong to this block starting at cursor.
-            UInt128 can_provide = (cursor.offset_in_ranges == end.offset_in_ranges) ? (end.offset_in_range - cursor.offset_in_range)
-                                                                                    : (range.size - cursor.offset_in_range);
-
             UInt64 need = block_size - provided;
+            UInt128 remaining_in_current_range = range.size - cursor.offset_in_range;
 
-            chassert(can_provide > 0 && can_provide <= need);
+            /// How many items from the current range should belong to this block starting at cursor.
+            UInt128 can_provide = std::min<UInt128>(remaining_in_current_range, need);
+            chassert(can_provide > 0);
 
             UInt64 take = static_cast<UInt64>(can_provide);
 
@@ -306,17 +303,10 @@ protected:
             pos += take;
             provided += take;
 
-            if (cursor.offset_in_ranges == end.offset_in_ranges)
+            cursor.offset_in_range += take;
+            if (cursor.offset_in_range == range.size)
             {
-                /// We are in the final range for this block: cursor moves towards `end`.
-                cursor.offset_in_range += take;
-                chassert(cursor.offset_in_range == end.offset_in_range);
-            }
-            else
-            {
-                /// We consumed the whole tail of this range for this block; move to the next range.
-                chassert(cursor.offset_in_range + take == range.size);
-                cursor.offset_in_ranges++;
+                ++cursor.offset_in_ranges;
                 cursor.offset_in_range = 0;
             }
         }
