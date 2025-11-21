@@ -760,8 +760,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
     auto with_retries = [this, request_fn_ = std::move(request_fn)] (RequestType & request_)
     {
         chassert(client_configuration.retryStrategy);
-        const Int64 max_attempts = client_configuration.retry_strategy.max_retries;
-        chassert(max_attempts > 0);
+        const Int64 max_attempts = client_configuration.retry_strategy.max_retries + 1;
 
         Int64 attempt_no = 1;
         std::invoke_result_t<RequestFn, RequestType &> outcome;
