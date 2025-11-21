@@ -425,13 +425,11 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_skipped():
+                if result_.is_skipped() and result.is_dropped():
                     # job was skipped in workflow configuration by a user' hook
                     print(
                         f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
-                    if not result.is_dropped():
-                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
@@ -673,33 +671,47 @@ class Result(MetaClasses.Serializable):
         else:
             sys.exit(0)
 
-    def to_stdout_formatted(self, indent="", res=""):
-        add_frame = not res
+    def to_stdout_formatted(self, indent="", output=""):
+        """
+        Format the result and its sub-results as a human-readable string for stdout output.
+
+        Args:
+            indent: Current indentation level (used for nested results)
+            output: Accumulated output string (used for recursive calls)
+
+        Returns:
+            Formatted string representation of the result
+        """
+        add_frame = not output
         sub_indent = indent + "  "
+        MAX_INFO_LINES_CNT = 100
 
         if add_frame:
-            res = "+" * 80 + "\n"
-        if add_frame or not self.is_ok():
-            res += f"{indent}{self.status} [{self.name}]\n"
-            info_lines = self.info.splitlines()
-            if len(info_lines) > 30:
-                info_lines = (
-                    info_lines[:10]
-                    + [
-                        f"~~~~~ truncated {len(info_lines) - 20} lines ~~~~~",
-                    ]
-                    + info_lines[-10:]
-                )
-            for line in info_lines:
-                res += f"{sub_indent}| {line}\n"
+            output = indent + "+" * 80 + "\n"
 
+        if add_frame or not self.is_ok():
+            output += f"{indent}{self.status} [{self.name}]\n"
+            info_lines = self.info.splitlines()
+
+            # Truncate info lines if too many, showing only the last N lines
+            if len(info_lines) > MAX_INFO_LINES_CNT:
+                truncated_count = len(info_lines) - MAX_INFO_LINES_CNT
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-MAX_INFO_LINES_CNT:]
+
+            for line in info_lines:
+                output += f"{sub_indent}| {line}\n"
+
+        # Recursively format sub-results if this result is not ok
         if not self.is_ok():
             for sub_result in self.results:
-                res = sub_result.to_stdout_formatted(sub_indent, res)
+                output = sub_result.to_stdout_formatted(sub_indent, output)
 
         if add_frame:
-            res += "+" * 80 + "\n"
-        return res
+            output += indent + "+" * 80 + "\n"
+
+        return output
 
     def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
         if not name:

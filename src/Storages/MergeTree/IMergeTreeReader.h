@@ -25,6 +25,7 @@ public:
         const NamesAndTypesList & columns_,
         const VirtualFields & virtual_fields_,
         const StorageSnapshotPtr & storage_snapshot_,
+        const MergeTreeSettingsPtr & storage_settings_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
         const MarkRanges & all_mark_ranges_,
@@ -106,6 +107,7 @@ protected:
     MarkCache * const mark_cache;
 
     MergeTreeReaderSettings settings;
+    MergeTreeSettingsPtr storage_settings;
 
     const StorageSnapshotPtr storage_snapshot;
     MarkRanges all_mark_ranges;
@@ -157,6 +159,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns,
     const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
