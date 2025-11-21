@@ -127,8 +127,8 @@ def run_fuzz_job(check_name: str):
         if result.results and any(
             pattern in result.results[-1].name for pattern in patterns
         ):
-            info += f"---\n\nIssue found in the {"client" if result.is_error() else "server"}\n"
-            info += f"---\n\n{"Fuzzer" if result.is_error() else "Server"} log (last 200 lines):\n"
+            info += f"---\n\nIssue found in the {'client' if result.is_error() else 'server'}\n"
+            info += f"---\n\n{'Fuzzer' if result.is_error() else 'Server'} log (last 200 lines):\n"
             info += (
                 Shell.get_output(
                     f"tail -n200 {fuzzer_log if result.is_error() else server_log}",
