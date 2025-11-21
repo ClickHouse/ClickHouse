@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-asan
+-- no-asan: runs too long
 
 SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;
