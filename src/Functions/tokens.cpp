@@ -28,12 +28,12 @@ constexpr size_t arg_separators = 2;
 
 std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & arguments, std::string_view name)
 {
-    const auto tokenizer_arg = arguments.size() < 2 ? DefaultTokenExtractor::getExternalName()
+    const auto tokenizer_arg = arguments.size() < 2 ? SplitByNonAlphaTokenExtractor::getExternalName()
                                                         : arguments[arg_tokenizer].column->getDataAt(0).toView();
 
-    if (tokenizer_arg == DefaultTokenExtractor::getExternalName())
+    if (tokenizer_arg == SplitByNonAlphaTokenExtractor::getExternalName())
     {
-        return std::make_unique<DefaultTokenExtractor>();
+        return std::make_unique<SplitByNonAlphaTokenExtractor>();
     }
     if (tokenizer_arg == SplitTokenExtractor::getExternalName())
     {

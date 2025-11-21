@@ -16,7 +16,7 @@ struct ITokenExtractor
 public:
     enum class Type
     {
-        Default,
+        SplitByNonAlpha,
         Ngrams,
         Split,
         NoOp,
@@ -178,9 +178,9 @@ private:
 };
 
 /// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
-struct DefaultTokenExtractor final : public ITokenExtractorHelper<DefaultTokenExtractor>
+struct SplitByNonAlphaTokenExtractor final : public ITokenExtractorHelper<SplitByNonAlphaTokenExtractor>
 {
-    DefaultTokenExtractor() : ITokenExtractorHelper(Type::Default) {}
+    SplitByNonAlphaTokenExtractor() : ITokenExtractorHelper(Type::SplitByNonAlpha) {}
 
     static const char * getName() { return "tokenbf_v1"; }
     static const char * getExternalName() { return "splitByNonAlpha"; }
@@ -282,10 +282,10 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
 
     switch (extractor.getType())
     {
-        case ITokenExtractor::Type::Default:
+        case ITokenExtractor::Type::SplitByNonAlpha:
         {
-            const auto & default_extractor = assert_cast<const DefaultTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(default_extractor, data, length, callback);
+            const auto & split_by_non_alpha_extractor = assert_cast<const SplitByNonAlphaTokenExtractor &>(extractor);
+            forEachTokenImpl<is_padded>(split_by_non_alpha_extractor, data, length, callback);
             return;
         }
         case ITokenExtractor::Type::Ngrams:
