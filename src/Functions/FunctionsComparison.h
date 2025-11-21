@@ -1177,7 +1177,7 @@ public:
             if (!arguments[0]->isComparableForEquality() || !arguments[1]->isComparableForEquality())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality"
+                    "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable for equality",
                     backQuote(arguments[0]->getName()),
                     backQuote(arguments[1]->getName()),
                     backQuote(getName()));
@@ -1186,7 +1186,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable"
+                "Illegal types of arguments ({}, {}) of function {}, because some of them are not comparable",
                 backQuote(arguments[0]->getName()),
                 backQuote(arguments[1]->getName()),
                 backQuote(getName()));
