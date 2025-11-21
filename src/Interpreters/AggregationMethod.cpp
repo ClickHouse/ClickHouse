@@ -1,5 +1,6 @@
-#include <Interpreters/AggregationMethod.h>
 #include <Interpreters/AggregatedData.h>
+#include <Interpreters/AggregationMethod.h>
+#include <IO/ReadBufferFromString.h>
 
 namespace DB
 {
@@ -191,9 +192,9 @@ template struct AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, fa
 template <typename TData, bool nullable, bool prealloc>
 void AggregationMethodSerialized<TData, nullable, prealloc>::insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
 {
-    const auto * pos = key.data;
+    ReadBufferFromString buf({key.data, key.size});
     for (auto & column : key_columns)
-        pos = column->deserializeAndInsertFromArena(pos);
+        column->deserializeAndInsertFromArena(buf);
 }
 
 template struct AggregationMethodSerialized<AggregatedDataWithStringKey>;

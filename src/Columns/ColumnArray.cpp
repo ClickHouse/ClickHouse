@@ -17,6 +17,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <cstring> // memcpy
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -296,39 +297,35 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
 }
 
 
-const char * ColumnArray::deserializeAndInsertFromArena(const char * pos)
+void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
+    size_t array_size;
+    readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        pos = getData().deserializeAndInsertFromArena(pos);
+        getData().deserializeAndInsertFromArena(in);
 
     getOffsets().push_back(getOffsets().back() + array_size);
-    return pos;
 }
 
-const char * ColumnArray::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnArray::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
+    size_t array_size;
+    readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        pos = getData().deserializeAndInsertAggregationStateValueFromArena(pos);
+        getData().deserializeAndInsertAggregationStateValueFromArena(in);
 
     getOffsets().push_back(getOffsets().back() + array_size);
-    return pos;
 }
 
-const char * ColumnArray::skipSerializedInArena(const char * pos) const
+void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t array_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(array_size);
+    size_t array_size;
+    readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        pos = getData().skipSerializedInArena(pos);
-
-    return pos;
+        getData().skipSerializedInArena(in);
 }
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
