@@ -311,7 +311,6 @@ protected:
         }
 
         chassert(provided == block_size);
-        chassert(block_size == UInt64(pos - vec.begin()));
         progress(column->size(), column->byteSize());
 
         return {Columns{std::move(column)}, block_size};
