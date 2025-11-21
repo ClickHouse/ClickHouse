@@ -21,6 +21,9 @@
 
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/hasNullable.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -68,6 +71,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsBool transform_null_in;
 }
 
 namespace
@@ -81,6 +85,143 @@ void checkFunctionNodeHasEmptyNullsAction(FunctionNode const & node)
             backQuote(node.getFunctionName()),
             node.getNullsAction() == NullsAction::IGNORE_NULLS ? "IGNORE" : "RESPECT");
 }
+}
+
+/// Checks if node is a NULL constant
+bool isNullConstant(const QueryTreeNodePtr & node)
+{
+    if (const auto * const_node = node->as<ConstantNode>())
+        return const_node->getValue().isNull();
+    return false;
+}
+
+/// Builds and resolves `IF(isNull(element), NULL, has(array, element))`
+std::pair<QueryTreeNodePtr, ProjectionNames> QueryAnalyzer::makeNullSafeHas(
+    QueryTreeNodePtr array_arg,    // [1,2,number]
+    QueryTreeNodePtr element_arg,  // x (e.g. NULL)
+    const ProjectionNames & args_proj,
+    IdentifierResolveScope & scope)
+{
+    auto is_null_fn = std::make_shared<FunctionNode>("isNull");
+    is_null_fn->getArguments().getNodes().push_back(element_arg);
+
+    auto has_fn = std::make_shared<FunctionNode>("has");
+    has_fn->getArguments().getNodes().push_back(array_arg);
+    has_fn->getArguments().getNodes().push_back(element_arg);
+
+    auto null_const = std::make_shared<ConstantNode>(
+        Field{},
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()));
+
+    auto raw_if = std::make_shared<FunctionNode>("if");
+    raw_if->getArguments().getNodes() = {is_null_fn, null_const, has_fn};
+
+    QueryTreeNodePtr if_node = raw_if;
+    auto single_name = calculateFunctionProjectionName(if_node, {}, args_proj);
+    ProjectionNames proj = {single_name};
+
+    resolveFunction(if_node, scope);
+
+    return std::make_pair(if_node, proj);
+}
+
+/// handles special case: NULL IN (tuple) with transform_null_in enabled
+ProjectionNames QueryAnalyzer::handleNullInTuple(
+    const QueryTreeNodes & tuple_args,
+    const std::string & function_name,
+    const ProjectionNames & parameters_projection_names,
+    const ProjectionNames & arguments_projection_names,
+    IdentifierResolveScope & scope,
+    QueryTreeNodePtr & node)
+{
+    std::vector<QueryTreeNodePtr> null_checks;
+    for (const auto & elem : tuple_args)
+    {
+        if (isNullableOrLowCardinalityNullable(elem->getResultType()))
+        {
+            auto isnull_fn = std::make_shared<FunctionNode>("isNull");
+            isnull_fn->getArguments().getNodes().push_back(elem);
+            null_checks.emplace_back(isnull_fn);
+        }
+    }
+
+    if (null_checks.empty())
+    {
+        node = std::make_shared<ConstantNode>(Field(UInt64(0)), std::make_shared<DataTypeUInt8>());
+        return ProjectionNames{function_name};
+    }
+
+    auto list_node = std::make_shared<ListNode>();
+    list_node->getNodes() = null_checks;
+    auto array_fn = std::make_shared<FunctionNode>("array");
+    array_fn->getArgumentsNode() = list_node;
+
+    auto arraycount_fn = std::make_shared<FunctionNode>("arrayCount");
+    arraycount_fn->getArguments().getNodes().push_back(array_fn);
+
+    auto zero_const = std::make_shared<ConstantNode>(Field(UInt64(0)), std::make_shared<DataTypeUInt64>());
+    auto gt_fn = std::make_shared<FunctionNode>("greater");
+    gt_fn->getArguments().getNodes() = {arraycount_fn, zero_const};
+
+    node = gt_fn;
+    auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+    resolveFunction(node, scope);
+
+    return {proj};
+}
+
+/// converts tuple to array with proper type handling
+QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
+    const QueryTreeNodes & tuple_args,
+    const QueryTreeNodePtr & in_first_argument,
+    bool left_is_null,
+    IdentifierResolveScope & scope)
+{
+    auto array_function_node = std::make_shared<FunctionNode>("array");
+    auto array_arguments_list = std::make_shared<ListNode>();
+
+    DataTypePtr common_type;
+
+    if (left_is_null)
+        common_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
+    else
+        common_type = in_first_argument->getResultType();
+
+    bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
+        [](const auto & arg) { return isNullConstant(arg); });
+
+    if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !common_type->isNullable())
+        common_type = makeNullable(common_type);
+
+    for (const auto & arg : tuple_args)
+        array_arguments_list->getNodes().push_back(castNodeToType(arg, common_type, scope));
+
+    array_function_node->getArgumentsNode() = array_arguments_list;
+    QueryTreeNodePtr array_node = array_function_node;
+    resolveExpressionNode(array_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+    return array_node;
+}
+
+/// casts node to target type with appropriate method (toString for strings, CAST for others)
+QueryTreeNodePtr QueryAnalyzer::castNodeToType(
+    const QueryTreeNodePtr & node,
+    const DataTypePtr & target_type,
+    IdentifierResolveScope & scope)
+{
+    if (node->getResultType()->equals(*target_type))
+        return node;
+
+    auto cast_node = std::make_shared<FunctionNode>("CAST");
+    auto cast_args = std::make_shared<ListNode>();
+    cast_args->getNodes().push_back(node);
+    cast_args->getNodes().push_back(
+        std::make_shared<ConstantNode>(target_type->getName(), std::make_shared<DataTypeString>()));
+    cast_node->getArgumentsNode() = cast_args;
+
+    QueryTreeNodePtr result = cast_node;
+    resolveFunction(result, scope);
+    return result;
 }
 
 /** Resolve function node in scope.

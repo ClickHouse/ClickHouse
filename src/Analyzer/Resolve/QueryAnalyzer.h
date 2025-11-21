@@ -188,8 +188,6 @@ private:
 
     QueryTreeNodePtr castNodeToType(const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & scope);
 
-    bool isNullConstant(const QueryTreeNodePtr & node);
-
     /// Resolve identifier functions
 
     IdentifierResolveResult tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
