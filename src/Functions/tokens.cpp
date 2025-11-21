@@ -35,7 +35,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
     {
         return std::make_unique<SplitByNonAlphaTokenExtractor>();
     }
-    if (tokenizer_arg == SplitTokenExtractor::getExternalName())
+    if (tokenizer_arg == SplitByStringTokenExtractor::getExternalName())
     {
         std::vector<String> separators;
         if (arguments.size() < 3)
@@ -60,7 +60,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
                 separators.emplace_back(separator.safeGet<String>());
         }
 
-        return std::make_unique<SplitTokenExtractor>(separators);
+        return std::make_unique<SplitByStringTokenExtractor>(separators);
     }
     if (tokenizer_arg == NoOpTokenExtractor::getExternalName())
     {
@@ -233,7 +233,7 @@ public:
 
                 if (tokenizer == NgramsTokenExtractor::getExternalName())
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
-                else if (tokenizer == SplitTokenExtractor::getExternalName())
+                else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
             }
 

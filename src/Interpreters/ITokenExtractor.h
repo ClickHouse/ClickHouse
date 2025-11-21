@@ -18,7 +18,7 @@ public:
     {
         SplitByNonAlpha,
         Ngrams,
-        Split,
+        SplitByString,
         NoOp,
         SparseGram,
     };
@@ -196,9 +196,9 @@ struct SplitByNonAlphaTokenExtractor final : public ITokenExtractorHelper<SplitB
 
 /// Parser extracting tokens which are separated by certain strings.
 /// Allows to emulate e.g. BigQuery's LOG_ANALYZER.
-struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtractor>
+struct SplitByStringTokenExtractor final : public ITokenExtractorHelper<SplitByStringTokenExtractor>
 {
-    explicit SplitTokenExtractor(const std::vector<String> & separators_) : ITokenExtractorHelper(Type::Split), separators(separators_) {}
+    explicit SplitByStringTokenExtractor(const std::vector<String> & separators_) : ITokenExtractorHelper(Type::SplitByString), separators(separators_) {}
 
     static const char * getName() { return "splitByString"; }
     static const char * getExternalName() { return getName(); }
@@ -298,10 +298,10 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
             forEachTokenImpl<is_padded>(ngrams_tokenizer, data, length, callback);
             return;
         }
-        case ITokenExtractor::Type::Split:
+        case ITokenExtractor::Type::SplitByString:
         {
-            const auto & split_extractor = assert_cast<const SplitTokenExtractor &>(extractor);
-            forEachTokenImpl<is_padded>(split_extractor, data, length, callback);
+            const auto & split_by_string_extractor = assert_cast<const SplitByStringTokenExtractor &>(extractor);
+            forEachTokenImpl<is_padded>(split_by_string_extractor, data, length, callback);
             return;
         }
         case ITokenExtractor::Type::NoOp:

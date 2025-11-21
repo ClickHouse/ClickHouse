@@ -1154,7 +1154,7 @@ UInt64 extractNgramParam(const std::vector<Field> & params)
 
 std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 {
-    assertParamsCount(SplitTokenExtractor::getExternalName(), params.size(), 1);
+    assertParamsCount(SplitByStringTokenExtractor::getExternalName(), params.size(), 1);
     if (params.empty())
         return std::vector<String>{" "};
 
@@ -1204,10 +1204,10 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
         auto ngram_size = extractNgramParam(params);
         token_extractor = std::make_unique<NgramsTokenExtractor>(ngram_size);
     }
-    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
     {
         auto separators = extractSplitByStringParam(params);
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+        token_extractor = std::make_unique<SplitByStringTokenExtractor>(separators);
     }
     else if (tokenizer == NoOpTokenExtractor::getExternalName())
     {
@@ -1252,7 +1252,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     /// Check that tokenizer is supported
     const bool is_supported_tokenizer = (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName()
                                       || tokenizer == NgramsTokenExtractor::getExternalName()
-                                      || tokenizer == SplitTokenExtractor::getExternalName()
+                                      || tokenizer == SplitByStringTokenExtractor::getExternalName()
                                       || tokenizer == NoOpTokenExtractor::getExternalName()
                                       || tokenizer == SparseGramTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
@@ -1279,7 +1279,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 tokenizer, ngram_size);
         }
     }
-    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
     {
         auto separators = extractSplitByStringParam(params);
 
