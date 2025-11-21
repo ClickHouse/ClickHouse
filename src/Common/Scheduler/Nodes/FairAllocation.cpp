@@ -31,6 +31,7 @@ void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_b
             "Can't add another child with the same path: {}",
             it->second->getPath());
     child->setParentNode(this);
+    child->parent_key = {-1, 0}; // force key update
     propagateUpdate(*child, Update()
         .setAttached(child.get())
         .setIncrease(child->increase)
@@ -46,6 +47,7 @@ void FairAllocation::removeChild(ISchedulerNode * child_base)
             .setDetached(child.get())
             .setIncrease(nullptr)
             .setDecrease(nullptr));
+        child->parent_key = {-1, 0}; // do not leave garbage
         child->setParentNode(nullptr);
         children.erase(iter);
     }
@@ -148,7 +150,11 @@ bool FairAllocation::setDecrease(ISpaceSharedNode & from_child, DecreaseRequest 
 
 void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase)
 {
-    ResourceCost increase_size = new_increase ? new_increase->size : 0;
+    // Key calculation follows several principles.
+    // - Isolation: We take into account increase request size to make sure huge increase request will kill itself, not allocations from other workloads.
+    // - Weights: We normalize by weight to achieve fair division according to weights.
+    // - Pending: We only take into account increase requests of non-pending allocations, because pending allocations do not consume resources yet.
+    ResourceCost increase_size = new_increase && !new_increase->pending_allocation ? new_increase->size : 0;
     double new_key = double(from_child.allocated + increase_size) / from_child.info.weight;
     if (from_child.parent_key.first != new_key)
     {

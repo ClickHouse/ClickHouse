@@ -26,7 +26,7 @@ public:
 
     ResourceCost allocated = 0; /// Currently allocated amount of resource.
 
-    std::pair<double, size_t> parent_key{0, 0}; /// for FairAllocation: (allocated + increase.size) / weight and tie breaker
+    std::pair<double, size_t> parent_key{-1, 0}; /// for FairAllocation: (allocated + increase.size) / weight and tie breaker
     boost::intrusive::set_member_hook<> running_hook; /// for parent: set of children with running allocations
     boost::intrusive::set_member_hook<> increasing_hook; /// for parent: set of children with pending increase request
     boost::intrusive::list_member_hook<> decreasing_hook; /// for parent: list of children with pending decrease request
