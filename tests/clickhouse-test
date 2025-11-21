@@ -2747,6 +2747,7 @@ class TestSuite:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
+
             if not filter_func(test_name):
                 continue
             test_name = self.render_test_template(j2env, self.suite_path, test_name)

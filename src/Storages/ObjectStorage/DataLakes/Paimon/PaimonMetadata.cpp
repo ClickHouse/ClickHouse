@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -17,6 +18,8 @@
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PartitionPruner.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -27,9 +30,10 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Formats/FormatFactory.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
+#include <Interpreters/Context.h>
 #include <fmt/format.h>
 
 
@@ -39,6 +43,10 @@ using namespace Paimon;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+}
+namespace Setting
+{
+extern const SettingsBool use_paimon_partition_pruning;
 }
 
 DataLakeMetadataPtr PaimonMetadata::create(
@@ -102,7 +110,7 @@ void PaimonMetadata::updateState()
     std::vector<PaimonManifestFileMeta> base_manifest_list = table_client_ptr->getManifestMeta(snapshot->base_manifest_list);
     std::vector<PaimonManifestFileMeta> delta_manifest_list = table_client_ptr->getManifestMeta(snapshot->delta_manifest_list);
 
-    auto getOrDefault = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
+    auto get_or_default = [](const std::string & key, const std::string & default_value, std::unordered_map<String, String> & options) -> std::string
     {
         auto inner_it = options.find(key);
         return inner_it != options.end() ? inner_it->second : default_value;
@@ -110,11 +118,11 @@ void PaimonMetadata::updateState()
 
     for (const auto & manifest_meta : base_manifest_list)
     {
-        base_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, getOrDefault(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
+        base_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
     for (const auto & manifest_meta : delta_manifest_list)
     {
-        delta_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, getOrDefault(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
+        delta_manifest.emplace_back(table_client_ptr->getDataManifest(manifest_meta.file_name, *table_schema, get_or_default(PAIMON_DEFAULT_PARTITION_NAME, PARTITION_DEFAULT_VALUE, table_schema->options)));
     }
 }
 
@@ -154,26 +162,36 @@ void PaimonMetadata::update(const ContextPtr &)
 }
 
 ObjectIterator PaimonMetadata::iterate(
-    const ActionsDAG * /* filter_dag */,
-    FileProgressCallback callback,
+    const ActionsDAG * filter_dag_,
+    FileProgressCallback callback_,
     size_t /* list_batch_size */,
     StorageMetadataPtr /*storage_metadata*/,
-    ContextPtr /* context */) const
+    ContextPtr context_) const
 {
     SharedLockGuard shared_lock(mutex);
     auto configuration_ptr = configuration.lock();
     Strings data_files;
+    std::optional<PartitionPruner> partition_pruner;
+    if (filter_dag_ && context_->getSettingsRef()[Setting::use_paimon_partition_pruning])
+    {
+        auto filter_dag = filter_dag_->clone();
+        partition_pruner.emplace(*table_schema, filter_dag, getContext());
+    }
     for (const auto & entry : base_manifest)
     {
         for (const auto & file_entry : entry.entries)
         {
-            if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
+            if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
+                continue;
+            if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
             {
-                data_files.emplace_back(
-                    std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
-                    / file_entry.file.file_name);
-                LOG_TEST(log, "base_manifest data file: {}", data_files.back());
+                LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
+                continue;
             }
+            data_files.emplace_back(
+                std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
+                / file_entry.file.file_name);
+            LOG_TEST(log, "base_manifest data file: {}", data_files.back());
         }
     }
 
@@ -181,16 +199,20 @@ ObjectIterator PaimonMetadata::iterate(
     {
         for (const auto & file_entry : entry.entries)
         {
-            if (file_entry.kind != PaimonManifestEntry::Kind::DELETE)
+            if (file_entry.kind == PaimonManifestEntry::Kind::DELETE)
+                continue;
+            if (partition_pruner.has_value() && partition_pruner->canBePruned(file_entry))
             {
-                data_files.emplace_back(
-                    std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
-                    / file_entry.file.file_name);
-                LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
+                LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
+                continue;
             }
+            data_files.emplace_back(
+                std::filesystem::path(configuration_ptr->getPathForRead().path) / file_entry.file.bucket_path
+                / file_entry.file.file_name);
+            LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
         }
     }
-    return createKeysIterator(std::move(data_files), object_storage, callback);
+    return createKeysIterator(std::move(data_files), object_storage, callback_);
 }
 
 }
