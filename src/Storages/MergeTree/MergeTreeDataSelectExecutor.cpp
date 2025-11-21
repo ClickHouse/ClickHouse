@@ -837,9 +837,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     if (it == required_columns_list.end())
                         return {};
 
-                    return std::unexpected(PreformattedMessage::create(
-                        "Index {} is not used for part {} because it depends on column {} which will be updated on fly",
-                        index->index.name, index->index.name, it->getNameInStorage()));
+                    return std::unexpected(
+                        PreformattedMessage::create(
+                            "Index {} is not used for part {} because it depends on column `{}` which will be updated on the fly",
+                            index->index.name,
+                            ranges.data_part->name,
+                            it->getNameInStorage()));
                 };
 
                 auto can_use_merged_index = [&](const std::vector<MergeTreeIndexPtr> & indices) -> std::expected<void, PreformattedMessage>
@@ -1096,6 +1099,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1104,7 +1108,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || !settings[Setting::allow_experimental_analyzer]
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
-            || select_query_info.isFinal())
+            || select_query_info.isFinal()
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();

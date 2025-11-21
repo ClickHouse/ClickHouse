@@ -413,38 +413,80 @@ struct OperationApplier
     template <typename Columns, typename ResultData>
     static void apply(Columns & in, ResultData & result_data, bool use_result_data_as_input = false)
     {
-        if (!use_result_data_as_input)
-            doBatchedApply<false>(in, result_data.data(), result_data.size());
-        while (!in.empty())
-            doBatchedApply<true>(in, result_data.data(), result_data.size());
-    }
-
-    template <bool CarryResult, typename Columns, typename Result>
-    static void NO_INLINE doBatchedApply(Columns & in, Result * __restrict result_data, size_t size)
-    {
-        if (N > in.size())
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::AVX512BW))
         {
-            OperationApplier<Op, OperationApplierImpl, N - 1>
-                ::template doBatchedApply<CarryResult>(in, result_data, size);
+            if (!use_result_data_as_input)
+                doBatchedApplyAVX512BW<false>(in, result_data.data(), result_data.size());
+            while (!in.empty())
+                doBatchedApplyAVX512BW<true>(in, result_data.data(), result_data.size());
             return;
         }
 
-        const OperationApplierImpl<Op, N> operation_applier_impl(in);
-        for (size_t i = 0; i < size; ++i)
+        if (isArchSupported(TargetArch::AVX2))
         {
-            if constexpr (CarryResult)
-            {
-                if constexpr (std::is_same_v<OperationApplierImpl<Op, N>, AssociativeApplierImpl<Op, N>>)
-                    result_data[i] = Op::apply(result_data[i], operation_applier_impl.apply(i));
-                else
-                    result_data[i] = Op::ternaryApply(result_data[i], operation_applier_impl.apply(i));
-            }
-            else
-                result_data[i] = operation_applier_impl.apply(i);
+            if (!use_result_data_as_input)
+                doBatchedApplyAVX2<false>(in, result_data.data(), result_data.size());
+            while (!in.empty())
+                doBatchedApplyAVX2<true>(in, result_data.data(), result_data.size());
+            return;
         }
-
-        in.erase(in.end() - N, in.end());
+#endif
+        {
+            if (!use_result_data_as_input)
+                doBatchedApply<false>(in, result_data.data(), result_data.size());
+            while (!in.empty())
+                doBatchedApply<true>(in, result_data.data(), result_data.size());
+        }
     }
+
+#define BATCH_BODY(FUNCTION_NAME) \
+    { \
+        if (N > in.size()) \
+        { \
+            OperationApplier<Op, OperationApplierImpl, N - 1> \
+                ::template FUNCTION_NAME<CarryResult>(in, result_data, size); /* NOLINT */ \
+            return; \
+        } \
+    \
+        const OperationApplierImpl<Op, N> operation_applier_impl(in); \
+        for (size_t i = 0; i < size; ++i) \
+        { \
+            if constexpr (CarryResult) \
+            { \
+                if constexpr (std::is_same_v<OperationApplierImpl<Op, N>, AssociativeApplierImpl<Op, N>>) \
+                    result_data[i] = Op::apply(result_data[i], operation_applier_impl.apply(i)); \
+                else \
+                    result_data[i] = Op::ternaryApply(result_data[i], operation_applier_impl.apply(i)); \
+            } \
+            else \
+                result_data[i] = operation_applier_impl.apply(i); \
+        } \
+    \
+        in.erase(in.end() - N, in.end()); \
+    } \
+
+    template <bool CarryResult, typename Columns, typename Result>
+    static void doBatchedApply(Columns & in, Result * __restrict result_data, size_t size)
+    {
+        BATCH_BODY(doBatchedApply)
+    }
+
+#if USE_MULTITARGET_CODE
+    template <bool CarryResult, typename Columns, typename Result>
+    static void doBatchedApplyAVX512BW(Columns & in, Result * __restrict result_data, size_t size) AVX512BW_FUNCTION_SPECIFIC_ATTRIBUTE
+    {
+        BATCH_BODY(doBatchedApplyAVX512BW)
+    }
+
+    template <bool CarryResult, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns & in, Result * __restrict result_data, size_t size) AVX2_FUNCTION_SPECIFIC_ATTRIBUTE
+    {
+        BATCH_BODY(doBatchedApplyAVX2)
+    }
+#endif
+
+#undef BATCH_BODY
 };
 
 template <
@@ -452,10 +494,24 @@ template <
 struct OperationApplier<Op, OperationApplierImpl, 0>
 {
     template <bool, typename Columns, typename Result>
-    static void NO_INLINE doBatchedApply(Columns &, Result &, size_t)
+    static void doBatchedApply(Columns &, Result &, size_t)
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
     }
+
+#if USE_MULTITARGET_CODE
+    template <bool, typename Columns, typename Result>
+    static void doBatchedApplyAVX512BW(Columns &, Result &, size_t)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
+    }
+
+    template <bool, typename Columns, typename Result>
+    static void doBatchedApplyAVX2(Columns &, Result &, size_t)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "OperationApplier<...>::apply(...): not enough arguments to run this method");
+    }
+#endif
 };
 
 
@@ -494,14 +550,38 @@ using FastApplierImpl =
 template <typename Op, typename Type, typename ... Types>
 struct TypedExecutorInvoker<Op, Type, Types ...>
 {
+    MULTITARGET_FUNCTION_AVX512BW_AVX2(
+    MULTITARGET_FUNCTION_HEADER(
+    template <typename T, typename Result>
+    static void
+    ), applyImpl, MULTITARGET_FUNCTION_BODY((const ColumnVector<T> & x, const ColumnVector<Type> & column, Result & result)
+    {
+        std::transform(
+            x.getData().cbegin(), x.getData().cend(),
+            column.getData().cbegin(), result.begin(),
+            [](const auto a, const auto b) { return Op::apply(static_cast<bool>(a), static_cast<bool>(b)); });
+    })
+    )
+
     template <typename T, typename Result>
     static void apply(const ColumnVector<T> & x, const IColumn & y, Result & result)
     {
         if (const auto column = typeid_cast<const ColumnVector<Type> *>(&y))
-            std::transform(
-                    x.getData().cbegin(), x.getData().cend(),
-                    column->getData().cbegin(), result.begin(),
-                    [](const auto a, const auto b) { return Op::apply(static_cast<bool>(a), static_cast<bool>(b)); });
+        {
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::AVX512BW))
+            {
+                applyImplAVX512BW<T, Result>(x, *column, result);
+                return;
+            }
+            if (isArchSupported(TargetArch::AVX2))
+            {
+                applyImplAVX2<T, Result>(x, *column, result);
+                return;
+            }
+#endif
+            applyImpl<T, Result>(x, *column, result);
+        }
         else
             TypedExecutorInvoker<Op, Types ...>::template apply<T>(x, y, result);
     }
