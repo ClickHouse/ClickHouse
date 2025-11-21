@@ -28,7 +28,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
-#include "Common/Exception.h"
 #include <Common/DateLUT.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
