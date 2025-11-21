@@ -29,6 +29,7 @@
 #include <Parsers/Access/ParserCreateQuotaQuery.h>
 #include <Parsers/Access/ParserCreateRoleQuery.h>
 #include <Parsers/Access/ParserCreateRowPolicyQuery.h>
+#include <Parsers/Access/ParserCreateMaskingPolicyQuery.h>
 #include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ParserCreateUserQuery.h>
 #include <Parsers/Access/ParserDropAccessEntityQuery.h>
