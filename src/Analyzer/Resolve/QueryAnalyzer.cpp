@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -118,6 +119,7 @@ namespace Setting
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsBool transform_null_in;
 }
 
 
@@ -1153,7 +1155,7 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 }
 
 /// Checks if node is a NULL constant
-bool isNullConstant(const QueryTreeNodePtr & node)
+bool QueryAnalyzer::isNullConstant(const QueryTreeNodePtr & node)
 {
     if (const auto * const_node = node->as<ConstantNode>())
         return const_node->getValue().isNull();
@@ -1282,7 +1284,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
         common_type = in_first_argument->getResultType();
 
     bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
-        [](const auto & arg) { return isNullConstant(arg); });
+        [this](const auto & arg) { return isNullConstant(arg); });
 
     if ((has_null || !scope.context->getSettingsRef()[Setting::transform_null_in]) && !common_type->isNullable())
         common_type = makeNullable(common_type);
@@ -3210,7 +3212,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
-        auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
 
         if (isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[0]) || isCorrelatedQueryOrUnionNode(function_in_arguments_nodes[1]))
@@ -3281,64 +3282,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
                 }
             }
-            /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
-            if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
-            {
-                bool left_is_null = isNullConstant(in_first_argument);
-                const auto & candidate_name = non_const_set_candidate->getFunctionName();
-
-                /// Case 1: array(..) node
-                if (candidate_name == "array")
-                {
-                    /// convert to has() by swapping arguments
-                    function_name = "has";
-                    is_special_function_in = false;
-                    auto & fn_args = function_node.getArguments().getNodes();
-                    std::swap(fn_args[0], fn_args[1]);
-
-                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
-                    {
-                        auto [wrapped_node, proj_names] = makeNullSafeHas(
-                            fn_args[0], fn_args[1], arguments_projection_names, scope);
-                        node = wrapped_node;
-                        return proj_names;
-                    }
-                }
-                /// Case 2: tuple(..) node - rewrite into an array
-                else if (candidate_name == "tuple")
-                {
-                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
-
-                    /// special handling for NULL IN (tuple) with transform_null_in enabled
-                    if (left_is_null && scope.context->getSettingsRef()[Setting::transform_null_in])
-                    {
-                        return handleNullInTuple(tuple_args, function_name,
-                                            parameters_projection_names,
-                                            arguments_projection_names, scope, node);
-                    }
-
-                    // convert tuple to array with proper type handling
-                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument,
-                                                            left_is_null, scope);
-
-                    /// convert to has() and handle null-safety
-                    function_name = "has";
-                    is_special_function_in = false;
-                    auto & fn_args = function_node.getArguments().getNodes();
-                    std::swap(fn_args[0], fn_args[1]);
-
-                    if (!scope.context->getSettingsRef()[Setting::transform_null_in])
-                    {
-                        auto [wrapped_node, proj_names] = makeNullSafeHas(
-                            fn_args[0], fn_args[1], arguments_projection_names, scope);
-                        node = wrapped_node;
-                        return proj_names;
-                    }
-                }
-            }
         }
-
         /// Edge case when the first argument of IN is scalar subquery.
+        auto & in_first_argument = function_in_arguments_nodes[0];
         auto first_argument_type = in_first_argument->getNodeType();
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
