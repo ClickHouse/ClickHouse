@@ -116,7 +116,6 @@ def run_fuzz_job(check_name: str):
             info += f"Error:\n{error_output}\n"
 
         patterns = [
-            "BuzzHouse fuzzer exception",
             "Killed",
             "Let op!",
             "Received signal",
@@ -124,10 +123,12 @@ def run_fuzz_job(check_name: str):
             "Sanitizer:",
             "Unknown error",
         ]
-        if (
-            result.results
-            and not "Logical error" in result.results[-1].name
-            and any(pattern in result.results[-1].name for pattern in patterns)
+        if result.results and (
+            buzzhouse
+            or (
+                not "Logical error" in result.results[-1].name
+                and any(pattern in result.results[-1].name for pattern in patterns)
+            )
         ):
             info += f"---\n\nIssue found in the {'client' if result.is_error() else 'server'}\n"
             info += f"---\n\n{'Fuzzer' if result.is_error() else 'Server'} log (last 200 lines):\n"
