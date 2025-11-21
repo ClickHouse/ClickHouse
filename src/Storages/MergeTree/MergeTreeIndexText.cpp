@@ -1169,7 +1169,7 @@ std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 
 std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(const std::vector<Field> & params)
 {
-    assertParamsCount(SparseGramTokenExtractor::getExternalName(), params.size(), 3);
+    assertParamsCount(SparseGramsTokenExtractor::getExternalName(), params.size(), 3);
 
     UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
     UInt64 max_length = DEFAULT_SPARSE_GRAMS_MAX_LENGTH;
@@ -1213,10 +1213,10 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     {
         token_extractor = std::make_unique<ArrayTokenExtractor>();
     }
-    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
     {
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
-        token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
+        token_extractor = std::make_unique<SparseGramsTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
     else
     {
@@ -1254,7 +1254,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                                       || tokenizer == NgramsTokenExtractor::getExternalName()
                                       || tokenizer == SplitByStringTokenExtractor::getExternalName()
                                       || tokenizer == ArrayTokenExtractor::getExternalName()
-                                      || tokenizer == SparseGramTokenExtractor::getExternalName());
+                                      || tokenizer == SparseGramsTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
@@ -1290,7 +1290,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 tokenizer);
         }
     }
-    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
     {
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
 

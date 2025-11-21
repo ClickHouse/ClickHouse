@@ -403,7 +403,7 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
     else
     {
         /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
         {
             /// The sparse gram token extractor stores an internal state which modified during the execution.
             /// This leads to an error while executing this function multi-threaded because that state is not protected.

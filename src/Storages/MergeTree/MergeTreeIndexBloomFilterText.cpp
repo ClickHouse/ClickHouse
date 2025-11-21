@@ -791,7 +791,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
+    if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() == 5)
         {
@@ -803,7 +803,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
                 index.arguments[3].safeGet<size_t>(),
                 index.arguments[4].safeGet<size_t>());
 
-            auto tokenizer = std::make_unique<SparseGramTokenExtractor>(min_ngram_length, max_ngram_length);
+            auto tokenizer = std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length);
 
             return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
         }
@@ -818,7 +818,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
                 index.arguments[4].safeGet<size_t>(),
                 index.arguments[5].safeGet<size_t>());
 
-            auto tokenizer = std::make_unique<SparseGramTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
+            auto tokenizer = std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
 
             return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
 
@@ -860,7 +860,7 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
     }
-    else if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
+    else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() != 5 && index.arguments.size() != 6)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparseGrams` index must have exactly 5 or 6 arguments.");

@@ -73,7 +73,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Ngrams argument of function {} should be between 2 and 8, got: {}", name, ngrams);
         return std::make_unique<NgramsTokenExtractor>(ngrams);
     }
-    if (tokenizer_arg == SparseGramTokenExtractor::getExternalName())
+    if (tokenizer_arg == SparseGramsTokenExtractor::getExternalName())
     {
         auto min_length = arguments.size() < 3 ? 3
             : arguments[2].column->getUInt(0);
@@ -82,7 +82,7 @@ std::unique_ptr<ITokenExtractor> createTokenizer(const ColumnsWithTypeAndName & 
         auto min_cutoff_length = arguments.size() < 5 ? std::nullopt
             : std::optional(arguments[4].column->getUInt(0));
 
-        return std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
+        return std::make_unique<SparseGramsTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
 
     throw Exception(
@@ -112,7 +112,7 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
         {
             /// The sparse gram token extractor stores an internal state which modified during the execution.
             /// This leads to an error while executing this function multi-threaded because that state is not protected.
@@ -241,7 +241,7 @@ public:
             {
                 const auto tokenizer = arguments[arg_tokenizer].column->getDataAt(0).toString();
 
-                if (tokenizer == SparseGramTokenExtractor::getExternalName())
+                if (tokenizer == SparseGramsTokenExtractor::getExternalName())
                 {
                     optional_args.emplace_back("min_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
                     optional_args.emplace_back("max_length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "UInt8");
