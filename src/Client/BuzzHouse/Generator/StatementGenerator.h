@@ -193,7 +193,7 @@ private:
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
 
     template <typename T>
-    const std::unordered_map<uint32_t, T> & getNextCollection() const
+    std::unordered_map<uint32_t, T> & getNextCollection()
     {
         if constexpr (std::is_same_v<T, SQLTable>)
         {
@@ -219,9 +219,9 @@ private:
 
 public:
     template <typename T>
-    bool collectionHas(const std::function<bool(const T &)> func) const
+    bool collectionHas(const std::function<bool(const T &)> func)
     {
-        const auto & input = getNextCollection<T>();
+        auto & input = getNextCollection<T>();
 
         for (const auto & entry : input)
         {
@@ -235,10 +235,10 @@ public:
 
 private:
     template <typename T>
-    uint32_t collectionCount(const std::function<bool(const T &)> func) const
+    uint32_t collectionCount(const std::function<bool(const T &)> func)
     {
         uint32_t res = 0;
-        const auto & input = getNextCollection<T>();
+        auto & input = getNextCollection<T>();
 
         for (const auto & entry : input)
         {
@@ -285,7 +285,7 @@ public:
     template <typename T>
     std::vector<std::reference_wrapper<const T>> & filterCollection(const std::function<bool(const T &)> func)
     {
-        const auto & input = getNextCollection<T>();
+        auto & input = getNextCollection<T>();
         auto & res = getNextCollectionResult<T>();
 
         res.clear();
