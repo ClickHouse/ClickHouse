@@ -85,11 +85,6 @@ namespace Paimon
             if (value.isNull())
                 value = POSITIVE_INFINITY;
         }
-        // log partition_key_values
-        for (const auto & value : partition_key_values)
-        {
-            LOG_DEBUG(&Poco::Logger::get("PartitionPruner"), "partition key value: {}", value.dump());
-        }
         if (partition_key_values.empty())
             return false;
         std::vector<DB::FieldRef> partition_key_values_ref(partition_key_values.begin(), partition_key_values.end());
