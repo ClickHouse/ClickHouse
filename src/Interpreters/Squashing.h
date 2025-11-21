@@ -45,6 +45,7 @@ public:
 
     Chunk add(Chunk && input_chunk, bool flush_if_enough_size = false);
     static Chunk squash(Chunk && input_chunk);
+    static Chunk squash(std::vector<Chunk> && input_chunks);
     Chunk flush();
 
     void setHeader(const Block & header_) { header = std::make_shared<const Block>(header_); }

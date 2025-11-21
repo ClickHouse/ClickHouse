@@ -117,6 +117,17 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
         return result;
     }
 
+    auto chunk_infos = std::move(input_chunks.back().getChunkInfos());
+    auto result = Squashing::squash(std::move(input_chunks));
+    result.setChunkInfos(infos);
+    result.getChunkInfos().appendIfUniq(std::move(chunk_infos));
+
+    chassert(result);
+    return result;
+}
+
+Chunk Squashing::squash(std::vector<Chunk> && input_chunks)
+{
     std::vector<IColumn::MutablePtr> mutable_columns;
     size_t rows = 0;
     for (const Chunk & chunk : input_chunks)
@@ -171,10 +182,6 @@ Chunk Squashing::squash(std::vector<Chunk> && input_chunks, Chunk::ChunkInfoColl
 
     Chunk result;
     result.setColumns(std::move(mutable_columns), rows);
-    result.setChunkInfos(infos);
-    result.getChunkInfos().appendIfUniq(std::move(input_chunks.back().getChunkInfos()));
-
-    chassert(result);
     return result;
 }
 
