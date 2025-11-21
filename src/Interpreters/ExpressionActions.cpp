@@ -878,6 +878,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
 void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
 {
     size_t num_rows = block.rows();
+
     execute(block, num_rows, dry_run, allow_duplicates_in_input);
 
     if (block.empty())

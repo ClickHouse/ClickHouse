@@ -1246,8 +1246,9 @@ public:
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
 
-                /// Nullable(Nothing) or Nothing
                 has_null = has_null || element_type->onlyNull();
+
+                /// Nullable(Nothing) or Nothing
                 has_nothing = has_nothing || isNothing(element_type);
             }
 
