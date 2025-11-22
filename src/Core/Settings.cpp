@@ -2165,7 +2165,7 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
-DECLARE(UInt64, query_plan_optimize_join_order_limit, 1, R"(
+DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \

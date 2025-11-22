@@ -10,8 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
-#include <Common/Exception.h>
-#include <Interpreters/Context_fwd.h>
+
 
 namespace Coordination
 {
@@ -272,17 +271,6 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
-}
-
-void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
-{
-    Coordination::write(path_created, out);
-    Coordination::write(zstat, out);
-}
-
-size_t ZooKeeperCreate2Response::sizeImpl() const
-{
-    return Coordination::size(path_created) + Coordination::size(zstat);
 }
 
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
@@ -992,8 +980,6 @@ ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return s
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
-    if (include_stats)
-        return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
@@ -1160,13 +1146,6 @@ void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) c
     elem.path_created = path_created;
 }
 
-void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) const
-{
-    Coordination::ZooKeeperCreateResponse::fillLogElements(elems, idx);
-    auto & elem =  elems[idx];
-    elem.path_created = path_created;
-}
-
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
@@ -1263,8 +1242,6 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
-        else if constexpr (num == OpNum::Create2)
-            res->include_stats = true;
         else if constexpr (num == OpNum::CheckStat)
             res->stat_to_check.emplace();
 
@@ -1279,7 +1256,6 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Auth, ZooKeeperAuthRequest>(*this);
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
-    registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
     registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);

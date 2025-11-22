@@ -236,13 +236,7 @@ struct ZooKeeperCreateRequest final : public CreateRequest, ZooKeeperRequest
     ZooKeeperCreateRequest() = default;
     explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
-    OpNum getOpNum() const override
-    {
-        if (include_stats)
-            return OpNum::Create2;
-        return not_exists ? OpNum::CreateIfNotExists : OpNum::Create;
-    }
-
+    OpNum getOpNum() const override { return not_exists ? OpNum::CreateIfNotExists : OpNum::Create; }
     void writeImpl(WriteBuffer & out) const override;
     size_t sizeImpl() const override;
     void readImpl(ReadBuffer & in) override;
@@ -266,21 +260,6 @@ struct ZooKeeperCreateResponse : CreateResponse, ZooKeeperResponse
     OpNum getOpNum() const override { return OpNum::Create; }
 
     size_t bytesSize() const override { return CreateResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
-
-    void fillLogElements(LogElements & elems, size_t idx) const override;
-};
-
-struct ZooKeeperCreate2Response : ZooKeeperCreateResponse
-{
-    using ZooKeeperCreateResponse::ZooKeeperCreateResponse;
-    Stat zstat;
-
-    void writeImpl(WriteBuffer & out) const override;
-    size_t sizeImpl() const override;
-
-    OpNum getOpNum() const override { return OpNum::Create2; }
-
-    size_t bytesSize() const override { return ZooKeeperCreateResponse::bytesSize() + sizeof(zstat); }
 
     void fillLogElements(LogElements & elems, size_t idx) const override;
 };
