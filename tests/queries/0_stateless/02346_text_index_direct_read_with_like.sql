@@ -1,6 +1,7 @@
 -- 03580_text_index_like_optimization.sql
 -- Test LIKE optimization using inverted text index (row-level filtering via hasAllTokens)
 
+SET allow_experimental_full_text_index = 1;
 SET allow_experimental_analyzer = 1;
 SET use_skip_indexes_on_data_read = 1;
 
