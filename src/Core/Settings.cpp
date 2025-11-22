@@ -3295,6 +3295,9 @@ Read more about [memory overcommit](memory-overcommit.md).
     DECLARE(UInt64, max_untracked_memory, (4 * 1024 * 1024), R"(
 Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
 )", 0) \
+    DECLARE(UInt64, max_reverse_dictionary_lookup_cache_size_bytes, (100 * 1024 * 1024), R"(
+Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query. When the limit is reached, entries are evicted using LRU. Set to 0 to disable caching.
+)", 0) \
     DECLARE(UInt64, memory_profiler_step, (4 * 1024 * 1024), R"(
 Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](/operations/system-tables/trace_log).
 
@@ -7035,6 +7038,19 @@ Possible values:
 - 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
 - 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
 )", 0) \
+    DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
+Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+:::note
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+:::
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, jemalloc_enable_profiler, false, R"(
 Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
 Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
@@ -7287,6 +7303,9 @@ Sets the evaluation time to be used with promql dialect. 'auto' means the curren
     DECLARE(Bool, allow_experimental_alias_table_engine, false, R"(
 Allow to create table with the Alias engine.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, use_paimon_partition_pruning, false, R"(
+Use Paimon partition pruning for Paimon table functions
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
