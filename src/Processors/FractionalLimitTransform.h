@@ -22,6 +22,15 @@ namespace DB
 ///     SELECT * FROM system.numbers_mt WHERE number = 1000000 LIMIT 0.1
 ///
 /// with_ties - implementation of LIMIT WITH TIES. It works only for single port.
+///
+/// Processor workflow:
+/// while input:
+///     1. read and cache input chunk
+///     2. if offset or fractional_offset, drop from cache 
+///        chunks that we became 100% sure will be offseted entirely.
+/// 2. count total rows count in input
+/// 3. calculate integral limit and offset
+/// 4. apply normal offset logic on remaining cached chunks.
 class FractionalLimitTransform final : public IProcessor
 {
 private:
@@ -56,12 +65,8 @@ private:
     std::vector<PortsData> ports_data;
     size_t num_finished_input_ports = 0;
 
-    /// Processor workflow:
-    /// 1. read and cache all input chunks (with their output destination)
-    /// 2. get total rows count from input
-    /// 3. calculate target limit, offset
-    /// 4. apply normal limit, offset logic on cached data.
     size_t rows_cnt = 0;
+    UInt64 evicted_rows_cnt = 0;
     struct CacheEntry
     {
         OutputPort * output_port = nullptr;
