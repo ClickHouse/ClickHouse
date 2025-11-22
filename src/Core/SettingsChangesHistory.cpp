@@ -45,7 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"use_paimon_partition_pruning", false, false, "New setting."},
-            {"aggregate_function_input_format", "state", "state", "Added setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
+            {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
