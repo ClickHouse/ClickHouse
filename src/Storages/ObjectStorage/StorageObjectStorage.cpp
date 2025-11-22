@@ -539,7 +539,7 @@ void StorageObjectStorage::truncate(
     paths.reserve(DELETE_CHUNK_SIZE);
     while (auto element = iterator->next(0))
     {
-        paths.push_back(StoredObject(element->relative_path));
+        paths.push_back(StoredObject(element->getPath()));
         // Delete in chunks to avoid holding too many objects in memory
         if (paths.size() >= DELETE_CHUNK_SIZE)
         {
