@@ -112,36 +112,15 @@ public:
         if (input_rows_count == 0)
             return ColumnArray::create(std::move(col_result), std::move(col_offsets));
 
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
-        {
-            /// The sparse gram token extractor stores an internal state which modified during the execution.
-            /// This leads to an error while executing this function multi-threaded because that state is not protected.
-            /// To avoid this case, a clone of the sparse gram token extractor will be used.
-            auto sparse_gram_extractor = token_extractor->clone();
-            executeWithTokenizer(*sparse_gram_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
-        }
-        else
-        {
-            executeWithTokenizer(*token_extractor, std::move(col_input), *col_offsets, input_rows_count, *col_result);
-        }
+        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
+            executeImpl(*token_extractor, *column_string, *col_offsets, input_rows_count, *col_result);
+        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
+            executeImpl(*token_extractor, *column_fixed_string, *col_offsets, input_rows_count, *col_result);
 
         return ColumnArray::create(std::move(col_result), std::move(col_offsets));
     }
 
 private:
-    void executeWithTokenizer(
-        const ITokenExtractor & extractor,
-        ColumnPtr col_input,
-        ColumnArray::ColumnOffsets & col_offsets,
-        size_t input_rows_count,
-        ColumnString & col_result) const
-    {
-        if (const auto * column_string = checkAndGetColumn<ColumnString>(col_input.get()))
-            executeImpl(extractor, *column_string, col_offsets, input_rows_count, col_result);
-        else if (const auto * column_fixed_string = checkAndGetColumn<ColumnFixedString>(col_input.get()))
-            executeImpl(extractor, *column_fixed_string, col_offsets, input_rows_count, col_result);
-    }
-
     template <typename StringColumnType>
     void executeImpl(
         const ITokenExtractor & extractor,
@@ -278,8 +257,8 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     FunctionDocumentation::Syntax syntax = "tokens(value[, tokenizer[, ngrams[, separators]]])";
     FunctionDocumentation::Arguments arguments = {
         {"value", "The input string.", {"String", "FixedString"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `ngrams`, `splitByString`, `array`, and `sparseGrams`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
-        {"ngrams", "Only relevant if argument `tokenizer` is `ngrams`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are `default`, `ngram`, `split`, and `no_op`. Optional, if not set explicitly, defaults to `default`.", {"const String"}},
+        {"ngrams", "Only relevant if argument `tokenizer` is `ngram`: An optional parameter which defines the length of the ngrams. If not set explicitly, defaults to `3`.", {"const UInt8"}},
         {"separators", "Only relevant if argument `tokenizer` is `split`: An optional parameter which defines the separator strings. If not set explicitly, defaults to `[' ']`.", {"const Array(String)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the resulting array of tokens from input string.", {"Array"}};
@@ -293,7 +272,7 @@ For example, with separators = `['%21', '%']` string `%21abc` would be tokenized
     },
     {
         "Ngram tokenizer",
-        "SELECT tokens('abc def', 'ngrams', 3) AS tokens;",
+        "SELECT tokens('abc def', 'ngram', 3) AS tokens;",
         R"(
 ['abc','bc ','c d',' de','def']
         )"

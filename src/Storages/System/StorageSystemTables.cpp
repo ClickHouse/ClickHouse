@@ -55,7 +55,7 @@ bool needTable(const DatabasePtr & database, const Block & header)
     static const std::set<std::string> columns_without_table = {"database", "name", "uuid", "metadata_modification_time"};
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (!columns_without_table.contains(column.name))
+        if (columns_without_table.find(column.name) == columns_without_table.end())
             return true;
     }
     return false;
@@ -97,7 +97,7 @@ ColumnPtr getFilteredTables(
     MutableColumnPtr uuid_column;
     MutableColumnPtr engine_column;
 
-    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context);
+    auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample);
     if (dag)
     {
         bool filter_by_engine = false;
@@ -211,7 +211,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"active_on_fly_data_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active data mutations (UPDATEs and DELETEs) suitable for applying on the fly."},
         {"active_on_fly_alter_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active alter mutations (MODIFY COLUMNs) suitable for applying on the fly."},
         {"active_on_fly_metadata_mutations", std::make_shared<DataTypeUInt64>(), "Total number of active metadata mutations (RENAMEs) suitable for applying on the fly."},
-        {"columns_descriptions_cache_size", std::make_shared<DataTypeUInt64>(), "Size of columns description cache for *MergeTree tables"},
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows INSERTed since server start (only for Buffer tables)."
         },
@@ -284,12 +283,7 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
-            if (!metadata_snapshot)
-            {
-                columns[res_index++]->insertDefault();
-                return;
-            }
+            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
 
             NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
             if (!query_parameters_array.empty())
@@ -525,12 +519,10 @@ protected:
                 {
                     chassert(lock != nullptr);
                     Array table_paths_array;
-                    if (auto paths = table->tryGetDataPaths())
-                    {
-                        table_paths_array.reserve(paths->size());
-                        for (const String & path : *paths)
-                            table_paths_array.push_back(path);
-                    }
+                    auto paths = table->getDataPaths();
+                    table_paths_array.reserve(paths.size());
+                    for (const String & path : paths)
+                        table_paths_array.push_back(path);
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
                     lock = nullptr;
@@ -544,7 +536,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+                    metadata_snapshot = table->getInMemoryMetadataPtr();
 
                 if (columns_mask[src_index++])
                 {
@@ -658,7 +650,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
+                    auto policy = table ? table->getStoragePolicy() : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -774,18 +766,9 @@ protected:
                     }
                 }
 
-                // columns_descriptions_cache_size
                 if (columns_mask[src_index++])
                 {
-                    if (table_merge_tree)
-                        res_columns[res_index++]->insert(table_merge_tree->getColumnsDescriptionsCacheSize());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    auto lifetime_rows = table ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -794,7 +777,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
+                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
@@ -859,8 +842,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
-                        res_columns[res_index++]->insert(*metadata_snapshot->definer);
+                    if (table && table->getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
+                        res_columns[res_index++]->insert(*table->getInMemoryMetadataPtr()->definer);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

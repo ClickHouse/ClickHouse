@@ -44,11 +44,6 @@ StorageAlias::StorageAlias(
     StorageID target_id(target_database, target_table);
     if (table_id_ == target_id)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to itself");
-
-    // Disallow target is also an alias
-    auto target_storage = DatabaseCatalog::instance().tryGetTable(target_id, context_);
-    if (target_storage && target_storage->getName() == "Alias")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Alias table cannot refer to another Alias table");
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -218,6 +213,11 @@ StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & m
     return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
 }
 
+StorageSnapshotPtr StorageAlias::getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query, ContextPtr query_context) const
+{
+    return getTargetTable()->getStorageSnapshotForQuery(metadata_snapshot, query, query_context);
+}
+
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
     return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
@@ -303,7 +303,7 @@ void registerStorageAlias(StorageFactory & factory)
         // Storage Alias does not support explicit column definitions
         // Columns are always dynamically fetched from the target table
         // Only check for CREATE, not for ATTACH/RESTORE
-        if (!args.columns.empty() && args.mode == LoadingStrictnessLevel::CREATE)
+        if (!args.columns.empty() && args.mode < LoadingStrictnessLevel::ATTACH)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Storage Alias does not support explicit column definitions");

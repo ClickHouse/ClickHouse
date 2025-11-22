@@ -412,13 +412,6 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
-    if (columns_description)
-    {
-        columns_description.reset();
-        columns_description_with_collected_nested.reset();
-        storage.decrefColumnsDescriptionForColumns(columns);
-    }
-
     DimensionalMetrics::sub(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
@@ -611,9 +604,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         }, ISerialization::SubstreamData(serialization));
     }
 
-    auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
-    columns_description = columns_descriptions.original;
-    columns_description_with_collected_nested = columns_descriptions.with_collected_nested;
+    columns_description = ColumnsDescription(columns);
+    columns_description_with_collected_nested = ColumnsDescription(Nested::collect(columns));
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -640,7 +632,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
+        return storage.getPatchPartMetadata(columns_description, info.getPartitionId(), storage.getContext());
 
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!parent_part)
@@ -651,12 +643,12 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
 {
-    return columns_description->getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return columns_description.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
 {
-    return columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return columns_description.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
@@ -1383,7 +1375,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
             {
                 if (path_to_data_file.empty())
                 {
-                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage());
                     if (!stream_name)
                         return;
 
@@ -1656,7 +1648,6 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         part_info,
         cols,
         storage_snapshot_ptr,
-        storage.getSettings(),
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
@@ -2642,10 +2633,9 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const String & column_name,
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
-    const Checksums & checksums_,
-    const MergeTreeSettingsPtr & settings)
+    const Checksums & checksums_)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, ISerialization::StreamFileNameSettings(*settings));
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
     return getStreamNameOrHash(stream_name, extension, checksums_);
 }
 
@@ -2653,10 +2643,9 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
-    const Checksums & checksums_,
-    const MergeTreeSettingsPtr & settings)
+    const Checksums & checksums_)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
     return getStreamNameOrHash(stream_name, extension, checksums_);
 }
 
@@ -2664,10 +2653,9 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const String & column_name,
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
-    const IDataPartStorage & storage_,
-    const MergeTreeSettingsPtr & settings)
+    const IDataPartStorage & storage_)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path, ISerialization::StreamFileNameSettings(*settings));
+    auto stream_name = ISerialization::getFileNameForStream(column_name, substream_path);
     return getStreamNameOrHash(stream_name, extension, storage_);
 }
 
@@ -2675,10 +2663,9 @@ std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
     const NameAndTypePair & column,
     const ISerialization::SubstreamPath & substream_path,
     const String & extension,
-    const IDataPartStorage & storage_,
-    const MergeTreeSettingsPtr & settings)
+    const IDataPartStorage & storage_)
 {
-    auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*settings));
+    auto stream_name = ISerialization::getFileNameForStream(column, substream_path);
     return getStreamNameOrHash(stream_name, extension, storage_);
 }
 
@@ -2737,7 +2724,6 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         part_info,
         cols,
         storage_snapshot_ptr,
-        storage.getSettings(),
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},

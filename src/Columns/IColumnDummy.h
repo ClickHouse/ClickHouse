@@ -40,7 +40,7 @@ public:
 
     Field operator[](size_t) const override;
     void get(size_t, Field &) const override;
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
     void insert(const Field &) override;
     bool tryInsert(const Field &) override { return false; }
     bool isDefaultAt(size_t) const override;

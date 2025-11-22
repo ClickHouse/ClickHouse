@@ -254,10 +254,7 @@ namespace ErrorCodes
     This mode allows to use significantly less memory for storing discriminators
     in parts when there is mostly one variant or a lot of NULL values.
     )", 0) \
-    DECLARE(Bool, escape_variant_subcolumn_filenames, true, R"(
-    Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility.
-    )", 0) \
-    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "with_types", R"(
+    DECLARE(MergeTreeSerializationInfoVersion, serialization_info_version, "basic", R"(
     Serialization info version used when writing `serialization.json`.
     This setting is required for compatibility during cluster upgrades.
 
@@ -270,7 +267,7 @@ namespace ErrorCodes
     data parts compatible with old servers. After the upgrade completes,
     switch to `WITH_TYPES` to enable per-type serialization versions.
     )", 0) \
-    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "with_size_stream", R"(
+    DECLARE(MergeTreeStringSerializationVersion, string_serialization_version, "single_stream", R"(
     Controls the serialization format for top-level `String` columns.
 
     This setting is only effective when `serialization_info_version` is set to "with_types".
@@ -332,7 +329,7 @@ namespace ErrorCodes
     Enables writing marks per each substream instead of per each column in Compact parts.
     It allows to read individual subcolumns from the data part efficiently.
 
-    For example, column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
+    For example column `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` is serialized in the next substreams:
     - `t.a` for String data of tuple element `a`
     - `t.b` for UInt32 data of tuple element `b`
     - `t.c.size0` for array sizes of tuple element `c`
@@ -343,13 +340,6 @@ namespace ErrorCodes
     the data of each individual substream from the granule separately if needed. For example, if we want to read the subcolumn `t.c` we will read only data of
     substreams `t.c.size0`, `t.c.null` and `t.c` and won't read data from substreams `t.a` and `t.b`. When this setting is disabled,
     we will write a mark only for top-level column `t`, which means that we will always read the whole column data from the granule, even if we need only data of some substreams.
-    )", 0) \
-    DECLARE(UInt64Auto, merge_max_dynamic_subcolumns_in_wide_part, Field("auto"), R"(
-    The maximum number of dynamic subcolumns that can be created in every column in the Wide data part after merge.
-    It allows to reduce number of files created in Wide data part regardless of dynamic parameters specified in the data type.
-
-    For example, if the table has a column with the JSON(max_dynamic_paths=1024) type and the setting merge_max_dynamic_subcolumns_in_wide_part is set to 128,
-    after merge into the Wide data part number of dynamic paths will be decreased to 128 in this part and only 128 paths will be written as dynamic subcolumns.
     )", 0) \
     \
     /** Merge selector settings. */ \
@@ -1400,7 +1390,7 @@ namespace ErrorCodes
     If enabled too many parts counter will rely on shared data in Keeper, not on
     local replica state. Only available in ClickHouse Cloud
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, false, R"(
+    DECLARE(Bool, shared_merge_tree_create_per_replica_metadata_nodes, true, R"(
     Enables creation of per-replica /metadata and /columns nodes in ZooKeeper.
     Only available in ClickHouse Cloud
     )", 0) \
@@ -1745,44 +1735,6 @@ namespace ErrorCodes
     When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
     the partition or sorting key.
     )", 0) \
-    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
-    Enables writing attributes into virtual parts and committing blocks in keeper
-    )", BETA) \
-    DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
-    Activates rescheduling of coordinated merges tasks. It can be useful even when
-    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
-    statistics and help with cold start.
-    )", BETA) \
-    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
-    Enables coordinated merges strategy
-    )", BETA) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
-    Number of merge entries that coordinator should prepare and distribute across workers
-    )", BETA) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
-    How often merge coordinator should sync with zookeeper to take fresh metadata
-    )", BETA) \
-    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
-    Number of merges that coordinator can request from MergerMutator at once
-    )", BETA) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
-    Time between runs of merge coordinator election thread
-    )", BETA) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
-    Minimum time between runs of merge coordinator thread
-    )", BETA) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
-    Maximum time between runs of merge coordinator thread
-    )", BETA) \
-    DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
-    Time changing factor for delay of coordinator thread
-    )", BETA) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
-    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
-    )", BETA) \
-    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
-    Time between runs of merge worker thread
-    )", BETA) \
     \
     /** Experimental/work in progress feature. Unsafe for production. */ \
     DECLARE(UInt64, part_moves_between_shards_enable, 0, R"(
@@ -1884,6 +1836,44 @@ namespace ErrorCodes
     DECLARE(Bool, notify_newest_block_number, false, R"(
     Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, R"(
+    Enables writing attributes into virtual parts and committing blocks in keeper
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_activate_coordinated_merges_tasks, false, R"(
+    Activates rescheduling of coordinated merges tasks. It can be useful even when
+    shared_merge_tree_enable_coordinated_merges=0 because this will populate merge coordinator
+    statistics and help with cold start.
+    )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_coordinated_merges, false, R"(
+    Enables coordinated merges strategy
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_merges_prepare_count, 100, R"(
+    Number of merge entries that coordinator should prepare and distribute across workers
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms, 10000, R"(
+    How often merge coordinator should sync with zookeeper to take fresh metadata
+    )", EXPERIMENTAL) \
+    DECLARE(UInt64, shared_merge_tree_merge_coordinator_max_merge_request_size, 20, R"(
+    Number of merges that coordinator can request from MergerMutator at once
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_election_check_period_ms, 30000, R"(
+    Time between runs of merge coordinator election thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_min_period_ms, 1, R"(
+    Minimum time between runs of merge coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_coordinator_max_period_ms, 10000, R"(
+    Maximum time between runs of merge coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Float, shared_merge_tree_merge_coordinator_factor, 1.1f, R"(
+    Time changing factor for delay of coordinator thread
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_fast_timeout_ms, 100, R"(
+    Timeout that merge worker thread will use if it is needed to update it's state after immediate action
+    )", EXPERIMENTAL) \
+    DECLARE(Milliseconds, shared_merge_tree_merge_worker_regular_timeout_ms, 10000, R"(
+    Time between runs of merge worker thread
+    )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
     How many partition discoveries should be packed into batch
     )", EXPERIMENTAL) \
@@ -1982,17 +1972,6 @@ namespace ErrorCodes
     - `drop`
     - `rebuild`
     )", 0) \
-    DECLARE(AlterColumnSecondaryIndexMode, alter_column_secondary_index_mode, AlterColumnSecondaryIndexMode::REBUILD, R"(
-    Configures whether to allow `ALTER` commands that modify columns covered by secondary indices, and what action to take if
-    they are allowed. By default, such `ALTER` commands are allowed and the indices are rebuilt.
-
-    Possible values:
-    - `rebuild` (default): Rebuilds any secondary indices affected by the column in the `ALTER` command.
-    - `throw`: Prevents any `ALTER` of columns covered by secondary indices by throwing an exception.
-    - `drop`: Drop the dependent secondary indices. The new parts won't have the indices, requiring `MATERIALIZE INDEX` to recreate them.
-    - `compatibility`: Matches the original behaviour: `throw` on `ALTER ... MODIFY COLUMN` and `rebuild` on `ALTER ... UPDATE/DELETE`.
-    - `ignore`: Intended for expert usage. It will leave the indices in an inconsistent state, allowing incorrect query results.
-    )", 0) \
     /** Part loading settings. */           \
     DECLARE(Bool, columns_and_secondary_indices_sizes_lazy_calculation, true, R"(
     Calculate columns and secondary indices sizes lazily on first request instead
@@ -2016,9 +1995,6 @@ namespace ErrorCodes
     - any - scope is not limited.
     - local - scope is limited by local disks .
     - none - empty scope, do not search
-    )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 0, R"(
-    The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
     )", 0) \
 
 #define MAKE_OBSOLETE_MERGE_TREE_SETTING(M, TYPE, NAME, DEFAULT) \

@@ -402,7 +402,7 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
         if (cache_ptr)
             read_settings.enable_filesystem_cache = false;
 
-        auto source_buf = createReadBuffer(object_info.relative_path_with_metadata, object_storage, local_context, log, read_settings);
+        auto source_buf = createReadBuffer(object_info, object_storage, local_context, log, read_settings);
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)

@@ -67,6 +67,7 @@ S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
 ]
 
+
 def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -150,7 +151,6 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
-                "configs/config.d/remove_masking_rules.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
@@ -2291,23 +2291,21 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100",
             query_id=query_id,
         )
     )
     instance.query("SYSTEM FLUSH LOGS")
-    bytes_read = int(
+    assert 107220 == int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    # Slightly different number depending on reader implementation.
-    assert 107220 <= bytes_read <= 107232
 
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100",
             query_id=query_id,
         )
     )
@@ -2317,13 +2315,12 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    bytes_read = int(
+    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
+    assert 105677 == int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
-    assert 105677 <= bytes_read <= 105689
 
 
 def test_concurrent_reads(started_cluster):

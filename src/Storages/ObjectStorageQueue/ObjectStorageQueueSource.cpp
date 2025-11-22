@@ -69,8 +69,9 @@ namespace ErrorCodes
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
-    const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
+        const ObjectInfo & object_info,
+        ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
+    : ObjectInfo(object_info.relative_path, object_info.metadata)
     , file_metadata(file_metadata_)
 {
 }
@@ -114,7 +115,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     const auto globbed_key = reading_path.path;
-    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_, /*with_tags=*/ false);
+    object_storage_iterator = object_storage->iterate(reading_path.cutGlobs(configuration->supportsPartialPathPrefix()), list_objects_batch_size_);
 
     matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
     if (!matcher->ok())
@@ -126,7 +127,7 @@ ObjectStorageQueueSource::FileIterator::FileIterator(
     }
 
     recursive = globbed_key == "/**";
-    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns, context_))
+    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
     {
         VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
         filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -170,7 +171,7 @@ ObjectStorageQueueSource::FileIterator::next()
     {
         file_metadatas.clear();
         Stopwatch get_object_watch;
-        ObjectInfos new_batch;
+        Source::ObjectInfos new_batch;
 
         while (new_batch.empty())
         {
@@ -183,11 +184,7 @@ ObjectStorageQueueSource::FileIterator::next()
 
             LOG_TEST(log, "Received batch of size: {}", result->size());
 
-            std::transform(
-                result->begin(),
-                result->end(),
-                std::back_inserter(new_batch),
-                [&](const std::shared_ptr<RelativePathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
+            new_batch = std::move(result.value());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
             for (auto it = new_batch.begin(); it != new_batch.end();)
@@ -237,8 +234,8 @@ ObjectStorageQueueSource::FileIterator::next()
                 for (size_t i = 0; i < new_batch.size(); ++i)
                 {
                     file_metadatas[i] = metadata->getFileMetadata(
-                        new_batch[i]->getPath(),
-                        /* bucket_info */ {}); /// No buckets for Unordered mode.
+                        new_batch[i]->relative_path,
+                        /* bucket_info */{}); /// No buckets for Unordered mode.
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -407,7 +404,7 @@ ObjectStorageQueueSource::FileIterator::next()
     return result;
 }
 
-void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos & objects)
+void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
 {
     std::vector<std::string> paths;
     paths.reserve(objects.size());
@@ -425,7 +422,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     std::unordered_set<std::string> paths_set;
     std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
 
-    ObjectInfos result;
+    Source::ObjectInfos result;
     result.reserve(paths_set.size());
     for (auto & object : objects)
     {
@@ -481,12 +478,13 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (!file_metadata)
         {
-            file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
+            file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
             if (!file_metadata->trySetProcessing())
                 continue;
         }
 
-        if (file_deletion_on_processed_enabled && !object_storage->exists(StoredObject(object_info->getPath())))
+        if (file_deletion_on_processed_enabled
+            && !object_storage->exists(StoredObject(object_info->relative_path)))
         {
             /// Imagine the following case:
             /// Replica A processed fileA and deletes it afterwards.
@@ -525,7 +523,7 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
     chassert(object_info);
     if (metadata->useBucketsForProcessing())
     {
-        const auto bucket = metadata->getBucketForPath(object_info->getPath());
+        const auto bucket = metadata->getBucketForPath(object_info->relative_path);
         std::lock_guard lock(mutex);
         listed_keys_cache[bucket].keys.emplace_front(object_info, file_metadata);
     }
@@ -716,7 +714,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
         chassert(!file_metadata);
         if (object_info)
         {
-            const auto bucket = metadata->getBucketForPath(object_info->getPath());
+            const auto bucket = metadata->getBucketForPath(object_info->relative_path);
             auto & bucket_cache = listed_keys_cache[bucket];
 
             LOG_TEST(log, "Found next file: {}, bucket: {}, current bucket: {}, cached_keys: {}",
@@ -1045,13 +1043,15 @@ Chunk ObjectStorageQueueSource::generateImpl()
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
             ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
 
-            const auto & object_metadata = reader.getObjectInfo()->getObjectMetadata();
+            const auto & object_metadata = reader.getObjectInfo()->metadata;
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk,
-                read_from_format_info.requested_virtual_columns,
-                {.path = path, .size = object_metadata->size_bytes, .last_modified = object_metadata->last_modified},
-                getContext());
+                chunk, read_from_format_info.requested_virtual_columns,
+                {
+                    .path = path,
+                    .size = object_metadata->size_bytes,
+                    .last_modified = object_metadata->last_modified
+                }, getContext());
 
             return chunk;
         }
@@ -1064,7 +1064,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
         processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
-        file_status = nullptr;
+        file_status.reset();
         reader = {};
 
         if (commit_settings.max_processed_files_before_commit
