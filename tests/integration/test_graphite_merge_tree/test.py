@@ -254,6 +254,8 @@ SELECT * FROM test.graphite;
 
 
 def test_system_graphite_retentions(graphite_table):
+    # Avoid flakiness caused by concurrent test runs
+    q("DROP TABLE IF EXISTS test.graphite2")
     expected = """
 graphite_rollup	all	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
 graphite_rollup	all	\\\\.max$	max	0	0	2	0	['test']	['graphite']
@@ -533,4 +535,3 @@ CREATE TABLE test.graphite
     q("INSERT INTO test.graphite FORMAT TSV", to_insert)
     q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
     q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
-    q("DROP TABLE test.graphite")
