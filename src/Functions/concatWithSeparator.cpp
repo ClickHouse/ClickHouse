@@ -102,12 +102,16 @@ public:
             const ColumnPtr & column = arguments[i + 1].column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
+                chassert(col->size() == input_rows_count);
+
                 has_column_string = true;
                 data[2 * i] = &col->getChars();
                 offsets[2 * i] = &col->getOffsets();
             }
             else if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
             {
+                chassert(fixed_col->size() == input_rows_count);
+
                 has_column_fixed_string = true;
                 data[2 * i] = &fixed_col->getChars();
                 fixed_string_sizes[2 * i] = fixed_col->getN();
@@ -118,14 +122,25 @@ public:
             }
             else
             {
+                ColumnPtr column_to_serialize = column;
+
+                /// Resize const column to input_rows_count if needed
+                if (const auto * const_column = checkAndGetColumn<ColumnConst>(column_to_serialize.get()))
+                {
+                    column_to_serialize = const_column->cloneResized(input_rows_count);
+                }
+
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
-                auto full_column = column->convertToFullIfNeeded();
+                auto full_column = column_to_serialize->convertToFullIfNeeded();
+
+                chassert(full_column->size() == input_rows_count);
+
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, full_column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t row = 0; row < column->size(); ++row)
+                for (size_t row = 0; row < full_column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.finishRow();
