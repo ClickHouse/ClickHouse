@@ -4688,9 +4688,9 @@ class ClickHouseInstance:
             )
         try:
             ps_clickhouse = self.exec_in_container(
-                ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+                ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
             )
-            if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+            if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
                 return
 
