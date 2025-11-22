@@ -28,7 +28,6 @@ namespace DB::Setting
 
 namespace DB::QueryPlanOptimizations
 {
-
 static String removeEscapedQuotes(String s)
 {
     const String target = "\\'";
@@ -36,6 +35,26 @@ static String removeEscapedQuotes(String s)
     while ((pos = s.find(target, pos)) != String::npos)
         s.erase(pos, target.length());
     return s;
+}
+
+static UInt64 hashTokensWithTextIndex(std::vector<String> & tokens, const String & column_name, const String & index_name, const String & hash_type)
+{
+    SipHash hash;
+
+    hash.update(column_name.data(), column_name.size());
+    hash.update(index_name.data(), index_name.size());
+    hash.update(hash_type.data(), hash_type.size());
+
+    hash.update(static_cast<UInt64>(tokens.size()));
+
+    std::sort(tokens.begin(), tokens.end());
+    for (const auto & token : tokens)
+    {
+        hash.update(static_cast<UInt64>(token.size()));
+        hash.update(token.data(), token.size());
+    }
+
+    return hash.get64();
 }
 
 /// Used when inverted-index functions (e.g. hasAllTokens) require a
@@ -92,8 +111,7 @@ static void collectLikeFunctionNodeWithIndexes(const ActionsDAG & dag, const Rea
             if (auto *text_index = dynamic_cast<const MergeTreeIndexText *>(index_helper.get()))
             {
                 auto names = text_index->index.column_names;
-                auto it = std::find_if(names.begin(), names.end(),
-                                       [&](const auto &name) { return column_name == name; });
+                auto it = std::find_if(names.begin(), names.end(), [&](const auto &name) { return column_name == name; });
                 if (it != names.end())
                 {
                     return index_desc;
@@ -120,7 +138,7 @@ static void collectLikeFunctionNodeWithIndexes(const ActionsDAG & dag, const Rea
 /// This function rewrites: column LIKE '%prefix,token1%token2,suffix%'
 /// into an equivalent: hasAllTokens(column, ['token1','token2']) AND LIKE '%prefix,token1%token2,suffix%'
 /// and AND-combines it with the existing result node in the DAG.
-static const ActionsDAG::Node * optimizeOneLikeOperatorUsingTextIndex(ActionsDAG & dag, const String & result_column_name, const ActionsDAG::Node * like_node, const MergeTreeIndexText * index, const ContextPtr & context)
+static const ActionsDAG::Node * optimizeOneLikeOperatorUsingTextIndex(ActionsDAG & dag, const String & result_column_name, const ActionsDAG::Node * like_node, const MergeTreeIndexText * index, std::unordered_set<UInt64> & like_nodes_hash, const ContextPtr & context)
 {
     chassert(like_node->type == ActionsDAG::ActionType::FUNCTION && like_node->children.size() == 2);
 
@@ -134,11 +152,14 @@ static const ActionsDAG::Node * optimizeOneLikeOperatorUsingTextIndex(ActionsDAG
 
     std::vector<String> tokens;
     index->token_extractor->stringLikeToTokens(value.data(), value.size(), tokens);
-    auto const_text = makeConstArrayOfTokens(tokens, context);
+    auto like_node_hash = hashTokensWithTextIndex(tokens, text_node->result_name, index->index.name, index->index.type);
+    if (like_nodes_hash.contains(like_node_hash))
+        return {};
+    like_nodes_hash.insert(like_node_hash);
 
+    auto const_text = makeConstArrayOfTokens(tokens, context);
     auto & const_text_node = dag.addColumn(const_text);
-    auto & ff = FunctionFactory::instance();
-    auto func_has_all_tokens = ff.get("hasAllTokens", context);
+    auto func_has_all_tokens =  FunctionFactory::instance().get("hasAllTokens", context);
 
     auto & result_node = dag.findInOutputs(result_column_name);
     ActionsDAG::NodeRawConstPtrs has_tokens_args = { text_node, &const_text_node };
@@ -175,6 +196,7 @@ static void optimizeLikeOperatorsUsingTextIndex(SourceStepWithFilterBase * sourc
     if (like_node_with_indexes.empty())
         return;
 
+    std::unordered_set<UInt64> like_node_hashs;
     bool updated = false;
     String filter_column_name = filter_step->getFilterColumnName();
     for (auto [like_node, index_desc] : like_node_with_indexes)
@@ -182,7 +204,7 @@ static void optimizeLikeOperatorsUsingTextIndex(SourceStepWithFilterBase * sourc
         auto index_helper = MergeTreeIndexFactory::instance().get(index_desc);
         auto * text_index = dynamic_cast<const MergeTreeIndexText *>(index_helper.get());
         chassert(text_index);
-        auto result_node = optimizeOneLikeOperatorUsingTextIndex(filter_dag, filter_column_name, like_node, text_index, read_from_merge_tree->getContext());
+        auto result_node = optimizeOneLikeOperatorUsingTextIndex(filter_dag, filter_column_name, like_node, text_index, like_node_hashs, read_from_merge_tree->getContext());
         if (result_node)
         {
             filter_column_name = result_node->result_name;
