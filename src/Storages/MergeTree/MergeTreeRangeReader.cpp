@@ -47,8 +47,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const IColumn::Filter & filter)
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
+    const auto & filter_data = filter.getData();
     for (auto & column : columns)
     {
         if (column)
@@ -57,12 +58,15 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            /// Debug logging: print column and filter information
-            LOG_ERROR(&Poco::Logger::get("MergeTreeRangeReader"),
-                "filterColumns: column_size={}, filter_size={}, column_type={}, column_name={}",
-                column->size(), filter.size(), column->getFamilyName(), column->getName());
-
-            column->assumeMutable()->filter(filter);
+            if (filter.getColumn() != column)
+            {
+                column->assumeMutable()->filter(filter_data);
+            }
+            else
+            {
+                /// Column is the same as filter column, so it cannot be filtered in-place
+                column = column->filter(filter_data, filter.countBytesInFilter());
+            }
 
             if (column->empty())
             {
@@ -87,7 +91,7 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
         return;
     }
 
-    DB::filterColumns(columns, filter.getData());
+    DB::filterColumns(columns, filter);
 }
 
 void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter)

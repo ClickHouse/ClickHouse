@@ -757,49 +757,115 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
 void ColumnArray::filter(const Filter & filt)
 {
     if (typeid_cast<const ColumnUInt8 *>(data.get()))
+    {
         filterNumber<UInt8>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnUInt16 *>(data.get()))
+    {
         filterNumber<UInt16>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnUInt32 *>(data.get()))
+    {
         filterNumber<UInt32>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnUInt64 *>(data.get()))
+    {
         filterNumber<UInt64>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnUInt128 *>(data.get()))
+    {
         filterNumber<UInt128>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnUInt256 *>(data.get()))
+    {
         filterNumber<UInt256>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnInt8 *>(data.get()))
+    {
         filterNumber<Int8>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnInt16 *>(data.get()))
+    {
         filterNumber<Int16>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnInt32 *>(data.get()))
+    {
         filterNumber<Int32>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnInt64 *>(data.get()))
+    {
         filterNumber<Int64>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnInt128 *>(data.get()))
+    {
         filterNumber<Int128>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnInt256 *>(data.get()))
+    {
         filterNumber<Int256>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnBFloat16 *>(data.get()))
+    {
         filterNumber<BFloat16>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
+    {
         filterNumber<Float32>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
+    {
         filterNumber<Float64>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnDecimal<Decimal32> *>(data.get()))
+    {
         filterNumber<Decimal32>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnDecimal<Decimal64> *>(data.get()))
+    {
         filterNumber<Decimal64>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnDecimal<Decimal128> *>(data.get()))
+    {
         filterNumber<Decimal128>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnDecimal<Decimal256> *>(data.get()))
+    {
         filterNumber<Decimal256>(filt);
+        return;
+    }
     if (typeid_cast<const ColumnString *>(data.get()))
+    {
         filterString(filt);
+        return;
+    }
     if (typeid_cast<const ColumnTuple *>(data.get()))
+    {
         filterTuple(filt);
+        return;
+    }
     if (typeid_cast<const ColumnNullable *>(data.get()))
+    {
         filterNullable(filt);
+        return;
+    }
     filterGeneric(filt);
 }
 
