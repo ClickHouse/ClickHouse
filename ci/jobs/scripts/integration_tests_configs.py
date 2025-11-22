@@ -117,7 +117,7 @@ IMAGES_ENV = {
     "clickhouse/integration-test": "DOCKER_BASE_TAG",
     "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
     "clickhouse/test-mysql80": "DOCKER_TEST_MYSQL80_TAG",
-    "clickhouse/test-mysql35": "DOCKER_TEST_MYSQL35_TAG",
+    "clickhouse/test-mysql57": "DOCKER_TEST_MYSQL57_TAG",
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
     "clickhouse/mysql-js-client": "DOCKER_MYSQL_JS_CLIENT_TAG",

@@ -1,6 +1,6 @@
 services:
     mysql80:
-        image: clickhouse/test-mysql80
+        image: clickhouse/test-mysql80:${DOCKER_TEST_MYSQL80_TAG:-latest}
         stop_grace_period: 5s
         restart: always
         environment:

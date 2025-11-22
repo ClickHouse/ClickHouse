@@ -1,6 +1,6 @@
 services:
     mysql57:
-        image: clickhouse/test-mysql57
+        image: clickhouse/test-mysql57:${DOCKER_TEST_MYSQL57_TAG:-latest}
         stop_grace_period: 5s
         restart: always
         environment:
