@@ -1,4 +1,4 @@
--- Tests - Truncate for both hive partitioned and non-partitioned tables
+-- Tests truncate for both hive partitioned and non-partitioned tables
 
 -- Test 1: Hive partitioned table
 DROP TABLE IF EXISTS test_truncate_hive;
