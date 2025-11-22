@@ -222,3 +222,16 @@ SELECT hostname(), database, table FROM clusterAllReplicas(default, system.table
 ```
 
 If you need to have tables replicated on all the nodes, you may use the [Replicated](../engines/database-engines/replicated.md) database engine in alternative to cluster discovery.
+
+## Other configurations {#other-configurations}
+
+Appearing or disappearing of a node will awake the cluster discovery thread to re-evaluate the cluster state by using condition variable and (zoo)keeper watches. Even the watch is not triggered, the condition variable will be timeout to awake the thread to force to re-evaluate the cluster state. You can customize the timeout value in seconds by a server setting `cluster_discovery_wait_timeout` (0 means infinite wait).
+
+```xml
+<clickhouse>
+    <!-- ... -->
+    <!-- default value is 5 seconds -->
+    <cluster_discovery_wait_timeout>5</cluster_discovery_wait_timeout>
+    <!-- ... -->
+</clickhouse>
+```

@@ -1,5 +1,6 @@
 <clickhouse>
     <allow_experimental_cluster_discovery>1</allow_experimental_cluster_discovery>
+    <cluster_discovery_wait_timeout>0</cluster_discovery_wait_timeout>
     <remote_servers>
         <dynamic_clusters1>
             <discovery>

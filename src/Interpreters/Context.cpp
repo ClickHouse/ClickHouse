@@ -375,6 +375,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
     extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
+    extern const ServerSettingsBool allow_experimental_cluster_discovery;
 }
 
 namespace ErrorCodes
@@ -5211,7 +5212,7 @@ void Context::startClusterDiscovery()
 void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     std::lock_guard lock(shared->clusters_mutex);
-    if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
+    if (shared->server_settings[ServerSetting::allow_experimental_cluster_discovery] && enable_discovery && !shared->cluster_discovery)
     {
         shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
     }

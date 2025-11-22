@@ -1210,6 +1210,8 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).)", 0) \
     DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
+    DECLARE(Bool, allow_experimental_cluster_discovery, false, R"(Allow experimental cluster discovery feature)", 0) \
+    DECLARE(UInt64, cluster_discovery_wait_timeout, 5, R"(Timeout for cluster discovery in seconds)", 0) \
 
 // clang-format on
 
