@@ -246,7 +246,7 @@ void SerializationAggregateFunction::serializeTextEscaped(
 }
 
 
-void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, const FormatSettings & settings, String s) const
+void SerializationAggregateFunction::deserializeBasedOnInput(IColumn & column, const FormatSettings & settings, const String & s) const
 {
     if (settings.aggregate_function_input_format == DB::FormatSettings::AggregateFunctionInputFormat::State)
     {
