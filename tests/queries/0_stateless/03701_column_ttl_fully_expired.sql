@@ -46,6 +46,8 @@ insert into x values (now() - toIntervalDay(30), 1), (now() - toIntervalDay(30),
 
 system start merges x;
 
+optimize table x final; -- Ensure that column TTL is applied
+
 optimize table x final deduplicate by dt, i;
 
 select i from x;
