@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest, no-random-settings
+
 -- Tests - Truncate for both hive partitioned and non-partitioned tables
 
 -- Test 1: Hive partitioned table
