@@ -539,7 +539,6 @@ void StorageObjectStorage::truncate(
     {
         object_storage->removeObjectsIfExist(paths);
     }
-    
 
 }
 
