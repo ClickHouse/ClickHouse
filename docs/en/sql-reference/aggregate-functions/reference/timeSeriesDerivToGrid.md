@@ -3,6 +3,7 @@ description: 'Aggregate function that calculates PromQL-like derivative over tim
 sidebar_position: 227
 slug: /sql-reference/aggregate-functions/reference/timeSeriesDerivToGrid
 title: 'timeSeriesDerivToGrid'
+doc_type: 'reference'
 ---
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like derivative](https://prometheus.io/docs/prometheus/latest/querying/functions/#deriv) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `deriv` are considered within the specified time window.

@@ -26,7 +26,8 @@ def start_cluster():
 
 def test_startup_execution_state(start_cluster):
     """
-    Making sure that the StartupScriptsExecutionState metric is set correctly.
+    Making sure that the StartupScriptsExecutionState metric is set correctly
+    and that the dimensional metric startup_scripts_failure_reason is recorded.
     """
 
     STATE_SUCCESS = 1
@@ -50,8 +51,17 @@ def test_startup_execution_state(start_cluster):
         )
         == STATE_SUCCESS
     )
-
     assert_startup_script_failed()
+
+    assert bool(
+        good.query(
+            """
+            SELECT count() = 0 FROM system.dimensional_metrics
+            WHERE metric = 'startup_scripts_failure_reason'
+            """
+        ).strip()
+    )
+
     bad.stop_clickhouse()
     # Set throw_on_error: true for the startup_script
     bad.replace_in_config(
@@ -79,3 +89,15 @@ def test_startup_execution_state(start_cluster):
 
     # startup script wasn't executed, but the server is up
     assert_startup_script_failed()
+
+    assert int(
+        bad.query(
+            """
+            SELECT value
+            FROM system.dimensional_metrics
+            WHERE 1
+                AND metric = 'startup_scripts_failure_reason'
+                AND labels['error_name'] = 'UNKNOWN_TABLE'
+            """
+        ).strip()
+    ) == 1

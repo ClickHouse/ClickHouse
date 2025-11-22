@@ -15,6 +15,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -60,16 +61,23 @@ static Int64 findMinPosition(const NameSet & condition_table_columns, const Name
     return min_position;
 }
 
-static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, const Names & queried_columns)
+static NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names & queried_columns)
 {
-    const auto & columns_description = metadata_snapshot->getColumns();
-    NameSet table_columns(std::from_range_t{},
-          metadata_snapshot->getColumns().getAllPhysical() | std::views::transform([](const auto & col) { return col.name; }));
+    GetColumnsOptions options(GetColumnsOptions::All);
+    options.withVirtuals();
+    options.withSubcolumns();
 
+    auto columns_list = storage_snapshot->getColumns(options);
+    NameSet table_columns;
+
+    for (const auto & column : columns_list)
+        table_columns.insert(column.name);
+
+    const auto & storage_columns = storage_snapshot->metadata->getColumns();
     /// Add also requested subcolumns to known table columns.
     for (const auto & column : queried_columns)
     {
-        if (columns_description.hasSubcolumn(column))
+        if (storage_columns.hasSubcolumn(column))
             table_columns.insert(column);
     }
 
@@ -78,18 +86,19 @@ static NameSet getTableColumns(const StorageMetadataPtr & metadata_snapshot, con
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     std::unordered_map<std::string, UInt64> column_sizes_,
-    const StorageMetadataPtr & metadata_snapshot,
+    const StorageSnapshotPtr & storage_snapshot,
     ConditionSelectivityEstimatorPtr estimator_,
     const Names & queried_columns_,
     const std::optional<NameSet> & supported_columns_,
     LoggerPtr log_)
     : estimator(estimator_)
-    , table_columns(getTableColumns(metadata_snapshot, queried_columns_))
+    , table_columns(getTableColumns(storage_snapshot, queried_columns_))
     , queried_columns{queried_columns_}
     , supported_columns{supported_columns_}
     , sorting_key_names{NameSet(
-          metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , primary_key_names_positions(fillNamesPositions(metadata_snapshot->getPrimaryKey().column_names))
+          storage_snapshot->metadata->getSortingKey().column_names.begin(), storage_snapshot->metadata->getSortingKey().column_names.end())}
+    , primary_key_names_positions(fillNamesPositions(storage_snapshot->metadata->getPrimaryKey().column_names))
+    , storage_metadata(storage_snapshot->metadata)
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -347,7 +356,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
         {
             cond.good = cond.viable;
 
-            cond.estimated_row_count = estimator->estimateRelationProfile(node).rows;
+            cond.estimated_row_count = estimator->estimateRelationProfile(storage_metadata, node).rows;
 
             if (node.getASTNode() != nullptr)
                 LOG_DEBUG(log, "Condition {} has estimated row count {}", node.getASTNode()->dumpTree(), cond.estimated_row_count);

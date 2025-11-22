@@ -16,6 +16,7 @@
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Interpreters/IcebergMetadataLog.h>
+#include <Interpreters/DeltaMetadataLog.h>
 #include <Common/MemoryTrackerDebugBlockerInThread.h>
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/DistributedCacheLog.h>
@@ -67,7 +68,7 @@ SystemLogQueue<LogElement>::SystemLogQueue(const SystemLogQueueSettings & settin
 static thread_local bool recursive_push_call = false;
 
 template <typename LogElement>
-void SystemLogQueue<LogElement>::push(LogElement&& element)
+void SystemLogQueue<LogElement>::push(LogElement && element)
 {
     /// It is possible that the method will be called recursively.
     /// Better to drop these events to avoid complications.
@@ -76,10 +77,11 @@ void SystemLogQueue<LogElement>::push(LogElement&& element)
     recursive_push_call = true;
     SCOPE_EXIT({ recursive_push_call = false; });
 
-    /// Memory can be allocated while resizing on queue.push_back.
-    /// The size of allocation can be in order of a few megabytes.
-    /// But this should not be accounted for query memory usage.
-    /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flaky.
+
+    /// Queue resize can allocate memory
+    /// - MemoryTrackerDebugBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
+    /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
+    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     /// Should not log messages under mutex.
@@ -128,7 +130,7 @@ void SystemLogQueue<LogElement>::handleCrash()
 {
     if (settings.notify_flush_on_crash)
     {
-        notifyFlush(getLastLogIndex(), /* should_prepare_tables_anyway */ true);
+        waitFlush(getLastLogIndex(),  /* should_prepare_tables_anyway */ true);
     }
 }
 
@@ -165,10 +167,18 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered before we wait the result
     notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 
-    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
-    {
-        return (flushed_index >= expected_flushed_index) || is_shutdown;
-    });
+    // prepared_tables starts from -1, so we need to wait for prepared_tables >= 0 when expected_flushed_index == 0 to make sure the table is created
+    // In theory it should be possible to wait only for prepared_tables, but:
+    // 1. It reflects the logic more precisely
+    // 2. One extra comparison shouldn't matter here
+    auto result = confirm_event.wait_for(
+        lock,
+        std::chrono::seconds(timeout_seconds),
+        [&]
+        {
+            return (flushed_index >= expected_flushed_index && (!should_prepare_tables_anyway || prepared_tables >= expected_flushed_index))
+                || is_shutdown;
+        });
 
     if (!result)
     {
@@ -312,7 +322,6 @@ void SystemLogBase<LogElement>::stopFlushThread()
 template <typename LogElement>
 void SystemLogBase<LogElement>::add(LogElement element)
 {
-    [[maybe_unused]] MemoryTrackerDebugBlockerInThread blocker;
     queue->push(std::move(element));
 }
 

@@ -5,6 +5,7 @@ sidebar_label: 'null function'
 sidebar_position: 140
 slug: /sql-reference/table-functions/null
 title: 'null'
+doc_type: 'reference'
 ---
 
 # null Table Function

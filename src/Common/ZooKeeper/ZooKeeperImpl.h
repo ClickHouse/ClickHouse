@@ -93,6 +93,11 @@ namespace DB
     class AggregatedZooKeeperLog;
 }
 
+namespace HistogramMetrics
+{
+    struct Metric;
+}
+
 namespace Coordination
 {
 
@@ -272,12 +277,11 @@ private:
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
-        clock::time_point time;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
-    RequestsQueue requests_queue{1024, "zookeeper-client"};
+    RequestsQueue requests_queue{1024};
     void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;

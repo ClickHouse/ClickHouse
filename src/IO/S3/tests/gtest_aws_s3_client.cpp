@@ -141,8 +141,8 @@ void testServerSideEncryption(
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {},
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
         uri.uri.getScheme());
 
     client_configuration.endpointOverride = uri.endpoint;
@@ -416,8 +416,8 @@ TEST(IOTestAwsS3Client, AssumeRole)
         s3_slow_all_threads_after_retryable_error,
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
-        /* get_request_throttler = */ {},
-        /* put_request_throttler = */ {},
+        /* opt_disk_name = */ {},
+        /* request_throttler = */ {},
         "http");
 
     client_configuration.endpointOverride = uri.endpoint;

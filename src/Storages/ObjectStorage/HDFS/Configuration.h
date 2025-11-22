@@ -58,7 +58,7 @@ public:
     String getDataSourceDescription() const override { return url; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    void check(ContextPtr context) const override;
+    void check(ContextPtr context) override;
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override;
 

@@ -174,6 +174,8 @@ bool FunctionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compar
         || nulls_action != rhs_typed.nulls_action)
         return false;
 
+    /// is_operator is ignored here because it affects only AST formatting
+
     if (!compare_options.compare_types)
         return true;
 
@@ -204,6 +206,8 @@ void FunctionNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
     hash_state.update(isWindowFunction());
     hash_state.update(nulls_action);
 
+    /// is_operator is ignored here because it affects only AST formatting
+
     if (!compare_options.compare_types)
         return;
 
@@ -225,6 +229,7 @@ QueryTreeNodePtr FunctionNode::cloneImpl() const
     result_function->kind = kind;
     result_function->nulls_action = nulls_action;
     result_function->wrap_with_nullable = wrap_with_nullable;
+    result_function->is_operator = is_operator;
 
     return result_function;
 }
@@ -235,6 +240,7 @@ ASTPtr FunctionNode::toASTImpl(const ConvertToASTOptions & options) const
 
     function_ast->name = function_name;
     function_ast->nulls_action = nulls_action;
+    function_ast->is_operator = is_operator;
 
     if (isWindowFunction())
     {

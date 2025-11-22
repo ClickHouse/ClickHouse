@@ -8,11 +8,12 @@ from helpers.s3_tools import (
     AzureUploader,
     LocalUploader,
     S3Uploader,
+    S3Downloader,
     LocalDownloader,
     prepare_s3_bucket,
 )
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="package")
 def started_cluster_iceberg_no_spark():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
@@ -29,6 +30,7 @@ def started_cluster_iceberg_no_spark():
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
+            with_iceberg_catalog=True,
         )
         cluster.add_instance(
             "node2",
@@ -37,19 +39,7 @@ def started_cluster_iceberg_no_spark():
                 "configs/config.d/cluster.xml",
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
-            ],
-            user_configs=["configs/users.d/users.xml"],
-            stay_alive=True,
-        )
-        cluster.add_instance(
-            "node3",
-            main_configs=[
-                "configs/config.d/query_log.xml",
-                "configs/config.d/cluster.xml",
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
+                "configs/config.d/no_metadata_log.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             stay_alive=True,
@@ -81,6 +71,7 @@ def started_cluster_iceberg_no_spark():
 
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
+        cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
 
         yield cluster
 
