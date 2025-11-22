@@ -57,12 +57,12 @@ ISchedulerNode * PriorityAllocation::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * PriorityAllocation::selectAllocationToKill()
+ResourceAllocation * PriorityAllocation::selectAllocationToKill(IncreaseRequest * triggering)
 {
     if (running_children.empty())
         return nullptr;
     // Kill the allocation from the least priority child. It is the last as the set is ordered by priority.
-    return running_children.rbegin()->selectAllocationToKill();
+    return running_children.rbegin()->selectAllocationToKill(triggering);
 }
 
 void PriorityAllocation::approveIncrease()

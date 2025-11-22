@@ -88,13 +88,13 @@ public:
     virtual void approveIncrease() = 0;
     virtual void approveDecrease() = 0;
 
-    /// Returns allocation to be killed from this node or its children.
+    /// Returns allocation to be killed from this node or its children to approve a `triggering` increase request.
     /// NOTE: It is important to keep killing order opposite to acquire ordering.
     /// This means that allocation policies of every node should have:
     ///     -- acquire order -->
     ///  A0 A1 A2 A3 A4 A5 A6 A7 A8 - ResourceAllocations
     ///    <-- killing order --
-    virtual ResourceAllocation * selectAllocationToKill() = 0;
+    virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest * triggering) = 0;
 
     /// For parent only. Sets the usage key.
     void setUsageKey(double value, size_t tie_breaker)

@@ -19,7 +19,7 @@ public:
     ISchedulerNode * getChild(const String & child_name) override;
 
     // ISpaceSharedNode
-    ResourceAllocation * selectAllocationToKill() override;
+    ResourceAllocation * selectAllocationToKill(IncreaseRequest * triggering) override;
     void approveIncrease() override;
     void approveDecrease() override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;

@@ -62,11 +62,13 @@ ISchedulerNode * FairAllocation::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * FairAllocation::selectAllocationToKill()
+ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest * triggering)
 {
     if (running_children.empty())
         return nullptr;
-    return running_children.rbegin()->selectAllocationToKill();
+    ResourceAllocation * victim = running_children.rbegin()->selectAllocationToKill(triggering);
+
+    return victim;
 }
 
 void FairAllocation::approveIncrease()

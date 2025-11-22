@@ -70,9 +70,9 @@ ISchedulerNode * AllocationLimit::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * AllocationLimit::selectAllocationToKill()
+ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest * triggering)
 {
-    return child->selectAllocationToKill();
+    return child->selectAllocationToKill(triggering);
 }
 
 void AllocationLimit::approveIncrease()
@@ -155,19 +155,14 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             // Limit would be violated, so we have to reclaim resource
             if (!allocation_to_kill)
             {
-                if (ResourceAllocation * candidate_to_kill = selectAllocationToKill())
+                allocation_to_kill = selectAllocationToKill(new_increase);
+                if (allocation_to_kill)
                 {
-                    // It is important not to kill allocation due to pending allocation in the same queue
-                    if (!new_increase->pending_allocation // Kill due to running allocation increase
-                        || &candidate_to_kill->queue != &new_increase->allocation.queue) // Or kills allocation from a different queue
-                    {
-                        SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
-                            getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, candidate_to_kill->id);
-                        allocation_to_kill = candidate_to_kill;
-                        allocation_to_kill->killAllocation(std::make_exception_ptr(
-                            Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
-                                "Resource limit exceeded"))); // TODO(serxa): add limit details, resource name, path
-                    }
+                    SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",
+                        getPath(), allocated, new_increase->size, max_allocated, new_increase->allocation.id, allocation_to_kill->id);
+                    allocation_to_kill->killAllocation(std::make_exception_ptr(
+                        Exception(ErrorCodes::RESOURCE_LIMIT_EXCEEDED,
+                            "Resource limit exceeded"))); // TODO(serxa): add limit details, resource name, path
                 }
             }
             // Block until there is enough resource to process child's increase request

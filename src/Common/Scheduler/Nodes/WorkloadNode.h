@@ -872,10 +872,10 @@ private:
         decrease = child->decrease;
     }
 
-    ResourceAllocation * selectAllocationToKill() override
+    ResourceAllocation * selectAllocationToKill(IncreaseRequest * triggering) override
     {
         chassert(child);
-        return child->selectAllocationToKill();
+        return child->selectAllocationToKill(triggering);
     }
 
     void propagateUpdateSchedulingSettings() override
