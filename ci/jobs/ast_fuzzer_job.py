@@ -21,13 +21,10 @@ cwd = Utils.cwd()
 def get_run_command(
     workspace_path: Path,
     image: DockerImage,
-    check_name: str,
+    buzzhouse: bool,
 ) -> str:
-    fuzzer_name = (
-        "BuzzHouse" if check_name.lower().startswith("buzzhouse") else "AST Fuzzer"
-    )
     envs = [
-        f"-e FUZZER_TO_RUN='{fuzzer_name}'",
+        f"-e FUZZER_TO_RUN='{'BuzzHouse' if buzzhouse else 'AST Fuzzer'}'",
     ]
 
     env_str = " ".join(envs)
@@ -49,6 +46,7 @@ def get_run_command(
 
 def run_fuzz_job(check_name: str):
     logging.basicConfig(level=logging.INFO)
+    buzzhouse: bool = check_name.lower().startswith("buzzhouse")
 
     temp_dir = Path(f"{cwd}/ci/tmp/")
     assert Path(f"{temp_dir}/clickhouse").exists(), "ClickHouse binary not found"
@@ -58,7 +56,7 @@ def run_fuzz_job(check_name: str):
     workspace_path = temp_dir / "workspace"
     workspace_path.mkdir(parents=True, exist_ok=True)
 
-    run_command = get_run_command(workspace_path, docker_image, check_name)
+    run_command = get_run_command(workspace_path, docker_image, buzzhouse)
     logging.info("Going to run %s", run_command)
 
     info = Info()
@@ -81,10 +79,11 @@ def run_fuzz_job(check_name: str):
         fatal_log,
         workspace_path / "stderr.log",
         server_log,
-        workspace_path / "fuzzer_out.sql",
         fuzzer_log,
         dmesg_log,
     ]
+    if buzzhouse:
+        paths.extend([workspace_path / "fuzzerout.sql", workspace_path / "fuzz.json"])
 
     try:
         with open(workspace_path / "status.txt", "r", encoding="utf-8") as status_f:
@@ -105,7 +104,7 @@ def run_fuzz_job(check_name: str):
     if not result.is_ok():
         info = ""
         error_output = Shell.get_output(
-            f"rg --text -A 10 -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
+            f"rg --text -A 10 -o 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|Received signal.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
         )
         if error_output:
             error_lines = error_output.splitlines()
@@ -116,17 +115,22 @@ def run_fuzz_job(check_name: str):
             error_output = "\n".join(error_lines)
             info += f"Error:\n{error_output}\n"
 
-        if result.results and result.results[-1].name in [
-            "Let op!",
+        patterns = [
+            "BuzzHouse fuzzer exception",
             "Killed",
+            "Let op!",
             "Unknown error",
-        ]:
-            info += "---\n\nFuzzer log (last 30 lines):\n"
-            info += Shell.get_output(f"tail -n30 {fuzzer_log}", verbose=False) + "\n"
+        ]
+        if result.results and any(
+            pattern in result.results[-1].name for pattern in patterns
+        ):
+            info += "---\n\nFuzzer log (last 200 lines):\n"
+            info += Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False) + "\n"
         else:
             try:
                 fuzzer_test_generator = FuzzerTestGenerator(
-                    str(server_log), str(fuzzer_log)
+                    str(server_log),
+                    str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
                 )
                 failed_query = fuzzer_test_generator.get_failed_query()
                 if failed_query:
