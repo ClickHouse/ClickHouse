@@ -258,6 +258,24 @@ def test_named_collection_limit(started_cluster):
             f"CREATE NAMED COLLECTION nc_{throw_limit} AS key=1"
         )
 
+        node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
+
+        verify_warning_with_values(
+            node,
+            current_val=throw_limit-1,
+            warn_val=warn_limit,
+            throw_val=throw_limit
+        )
+
+        node.query(f"DROP NAMED COLLECTION IF EXISTS nc_1")
+
+        verify_warning_with_values(
+            node,
+            current_val=throw_limit-1,
+            warn_val=warn_limit,
+            throw_val=throw_limit
+        )
+
         # Cleanup and check warning disappears
         for i in range(throw_limit + 1):
             node.query(f"DROP NAMED COLLECTION IF EXISTS nc_{i}")
