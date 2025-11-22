@@ -120,27 +120,30 @@ public:
             {
                 constant_strings[2 * i] = const_col->getValue<String>();
             }
+            else if (const auto * const_col_any = checkAndGetColumn<ColumnConst>(column.get()))
+            {
+                WriteBufferFromOwnString buf;
+                FormatSettings format_settings;
+                auto serialization = arguments[i + 1].type->getDefaultSerialization();
+
+                const auto & nested = const_col_any->getDataColumn();
+                serialization->serializeText(nested, 0, buf, format_settings);
+
+                constant_strings[2 * i] = buf.str();
+            }
             else
             {
-                ColumnPtr column_to_serialize = column;
-
-                /// Resize const column to input_rows_count if needed
-                if (const auto * const_column = checkAndGetColumn<ColumnConst>(column_to_serialize.get()))
-                {
-                    column_to_serialize = const_column->cloneResized(input_rows_count);
-                }
-
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
-                auto full_column = column_to_serialize->convertToFullIfNeeded();
+                auto full_column = column->convertToFullIfNeeded();
 
                 chassert(full_column->size() == input_rows_count);
 
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
-                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, full_column->size());
+                ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings;
-                for (size_t row = 0; row < full_column->size(); ++row)
+                for (size_t row = 0; row < column->size(); ++row)
                 {
                     serialization->serializeText(*full_column, row, write_buffer, format_settings);
                     write_helper.finishRow();
