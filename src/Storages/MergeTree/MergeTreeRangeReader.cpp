@@ -57,6 +57,11 @@ static void filterColumns(Columns & columns, const IColumn::Filter & filter)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
+            /// Debug logging: print column and filter information
+            LOG_ERROR(&Poco::Logger::get("MergeTreeRangeReader"),
+                "filterColumns: column_size={}, filter_size={}, column_type={}, column_name={}",
+                column->size(), filter.size(), column->getFamilyName(), column->getName());
+
             column->assumeMutable()->filter(filter);
 
             if (column->empty())
