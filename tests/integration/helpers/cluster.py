@@ -4719,7 +4719,7 @@ class ClickHouseInstance:
                         [
                             "bash",
                             "-c",
-                            f"gdb -batch -ex 'thread apply all bt full' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                            f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
                         ],
                         user="root",
                     )
@@ -4813,7 +4813,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         if last_err is not None:
@@ -4836,7 +4836,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         raise Exception(
