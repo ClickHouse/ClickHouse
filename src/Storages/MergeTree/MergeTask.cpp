@@ -294,6 +294,15 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         key_columns.emplace(global_ctx->merging_params.version_column);
     }
 
+    /// Force all columns params of Graphite mode.
+    if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        key_columns.emplace(global_ctx->merging_params.graphite_params.path_column_name);
+        key_columns.emplace(global_ctx->merging_params.graphite_params.time_column_name);
+        key_columns.emplace(global_ctx->merging_params.graphite_params.value_column_name);
+        key_columns.emplace(global_ctx->merging_params.graphite_params.version_column_name);
+    }
+
     /// Force sign column for VersionedCollapsing mode. Version is already in primary key.
     if (global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
         key_columns.emplace(global_ctx->merging_params.sign_column);
