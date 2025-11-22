@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
@@ -14,6 +15,7 @@ namespace DB
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsObjectStorageQueueAction after_processing;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
@@ -57,6 +59,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
+    , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
@@ -72,6 +75,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
 String ObjectStorageQueueTableMetadata::toString() const
 {
     Poco::JSON::Object json;
+    json.set("after_processing", actionToString(after_processing.load()));
     json.set("mode", mode);
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
@@ -86,6 +90,34 @@ String ObjectStorageQueueTableMetadata::toString() const
     oss.exceptions(std::ios::failbit);
     Poco::JSON::Stringifier::stringify(json, oss);
     return oss.str();
+}
+
+ObjectStorageQueueAction ObjectStorageQueueTableMetadata::actionFromString(const std::string & action)
+{
+    if (action == "keep")
+        return ObjectStorageQueueAction::KEEP;
+    if (action == "delete")
+        return ObjectStorageQueueAction::DELETE;
+    if (action == "move")
+        return ObjectStorageQueueAction::MOVE;
+    if (action == "tag")
+        return ObjectStorageQueueAction::TAG;
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
+}
+
+std::string ObjectStorageQueueTableMetadata::actionToString(ObjectStorageQueueAction action)
+{
+    switch (action)
+    {
+        case ObjectStorageQueueAction::DELETE:
+            return "delete";
+        case ObjectStorageQueueAction::KEEP:
+            return "keep";
+        case ObjectStorageQueueAction::MOVE:
+            return "move";
+        case ObjectStorageQueueAction::TAG:
+            return "tag";
+    }
 }
 
 ObjectStorageQueueMode ObjectStorageQueueTableMetadata::getMode() const
@@ -114,6 +146,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , columns(json->getValue<String>("columns"))
     , mode(json->getValue<String>("mode"))
     , last_processed_path(getOrDefault<String>(json, "last_processed_file", "s3queue_", ""))
+    , after_processing(actionFromString(json->getValue<String>("after_processing")))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
@@ -155,6 +188,14 @@ void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableM
 
 void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectStorageQueueTableMetadata & from_zk) const
 {
+    if (after_processing != from_zk.after_processing)
+        throw Exception(
+            ErrorCodes::METADATA_MISMATCH,
+            "Existing table metadata in ZooKeeper differs "
+            "in action after processing. Stored in ZooKeeper: {}, local: {}",
+            DB::toString(from_zk.after_processing.load()),
+            DB::toString(after_processing.load()));
+
     if (mode != from_zk.mode)
         throw Exception(
             ErrorCodes::METADATA_MISMATCH,

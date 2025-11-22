@@ -45,51 +45,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ObjectStorageQueueAction ObjectStorageQueuePostProcessor::actionFromString(const std::string & action)
-{
-    if (action == "keep")
-        return ObjectStorageQueueAction::KEEP;
-    if (action == "delete")
-        return ObjectStorageQueueAction::DELETE;
-    if (action == "move")
-        return ObjectStorageQueueAction::MOVE;
-    if (action == "tag")
-        return ObjectStorageQueueAction::TAG;
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
-}
-
-std::string ObjectStorageQueuePostProcessor::actionToString(ObjectStorageQueueAction action)
-{
-    switch (action)
-    {
-        case ObjectStorageQueueAction::DELETE:
-            return "delete";
-        case ObjectStorageQueueAction::KEEP:
-            return "keep";
-        case ObjectStorageQueueAction::MOVE:
-            return "move";
-        case ObjectStorageQueueAction::TAG:
-            return "tag";
-    }
-}
-
 ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     ContextPtr context_,
     ObjectStorageType type_,
     ObjectStoragePtr object_storage_,
     String engine_name_,
+    const ObjectStorageQueueTableMetadata & table_metadata_,
     AfterProcessingSettings settings_)
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
     , engine_name(engine_name_)
+    , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))
 { }
 
 void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) const
 {
-    const ObjectStorageQueueAction after_processing_action = settings.after_processing;
+    const ObjectStorageQueueAction after_processing_action = table_metadata.after_processing.load();
     if (after_processing_action == ObjectStorageQueueAction::DELETE)
     {
         /// We do need to apply after-processing action before committing requests to keeper.
@@ -162,7 +136,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Unsupported after_processing action {}",
-            actionToString(after_processing_action));
+            ObjectStorageQueueTableMetadata::actionToString(after_processing_action));
     }
 
 }

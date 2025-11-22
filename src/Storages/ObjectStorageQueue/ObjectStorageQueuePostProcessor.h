@@ -15,7 +15,6 @@ class ObjectStorageQueuePostProcessor: public WithContext
 public:
     struct AfterProcessingSettings
     {
-        ObjectStorageQueueAction after_processing;
         UInt32 after_processing_retries;
         String after_processing_move_uri;
         String after_processing_move_prefix;
@@ -27,14 +26,12 @@ public:
         String after_processing_tag_value;
     };
 
-    static ObjectStorageQueueAction actionFromString(const std::string & action);
-    static std::string actionToString(ObjectStorageQueueAction action);
-
     ObjectStorageQueuePostProcessor(
         ContextPtr context_,
         ObjectStorageType type_,
         ObjectStoragePtr object_storage_,
         String engine_name_,
+        const ObjectStorageQueueTableMetadata & table_metadata_,
         AfterProcessingSettings settings_);
 
     /// Apply post-processing to the objects. Can throw exceptions in case of misconfiguration.
@@ -56,6 +53,7 @@ private:
     ObjectStorageType type;
     const ObjectStoragePtr object_storage;
     const String engine_name;
+    const ObjectStorageQueueTableMetadata & table_metadata;
     const AfterProcessingSettings settings;
 
     LoggerPtr log;

@@ -298,6 +298,10 @@ def test_alter_settings(started_cluster):
         f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
     )
 
+    assert '"after_processing":"keep"' in node1.query(
+        f"SELECT * FROM system.zookeeper WHERE path = '{keeper_path}'"
+    )
+
     generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
@@ -399,6 +403,7 @@ def test_alter_settings(started_cluster):
 
     def with_keeper(setting):
         return setting in {
+            "after_processing",
             "loading_retries",
             "processing_threads_num",
             "tracked_files_limit",

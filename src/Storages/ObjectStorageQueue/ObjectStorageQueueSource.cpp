@@ -1306,13 +1306,14 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
 
     if (!successful_objects.empty()
-        && after_processing_settings.after_processing != ObjectStorageQueueAction::KEEP)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
         auto postProcessor = ObjectStorageQueuePostProcessor(
             getContext(),
             configuration->getType(),
             object_storage,
             getName(),
+            files_metadata->getTableMetadata(),
             after_processing_settings);
         postProcessor.process(successful_objects);
     }

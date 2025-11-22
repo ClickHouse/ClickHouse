@@ -259,7 +259,6 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
     })
     , after_processing_settings(AfterProcessingSettings{
-        .after_processing = (*queue_settings_)[ObjectStorageQueueSetting::after_processing],
         .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
         .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
         .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
@@ -889,16 +888,13 @@ void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_obj
 
     {
         std::lock_guard lock(mutex);
-
-        if (after_processing_settings.after_processing != ObjectStorageQueueAction::KEEP)
-        {
-            post_processor.emplace(
-                getContext(),
-                type,
-                object_storage,
-                getName(),
-                after_processing_settings);
-        }
+        post_processor.emplace(
+            getContext(),
+            type,
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
     }
 
     if (post_processor)
@@ -930,7 +926,8 @@ void StorageObjectStorageQueue::commit(
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
-    if (!successful_objects.empty())
+    if (!successful_objects.empty()
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
         postProcess(successful_objects);
     }
@@ -1328,11 +1325,6 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
-            else if (change.name == "after_processing")
-            {
-                auto action = ObjectStorageQueuePostProcessor::actionFromString(change.value.safeGet<String>());
-                after_processing_settings.after_processing = action;
-            }
             else if (change.name == "after_processing_retries")
                 after_processing_settings.after_processing_retries = change.value.safeGet<UInt32>();
             else if (change.name == "after_processing_move_uri")
@@ -1414,6 +1406,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
 
     const auto & table_metadata = getTableMetadata();
     settings[ObjectStorageQueueSetting::mode] = table_metadata.mode;
+    settings[ObjectStorageQueueSetting::after_processing] = table_metadata.after_processing;
     settings[ObjectStorageQueueSetting::keeper_path] = zk_path;
     settings[ObjectStorageQueueSetting::loading_retries] = table_metadata.loading_retries;
     settings[ObjectStorageQueueSetting::processing_threads_num] = table_metadata.processing_threads_num;
@@ -1439,7 +1432,6 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
         settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
-        settings[ObjectStorageQueueSetting::after_processing] = after_processing_settings.after_processing;
         settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
         settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
         settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;

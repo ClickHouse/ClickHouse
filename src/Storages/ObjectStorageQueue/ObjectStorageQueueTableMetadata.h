@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <base/types.h>
@@ -24,6 +25,7 @@ struct ObjectStorageQueueTableMetadata
     const String mode;
     const String last_processed_path;
     /// Changeable settings.
+    std::atomic<ObjectStorageQueueAction> after_processing;
     std::atomic<UInt64> loading_retries;
     std::atomic<UInt64> processing_threads_num;
     std::atomic<bool> parallel_inserts;
@@ -43,6 +45,7 @@ struct ObjectStorageQueueTableMetadata
         , columns(other.columns)
         , mode(other.mode)
         , last_processed_path(other.last_processed_path)
+        , after_processing(other.after_processing.load())
         , loading_retries(other.loading_retries.load())
         , processing_threads_num(other.processing_threads_num.load())
         , parallel_inserts(other.parallel_inserts.load())
@@ -54,6 +57,7 @@ struct ObjectStorageQueueTableMetadata
 
     void syncChangeableSettings(const ObjectStorageQueueTableMetadata & other)
     {
+        after_processing = other.after_processing.load();
         loading_retries = other.loading_retries.load();
         processing_threads_num = other.processing_threads_num.load();
         tracked_files_limit = other.tracked_files_limit.load();
@@ -63,6 +67,9 @@ struct ObjectStorageQueueTableMetadata
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);
 
     static ObjectStorageQueueTableMetadata parse(const String & metadata_str);
+
+    static ObjectStorageQueueAction actionFromString(const std::string & action);
+    static std::string actionToString(ObjectStorageQueueAction action);
 
     String toString() const;
 
@@ -81,6 +88,7 @@ struct ObjectStorageQueueTableMetadata
             "mode",
             "buckets",
             "last_processed_path",
+            "after_processing",
             "loading_retries",
             "processing_threads_num",
             "parallel_inserts",
