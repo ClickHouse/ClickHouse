@@ -399,7 +399,7 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
 
 MULTITARGET_FUNCTION_AVX512BW_AVX2(
 MULTITARGET_FUNCTION_HEADER(
-template <typename T, bool full = false>
+template <typename T, bool full>
 void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail)
 {
     UInt64 matrix[64] = {};
@@ -434,17 +434,17 @@ ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, 
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::AVX512BW))
     {
-        reverseTransposeImplAVX512BW(src, buf, num_bits, tail);
+        reverseTransposeImplAVX512BW<T, full>(src, buf, num_bits, tail);
         return;
     }
     if (isArchSupported(TargetArch::AVX2))
     {
-        reverseTransposeImplAVX2(src, buf, num_bits, tail);
+        reverseTransposeImplAVX2<T, full>(src, buf, num_bits, tail);
         return;
     }
 #endif
     {
-        reverseTransposeImpl(src, buf, num_bits, tail);
+        reverseTransposeImpl<T, full>(src, buf, num_bits, tail);
     }
 }
 
