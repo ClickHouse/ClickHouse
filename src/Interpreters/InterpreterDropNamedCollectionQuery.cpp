@@ -38,12 +38,14 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().removeFromSQL(query);
-    if (CurrentMetrics::get(CurrentMetrics::NamedCollection) <= 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "CurrentMetrics::NamedCollection <= 0 when trying to drop a named collection ({})",
-            CurrentMetrics::get(CurrentMetrics::NamedCollection));
+    //
+    //    if (CurrentMetrics::get(CurrentMetrics::NamedCollection) <= 0)
+    //        throw Exception(ErrorCodes::LOGICAL_ERROR,
+    //            "CurrentMetrics::NamedCollection <= 0 when trying to drop a named collection ({})",
+    //            CurrentMetrics::get(CurrentMetrics::NamedCollection));
 
-    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
+    if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > 0)
+        CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 
     return {};
 }
