@@ -73,6 +73,7 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         configuration,
         query_settings,
         object_storage,
+        getInMemoryMetadataPtr(),
         local_distributed_processing,
         context,
         {}, // predicate
@@ -511,6 +512,7 @@ void StorageObjectStorage::truncate(
         configuration,
         query_settings,
         object_storage,
+        getInMemoryMetadataPtr(),
         local_distributed_processing,
         context,
         {}, // predicate
@@ -564,6 +566,7 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
+        nullptr,
         false/* distributed_processing */,
         context,
         {}/* predicate */,
