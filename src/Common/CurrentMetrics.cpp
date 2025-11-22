@@ -257,6 +257,9 @@
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
+    M(FreezePartThreads, "Number of threads in the threadpool for freezing data parts.") \
+    M(FreezePartThreadsActive, "Number of active threads in the threadpool for freezing data parts.") \
+    M(FreezePartThreadsScheduled, "Number of queued or active jobs in the threadpool for freezing data parts.") \
     M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
     M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
@@ -320,6 +323,10 @@
     M(VectorSimilarityIndexCacheCells, "Number of entries in the vector similarity index cache") \
     M(TextIndexDictionaryBlockCacheBytes, "Size of the text index dictionary block cache in bytes") \
     M(TextIndexDictionaryBlockCacheCells, "Number of entries in the text index dictionary block cache") \
+    M(TextIndexHeaderCacheBytes, "Size of the text index header cache in bytes") \
+    M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
+    M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
+    M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \
@@ -348,6 +355,7 @@
     M(MergeJoinBlocksCacheCount, "Total cached blocks in MergeJoin") \
     M(BcryptCacheBytes, "Total size of the bcrypt authentication cache in bytes") \
     M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
+    M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -455,6 +463,9 @@
     M(DropDistributedCacheThreads, "Number of threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsActive, "Number of active threads in the threadpool for drop distributed cache query.") \
     M(DropDistributedCacheThreadsScheduled, "Number of queued or active jobs in the threadpool for drop distributed cache.") \
+    \
+    M(S3CachedCredentialsProviders, "Total number of cached credentials providers") \
+
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

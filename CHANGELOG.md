@@ -20,7 +20,7 @@
 
 # 2025 Changelog
 
-### <a id="2510"></a> ClickHouse release 25.10, 2025-10-30
+### <a id="2510"></a> ClickHouse release 25.10, 2025-10-31
 
 #### Backward Incompatible Change
 * Changed default `schema_inference_make_columns_nullable` setting to respect column `Nullable`-ness information from Parquet/ORC/Arrow metadata, instead of making everything Nullable. No change for text formats. [#71499](https://github.com/ClickHouse/ClickHouse/pull/71499) ([Michael Kolupaev](https://github.com/al13n321)).
@@ -521,7 +521,7 @@
 * Added `Hash` as a new output format. It calculates a single hash value for all columns and rows of the result. This is useful for calculating a "fingerprint" of the result, for example, in use cases where data transfer is a bottleneck. Example: `SELECT arrayJoin(['abc', 'def']), 42 FORMAT Hash` returns `e5f9e676db098fdb9530d2059d8c23ef`. [#84607](https://github.com/ClickHouse/ClickHouse/pull/84607) ([Robert Schulze](https://github.com/rschu1ze)).
 * Add the ability to set up arbitrary watches in Keeper Multi queries. [#84964](https://github.com/ClickHouse/ClickHouse/pull/84964) ([Mikhail Artemenko](https://github.com/Michicosun)).
 * Adds an option `--max-concurrency` for the `clickhouse-benchmark` tool that enables a mode with a gradual increase in the number of parallel queries. [#85623](https://github.com/ClickHouse/ClickHouse/pull/85623) ([Sergei Trifonov](https://github.com/serxa)).
-* TODO: what's that? Support partially aggregated metrics. [#85328](https://github.com/ClickHouse/ClickHouse/pull/85328) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* Support partially aggregated metrics. [#85328](https://github.com/ClickHouse/ClickHouse/pull/85328) ([Mikhail Artemenko](https://github.com/Michicosun)).
 
 #### Experimental Feature
 * Enable correlated subqueries support by default, they are no longer experimental. [#85107](https://github.com/ClickHouse/ClickHouse/pull/85107) ([Dmitry Novik](https://github.com/novikd)).

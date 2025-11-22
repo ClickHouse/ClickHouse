@@ -606,10 +606,10 @@ void Connection::receiveHello(const Poco::Timespan & handshake_timeout)
             readVarUInt(server_query_plan_serialization_version, *in);
         }
 
-        server_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
+        worker_cluster_function_protocol_version = DBMS_CLUSTER_INITIAL_PROCESSING_PROTOCOL_VERSION;
         if (server_revision >= DBMS_MIN_REVISION_WITH_VERSIONED_CLUSTER_FUNCTION_PROTOCOL)
         {
-            readVarUInt(server_cluster_function_protocol_version, *in);
+            readVarUInt(worker_cluster_function_protocol_version, *in);
         }
     }
     else if (packet_type == Protocol::Server::Exception)
@@ -1005,7 +1005,7 @@ void Connection::sendCancel()
 {
     /// If we already disconnected.
     if (!out)
-        return;
+        throw Exception(ErrorCodes::NETWORK_ERROR, "Connection to {} terminated", getDescription());
 
     writeVarUInt(Protocol::Client::Cancel, *out);
     out->finishChunk();
@@ -1056,7 +1056,7 @@ void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
-    response.serialize(*out, server_cluster_function_protocol_version);
+    response.serialize(*out, worker_cluster_function_protocol_version);
     out->finishChunk();
     out->next();
 }
@@ -1204,7 +1204,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             elem->pipe = elem->creating_pipe_callback();
 
         QueryPipelineBuilder pipeline = std::move(*elem->pipe);
-        elem->pipe.reset();
+        elem->pipe = nullptr;
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getSharedHeader(), *this, *elem, std::move(on_cancel));
         pipeline.setSinks([&](const SharedHeader &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
