@@ -104,7 +104,7 @@ def run_fuzz_job(check_name: str):
     if not result.is_ok():
         info = ""
         error_output = Shell.get_output(
-            f"rg --text -A 10 -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
+            f"rg --text -A 10 -o 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|Received signal.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
         )
         if error_output:
             error_lines = error_output.splitlines()
@@ -119,8 +119,6 @@ def run_fuzz_job(check_name: str):
             "BuzzHouse fuzzer exception",
             "Killed",
             "Let op!",
-            "Received signal",
-            "runtime error",
             "Unknown error",
         ]
         if result.results and any(
@@ -131,7 +129,8 @@ def run_fuzz_job(check_name: str):
         else:
             try:
                 fuzzer_test_generator = FuzzerTestGenerator(
-                    str(server_log), str(fuzzer_log)
+                    str(server_log),
+                    str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
                 )
                 failed_query = fuzzer_test_generator.get_failed_query()
                 if failed_query:
