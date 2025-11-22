@@ -284,7 +284,12 @@ protected:
     {
         if (table)
         {
-            StorageMetadataPtr metadata_snapshot = table->getInMemoryMetadataPtr();
+            StorageMetadataPtr metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
+            if (!metadata_snapshot)
+            {
+                columns[res_index++]->insertDefault();
+                return;
+            }
 
             NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
             if (!query_parameters_array.empty())
@@ -520,10 +525,12 @@ protected:
                 {
                     chassert(lock != nullptr);
                     Array table_paths_array;
-                    auto paths = table->getDataPaths();
-                    table_paths_array.reserve(paths.size());
-                    for (const String & path : paths)
-                        table_paths_array.push_back(path);
+                    if (auto paths = table->tryGetDataPaths())
+                    {
+                        table_paths_array.reserve(paths->size());
+                        for (const String & path : *paths)
+                            table_paths_array.push_back(path);
+                    }
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
                     lock = nullptr;
@@ -537,7 +544,7 @@ protected:
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
-                    metadata_snapshot = table->getInMemoryMetadataPtr();
+                    metadata_snapshot = table->tryGetInMemoryMetadataPtr().value_or(nullptr);
 
                 if (columns_mask[src_index++])
                 {
@@ -651,7 +658,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto policy = table ? table->getStoragePolicy() : nullptr;
+                    auto policy = table ? table->tryGetStoragePolicy().value_or(nullptr) : nullptr;
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
@@ -778,7 +785,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_rows = table ? table->lifetimeRows() : std::nullopt;
+                    auto lifetime_rows = table ? table->tryLifetimeRows().value_or(std::nullopt) : std::nullopt;
                     if (lifetime_rows)
                         res_columns[res_index++]->insert(*lifetime_rows);
                     else
@@ -787,7 +794,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    auto lifetime_bytes = table ? table->lifetimeBytes() : std::nullopt;
+                    auto lifetime_bytes = table ? table->tryLifetimeBytes().value_or(std::nullopt) : std::nullopt;
                     if (lifetime_bytes)
                         res_columns[res_index++]->insert(*lifetime_bytes);
                     else
@@ -852,8 +859,8 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (table && table->getInMemoryMetadataPtr()->sql_security_type == SQLSecurityType::DEFINER)
-                        res_columns[res_index++]->insert(*table->getInMemoryMetadataPtr()->definer);
+                    if (metadata_snapshot && metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
+                        res_columns[res_index++]->insert(*metadata_snapshot->definer);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
