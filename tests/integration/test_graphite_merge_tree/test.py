@@ -533,3 +533,4 @@ CREATE TABLE test.graphite
     q("INSERT INTO test.graphite FORMAT TSV", to_insert)
     q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
     q("OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL")
+    q("DROP TABLE test.graphite")
