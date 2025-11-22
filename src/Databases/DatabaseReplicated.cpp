@@ -135,7 +135,7 @@ static inline std::tuple<String, UInt16, UUID> parseHostID(const String & host_i
     /// Find the last colon to extract UUID
     size_t last_colon = host_id.rfind(':');
     if (last_colon == String::npos)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid host_id format: {}", host_id);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid host_id format: {}", host_id);
 
     String uuid_str = host_id.substr(last_colon + 1);
     String host_port_str = host_id.substr(0, last_colon);
@@ -150,8 +150,7 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, 
 {
     /// Determine the advertised host using the fallback chain:
     /// 1. replica_host (if configured)
-    /// 2. interserver_http_host (if configured)
-    /// 3. getFQDNOrHostName() (system hostname)
+    /// 2. getFQDNOrHostName() (system hostname)
     String host;
     if (global_context->hasReplicaHost())
     {
@@ -159,15 +158,7 @@ static inline String getHostID(ContextPtr global_context, const UUID & db_uuid, 
     }
     else
     {
-        auto host_port = global_context->getInterserverIOAddress();
-        if (!host_port.first.empty())
-        {
-            host = host_port.first;
-        }
-        else
-        {
-            host = getFQDNOrHostName();
-        }
+        host = getFQDNOrHostName();
     }
 
     UInt16 port = secure ? global_context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : global_context->getTCPPort();
@@ -637,7 +628,7 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
                 catch (const Exception & e)
                 {
                     /// If we can't parse the host_id, fall back to the original error
-                    if (e.code() == ErrorCodes::LOGICAL_ERROR)
+                    if (e.code() == ErrorCodes::BAD_ARGUMENTS)
                     {
                         throw Exception(
                             ErrorCodes::REPLICA_ALREADY_EXISTS,

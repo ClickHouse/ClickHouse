@@ -3,7 +3,7 @@ Integration tests for replica_host configuration in DatabaseReplicated
 
 This test suite validates:
 1. Basic replica_host configuration usage
-2. Fallback chain: replica_host → interserver_http_host → hostname
+2. Fallback chain: replica_host → hostname
 3. DDL and data replication with replica_host
 4. Special character handling (URL encoding)
 """
@@ -24,10 +24,9 @@ node1 = cluster.add_instance(
     stay_alive=True,
 )
 
-# Node without replica_host (uses interserver_http_host)
+# Node without replica_host (uses hostname fallback)
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config_without_replica_host.xml"],
     with_zookeeper=True,
     macros={"replica": "node2", "shard": "shard1"},
     stay_alive=True,
@@ -84,48 +83,29 @@ def test_replica_host_basic(started_cluster):
 
 
 def test_replica_host_fallback(started_cluster):
-    """Test fallback chain: replica_host → interserver_http_host → hostname."""
+    """Test fallback: replica_host → hostname."""
 
-    # Create database on all three nodes
-    for node in [node1, node2, node3]:
-        replica_name = node.name
+    for node in [node1, node3]:
         node.query(
-            f"CREATE DATABASE test_fallback ENGINE = Replicated('/clickhouse/databases/test_fallback', 'shard1', '{replica_name}')"
+            f"CREATE DATABASE test_fallback ENGINE = Replicated('/clickhouse/databases/test_fallback', 'shard1', '{node.name}')"
         )
-
-    # Wait for synchronization
-    for node in [node1, node2, node3]:
         node.query("SYSTEM SYNC DATABASE REPLICA test_fallback")
 
-    # Get all host_ids from ZooKeeper
     host_ids = node1.query(
         "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_fallback/replicas'"
     )
     host_ids_decoded = urllib.parse.unquote(host_ids)
 
-    print(f"All host IDs: {host_ids_decoded}")
+    assert "public.node1.com" in host_ids_decoded
+    assert "node3" in host_ids_decoded
 
-    # Verify node1 uses replica_host
-    assert "public.node1.com" in host_ids_decoded, \
-        "node1 should use replica_host"
-
-    # Verify node2 uses interserver_http_host (configured in its config)
-    assert "interserver.node2.com" in host_ids_decoded, \
-        "node2 should use interserver_http_host"
-
-    # Verify we have 3 different host_ids (one per node)
-    lines = [line for line in host_ids_decoded.strip().split('\n') if line]
-    assert len(lines) == 3, f"Expected 3 replicas, got {len(lines)}"
-
-    # Cleanup
-    for node in [node1, node2, node3]:
+    for node in [node1, node3]:
         node.query("DROP DATABASE test_fallback SYNC")
 
 
 def test_replica_host_ddl_replication(started_cluster):
-    """Test that DDL replication works correctly with replica_host."""
+    """Test DDL replication with replica_host."""
 
-    # Create database on node1 (with replica_host) and node2 (with interserver_http_host)
     node1.query(
         "CREATE DATABASE test_ddl ENGINE = Replicated('/clickhouse/databases/test_ddl', 'shard1', 'node1')"
     )
@@ -133,80 +113,46 @@ def test_replica_host_ddl_replication(started_cluster):
         "CREATE DATABASE test_ddl ENGINE = Replicated('/clickhouse/databases/test_ddl', 'shard1', 'node2')"
     )
 
-    # Wait for sync
     node1.query("SYSTEM SYNC DATABASE REPLICA test_ddl")
     node2.query("SYSTEM SYNC DATABASE REPLICA test_ddl")
 
-    # Create table on node1
     node1.query(
         "CREATE TABLE test_ddl.test_table (id UInt32, value String) ENGINE = ReplicatedMergeTree ORDER BY id"
     )
-
-    # Wait for DDL to replicate to node2
     node2.query("SYSTEM SYNC DATABASE REPLICA test_ddl")
 
-    # Verify table exists on node2
     tables_on_node2 = node2.query("SHOW TABLES FROM test_ddl")
-    assert "test_table" in tables_on_node2, \
-        f"Table should be replicated to node2, got: {tables_on_node2}"
+    assert "test_table" in tables_on_node2
 
-    # Insert data on node1
     node1.query("INSERT INTO test_ddl.test_table VALUES (1, 'hello'), (2, 'world')")
-
-    # Wait for data replication
     node2.query("SYSTEM SYNC REPLICA test_ddl.test_table")
 
-    # Verify data on node2
     count = node2.query("SELECT count() FROM test_ddl.test_table").strip()
-    assert count == "2", f"Expected 2 rows on node2, got {count}"
+    assert count == "2"
 
     value = node2.query("SELECT value FROM test_ddl.test_table WHERE id = 1").strip()
-    assert value == "hello", f"Expected 'hello', got {value}"
+    assert value == "hello"
 
-    # Cleanup
     node1.query("DROP DATABASE test_ddl SYNC")
     node2.query("DROP DATABASE test_ddl SYNC")
 
 
 def test_replica_host_special_characters(started_cluster):
-    """Test that special characters in replica_host are properly escaped."""
-
-    # This test verifies escapeForFileName() handles special characters
-    # replica_host might contain characters like colons in IPv6: [2001:db8::1]
+    """Test special character escaping in replica_host."""
 
     node1.query(
         "CREATE DATABASE test_escape ENGINE = Replicated('/clickhouse/databases/test_escape', 'shard1', 'node1')"
     )
     node1.query("SYSTEM SYNC DATABASE REPLICA test_escape")
 
-    # Get host_id from ZooKeeper - use name column which contains the replica name, value contains host_id
-    replicas = node1.query(
-        "SELECT name, value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas'"
-    ).strip()
-
-    print(f"Replicas in ZooKeeper: {replicas}")
-
-    # The replica name 'node1' should exist
-    assert "node1" in replicas, f"Expected replica 'node1' in ZooKeeper, got: {replicas}"
-
-    # Get the host_id value for node1 (full replica name is shard1|node1)
     host_id = node1.query(
         "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/databases/test_escape/replicas' AND name = 'shard1|node1'"
     ).strip()
 
-    # URL decode to get actual value
     host_id_decoded = urllib.parse.unquote(host_id)
-
-    print(f"Host ID (URL encoded): {host_id}")
-    print(f"Host ID (decoded): {host_id_decoded}")
-
-    # Verify it can be parsed (no errors)
-    # If escaping is wrong, parsing would fail
     parts = host_id_decoded.split(':')
-    assert len(parts) >= 3, \
-        f"host_id should have at least 3 parts (host:port:uuid), got: {host_id_decoded}"
+    assert len(parts) >= 3
 
-    # Cleanup
     node1.query("DROP DATABASE test_escape SYNC")
 
 
