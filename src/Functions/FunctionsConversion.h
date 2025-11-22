@@ -2718,8 +2718,7 @@ public:
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
     }
 
-    using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
-    static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter)
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         NullPresence null_presence = getNullPresense(arguments);
 
@@ -2730,20 +2729,11 @@ public:
         if (null_presence.has_nullable)
         {
             auto nested_columns = Block(createBlockWithNestedColumns(arguments));
-            auto return_type = getter(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+            auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
             return makeNullable(return_type);
         }
 
-        return getter(arguments);
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        auto getter = [&] (const auto & args) { return getReturnTypeImplRemovedNullable(args); };
-        auto res = getReturnTypeDefaultImplementationForNulls(arguments, getter);
-        to_nullable = res->isNullable();
-        checked_return_type = true;
-        return res;
+        return getReturnTypeImplRemovedNullable(arguments);
     }
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
@@ -2838,15 +2828,7 @@ public:
         }
     }
 
-    /// Function actually uses default implementation for nulls,
-    /// but we need to know if return type is Nullable or not,
-    /// so we use checked_return_type only to intercept the first call to getReturnTypeImpl(...).
-    bool useDefaultImplementationForNulls() const override
-    {
-        bool to_nullable_string = to_nullable && std::is_same_v<ToDataType, DataTypeString>;
-        return checked_return_type && !to_nullable_string;
-    }
-
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -2862,7 +2844,51 @@ public:
     {
         try
         {
-            return executeInternal(arguments, result_type, input_rows_count);
+            /// Do something like IExecutableFunction::defaultImplementationForNulls.
+            /// We can't just enable default implementation for nulls because we need to know
+            /// whether the result is nullable (`to_nullable`).
+            if (result_type->isNullable())
+            {
+                if (result_type->onlyNull())
+                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+                ColumnPtr result_null_map;
+                for (const auto & arg : arguments)
+                {
+                    if (!arg.type->isNullable())
+                        continue;
+                    if (isColumnConst(*arg.column))
+                    {
+                        if (arg.column->onlyNull())
+                            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+                        else
+                            continue;
+                    }
+                    if (result_null_map)
+                    {
+                        MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
+                        auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
+                        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            result_null_map_data[i] |= null_map[i];
+                        result_null_map = std::move(mut);
+                    }
+                    else
+                    {
+                        result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                    }
+                }
+
+                ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
+                auto temporary_result_type = removeNullable(result_type);
+                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
+
+                return wrapInNullable(res, std::move(result_null_map));
+            }
+            else
+            {
+                return executeInternal(arguments, result_type, input_rows_count, /*to_nullable=*/ false);
+            }
         }
         catch (Exception & e)
         {
@@ -2907,10 +2933,8 @@ public:
 private:
     ContextPtr context;
     FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior;
-    mutable bool checked_return_type = false;
-    mutable bool to_nullable = false;
 
-    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+    ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool to_nullable) const
     {
         if (arguments.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
@@ -2931,7 +2955,7 @@ private:
         {
             auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
             {
-                return executeInternal(args, to_type, args[0].column->size());
+                return executeInternal(args, to_type, args[0].column->size(), /*to_nullable=*/ false);
             };
 
             return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
