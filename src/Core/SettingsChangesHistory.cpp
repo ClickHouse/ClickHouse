@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"use_skip_indexes_on_disjuncts", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -58,7 +59,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"use_skip_indexes_on_disjuncts", false, true, "New setting"},
             {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
