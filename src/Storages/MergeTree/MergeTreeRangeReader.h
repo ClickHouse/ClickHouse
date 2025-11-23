@@ -63,6 +63,8 @@ struct ReadStepPerformanceCounters
 
 using ReadStepPerformanceCountersPtr = std::shared_ptr<ReadStepPerformanceCounters>;
 
+using ColumnFilterCache = std::unordered_map<const IColumn *, ColumnPtr>;
+
 /// Thread-safe, logically const container for read performance counters of multiple steps.
 ///
 /// Design Notes:
@@ -424,8 +426,8 @@ public:
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }
 
-    static void filterColumns(Columns & columns, const FilterWithCachedCount & filter);
-    static void filterBlock(Block & block, const FilterWithCachedCount & filter);
+    static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache);
+    static void filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache);
 
 private:
     void fillVirtualColumns(Columns & columns, ReadResult & result);

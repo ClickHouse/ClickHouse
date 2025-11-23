@@ -47,21 +47,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     const auto & filter_data = filter.getData();
-
-    /// Cache to avoid filtering duplicate columns multiple times
-    std::unordered_map<const IColumn *, ColumnPtr> filtered_cache;
 
     for (auto & column : columns)
     {
         if (column)
         {
             const IColumn * column_ptr = column.get();
-            if (filtered_cache.contains(column_ptr))
+            if (cache.contains(column_ptr))
             {
-                column = filtered_cache[column_ptr];
+                column = cache[column_ptr];
                 continue;
             }
 
@@ -85,12 +82,12 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 return;
             }
 
-            filtered_cache[column_ptr] = column;
+            cache[column_ptr] = column;
         }
     }
 }
 
-void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter)
+void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     if (filter.alwaysTrue())
         return;
@@ -104,13 +101,13 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
         return;
     }
 
-    DB::filterColumns(columns, filter);
+    DB::filterColumns(columns, filter, cache);
 }
 
-void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter)
+void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     auto columns = block.getColumns();
-    filterColumns(columns, filter);
+    filterColumns(columns, filter, cache);
 
     if (!columns.empty())
         block.setColumns(columns);
@@ -525,10 +522,12 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     LOG_TEST(log, "ReadResult::applyFilter() num_rows before: {}", num_rows);
 
-    filterColumns(columns, filter);
-    filterBlock(additional_columns, filter);
-    filterBlock(columns_for_patches, filter);
-    filterBlock(patch_versions_block, filter);
+    /// Prevents repeated in-place filter execution on the same column
+    ColumnFilterCache cache;
+    filterColumns(columns, filter, cache);
+    filterBlock(additional_columns, filter, cache);
+    filterBlock(columns_for_patches, filter, cache);
+    filterBlock(patch_versions_block, filter, cache);
 
     num_rows = filter.countBytesInFilter();
 
