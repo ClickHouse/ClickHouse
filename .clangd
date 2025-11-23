@@ -1,7 +1,3 @@
-CompileFlags:
-    CompilationDatabase: build
-    # Use the same compiler version as in compile_commands.json
-    Compiler: clang++-19
 Diagnostics:
     # clangd does parse .clang-tidy, but some checks are too slow to run in
     # clang-tidy build, so let's enable them explicitly for clangd at least.
