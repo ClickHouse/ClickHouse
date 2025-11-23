@@ -40,7 +40,12 @@ public:
         if (arg.type->lowCardinality())
             return arg.column;
 
-        auto column = res_type->createColumn();
+        /// res_type may have LowCardinality stripped by KeyCondition optimization
+        DataTypePtr low_cardinality_type = res_type->lowCardinality()
+            ? res_type
+            : std::make_shared<DataTypeLowCardinality>(res_type);
+
+        auto column = low_cardinality_type->createColumn();
         typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
         return column;
     }
