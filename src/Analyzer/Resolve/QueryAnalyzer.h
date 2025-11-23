@@ -184,7 +184,7 @@ private:
     ProjectionNames handleNullInTuple(const QueryTreeNodes & tuple_args, const std::string & function_name, const ProjectionNames & parameters_projection_names,
                                         const ProjectionNames & arguments_projection_names, IdentifierResolveScope & scope, QueryTreeNodePtr & node);
 
-    QueryTreeNodePtr convertTupleToArray(const QueryTreeNodes & tuple_args, const QueryTreeNodePtr & in_first_argument, bool left_is_null, IdentifierResolveScope & scope);
+    QueryTreeNodePtr convertTupleToArray(const QueryTreeNodes & tuple_args, const QueryTreeNodePtr & in_first_argument, IdentifierResolveScope & scope);
 
     QueryTreeNodePtr castNodeToType(const QueryTreeNodePtr & node, const DataTypePtr & target_type, IdentifierResolveScope & scope);
 

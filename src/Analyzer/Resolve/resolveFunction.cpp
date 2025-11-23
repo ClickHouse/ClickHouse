@@ -71,7 +71,6 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
-    extern const SettingsBool transform_null_in;
 }
 
 namespace
@@ -174,7 +173,6 @@ ProjectionNames QueryAnalyzer::handleNullInTuple(
 QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
     const QueryTreeNodes & tuple_args,
     const QueryTreeNodePtr & in_first_argument,
-    bool left_is_null,
     IdentifierResolveScope & scope)
 {
     auto array_function_node = std::make_shared<FunctionNode>("array");
@@ -182,10 +180,7 @@ QueryTreeNodePtr QueryAnalyzer::convertTupleToArray(
 
     DataTypePtr common_type;
 
-    if (left_is_null)
-        common_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
-    else
-        common_type = in_first_argument->getResultType();
+    common_type = in_first_argument->getResultType();
 
     bool has_null = std::any_of(tuple_args.begin(), tuple_args.end(),
         [](const auto & arg) { return isNullConstant(arg); });
@@ -836,9 +831,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                                             arguments_projection_names, scope, node);
                     }
 
+                    if (left_is_null && !scope.context->getSettingsRef()[Setting::transform_null_in])
+                    {
+                        auto proj = calculateFunctionProjectionName(node, parameters_projection_names, arguments_projection_names);
+                        auto null_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+                        node = std::make_shared<ConstantNode>(Field{}, null_type);
+                        return ProjectionNames{proj};
+                    }
+
                     // convert tuple to array with proper type handling
-                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument,
-                                                            left_is_null, scope);
+                    in_second_argument = convertTupleToArray(tuple_args, in_first_argument, scope);
 
                     /// convert to has() and handle null-safety
                     function_name = "has";
