@@ -1063,19 +1063,6 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
     return result;
 }
 
-bool canOptimizeJoinWithEmptyInput(
-    JoinKind kind,
-    [[maybe_unused]] JoinStrictness strictness,
-    bool left_is_empty,
-    bool right_is_empty)
-{
-    // TODO(mfilitov): add more cases and use strictness
-    if (isInnerOrCross(kind) && (left_is_empty || right_is_empty))
-        return true;
-
-    return false;
-}
-
 /// Quick check if a node will definitely produce zero rows
 /// This is a lightweight check that avoids expensive estimateReadRowsCount
 /// It only checks for obvious cases without analyzing indexes
@@ -1127,6 +1114,53 @@ static bool isDefinitelyEmpty(QueryPlan::Node & node)
     return false;
 }
 
+
+/// Table showing when each JOIN type produces empty result (1 = empty, 0 = not empty):
+/// ┌─────────────┬──────────────┬───────────────┬──────────────┬─────────────┐
+/// │ JOIN Type   │ Left Empty   │ Right Empty   │ Both Empty   │ None Empty  │
+/// ├─────────────┼──────────────┼───────────────┼──────────────┼─────────────┤
+/// │ INNER       │      1       │      1        │      1       │      0      │
+/// │ LEFT        │      1       │      0        │      1       │      0      │
+/// │ RIGHT       │      0       │      1        │      1       │      0      │
+/// │ FULL        │      0       │      0        │      1       │      0      │
+/// │ CROSS       │      1       │      1        │      1       │      0      │
+/// │ COMMA       │      1       │      1        │      1       │      0      │
+/// │ PASTE       │      1       │      1        │      1       │      0      │
+/// └─────────────┴──────────────┴───────────────┴──────────────┴─────────────┘
+static bool canOptimizeJoinWithEmptyInput(
+    JoinKind kind,
+    QueryPlan::Node * left_node,
+    QueryPlan::Node * right_node)
+{
+    switch (kind)
+    {
+        case JoinKind::Inner:
+        case JoinKind::Cross:
+        case JoinKind::Comma:
+        {
+            if (isDefinitelyEmpty(*left_node))
+                return true;
+            return isDefinitelyEmpty(*right_node);
+        }
+        case JoinKind::Left:
+        {
+            return isDefinitelyEmpty(*left_node);
+        }
+        case JoinKind::Right:
+        {
+            return isDefinitelyEmpty(*right_node);
+        }
+        case JoinKind::Full:
+        {
+            if (!isDefinitelyEmpty(*left_node))
+                return false;
+            return isDefinitelyEmpty(*right_node);
+        }
+        default:
+            return false;
+    }
+}
+
 bool tryOptimizeJoinWithEmptyInput(
     JoinStepLogical * join_step,
     QueryPlan::Node & node,
@@ -1138,14 +1172,7 @@ bool tryOptimizeJoinWithEmptyInput(
     if (!optimization_settings.allow_statistics_optimize)
         return false;
 
-    // TODO(mfilitov): check side only if required by the join and strictness type
-    auto left_empty = isDefinitelyEmpty(*node.children[0]);
-    auto right_empty = isDefinitelyEmpty(*node.children[1]);
-
-    if (!left_empty && !right_empty)
-        return false;
-
-    if (canOptimizeJoinWithEmptyInput(kind, strictness, left_empty, right_empty))
+    if (canOptimizeJoinWithEmptyInput(kind, node.children[0], node.children[1]))
     {
         LOG_DEBUG(getLogger("optimizeJoin"), 
             "Replacing {} {} with ReadNothingStep because one side is empty",
