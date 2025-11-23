@@ -380,6 +380,20 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     return format_settings;
 }
 
+FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
+{
+    auto creator = getCreators(format);
+    return creator.file_bucket_info_creator();
+}
+
+void FormatFactory::registerFileBucketInfo(const String & format, FileBucketInfoCreator bucket_info)
+{
+    chassert(bucket_info);
+    auto & creators = getOrCreateCreators(format);
+    if (creators.file_bucket_info_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Bucket splitter for format {} is already registered", format);
+    creators.file_bucket_info_creator = std::move(bucket_info);
+}
 
 InputFormatPtr FormatFactory::getInput(
     const String & name,
@@ -555,7 +569,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
         /// TODO: Consider using parser_shared_resources->io_runner instead of threadPoolCallbackRunnerUnsafe.
         res = wrapInParallelReadBufferIfSupported(
             buf,
-            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), "ParallelRead"),
+            threadPoolCallbackRunnerUnsafe<void>(getIOThreadPool().get(), ThreadName::PARALLEL_READ),
             max_download_threads,
             settings[Setting::max_download_buffer_size],
             file_size);
@@ -699,6 +713,21 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     creators.input_creator = std::move(input_creator);
     registerFileExtension(name, name);
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
+}
+
+void FormatFactory::registerSplitter(const String & format, BucketSplitterCreator splitter)
+{
+    chassert(splitter);
+    auto & creators = getOrCreateCreators(format);
+    if (creators.bucket_splitter_creator)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FormatFactory: Bucket splitter for format {} is already registered", format);
+    creators.bucket_splitter_creator = std::move(splitter);
+}
+
+BucketSplitter FormatFactory::getSplitter(const String & format)
+{
+    auto creator = getCreators(format);
+    return creator.bucket_splitter_creator();
 }
 
 void FormatFactory::registerRandomAccessInputFormat(const String & name, RandomAccessInputCreator input_creator)

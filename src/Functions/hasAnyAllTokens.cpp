@@ -274,8 +274,8 @@ void executeString(
 {
     if (tokens.empty())
     {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_rows_count, UInt8(1));
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_rows_count, UInt8(0));
         return;
     }
 
@@ -302,8 +302,8 @@ void executeArray(
 
     if (tokens.empty())
     {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_size, UInt8(1));
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_size, UInt8(0));
         return;
     }
 
@@ -549,7 +549,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 10};
     FunctionDocumentation::Category category_hasAnyTokens = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
 
@@ -683,7 +683,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 10};
     FunctionDocumentation::Category category_hasAllTokens = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
 

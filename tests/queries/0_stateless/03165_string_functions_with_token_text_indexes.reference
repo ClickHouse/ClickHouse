@@ -40,7 +40,7 @@ Parts: 0/1
 Parts: 1/1
 Parts: 1/1
 
--------- GIN filter --------
+-------- Text index filter --------
 
 -- No skip for prefix
 Parts: 1/1
@@ -66,5 +66,62 @@ Parts: 1/1
 1	Service is not ready
 
 -- Skip for substring with complete token
+Parts: 1/1
+Parts: 0/1
+
+-- Skip for like with non matching tokens
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for like with matching substring
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- No skip for like with non-matching string
+Parts: 1/1
+Parts: 1/1
+
+-- No skip for notLike with non-matching token
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- No skip for notLike with matching tokens
+Parts: 1/1
+Parts: 1/1
+
+-- No skip for notLike with matching substring
+Parts: 1/1
+Parts: 1/1
+
+-- No skip for equals with matching string
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for equals with non-matching string
+Parts: 1/1
+Parts: 0/1
+
+-- No skip for notEquals with non-matching string
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- No skip for notEquals with matching string
+Parts: 1/1
+Parts: 1/1
+
+-- No skip for hasTokenOrNull with matching token
+Parts: 1/1
+Parts: 1/1
+1	Service is not ready
+
+-- Skip for hasTokenOrNull with non-matching token
+Parts: 1/1
+Parts: 0/1
+
+-- Skip for hasTokenOrNull with ill-formed token
 Parts: 1/1
 Parts: 0/1
