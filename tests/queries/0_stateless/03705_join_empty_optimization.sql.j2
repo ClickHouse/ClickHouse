@@ -13,14 +13,14 @@ DROP TABLE IF EXISTS join_opt_results;
 
 CREATE TABLE join_opt_results
 (
-    engine            String,
-    join_kind         String,
-    strictness        String,
-    scenario          String,
-    count_without_opt UInt64,
-    count_with_opt    UInt64,
-    ok                UInt8,
-    plan_has_join     UInt8
+    engine             String,
+    join_kind          String,
+    strictness         String,
+    scenario           String,
+    count_without_opt  UInt64,
+    count_with_opt      UInt64,
+    results_match       Bool,
+    plan_has_join       Bool
 )
 ENGINE = Memory;
 
@@ -95,16 +95,17 @@ WITH
     )
     WHERE position(explain, 'Join') > 0
 ) AS plan_hit
+
 INSERT INTO join_opt_results
 SELECT
-    '{{ src.name }}'          AS engine,
-    '{{ kind }}'              AS join_kind,
-    '{{ strict }}'            AS strictness,
-    '{{ scenario }}'          AS scenario,
-    c0                        AS count_without_opt,
-    c1                        AS count_with_opt,
-    equals(c0, c1)            AS ok,
-    plan_hit > 0              AS plan_has_join;
+    '{{ src.name }}'  AS engine,
+    '{{ kind }}'      AS join_kind,
+    '{{ strict }}'    AS strictness,
+    '{{ scenario }}'  AS scenario,
+    c0                AS count_without_opt,
+    c1                AS count_with_opt,
+    (c0 = c1)         AS results_match,
+    (plan_hit > 0)    AS plan_has_join;
 
 {% endfor %}
 {% endfor %}
@@ -119,7 +120,7 @@ SELECT
     scenario,
     count_without_opt,
     count_with_opt,
-    ok,
+    results_match,
     plan_has_join
 FROM join_opt_results
 ORDER BY
@@ -128,4 +129,3 @@ ORDER BY
     strictness,
     scenario
 FORMAT PrettyCompact;
-
