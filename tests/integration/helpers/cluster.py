@@ -4688,9 +4688,9 @@ class ClickHouseInstance:
             )
         try:
             ps_clickhouse = self.exec_in_container(
-                ["bash", "-c", "ps -C clickhouse"], nothrow=True, user="root"
+                ["bash", "-c", "ps --no-header -C clickhouse"], nothrow=True, user="root"
             )
-            if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+            if not ps_clickhouse:
                 logging.warning("ClickHouse process already stopped")
                 return
 
@@ -4719,7 +4719,7 @@ class ClickHouseInstance:
                         [
                             "bash",
                             "-c",
-                            f"gdb -batch -ex 'thread apply all bt full' -p {pid} > /var/log/clickhouse-server/stdout.log",
+                            f"gdb -batch -ex 'thread apply all bt' -p {pid} > /var/log/clickhouse-server/stdout.log",
                         ],
                         user="root",
                     )
@@ -4813,7 +4813,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         if last_err is not None:
@@ -4836,7 +4836,7 @@ class ClickHouseInstance:
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(
-                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"],
+                ["bash", "-c", f"gdb -batch -ex 'thread apply all bt' -p {pid}"],
                 user="root",
             )
         raise Exception(
@@ -4897,7 +4897,7 @@ class ClickHouseInstance:
         return len(result) > 0
 
     def grep_in_log(
-        self, substring, from_host=False, filename="clickhouse-server.log", after=None
+        self, substring, from_host=False, filename="clickhouse-server.log", after=None, only_latest=False
     ):
         logging.debug(f"grep in log called %s", substring)
         if after is not None:
@@ -4910,7 +4910,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}{"" if only_latest else "*"} || true',
                 ]
             )
         else:
@@ -4918,7 +4918,7 @@ class ClickHouseInstance:
                 [
                     "bash",
                     "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}{"" if only_latest else "*"} || true',
                 ]
             )
         logging.debug("grep result %s", result)
