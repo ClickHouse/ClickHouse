@@ -66,6 +66,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def should_use_sparse_checkout_of_submodules(build_type: str) -> bool:
     NOT_COMPATIBLE_JOBS = [
+        BuildTypes.AMD_COMPAT,
         BuildTypes.AMD_DARWIN,
         BuildTypes.AMD_FREEBSD,
         BuildTypes.ARM_DARWIN,
