@@ -8,11 +8,6 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric NamedCollection;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -38,14 +33,6 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
     }
 
     NamedCollectionFactory::instance().removeFromSQL(query);
-    //
-    //    if (CurrentMetrics::get(CurrentMetrics::NamedCollection) <= 0)
-    //        throw Exception(ErrorCodes::LOGICAL_ERROR,
-    //            "CurrentMetrics::NamedCollection <= 0 when trying to drop a named collection ({})",
-    //            CurrentMetrics::get(CurrentMetrics::NamedCollection));
-
-    if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > 0)
-        CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 
     return {};
 }

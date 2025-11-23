@@ -19,6 +19,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric NamedCollection;
+}
+
 NamedCollectionFactory & NamedCollectionFactory::instance()
 {
     static NamedCollectionFactory instance;
@@ -316,6 +321,7 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
 
     metadata_storage->remove(query.collection_name);
     remove(query.collection_name, lock);
+    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 }
 
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)
