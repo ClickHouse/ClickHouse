@@ -1,0 +1,112 @@
+SELECT
+    'engine' AS engine,
+    'join_kind' AS join_kind,
+    'strictness' AS strictness,
+    'scenario' AS scenario,
+    'count_without_opt' AS count_without_opt,
+    'count_with_opt' AS count_with_opt,
+    'ok' AS ok,
+    'plan_has_join' AS plan_has_join
+FORMAT TSV;
+
+{% set join_kinds = ['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS'] %}
+{% set join_strictness = ['ALL'] %}
+{% set scenarios = ['left_empty', 'right_empty'] %}
+
+{% set sources = [
+    {'name': 'Memory', 'type': 'table'},
+    {'name': 'MergeTree', 'type': 'table'},
+    {'name': 'Log', 'type': 'table'},
+    {'name': 'numbers', 'type': 'numbers'}
+] %}
+
+{% macro join_query(src, idx, kind, strict, scenario, optimize_flag) %}
+
+SELECT *
+FROM
+    {% if src.type == 'table' %}
+        (SELECT * FROM l_{{ idx }} {% if scenario == 'left_empty' %} WHERE 0 {% endif %}) AS l
+    {% else %}
+        (SELECT number AS k, number * 10 AS v
+         FROM numbers({% if scenario=='left_empty' %}0{% else %}3{% endif %})
+        ) AS l
+    {% endif %}
+    {% if kind == 'CROSS' %}
+        CROSS JOIN
+    {% else %}
+        {{ strict }} {{ kind }} JOIN
+    {% endif %}
+    {% if src.type == 'table' %}
+        (SELECT * FROM r_{{ idx }} {% if scenario == 'right_empty' %} WHERE 0 {% endif %}) AS r
+    {% else %}
+        (SELECT number AS k, number * 100 AS v
+         FROM numbers({% if scenario=='right_empty' %}0{% else %}3{% endif %})
+        ) AS r
+    {% endif %}
+    {% if kind != 'CROSS' %} USING (k) {% endif %}
+SETTINGS allow_statistics_optimize = {{ optimize_flag }}
+
+{% endmacro %}
+
+{% for src in sources %}
+{% set idx = loop.index0 %}
+
+{% if src.type == 'table' %}
+
+DROP TABLE IF EXISTS l_{{ idx }};
+DROP TABLE IF EXISTS r_{{ idx }};
+
+CREATE TABLE l_{{ idx }} (k Int32, v Int32)
+ENGINE = {{ src.name }}
+{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
+
+CREATE TABLE r_{{ idx }} (k Int32, v Int32)
+ENGINE = {{ src.name }}
+{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
+
+INSERT INTO l_{{ idx }} VALUES (1,10),(2,20),(3,30);
+INSERT INTO r_{{ idx }} VALUES (2,200),(3,300),(4,400);
+
+{% endif %}
+
+
+{% for kind in join_kinds %}
+{% for strict in join_strictness %}
+{% for scenario in scenarios %}
+
+
+WITH
+(
+    SELECT count()
+    FROM ( {{ join_query(src, idx, kind, strict, scenario, 0) }} )
+) AS c0,
+(
+    SELECT count()
+    FROM ( {{ join_query(src, idx, kind, strict, scenario, 1) }} )
+) AS c1,
+(
+    SELECT count()
+    FROM
+    (
+        EXPLAIN PLAN
+        {{ join_query(src, idx, kind, strict, scenario, 1) }}
+    )
+    WHERE position(explain, 'Join') > 0
+) AS plan_hit
+SELECT
+    '{{ src.name }}',
+    '{{ kind }}',
+    '{{ strict }}',
+    '{{ scenario }}',
+    c0,
+    c1,
+    equals(c0, c1),
+    plan_hit > 0
+FORMAT TSV;
+
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+{% endfor %}
+
