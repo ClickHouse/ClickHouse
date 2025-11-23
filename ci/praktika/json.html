@@ -557,21 +557,13 @@
         widget.style.textAlign = 'left';
 
         const base_url = window.location.origin + window.location.pathname;
-        const items = links
-            .map((link) => {
-                const file_name = link.includes(base_url) ? "Report" : link.split('/').pop();
-                return { link, file_name };
-            })
-            .sort((a, b) =>
-                a.file_name.localeCompare(b.file_name, undefined, { numeric: true, sensitivity: 'base' })
-            )
 
-        items.forEach(({link, file_name}) => {
+        links.forEach(link => {
             const fileLink = document.createElement('a');
             fileLink.href = link;
             fileLink.target = '_blank';
             fileLink.className = 'file-link';
-            fileLink.textContent = file_name;
+            fileLink.textContent = link.includes(base_url) ? "Report" : link.split('/').pop();
 
             // Wrap each link in its own line for spacing
             const line = document.createElement('div');
