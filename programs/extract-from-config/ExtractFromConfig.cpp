@@ -15,11 +15,11 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/DOM/DOMWriter.h>
-#include <Poco/XML/XMLWriter.h>
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Node.h>
 #include <Poco/DOM/NodeList.h>
+#include <Poco/XML/XMLWriter.h>
 
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -121,7 +121,7 @@ static DB::ConfigurationPtr get_configuration(const std::string & config_path, b
     return DB::ConfigurationPtr(new Poco::Util::XMLConfiguration(config_xml));
 }
 
-static void printYamlLike(const Poco::Util::AbstractConfiguration & config, const std::string & key, std::ostream & out, int indent = 0)
+static void printYamlLike(const Poco::Util::AbstractConfiguration & config, const std::string & key, std::ostream & out, int indent = 0, bool is_root_call = true)
 {
     std::vector<std::string> subkeys;
     config.keys(key, subkeys);
@@ -139,8 +139,9 @@ static void printYamlLike(const Poco::Util::AbstractConfiguration & config, cons
         if (needs_quotes)
             value = "\"" + value + "\"";
 
-        if (indent == 0)
+        if (indent == 0 && is_root_call)
         {
+            // Direct leaf value at root
             out << value;
         }
         else
@@ -151,11 +152,27 @@ static void printYamlLike(const Poco::Util::AbstractConfiguration & config, cons
     }
 
     // Node with children
-    out << indent_str << tag << ":\n";
-    for (const auto & subkey : subkeys)
+    // Skip printing the tag only when we're at the document root (empty key at root call)
+    if (is_root_call && key.empty())
     {
-        std::string full_key = key.empty() ? subkey : key + "." + subkey;
-        printYamlLike(config, full_key, out, indent + 2);
+        // Document root - don't print a wrapper tag, just print children
+        for (const auto & subkey : subkeys)
+        {
+            printYamlLike(config, subkey, out, indent, false);
+        }
+    }
+    else
+    {
+        // Normal node or specific key at root - print the tag
+        if (indent > 0 || is_root_call)
+        {
+            out << indent_str << tag << ":\n";
+        }
+        for (const auto & subkey : subkeys)
+        {
+            std::string full_key = key.empty() ? subkey : key + "." + subkey;
+            printYamlLike(config, full_key, out, indent + 2, false);
+        }
     }
 }
 
@@ -193,7 +210,7 @@ static Poco::XML::Node * findNodeByPath(Poco::XML::Node * node, const std::strin
 
         Poco::XML::NodeList * children = current_node->childNodes();
         Poco::XML::Node * found = nullptr;
-        for (unsigned long i = 1; i < children->length(); ++i)
+        for (unsigned long i = 0; i < children->length(); ++i)
         {
             Poco::XML::Node * child = children->item(i);
             if (child && child->nodeType() == Poco::XML::Node::ELEMENT_NODE && child->nodeName() == part)
@@ -272,21 +289,33 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
         if (has_zk_includes && process_zk_includes)
         {
             DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
+
             zkutil::validateZooKeeperConfig(*bootstrap_configuration);
+
             zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
             zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
+
             zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
             config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
         }
 
         Poco::XML::Node * root = config_xml->documentElement();
-        Poco::XML::Node * target_node = findNodeByPath(root, key);
+        Poco::XML::Node * target_node;
 
-        if (!target_node)
+        // If key is empty, use the root element
+        if (key.empty())
         {
-            if (!ignore_errors)
-                throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Not found: {}", key);
-            return {""};
+            target_node = root;
+        }
+        else
+        {
+            target_node = findNodeByPath(root, key);
+            if (!target_node)
+            {
+                if (!ignore_errors)
+                    throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Not found: {}", key);
+                return {""};
+            }
         }
 
         std::ostringstream oss;
@@ -297,12 +326,12 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
     // For YAML and plain text, use AbstractConfiguration
     DB::ConfigurationPtr configuration = get_configuration(actual_config_path, process_zk_includes, !ignore_errors);
 
-    /// Check if a key has globs.
-    if (key.find_first_of("*?{") != std::string::npos)
+    /// Check if a key has globs (only if key is not empty).
+    if (!key.empty() && key.find_first_of("*?{") != std::string::npos)
         return extactFromConfigAccordingToGlobs(configuration, key, ignore_errors);
 
-    /// Do not throw exception if not found.
-    if (!configuration->has(key))
+    /// Do not throw exception if not found (skip check for empty key - root always exists).
+    if (!key.empty() && !configuration->has(key))
     {
         if (!ignore_errors)
             throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Not found: {}", key);
@@ -317,11 +346,16 @@ static std::vector<std::string> extractFromConfig(const std::string & config_pat
     }
     else
     {
+        // For plain text output, we need a specific key
+        if (key.empty())
+        {
+            if (!ignore_errors)
+                throw DB::Exception(DB::ErrorCodes::CANNOT_LOAD_CONFIG, "Key is required for plain text output. Use --pretty for formatted output.");
+            return {""};
+        }
         return {configuration->getString(key)} ;
     }
 }
-
-
 
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wmissing-declarations"
@@ -353,7 +387,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         ("users", po::bool_switch(&get_users), "Return values from users.xml config")
         ("log-level", po::value<std::string>(&log_level)->default_value("error"), "log level")
         ("config-file,c", po::value<std::string>(&config_path)->required(), "path to config file")
-        ("key,k", po::value<std::string>(&key)->required(), "key to get value for");
+        ("key,k", po::value<std::string>(&key)->default_value(""), "key to get value for (if empty, outputs entire config)");
 
     po::positional_options_description positional_desc;
     positional_desc.add("config-file", 1);
@@ -367,8 +401,9 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         if (options.contains("help"))
         {
             std::cerr << "Preprocess config file and extract value of the given key." << std::endl
+                << "If no key is provided with --pretty, outputs the entire config in the specified format." << std::endl
                 << std::endl;
-            std::cerr << "Usage: clickhouse extract-from-config [options]" << std::endl
+            std::cerr << "Usage: clickhouse extract-from-config [options] config-file [key]" << std::endl
                 << std::endl;
             std::cerr << options_desc << std::endl;
             return 0;
@@ -391,7 +426,7 @@ int mainEntryClickHouseExtractFromConfig(int argc, char ** argv)
         }
         else
         {
-            // Should keep backward compatibility -- ignore format and return plain value
+            // Keep backward compatibility -- ignore format and return plain value
             format = "";
         }
 
