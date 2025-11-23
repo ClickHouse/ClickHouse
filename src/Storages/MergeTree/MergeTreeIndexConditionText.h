@@ -53,7 +53,7 @@ using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPrep
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
-class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, WithContext
+class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, public WithContext
 {
 public:
     MergeTreeIndexConditionText(

@@ -152,6 +152,9 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "mapContainsKey"
         || function_name == "mapContainsValue")
     {
+        /// These functions compare the searched token as a whole and therefore
+        /// exact direct read is only possible with noop token extractor, that doesn't
+        /// split documents into tokens. Otherwise we can only use direct read as a hint.
         bool is_noop_extractor = typeid_cast<const NoOpTokenExtractor *>(token_extractor);
         return is_noop_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
@@ -445,28 +448,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    if (has_map_keys_column)
+    if (has_map_keys_column || has_map_values_column)
     {
         if (!value_data_type.isStringOrFixedString())
             return false;
 
         /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
-        if (function_name == "mapContainsKey" || function_name == "has")
-        {
-            auto tokens = stringToTokens(value_field);
-            out.function = RPNElement::FUNCTION_HAS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, read_mode, std::move(tokens)));
-            return true;
-        }
-        return false;
-    }
-    if (has_map_values_column)
-    {
-        if (!value_data_type.isStringOrFixedString())
-            return false;
-
         /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
-        if (function_name == "mapContainsValue")
+        if (function_name == "mapContainsKey" || function_name == "has" || function_name == "mapContainsValue")
         {
             auto tokens = stringToTokens(value_field);
             out.function = RPNElement::FUNCTION_HAS;

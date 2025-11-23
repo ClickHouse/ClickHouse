@@ -21,6 +21,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsFloat text_index_hint_max_selectivity;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -269,15 +274,17 @@ size_t MergeTreeReaderTextIndex::getNumRowsInGranule(size_t index_mark) const
 
 double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & query, const MergeTreeIndexGranuleText::TokenToPostingsInfosMap & remaining_tokens, size_t total_rows) const
 {
-    if (query.tokens.empty())
-        return 0;
+    chassert(!query.tokens.empty());
 
     /// Here we assume that tokens are independent and their distribution is uniform.
+    /// Below universe E stands for the set of documents in the index granule.
+    /// N stands for the size of the index granule in rows.
+    /// Sets Ai stand for the posting lists of the searched tokens.
     switch (query.search_mode)
     {
         case TextSearchMode::All:
         {
-            /// Estimate the cardinality of the intersection of the tokens.
+            /// Estimate the cardinality of the intersection of the sets.
             /// Assume each set Ai has known size |Ai|, and all sets are chosen
             /// independently and uniformly at random from the universe E of size N.
             /// Then, for any particular element, the probability that it appears in set Ai is pi = |Ai|/N.
@@ -301,7 +308,7 @@ double MergeTreeReaderTextIndex::estimateCardinality(const TextSearchQuery & que
         }
         case TextSearchMode::Any:
         {
-            /// Estimate the cardinality of the union of the tokens.
+            /// Estimate the cardinality of the union of the sets.
             /// The same as above the probability that a particular element appears in set Ai is pi = |Ai|/N
             /// The probability that element is not in set Ai is 1 - pi
             /// The probability that element is in none of the n sets is (1 - p1) * (1 - p2) * ... * (1 - pn).
@@ -352,11 +359,12 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
         }
         else if (search_query->read_mode == TextIndexDirectReadMode::Hint)
         {
-            static constexpr double SELECTIVITY_THRESHOLD = 0.2;
+            const auto & settings = condition_text.getContext()->getSettingsRef();
+            double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];
             size_t num_rows_in_granule = getNumRowsInGranule(index_mark);
             double cardinality = estimateCardinality(*search_query, remaining_tokens, num_rows_in_granule);
 
-            if (cardinality <= num_rows_in_granule * SELECTIVITY_THRESHOLD)
+            if (cardinality <= num_rows_in_granule * selectivity_threshold)
             {
                 useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
                 ProfileEvents::increment(ProfileEvents::TextIndexUseHint);

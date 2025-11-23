@@ -14,8 +14,11 @@
 namespace DB::QueryPlanOptimizations
 {
 
-using IndexConditionsMap = std::unordered_map<String, const MergeTreeIndexWithCondition *>;
-using NodesReplacementMap = std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
+namespace
+{
+
+using IndexConditionsMap = absl::flat_hash_map<String, const MergeTreeIndexWithCondition *>;
+using NodesReplacementMap = absl::flat_hash_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
 {
@@ -102,6 +105,8 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
+}
+
 /// This class substitutes filters with text-search functions by virtual columns which skip IO and read less data.
 ///
 /// The substitution is performed after the index analysis and before PREWHERE optimization:
@@ -136,8 +141,7 @@ public:
     };
 
     /// Replaces text-search functions by virtual columns.
-    /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0
-    /// Returns a pair of (added columns by index name, removed columns)
+    /// Example: hasToken(text_col, 'token') -> __text_index_text_col_idx_hasToken_0.
     ResultReplacement replace(const ContextPtr & context, const String & filter_column_name)
     {
         ResultReplacement result;
@@ -159,9 +163,7 @@ public:
         }
 
         if (result.added_columns.empty())
-        {
             return result;
-        }
 
         for (auto & output : actions_dag.outputs)
         {
@@ -224,7 +226,7 @@ private:
             const auto & index_header = text_index_condition.getHeader();
 
             /// Do not optimize if there are multiple text indexes set for the same expression.
-            /// It is abgious which index to use. However, we allow to use several indexes for different expressions.
+            /// It is ambiguous which index to use. However, we allow to use several indexes for different expressions.
             /// for example, we can use indexes both for mapKeys(m) and mapValues(m) in one function m['key'] = 'value'.
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 return std::nullopt;

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
+# Tags: no-parallel-replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_full_text_index 1 --use_skip_indexes_on_data_read 1 --query_plan_text_index_add_hint 1 --use_query_condition_cache 0"
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_full_text_index 1 --use_skip_indexes_on_data_read 1 --query_plan_text_index_add_hint 1 --use_query_condition_cache 0 --enable_analyzer 1"
 
 $MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_text_index_hint_map;
