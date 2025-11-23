@@ -1423,7 +1423,6 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::Get:
             return function(static_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
-        case Coordination::OpNum::Create2:
         case Coordination::OpNum::CreateIfNotExists:
             return function(static_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
@@ -1703,17 +1702,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
-
-    if (zk_request.include_stats)
-    {
-        auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
-        response = create2response;
-    }
-    else if (zk_request.not_exists)
-        response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
-    else
-        response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
+    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
+        ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
+        : std::make_shared<Coordination::ZooKeeperCreateResponse>();
 
     if (deltas.empty())
     {
@@ -1731,11 +1722,8 @@ Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRe
         { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
 
     if (create_delta_it != deltas.end())
-    {
         created_path = create_delta_it->path;
-        if (response->getOpNum() == Coordination::OpNum::Create2)
-            static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat = std::get<CreateNodeDelta>(create_delta_it->operation).stat;
-    }
+
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;
