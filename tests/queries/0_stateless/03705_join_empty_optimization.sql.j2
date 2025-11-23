@@ -1,12 +1,13 @@
 {% set join_kinds = ['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS'] %}
+-- Do we actually need it?
 {% set join_strictness = ['ALL'] %}
 {% set scenarios = ['left_empty', 'right_empty'] %}
 
 {% set sources = [
-    {'name': 'Memory', 'type': 'table'},
-    {'name': 'MergeTree', 'type': 'table'},
-    {'name': 'Log', 'type': 'table'},
-    {'name': 'numbers', 'type': 'numbers'}
+    {'name': 'Memory',   'type': 'table'},
+    {'name': 'MergeTree','type': 'table'},
+    {'name': 'Log',      'type': 'table'},
+    {'name': 'numbers',  'type': 'numbers'}
 ] %}
 
 DROP TABLE IF EXISTS join_opt_results;
@@ -18,9 +19,9 @@ CREATE TABLE join_opt_results
     strictness         String,
     scenario           String,
     count_without_opt  UInt64,
-    count_with_opt      UInt64,
-    results_match       Bool,
-    plan_has_join       Bool
+    count_with_opt     UInt64,
+    results_match      Bool,
+    plan_has_join      Bool
 )
 ENGINE = Memory;
 
@@ -29,10 +30,16 @@ ENGINE = Memory;
 SELECT *
 FROM
     {% if src.type == 'table' %}
-        (SELECT * FROM l_{{ idx }} {% if scenario == 'left_empty' %} WHERE 0 {% endif %}) AS l
+        (SELECT * FROM
+            {% if scenario == 'left_empty' %}
+                l_empty_{{ idx }}
+            {% else %}
+                l_nonempty_{{ idx }}
+            {% endif %}
+        ) AS l
     {% else %}
         (SELECT number AS k, number * 10 AS v
-         FROM numbers({% if scenario=='left_empty' %}0{% else %}3{% endif %})
+         FROM numbers({% if scenario == 'left_empty' %}0{% else %}3{% endif %})
         ) AS l
     {% endif %}
     {% if kind == 'CROSS' %}
@@ -41,10 +48,16 @@ FROM
         {{ strict }} {{ kind }} JOIN
     {% endif %}
     {% if src.type == 'table' %}
-        (SELECT * FROM r_{{ idx }} {% if scenario == 'right_empty' %} WHERE 0 {% endif %}) AS r
+        (SELECT * FROM
+            {% if scenario == 'right_empty' %}
+                r_empty_{{ idx }}
+            {% else %}
+                r_nonempty_{{ idx }}
+            {% endif %}
+        ) AS r
     {% else %}
         (SELECT number AS k, number * 100 AS v
-         FROM numbers({% if scenario=='right_empty' %}0{% else %}3{% endif %})
+         FROM numbers({% if scenario == 'right_empty' %}0{% else %}3{% endif %})
         ) AS r
     {% endif %}
     {% if kind != 'CROSS' %} USING (k) {% endif %}
@@ -57,19 +70,29 @@ SETTINGS allow_statistics_optimize = {{ optimize_flag }}
 
 {% if src.type == 'table' %}
 
-DROP TABLE IF EXISTS l_{{ idx }};
-DROP TABLE IF EXISTS r_{{ idx }};
+DROP TABLE IF EXISTS l_empty_{{ idx }};
+DROP TABLE IF EXISTS r_empty_{{ idx }};
+DROP TABLE IF EXISTS l_nonempty_{{ idx }};
+DROP TABLE IF EXISTS r_nonempty_{{ idx }};
 
-CREATE TABLE l_{{ idx }} (k Int32, v Int32)
+CREATE TABLE l_empty_{{ idx }} (k Int32, v Int32)
 ENGINE = {{ src.name }}
 {% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
 
-CREATE TABLE r_{{ idx }} (k Int32, v Int32)
+CREATE TABLE r_empty_{{ idx }} (k Int32, v Int32)
 ENGINE = {{ src.name }}
 {% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
 
-INSERT INTO l_{{ idx }} VALUES (1,10),(2,20),(3,30);
-INSERT INTO r_{{ idx }} VALUES (2,200),(3,300),(4,400);
+CREATE TABLE l_nonempty_{{ idx }} (k Int32, v Int32)
+ENGINE = {{ src.name }}
+{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
+
+CREATE TABLE r_nonempty_{{ idx }} (k Int32, v Int32)
+ENGINE = {{ src.name }}
+{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
+
+INSERT INTO l_nonempty_{{ idx }} VALUES (1,10),(2,20),(3,30);
+INSERT INTO r_nonempty_{{ idx }} VALUES (2,200),(3,300),(4,400);
 
 {% endif %}
 
@@ -98,14 +121,14 @@ WITH
 
 INSERT INTO join_opt_results
 SELECT
-    '{{ src.name }}'     AS engine,
-    '{{ kind }}'         AS join_kind,
-    '{{ strict }}'       AS strictness,
-    '{{ scenario }}'     AS scenario,
-    rows_without_opt      AS count_without_opt,
-    rows_with_opt          AS count_with_opt,
+    '{{ src.name }}'              AS engine,
+    '{{ kind }}'                  AS join_kind,
+    '{{ strict }}'                AS strictness,
+    '{{ scenario }}'              AS scenario,
+    rows_without_opt              AS count_without_opt,
+    rows_with_opt                 AS count_with_opt,
     (rows_without_opt = rows_with_opt) AS results_match,
-    (plan_hit > 0)         AS plan_has_join;
+    (plan_hit > 0)                AS plan_has_join;
 
 {% endfor %}
 {% endfor %}
