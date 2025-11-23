@@ -1,4 +1,3 @@
--- Tags: no-fasttest
 -- Test for issue #89412: Bad cast from ColumnNullable to ColumnLowCardinality
 
 DROP TABLE IF EXISTS test_tolowcardinality_nullable;
