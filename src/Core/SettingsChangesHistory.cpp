@@ -68,6 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
             {"http_write_exception_in_output_format", true, false, "Changed for consistency across formats"},
             {"optimize_const_name_size", -1, 256, "Replace with scalar and use hash as a name for large constants (size is estimated by name length)"},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
             {"allow_experimental_alias_table_engine", false, false, "New setting"},
