@@ -1097,8 +1097,24 @@ static bool isDefinitelyEmpty(QueryPlan::Node & node)
         // If not analyzed yet or has rows, return false
         return false;
     }
+
+    if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
+    {
+        const auto & storage = reading->getStorage();
+        auto total = storage->totalRows({});
+        return total.has_value() && *total == 0;
+    }
+
+    if (const auto * reading = typeid_cast<const ReadFromStorageStep *>(step))
+    {
+        auto storage = reading->getStorage();
+        if (!storage)
+            return false;
+
+        auto total = storage->totalRows({});
+        return total.has_value() && *total == 0;
+    }
     
-    /// can directly check limit
     if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
     {
         auto limit = reading->getLimit();
