@@ -20,6 +20,7 @@ workflow = Workflow.Config(
     secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
+    enable_commit_status_on_failure=True,
     cron_schedules=["13 5 * * *"],
 )
 
