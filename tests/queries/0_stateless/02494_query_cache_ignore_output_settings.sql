@@ -1,3 +1,4 @@
+-- Tags: no-parallel-replicas
 -- no-parallel-replicas: the query from query_log errors due to missing columns.
 
 -- Checks that the query cache ignores output format related settings (settings starting with 'output_format_')

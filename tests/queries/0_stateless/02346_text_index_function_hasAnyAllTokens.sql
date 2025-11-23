@@ -92,11 +92,12 @@ SELECT id FROM tab WHERE hasAllTokens('a b', 'a c');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'a a');
 SELECT id FROM tab WHERE hasAllTokens(col_str, 'b c');
 
--- Test search without needle on non-empty columns (all are expected to match)
+-- Test search without needle on non-empty columns (all are expected to match nothing)
 SELECT count() FROM tab WHERE hasAnyTokens(col_str, []);
 SELECT count() FROM tab WHERE hasAllTokens(col_str, []);
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']); -- matches nothing
-SELECT count() FROM tab WHERE hasAnyTokens(col_str, ''); -- TODO currently this goes through the default tokenizer and matches everything
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['']);
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, '');
+SELECT count() FROM tab WHERE hasAnyTokens(col_str, ['','']);
 -- { echoOff }
 
 DROP TABLE tab;
@@ -223,7 +224,7 @@ SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['cdef', 'defg']); --
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, ['efgh', 'cdef', 'defg']); --search for either cdefg or defgh
 
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg'); -- TODO currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efg');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAnyTokens(message, 'cdefgh');
@@ -236,7 +237,7 @@ SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['cdef', 'defg']);
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, ['efgh', 'cdef', 'defg']);
 
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efgh');
-SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg'); -- TODO currently returns all rows in table
+SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efg');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'efghi');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefg');
 SELECT groupArray(id) FROM tab WHERE hasAllTokens(message, 'cdefgh');

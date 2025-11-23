@@ -671,10 +671,10 @@ struct ToTime64Transform
         return execute(dt, time_zone);
     }
 
-    Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    Time64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
     {
-        Int32 dt = static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<int>(d))));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
+        // DataTypeTime stores seconds (or total seconds for hhh:mm:ss). Preserve value and add scale
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(d, 0, scale_multiplier);
     }
 
     Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const

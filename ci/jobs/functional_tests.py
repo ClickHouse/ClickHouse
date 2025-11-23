@@ -428,9 +428,6 @@ def main():
         # Experimental mode for targeted flavor: run a test subset N times instead of repeating each test N times
         #   in a single run to avoid failures for tests that cannot run in parallel with themselves
         run_sets_cnt = 1
-        if is_targeted_check:
-            run_sets_cnt = rerun_count
-            rerun_count = 1
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
         for cnt in range(run_sets_cnt):
             ft_res_processor.debug_files = []

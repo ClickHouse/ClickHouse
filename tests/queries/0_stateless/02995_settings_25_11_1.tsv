@@ -22,6 +22,7 @@ allow_distributed_ddl	1
 allow_drop_detached	0
 allow_dynamic_type_in_join_keys	0
 allow_execute_multiif_columnar	1
+allow_experimental_alias_table_engine	0
 allow_experimental_alter_materialized_view_structure	1
 allow_experimental_analyzer	1
 allow_experimental_annoy_index	0
@@ -104,7 +105,7 @@ allow_reorder_prewhere_conditions	1
 allow_settings_after_format_in_insert	0
 allow_simdjson	1
 allow_special_bool_values_inside_variant	0
-allow_special_serialization_kinds_in_output_formats	0
+allow_special_serialization_kinds_in_output_formats	1
 allow_statistic_optimize	0
 allow_statistics_optimize	0
 allow_suspicious_codecs	0
@@ -131,6 +132,7 @@ apply_mutations_on_fly	0
 apply_patch_parts	1
 apply_patch_parts_join_cache_buckets	8
 apply_settings_from_server	1
+arrow_flight_request_descriptor_type	path
 asterisk_include_alias_columns	0
 asterisk_include_materialized_columns	0
 async_insert	0
@@ -226,6 +228,8 @@ cloud_mode_database_engine	1
 cloud_mode_engine	1
 cluster_for_parallel_replicas	
 cluster_function_process_archive_on_multiple_nodes	1
+cluster_table_function_buckets_batch_size	0
+cluster_table_function_split_granularity	file
 collect_hash_table_stats_during_aggregation	1
 collect_hash_table_stats_during_joins	1
 column_names_for_schema_inference	
@@ -241,6 +245,7 @@ connect_timeout_with_failover_secure_ms	1000
 connection_pool_max_wait_ms	0
 connections_with_failover_max_tries	3
 convert_query_to_cnf	0
+correlated_subqueries_default_join_kind	right
 correlated_subqueries_substitute_equivalent_expressions	1
 count_distinct_implementation	uniqExact
 count_distinct_optimization	0
@@ -248,7 +253,7 @@ count_matches_stop_at_empty_match	0
 create_if_not_exists	0
 create_index_ignore_unique	0
 create_replicated_merge_tree_fault_injection_probability	0
-create_table_empty_primary_key_by_default	0
+create_table_empty_primary_key_by_default	1
 cross_join_min_bytes_to_compress	1073741824
 cross_join_min_rows_to_compress	10000000
 cross_to_inner_join_rewrite	1
@@ -262,6 +267,7 @@ database_replicated_always_detach_permanently	0
 database_replicated_ddl_output	1
 database_replicated_enforce_synchronous_settings	0
 database_replicated_initial_query_timeout_sec	300
+database_shared_drop_table_delay_seconds	28800
 date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands	0
 date_time_input_format	basic
 date_time_output_format	simple
@@ -367,7 +373,7 @@ enable_http_compression	1
 enable_job_stack_trace	0
 enable_join_runtime_filters	0
 enable_json_type	1
-enable_lazy_columns_replication	0
+enable_lazy_columns_replication	1
 enable_lightweight_delete	1
 enable_lightweight_update	1
 enable_memory_bound_merging_of_aggregation_results	1
@@ -385,7 +391,7 @@ enable_reads_from_query_cache	1
 enable_s3_requests_logging	0
 enable_scalar_subquery_optimization	1
 enable_scopes_for_with_statement	1
-enable_shared_storage_snapshot_in_query	0
+enable_shared_storage_snapshot_in_query	1
 enable_sharing_sets_for_mutations	1
 enable_software_prefetch_in_aggregation	1
 enable_time_time64_type	0
@@ -418,8 +424,8 @@ extract_key_value_pairs_max_pairs_per_row	1000
 extract_kvp_max_pairs_per_row	1000
 extremes	0
 fallback_to_stale_replicas_for_distributed_queries	1
-filesystem_cache_boundary_alignment	0
 filesystem_cache_allow_background_download	1
+filesystem_cache_boundary_alignment	0
 filesystem_cache_enable_background_download_during_fetch	1
 filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage	1
 filesystem_cache_max_download_size	137438953472
@@ -532,7 +538,7 @@ http_retry_max_backoff_ms	10000
 http_send_timeout	30
 http_skip_not_found_url_for_globs	1
 http_wait_end_of_query	0
-http_write_exception_in_output_format	1
+http_write_exception_in_output_format	0
 http_zlib_compression_level	3
 iceberg_delete_data_on_drop	0
 iceberg_engine_ignore_schema_evolution	0
@@ -642,6 +648,7 @@ input_format_parquet_enable_row_group_prefetch	1
 input_format_parquet_filter_push_down	1
 input_format_parquet_import_nested	0
 input_format_parquet_local_file_min_bytes_for_seek	8192
+input_format_parquet_local_time_as_utc	1
 input_format_parquet_max_block_size	65409
 input_format_parquet_memory_high_watermark	4294967296
 input_format_parquet_memory_low_watermark	2097152
@@ -650,8 +657,9 @@ input_format_parquet_prefer_block_bytes	16744704
 input_format_parquet_preserve_order	0
 input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference	0
 input_format_parquet_use_native_reader	0
-input_format_parquet_use_native_reader_v3	0
+input_format_parquet_use_native_reader_v3	1
 input_format_parquet_use_offset_index	1
+input_format_parquet_verify_checksums	1
 input_format_protobuf_flatten_google_wrappers	0
 input_format_protobuf_oneof_presence	0
 input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference	0
@@ -695,6 +703,7 @@ insert_shard_id	0
 interactive_delay	100000
 intersect_default_mode	ALL
 interval_output_format	numeric
+into_outfile_create_parent_directories	0
 jemalloc_collect_profile_samples_in_trace_log	0
 jemalloc_enable_profiler	0
 join_algorithm	direct,parallel_hash,hash
@@ -820,6 +829,7 @@ max_partitions_per_insert_block	100
 max_partitions_to_read	-1
 max_parts_to_move	1000
 max_pipeline_depth	0
+max_projection_rows_to_use_projection_index	1000000
 max_query_size	262144
 max_read_buffer_size	1048576
 max_read_buffer_size_local_fs	131072
@@ -915,6 +925,7 @@ min_joined_block_size_bytes	524288
 min_joined_block_size_rows	65409
 min_os_cpu_wait_time_ratio_to_throw	0
 min_outstreams_per_resize_after_split	24
+min_table_rows_to_use_projection_index	1000000
 mongodb_throw_on_unsupported_query	1
 move_all_conditions_to_prewhere	1
 move_primary_key_columns_to_end_of_prewhere	1
@@ -945,6 +956,7 @@ optimize_aggregators_of_group_by_keys	1
 optimize_and_compare_chain	1
 optimize_append_index	0
 optimize_arithmetic_operations_in_aggregate_functions	1
+optimize_const_name_size	256
 optimize_count_from_files	1
 optimize_distinct_in_order	1
 optimize_distributed_group_by_sharding_key	1
@@ -1061,6 +1073,7 @@ output_format_parquet_string_as_string	1
 output_format_parquet_use_custom_encoder	1
 output_format_parquet_version	2.latest
 output_format_parquet_write_bloom_filter	1
+output_format_parquet_write_checksums	1
 output_format_parquet_write_page_index	1
 output_format_pretty_color	auto
 output_format_pretty_display_footer_column_names	1
@@ -1183,7 +1196,7 @@ query_plan_join_shard_by_pk_ranges	0
 query_plan_join_swap_table	auto
 query_plan_lift_up_array_join	1
 query_plan_lift_up_union	1
-query_plan_max_limit_for_lazy_materialization	10
+query_plan_max_limit_for_lazy_materialization	100
 query_plan_max_optimizations_to_apply	10000
 query_plan_max_step_description_length	500
 query_plan_merge_expressions	1
@@ -1304,6 +1317,7 @@ secondary_indices_enable_bulk_filtering	1
 select_sequential_consistency	0
 send_logs_level	fatal
 send_logs_source_regexp	
+send_profile_events	1
 send_progress_in_http_headers	0
 send_timeout	300
 serialize_query_plan	0
@@ -1316,6 +1330,7 @@ short_circuit_function_evaluation_for_nulls_threshold	1
 show_create_query_identifier_quoting_rule	when_necessary
 show_create_query_identifier_quoting_style	Backticks
 show_data_lake_catalogs_in_system_tables	0
+show_processlist_include_internal	1
 show_table_uuid_in_table_create_query_if_not_nil	0
 single_join_prefer_left_table	1
 skip_download_if_exceeds_query_cache	1
@@ -1389,7 +1404,11 @@ use_skip_indexes	1
 use_skip_indexes_if_final	1
 use_skip_indexes_if_final_exact_mode	1
 use_skip_indexes_on_data_read	0
+use_statistics_cache	0
 use_structure_from_insertion_table_in_table_functions	2
+use_text_index_dictionary_cache	0
+use_text_index_header_cache	0
+use_text_index_postings_cache	0
 use_uncompressed_cache	0
 use_variant_as_common_type	0
 use_with_fill_by_sorting_prefix	1

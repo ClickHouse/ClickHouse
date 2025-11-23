@@ -427,6 +427,18 @@ class JobConfigs:
         ),
         result_name_for_cidb="Tests",
     )
+    lightweight_functional_tests_job = Job.Config(
+        name="Quick functional tests",
+        command="python3 ./ci/jobs/clickhouse_light.py --path ./ci/tmp/clickhouse",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/clickhouse_light.py",
+                "./ci/jobs/queries",
+            ],
+        ),
+        requires=[ArtifactNames.CH_AMD_DEBUG],
+        runs_on=RunnerLabels.AMD_SMALL,
+    )
     functional_tests_jobs = common_ft_job_config.parametrize(
         *[
             Job.ParamSet(
@@ -802,6 +814,7 @@ class JobConfigs:
             include_paths=[
                 "./ci/docker/fuzzer",
                 "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/generate_test.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./ci/jobs/scripts/fuzzer/",
                 "./ci/docker/fuzzer",
