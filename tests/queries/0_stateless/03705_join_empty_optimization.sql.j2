@@ -1,6 +1,4 @@
 {% set join_kinds = ['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS'] %}
--- Do we actually need it?
-{% set join_strictness = ['ALL'] %}
 {% set scenarios = ['left_empty', 'right_empty'] %}
 
 {% set sources = [
@@ -16,7 +14,6 @@ CREATE TABLE join_opt_results
 (
     engine             String,
     join_kind          String,
-    strictness         String,
     scenario           String,
     count_without_opt  UInt64,
     count_with_opt     UInt64,
@@ -25,7 +22,7 @@ CREATE TABLE join_opt_results
 )
 ENGINE = Memory;
 
-{% macro join_query(src, idx, kind, strict, scenario, optimize_flag) %}
+{% macro join_query(src, idx, kind, scenario, optimize_flag) %}
 
 SELECT *
 FROM
@@ -42,11 +39,7 @@ FROM
          FROM numbers({% if scenario == 'left_empty' %}0{% else %}3{% endif %})
         ) AS l
     {% endif %}
-    {% if kind == 'CROSS' %}
-        CROSS JOIN
-    {% else %}
-        {{ strict }} {{ kind }} JOIN
-    {% endif %}
+    {{ kind }} JOIN
     {% if src.type == 'table' %}
         (SELECT * FROM
             {% if scenario == 'right_empty' %}
@@ -97,24 +90,23 @@ INSERT INTO r_nonempty_{{ idx }} VALUES (2,200),(3,300),(4,400);
 {% endif %}
 
 {% for kind in join_kinds %}
-{% for strict in join_strictness %}
 {% for scenario in scenarios %}
 
 WITH
 (
     SELECT count()
-    FROM ( {{ join_query(src, idx, kind, strict, scenario, 0) }} )
+    FROM ( {{ join_query(src, idx, kind, scenario, 0) }} )
 ) AS rows_without_opt,
 (
     SELECT count()
-    FROM ( {{ join_query(src, idx, kind, strict, scenario, 1) }} )
+    FROM ( {{ join_query(src, idx, kind, scenario, 1) }} )
 ) AS rows_with_opt,
 (
     SELECT count()
     FROM
     (
         EXPLAIN PLAN
-        {{ join_query(src, idx, kind, strict, scenario, 1) }}
+        {{ join_query(src, idx, kind, scenario, 1) }}
     )
     WHERE position(explain, 'Join') > 0
 ) AS plan_hit
@@ -123,7 +115,6 @@ INSERT INTO join_opt_results
 SELECT
     '{{ src.name }}'              AS engine,
     '{{ kind }}'                  AS join_kind,
-    '{{ strict }}'                AS strictness,
     '{{ scenario }}'              AS scenario,
     rows_without_opt              AS count_without_opt,
     rows_with_opt                 AS count_with_opt,
@@ -132,14 +123,12 @@ SELECT
 
 {% endfor %}
 {% endfor %}
-{% endfor %}
 
 {% endfor %}
 
 SELECT
     engine,
     join_kind,
-    strictness,
     scenario,
     count_without_opt,
     count_with_opt,
@@ -149,6 +138,5 @@ FROM join_opt_results
 ORDER BY
     engine,
     join_kind,
-    strictness,
     scenario
 FORMAT PrettyCompact;

@@ -1,42 +1,42 @@
-    ┌─engine────┬─join_kind─┬─strictness─┬─scenario────┬─count_without_opt─┬─count_with_opt─┬─results_match─┬─plan_has_join─┐
- 1. │ Log       │ CROSS     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
- 2. │ Log       │ CROSS     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
- 3. │ Log       │ FULL      │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
- 4. │ Log       │ FULL      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
- 5. │ Log       │ INNER     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
- 6. │ Log       │ INNER     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
- 7. │ Log       │ LEFT      │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
- 8. │ Log       │ LEFT      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
- 9. │ Log       │ RIGHT     │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-10. │ Log       │ RIGHT     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-11. │ Memory    │ CROSS     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-12. │ Memory    │ CROSS     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-13. │ Memory    │ FULL      │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-14. │ Memory    │ FULL      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
-15. │ Memory    │ INNER     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-16. │ Memory    │ INNER     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-17. │ Memory    │ LEFT      │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-18. │ Memory    │ LEFT      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
-19. │ Memory    │ RIGHT     │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-20. │ Memory    │ RIGHT     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-21. │ MergeTree │ CROSS     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-22. │ MergeTree │ CROSS     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-23. │ MergeTree │ FULL      │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-24. │ MergeTree │ FULL      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
-25. │ MergeTree │ INNER     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-26. │ MergeTree │ INNER     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-27. │ MergeTree │ LEFT      │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-28. │ MergeTree │ LEFT      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
-29. │ MergeTree │ RIGHT     │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-30. │ MergeTree │ RIGHT     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-31. │ numbers   │ CROSS     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-32. │ numbers   │ CROSS     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-33. │ numbers   │ FULL      │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-34. │ numbers   │ FULL      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
-35. │ numbers   │ INNER     │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-36. │ numbers   │ INNER     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-37. │ numbers   │ LEFT      │ ALL        │ left_empty  │                 0 │              0 │ true          │ false         │
-38. │ numbers   │ LEFT      │ ALL        │ right_empty │                 3 │              3 │ true          │ true          │
-39. │ numbers   │ RIGHT     │ ALL        │ left_empty  │                 3 │              3 │ true          │ true          │
-40. │ numbers   │ RIGHT     │ ALL        │ right_empty │                 0 │              0 │ true          │ false         │
-    └───────────┴───────────┴────────────┴─────────────┴───────────────────┴────────────────┴───────────────┴───────────────┘
+    ┌─engine────┬─join_kind─┬─scenario────┬─count_without_opt─┬─count_with_opt─┬─results_match─┬─plan_has_join─┐
+ 1. │ Log       │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
+ 2. │ Log       │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
+ 3. │ Log       │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
+ 4. │ Log       │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
+ 5. │ Log       │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
+ 6. │ Log       │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
+ 7. │ Log       │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
+ 8. │ Log       │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
+ 9. │ Log       │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
+10. │ Log       │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
+11. │ Memory    │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
+12. │ Memory    │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
+13. │ Memory    │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
+14. │ Memory    │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
+15. │ Memory    │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
+16. │ Memory    │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
+17. │ Memory    │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
+18. │ Memory    │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
+19. │ Memory    │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
+20. │ Memory    │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
+21. │ MergeTree │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
+22. │ MergeTree │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
+23. │ MergeTree │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
+24. │ MergeTree │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
+25. │ MergeTree │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
+26. │ MergeTree │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
+27. │ MergeTree │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
+28. │ MergeTree │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
+29. │ MergeTree │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
+30. │ MergeTree │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
+31. │ numbers   │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
+32. │ numbers   │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
+33. │ numbers   │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
+34. │ numbers   │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
+35. │ numbers   │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
+36. │ numbers   │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
+37. │ numbers   │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
+38. │ numbers   │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
+39. │ numbers   │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
+40. │ numbers   │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
+    └───────────┴───────────┴─────────────┴───────────────────┴────────────────┴───────────────┴───────────────┘

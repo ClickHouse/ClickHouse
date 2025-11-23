@@ -1165,7 +1165,6 @@ bool tryOptimizeJoinWithEmptyInput(
     JoinStepLogical * join_step,
     QueryPlan::Node & node,
     JoinKind kind,
-    JoinStrictness strictness,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
     // Check if statistics-based optimizations are enabled
@@ -1175,8 +1174,8 @@ bool tryOptimizeJoinWithEmptyInput(
     if (canOptimizeJoinWithEmptyInput(kind, node.children[0], node.children[1]))
     {
         LOG_DEBUG(getLogger("optimizeJoin"), 
-            "Replacing {} {} with ReadNothingStep because one side is empty",
-            toString(kind), toString(strictness));
+            "Replacing {} with ReadNothingStep because one side is empty",
+            toString(kind));
 
         auto read_nothing_step = std::make_unique<ReadNothingStep>(join_step->getOutputHeader());
         node.step = std::move(read_nothing_step);
@@ -1223,7 +1222,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
-    if (tryOptimizeJoinWithEmptyInput(join_step, node, kind, strictness, optimization_settings))
+    if (tryOptimizeJoinWithEmptyInput(join_step, node, kind, optimization_settings))
         return;
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
