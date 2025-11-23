@@ -8,10 +8,10 @@
 #include <IO/EmptyReadBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/DeadLetterQueue.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -79,35 +79,34 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsNonZeroUInt64 max_block_size;
-extern const SettingsNonZeroUInt64 max_insert_block_size;
-extern const SettingsUInt64 output_format_avro_rows_in_file;
-extern const SettingsMilliseconds stream_flush_interval_ms;
-extern const SettingsMilliseconds stream_poll_timeout_ms;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 output_format_avro_rows_in_file;
+    extern const SettingsMilliseconds stream_flush_interval_ms;
+    extern const SettingsMilliseconds stream_poll_timeout_ms;
 }
 
 namespace KafkaSetting
 {
-extern const KafkaSettingsUInt64 input_format_allow_errors_num;
-extern const KafkaSettingsFloat input_format_allow_errors_ratio;
-extern const KafkaSettingsString kafka_broker_list;
-extern const KafkaSettingsString kafka_client_id;
-extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
-extern const KafkaSettingsMilliseconds kafka_consumer_reschedule_ms;
-extern const KafkaSettingsString kafka_format;
-extern const KafkaSettingsString kafka_group_name;
-extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
-extern const KafkaSettingsString kafka_keeper_path;
-extern const KafkaSettingsUInt64 kafka_max_block_size;
-extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
-extern const KafkaSettingsUInt64 kafka_num_consumers;
-extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
-extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
-extern const KafkaSettingsString kafka_replica_name;
-extern const KafkaSettingsString kafka_schema;
-extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
-extern const KafkaSettingsBool kafka_thread_per_consumer;
-extern const KafkaSettingsString kafka_topic_list;
+    extern const KafkaSettingsUInt64 input_format_allow_errors_num;
+    extern const KafkaSettingsFloat input_format_allow_errors_ratio;
+    extern const KafkaSettingsString kafka_broker_list;
+    extern const KafkaSettingsString kafka_client_id;
+    extern const KafkaSettingsMilliseconds kafka_flush_interval_ms;
+    extern const KafkaSettingsString kafka_format;
+    extern const KafkaSettingsString kafka_group_name;
+    extern const KafkaSettingsStreamingHandleErrorMode kafka_handle_error_mode;
+    extern const KafkaSettingsString kafka_keeper_path;
+    extern const KafkaSettingsUInt64 kafka_max_block_size;
+    extern const KafkaSettingsUInt64 kafka_max_rows_per_message;
+    extern const KafkaSettingsUInt64 kafka_num_consumers;
+    extern const KafkaSettingsUInt64 kafka_poll_max_batch_size;
+    extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
+    extern const KafkaSettingsString kafka_replica_name;
+    extern const KafkaSettingsString kafka_schema;
+    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
+    extern const KafkaSettingsBool kafka_thread_per_consumer;
+    extern const KafkaSettingsString kafka_topic_list;
 }
 
 namespace fs = std::filesystem;
@@ -142,8 +141,7 @@ StorageKafka2::StorageKafka2(
     , replica_path(keeper_path + "/replicas/" + (*kafka_settings_)[KafkaSetting::kafka_replica_name].value)
     , kafka_settings(std::move(kafka_settings_))
     , macros_info{.table_id = table_id_}
-    , topics(StorageKafkaUtils::parseTopics(
-          getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
+    , topics(StorageKafkaUtils::parseTopics(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_topic_list].value, macros_info)))
     , brokers(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_broker_list].value, macros_info))
     , group(getContext()->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_group_name].value, macros_info))
     , client_id(
@@ -161,7 +159,6 @@ StorageKafka2::StorageKafka2(
     , active_node_identifier(toString(ServerUUID::get()))
 {
     kafka_settings->sanityCheck(getContext());
-
     if ((*kafka_settings)[KafkaSetting::kafka_num_consumers] > 1 && !thread_per_consumer)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "With multiple consumers, it is required to use `kafka_thread_per_consumer` setting");
 
@@ -286,6 +283,7 @@ bool StorageKafka2::activate()
             replica_is_active_node = nullptr;
             LOG_ERROR(log, "Couldn't start replica: {}. {}", e.what(), DB::getCurrentExceptionMessage(true));
             return false;
+
         }
         catch (const Exception & e)
         {
@@ -409,8 +407,7 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
     /// Need for backward compatibility.
     if (format_name == "Avro" && local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].changed)
         max_rows = local_context->getSettingsRef()[Setting::output_format_avro_rows_in_file].value;
-    return std::make_shared<MessageQueueSink>(
-        std::make_shared<const Block>(std::move(header)), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
+    return std::make_shared<MessageQueueSink>(std::make_shared<const Block>(std::move(header)), getFormatName(), max_rows, std::move(producer), getName(), modified_context);
 }
 
 void StorageKafka2::startup()
@@ -456,8 +453,7 @@ KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
     /// NOTE: we pass |stream_cancelled| by reference here, so the buffers should not outlive the storage.
     chassert((thread_per_consumer || num_consumers == 1) && "StorageKafka2 cannot handle multiple consumers on a single thread");
     auto & stream_cancelled = tasks[consumer_number]->stream_cancelled;
-    return std::make_shared<KafkaConsumer2>(
-        log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics, getSchemaRegistrySkipBytes());
+    return std::make_shared<KafkaConsumer2>(log, getPollMaxBatchSize(), getPollTimeoutMillisecond(), stream_cancelled, topics, getSchemaRegistrySkipBytes());
 }
 
 cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_number, IKafkaExceptionInfoSinkPtr exception_sink)
@@ -480,31 +476,31 @@ cppkafka::Configuration StorageKafka2::getConsumerConfiguration(size_t consumer_
 
 cppkafka::Configuration StorageKafka2::getProducerConfiguration()
 {
-    KafkaConfigLoader::ProducerConfigParams params{{getContext()->getConfigRef(), collection_name, topics, log}, brokers, client_id};
+    KafkaConfigLoader::ProducerConfigParams params{
+        {getContext()->getConfigRef(), collection_name, topics, log},
+        brokers,
+        client_id};
     return KafkaConfigLoader::getProducerConfiguration(*this, params);
 }
 
 size_t StorageKafka2::getMaxBlockSize() const
 {
-    return (*kafka_settings)[KafkaSetting::kafka_max_block_size].changed
-        ? (*kafka_settings)[KafkaSetting::kafka_max_block_size].value
-        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
+    return (*kafka_settings)[KafkaSetting::kafka_max_block_size].changed ? (*kafka_settings)[KafkaSetting::kafka_max_block_size].value
+                                                        : (getContext()->getSettingsRef()[Setting::max_insert_block_size].value / num_consumers);
 }
 
 size_t StorageKafka2::getPollMaxBatchSize() const
 {
-    size_t batch_size = (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed
-        ? (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value
-        : getContext()->getSettingsRef()[Setting::max_block_size].value;
+    size_t batch_size = (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_max_batch_size].value
+                                                                          : getContext()->getSettingsRef()[Setting::max_block_size].value;
 
     return std::min(batch_size, getMaxBlockSize());
 }
 
 size_t StorageKafka2::getPollTimeoutMillisecond() const
 {
-    return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed
-        ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
-        : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
+    return (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].changed ? (*kafka_settings)[KafkaSetting::kafka_poll_timeout_ms].totalMilliseconds()
+                                                         : getContext()->getSettingsRef()[Setting::stream_poll_timeout_ms].totalMilliseconds();
 }
 
 size_t StorageKafka2::getSchemaRegistrySkipBytes() const
@@ -743,8 +739,10 @@ void StorageKafka2::dropReplica()
     }
 }
 
-std::optional<StorageKafka2::BlocksAndGuard>
-StorageKafka2::pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch & watch, const ContextPtr & modified_context)
+std::optional<StorageKafka2::BlocksAndGuard> StorageKafka2::pollConsumer(
+    KeeperHandlingConsumer & consumer,
+    const Stopwatch & watch,
+    const ContextPtr & modified_context)
 {
     LOG_TEST(log, "Polling consumer");
     auto storage_snapshot = getStorageSnapshot(getInMemoryMetadataPtr(), getContext());
@@ -783,7 +781,8 @@ StorageKafka2::pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch &
 
         switch (getHandleKafkaErrorMode())
         {
-            case StreamingHandleErrorMode::STREAM: {
+            case StreamingHandleErrorMode::STREAM:
+            {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
@@ -795,7 +794,8 @@ StorageKafka2::pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch &
                 }
                 return 1;
             }
-            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE: {
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
                 {
@@ -806,7 +806,8 @@ StorageKafka2::pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch &
                 is_dead_letter = true;
                 return 0;
             }
-            case StreamingHandleErrorMode::DEFAULT: {
+            case StreamingHandleErrorMode::DEFAULT:
+            {
                 e.addMessage(
                     "while parsing Kafka message (topic: {}, partition: {}, offset: {})'",
                     current_msg_info->currentTopic(),
@@ -837,8 +838,7 @@ StorageKafka2::pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch &
         return true;
     };
 
-    KeeperHandlingConsumer::MessageSinkFunction msg_sink
-        = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled) mutable
+    KeeperHandlingConsumer::MessageSinkFunction msg_sink = [&](ReadBufferPtr buf, const KeeperHandlingConsumer::MessageInfo & msg_info, bool has_more_polled_messages, bool stalled) mutable
     {
         size_t new_rows = 0;
         exception_message.reset();
@@ -920,19 +920,20 @@ StorageKafka2::pollConsumer(KeeperHandlingConsumer & consumer, const Stopwatch &
                 if (!dead_letter_queue)
                     LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
                 else
-                    dead_letter_queue->add(DeadLetterQueueElement{
-                        .table_engine = DeadLetterQueueElement::StreamType::Kafka,
-                        .event_time = timeInSeconds(time_now),
-                        .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database = storage_id.database_name,
-                        .table = storage_id.table_name,
-                        .raw_message = msg_info.currentPayload(),
-                        .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::KafkaDetails{
-                            .topic_name = msg_info.currentTopic(),
-                            .partition = msg_info.currentPartition(),
-                            .offset = msg_info.currentPartition(),
-                            .key = msg_info.currentKey()}});
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::Kafka,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = msg_info.currentPayload(),
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::KafkaDetails{
+                                .topic_name = msg_info.currentTopic(),
+                                .partition = msg_info.currentPartition(),
+                                .offset = msg_info.currentPartition(),
+                                .key = msg_info.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;
@@ -1085,7 +1086,8 @@ std::optional<StorageKafka2::StallKind> StorageKafka2::streamToViews(size_t idx)
         if (maybe_rows.has_value())
         {
             const auto milliseconds = watch.elapsedMilliseconds();
-            LOG_DEBUG(log, "Pushing {} rows took {} ms.", formatReadableQuantity(*maybe_rows), milliseconds);
+            LOG_DEBUG(
+                log, "Pushing {} rows took {} ms.", formatReadableQuantity(*maybe_rows), milliseconds);
         }
         else
         {
