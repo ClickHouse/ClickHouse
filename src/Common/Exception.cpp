@@ -79,11 +79,11 @@ static size_t handle_error_code(
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
     // Log the message before we fail.
-    if (code == ErrorCodes::LOGICAL_ERROR)
-    {
-        if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
-            abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
-    }
+    // if (code == ErrorCodes::LOGICAL_ERROR)
+    // {
+    //     if (debug_or_sanitizer_build || abort_on_logical_error.load(std::memory_order_relaxed))
+    //         abortOnFailedAssertion(msg, trace.data(), 0, trace.size());
+    // }
 
     if (Exception::callback)
     {

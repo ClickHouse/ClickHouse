@@ -50,10 +50,21 @@ namespace ErrorCodes
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     const auto & filter_data = filter.getData();
+
+    /// Cache to avoid filtering duplicate columns multiple times
+    std::unordered_map<const IColumn *, ColumnPtr> filtered_cache;
+
     for (auto & column : columns)
     {
         if (column)
         {
+            const IColumn * column_ptr = column.get();
+            if (filtered_cache.contains(column_ptr))
+            {
+                column = filtered_cache[column_ptr];
+                continue;
+            }
+
             if (column->size() != filter.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
@@ -73,6 +84,8 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 columns.clear();
                 return;
             }
+
+            filtered_cache[column_ptr] = column;
         }
     }
 }

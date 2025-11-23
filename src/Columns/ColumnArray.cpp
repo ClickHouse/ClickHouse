@@ -1115,8 +1115,6 @@ void ColumnArray::filterString(const Filter & filt)
     Offset prev_res_string_offset = 0;
     Offset prev_res_array_offset = 0;
 
-    bool need_copy = false;
-
     for (size_t i = 0; i < col_size; ++i)
     {
         /// Number of rows in the array.
@@ -1124,11 +1122,11 @@ void ColumnArray::filterString(const Filter & filt)
 
         if (filt[i])
         {
-            /// Copy string content only if array is not empty and source/destination positions differ.
-            if (array_size && need_copy)
+            if (array_size)
             {
                 size_t chars_to_copy = src_string_offsets[array_size + prev_src_offset - 1] - prev_src_string_offset;
-                memmove(&src_chars[result_chars_size], &src_chars[prev_src_string_offset], chars_to_copy);
+                if (result_chars_size != prev_src_string_offset)
+                    memmove(&src_chars[result_chars_size], &src_chars[prev_src_string_offset], chars_to_copy);
                 result_chars_size += chars_to_copy;
 
                 for (size_t j = 0; j < array_size; ++j)
@@ -1139,10 +1137,6 @@ void ColumnArray::filterString(const Filter & filt)
 
             prev_res_offset += array_size;
             src_offsets[prev_res_array_offset++] = prev_res_offset;
-        }
-        else if (array_size)
-        {
-            need_copy = true;
         }
 
         if (array_size)
