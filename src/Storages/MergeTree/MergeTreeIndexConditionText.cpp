@@ -106,7 +106,8 @@ bool MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(const String 
 {
     return function_name == "hasToken"
         || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens";
+        || function_name == "hasAllTokens"
+        || function_name == "has";
 }
 
 bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)

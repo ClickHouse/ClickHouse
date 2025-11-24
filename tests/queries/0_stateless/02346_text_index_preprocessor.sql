@@ -32,6 +32,8 @@ SELECT count() FROM tab WHERE hasToken(str, 'Baz');
 SELECT count() FROM tab WHERE hasToken(str, 'bar');
 SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
+SELECT count() FROM tab WHERE hasToken(str, 'def');
+
 DROP TABLE tab;
 
 SELECT '- Test preprocessor declaration using column more than once.';
@@ -55,6 +57,8 @@ SELECT count() FROM tab WHERE hasToken(str, 'Baz');
 
 SELECT count() FROM tab WHERE hasToken(str, 'bar');
 SELECT count() FROM tab WHERE hasToken(str, 'baz');
+
+SELECT count() FROM tab WHERE hasToken(str, 'def');
 
 DROP TABLE tab;
 
@@ -83,8 +87,34 @@ SELECT count() FROM tab WHERE hasToken(str, 'Baz');
 SELECT count() FROM tab WHERE hasToken(str, 'bar');
 SELECT count() FROM tab WHERE hasToken(str, 'baz');
 
+SELECT count() FROM tab WHERE hasToken(str, 'def');
+
 DROP TABLE tab;
 DROP FUNCTION udf_preprocessor;
+
+SELECT '- The preprocessor expression is compatible with array columns';
+CREATE TABLE tab
+(
+    key UInt64,
+    arr_str Array(String),
+    INDEX idx(arr_str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr_str))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab VALUES (1, ['foo']), (2, ['BAR']), (3, ['Baz']);
+
+SELECT count() FROM tab WHERE has(arr_str, 'foo');
+SELECT count() FROM tab WHERE has(arr_str, 'FOO');
+
+SELECT count() FROM tab WHERE has(arr_str, 'BAR');
+SELECT count() FROM tab WHERE has(arr_str, 'Baz');
+
+SELECT count() FROM tab WHERE has(arr_str, 'bar');
+SELECT count() FROM tab WHERE has(arr_str, 'baz');
+
+SELECT count() FROM tab WHERE has(arr_str, 'def');
+
+DROP TABLE tab;
 
 SELECT 'Negative tests on preprocessor construction validations.';
 
@@ -178,16 +208,6 @@ CREATE TABLE tab
     INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = concat(str, toString(rand())))
 )
 ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
-
-SELECT '- The preprocessor expression is not compatible with array columns (yet)';
-CREATE TABLE tab
-(
-    key UInt64,
-    arr_str Array(String),
-    INDEX idx(arr_str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(arr_str))
-)
-ENGINE = MergeTree ORDER BY tuple();   -- { serverError INCORRECT_QUERY }
-
 
 
 DROP TABLE IF EXISTS tab;

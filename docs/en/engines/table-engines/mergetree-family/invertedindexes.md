@@ -107,7 +107,8 @@ Typical use cases for the preprocessor argument include
 2. UTF-8 normalization, e.g. [normalizeUTF8NFC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFC), [normalizeUTF8NFD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFD), [normalizeUTF8NFKC](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKC), [normalizeUTF8NFKD](/sql-reference/functions/string-functions.md/#normalizeUTF8NFKD), [toValidUTF8](/sql-reference/functions/string-functions.md/#toValidUTF8).
 3. Removing or transforming unwanted characters or substrings, e.g. [extractTextFromHTML](/sql-reference/functions/string-functions.md/#extractTextFromHTML), [substring](/sql-reference/functions/string-functions.md/#substring), [idnaEncode](/sql-reference/functions/string-functions.md/#idnaEncode).
 
-The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
+The preprocessor expression must transform an input value of type [String](/sql-reference/data-types/string.md), [FixedString](/sql-reference/data-types/fixedstring.md) to a value of the same type.
+[Array(String)](/sql-reference/data-types/array.md) and [Array(FixedString)](/sql-reference/data-types/array.md) are also supported without requiring any specialization in the expression because the array entries are processed individually like rows entries in the String columns.
 
 Examples:
 - `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
@@ -302,6 +303,7 @@ SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
 #### `has` {#functions-example-has}
 
 Array function [has](/sql-reference/functions/array-functions#has) matches against a single token in the array of strings.
+This function also takes advantage of the [Direct Read](#direct-read) optimization.
 
 Example:
 
@@ -448,7 +450,7 @@ Direct read is controlled by two settings:
 Also, the text index must be fully materialized to use direct reading (use `ALTER TABLE ... MATERIALIZE INDEX` for that).
 
 **Supported functions**
-The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
+The direct read optimization supports functions `hasToken`, `hasAllTokens` and `hasAnyTokens` for text columns and `has` for Array(String) and Array(FixedString) columns.
 These functions can also be combined by AND, OR, and NOT operators.
 The WHERE clause can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 

@@ -6,11 +6,13 @@ Positive tests on preprocessor construction and use.
 1
 1
 1
+0
 - Test preprocessor declaration using column more than once.
 1
 0
 1
 1
+0
 0
 0
 - Test preprocessor declaration using udf.
@@ -19,6 +21,15 @@ Positive tests on preprocessor construction and use.
 1
 1
 0
+0
+0
+- The preprocessor expression is compatible with array columns
+1
+1
+1
+1
+1
+1
 0
 Negative tests on preprocessor construction validations.
 - The preprocessor argument must not reference non-indexed columns
@@ -29,4 +40,3 @@ Negative tests on preprocessor construction validations.
 - The preprocessor must have input and output values of the same type (here: String)
 - The preprocessor expression must use the column identifier
 - The preprocessor expression must use only deterministic functions
-- The preprocessor expression is not compatible with array columns (yet)
