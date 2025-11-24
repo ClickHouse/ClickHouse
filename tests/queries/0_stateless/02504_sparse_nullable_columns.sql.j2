@@ -1,10 +1,10 @@
-{% for (min_bytes, default_ratio) in [(0, 1.0), (1000000000, 0.9), (0, 0.9)] -%}
+{% for (min_bytes, default_ratio, nullable_version) in [(0, 1.0, 'allow_sparse'), (1000000000, 0.9, 'basic'), (1000000000, 0.9, 'allow_sparse'), (0, 0.9, 'basic'), (0, 0.9, 'allow_sparse')] -%}
 
     DROP TABLE IF EXISTS t_sparse_nullable;
 
     CREATE TABLE t_sparse_nullable (id UInt64, n Nullable(UInt64), s Nullable(String), t Tuple(a Nullable(String), b Nullable(UInt64)))
     ENGINE = MergeTree ORDER BY ()
-    SETTINGS index_granularity = 10, min_bytes_for_wide_part = {{ min_bytes }}, ratio_of_defaults_for_sparse_serialization = {{ default_ratio }};
+    SETTINGS index_granularity = 10, min_bytes_for_wide_part = {{ min_bytes }}, ratio_of_defaults_for_sparse_serialization = {{ default_ratio }}, serialization_info_version = 'with_types', nullable_serialization_version = '{{ nullable_version }}';
 
     INSERT INTO t_sparse_nullable
     SELECT

@@ -403,7 +403,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
 
     auto mutable_column = column->assumeMutable();
     auto & column_sparse = assert_cast<ColumnSparse &>(*mutable_column);
-    insertDataFromCachedColumn(settings, column_sparse.getOffsetsPtr(), state_sparse->column_offsets, num_read_offsets);
+    insertDataFromCachedColumn(settings, column_sparse.getOffsetsPtr(), state_sparse->column_offsets, num_read_offsets, cache);
     auto & offsets_data = column_sparse.getOffsetsData();
     auto & values_column = column_sparse.getValuesPtr();
 
