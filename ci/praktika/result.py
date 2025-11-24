@@ -60,6 +60,8 @@ class Result(MetaClasses.Serializable):
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
+        OK_ON_RETRY = "retry_ok"
+        FAILED_ON_RETRY = "retry_failed"
 
     name: str
     status: str
@@ -658,12 +660,21 @@ class Result(MetaClasses.Serializable):
         return self.ext.get("do_not_block_pipeline_on_failure", False)
 
     def complete_job(
-        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
+        self,
+        with_job_summary_in_info=True,
+        do_not_block_pipeline_on_failure=False,
+        disable_attached_files_sorting=False,
     ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
+        if not disable_attached_files_sorting:
+            try:
+                # Normalize to string and sort by filename case-insensitively
+                self.files.sort(key=lambda f: Path(str(f)).name.lower())
+            except Exception as e:
+                print(f"WARNING: Failed to sort attached files: {e}")
         self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok():
