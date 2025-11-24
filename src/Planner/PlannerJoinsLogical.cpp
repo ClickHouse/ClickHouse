@@ -540,7 +540,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             auto nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             ColumnWithTypeAndName null_column(nothing_type->createColumnConstWithDefaultValue(1), nothing_type, "NULL");
             JoinActionRef null_action(&actions_dag->addColumn(null_column), build_context.expression_actions);
-            null_action.setSourceRelations(BitSet().set(0).set(1));
+            null_action.setSourceRelations(BitSet());
             build_context.join_operator.expression.push_back(null_action);
         }
     }
