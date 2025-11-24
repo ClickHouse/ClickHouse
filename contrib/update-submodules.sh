@@ -39,8 +39,16 @@ git config --file .gitmodules --get-regexp '.*path' | sed 's/[^ ]* //' | xargs -
 
 # We don't want to depend on any third-party CMake files.
 # To check it, find and delete them.
+# llvm-project: Used to build llvm. Could be replaced with our own cmake files
+# google-protobuf: Used to build protoc during cross-compilation
+# grpc: Used to build grpc_cpp_plugin during cross-compilation
+# abseil-cpp: Dependency for google-protobuf and grpc
+# c-ares: Dependency for grpc
+# corrosion: Used to build rust
+# rust_vendor: Used to build rust
+# aws-crt-cpp: TODO: Fix and stop using it
 grep -o -P '"contrib/[^"]+"' .gitmodules |
-  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|corrosion|aws-crt-cpp|rust_vendor)' |
+  grep -v -P 'contrib/(llvm-project|google-protobuf|grpc|abseil-cpp|c-ares|corrosion|rust_vendor|aws-crt-cpp)' |
   xargs -I@ find @ \
     -'(' -name 'CMakeLists.txt' -or -name '*.cmake' -')' -and -not -name '*.h.cmake' \
     -delete

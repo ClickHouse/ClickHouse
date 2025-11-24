@@ -39,9 +39,18 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.11",
+        addSettingsChanges(settings_changes_history, "25.12",
         {
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
+            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
+            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+        });
+        addSettingsChanges(settings_changes_history, "25.11",
+        {
             {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
             {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
             {"cluster_table_function_split_granularity", "file", "file", "New setting."},
@@ -56,7 +65,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"use_text_index_dictionary_cache", false, false, "New setting"},
-            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
             {"use_text_index_header_cache", false, false, "New setting"},
             {"use_text_index_postings_cache", false, false, "New setting"},
             {"s3_retry_attempts", 500, 500, "Changed the value of the obsolete setting"},
@@ -65,14 +73,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_lazy_columns_replication", false, true, "Enable lazy columns replication in JOIN and ARRAY JOIN by default"},
             {"allow_special_serialization_kinds_in_output_formats", false, true, "Enable direct output of special columns representations like Sparse/Replicated in some output formats"},
             {"allow_experimental_alias_table_engine", false, false, "New setting"},
-            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"input_format_parquet_local_time_as_utc", false, true, "Use more appropriate type DateTime64(..., 'UTC') for parquet 'local time without timezone' type."},
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
-            {"use_paimon_partition_pruning", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {

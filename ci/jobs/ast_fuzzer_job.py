@@ -15,6 +15,9 @@ from ci.praktika.utils import Shell, Utils
 
 IMAGE_NAME = "clickhouse/fuzzer"
 
+# Maximum number of reproduce commands to display inline before writing to file
+MAX_INLINE_REPRODUCE_COMMANDS = 20
+
 cwd = Utils.cwd()
 
 
@@ -103,11 +106,19 @@ def run_fuzz_job(check_name: str):
 
     if not result.is_ok():
         info = ""
+        is_assertion = False
         error_output = Shell.get_output(
-            f"rg --text -A 10 -o 'Received signal.*|Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
+            f"rg --text -A 10 -o 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*|Received signal.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
         )
         if error_output:
+            is_assertion = True
+        else:
+            error_output = Shell.get_output(
+                f"rg --text -A 10 -o 'Received signal.*|.*Child process was terminated by signal 9.*' {server_log} | head -n10"
+            )
+        if error_output:
             error_lines = error_output.splitlines()
+            # keep all lines before next log line
             for i, line in enumerate(error_lines):
                 if "] {" in line and "} <" in line:
                     error_lines = error_lines[:i]
@@ -116,10 +127,10 @@ def run_fuzz_job(check_name: str):
             info += f"Error:\n{error_output}\n"
 
         patterns = [
-            "Let op!",
-            "Killed",
-            "Unknown error",
             "BuzzHouse fuzzer exception",
+            "Killed",
+            "Let op!",
+            "Unknown error",
         ]
         if result.results and any(
             pattern in result.results[-1].name for pattern in patterns
@@ -129,25 +140,33 @@ def run_fuzz_job(check_name: str):
         else:
             try:
                 fuzzer_test_generator = FuzzerTestGenerator(
-                    str(server_log), str(fuzzer_log)
+                    str(server_log),
+                    str(workspace_path / "fuzzerout.sql" if buzzhouse else fuzzer_log),
                 )
-                failed_query = fuzzer_test_generator.get_failed_query()
-                if failed_query:
-                    info += "---\n\nFailed query:\n"
-                    info += failed_query + "\n"
-                reproduce_commands = fuzzer_test_generator.get_reproduce_commands(
-                    failed_query
-                )
-                if reproduce_commands:
-                    info += "---\n\nReproduce commands (auto-generated; may require manual adjustment):\n"
-                    if len(reproduce_commands) > 20:
-                        reproduce_file_sql = workspace_path / "reproduce_commands.sql"
-                        with open(reproduce_file_sql, "w") as f:
-                            f.write("\n".join(reproduce_commands))
-                        paths.append(reproduce_file_sql)
-                        info += f"See file: {reproduce_file_sql}\n"
-                    else:
-                        info += "\n".join(reproduce_commands) + "\n"
+                if is_assertion:
+                    failed_query = fuzzer_test_generator.get_failed_query()
+                    if failed_query:
+                        info += "---\n\nFailed query:\n"
+                        info += failed_query + "\n"
+                        reproduce_commands = (
+                            fuzzer_test_generator.get_reproduce_commands(failed_query)
+                        )
+                        if reproduce_commands:
+                            info += "---\n\nReproduce commands (auto-generated; may require manual adjustment):\n"
+                            if len(reproduce_commands) > MAX_INLINE_REPRODUCE_COMMANDS:
+                                reproduce_file_sql = (
+                                    workspace_path / "reproduce_commands.sql"
+                                )
+                                try:
+                                    with open(reproduce_file_sql, "w") as f:
+                                        f.write("\n".join(reproduce_commands))
+                                    paths.append(reproduce_file_sql)
+                                    info += f"See file: {reproduce_file_sql}\n"
+                                except IOError as write_error:
+                                    info += f"Failed to write reproduce commands file: {write_error}\n"
+                            else:
+                                info += "\n".join(reproduce_commands) + "\n"
+                # Signal case: no action needed (query fetch not possible)
             except Exception as e:
                 info += (
                     "---\n\nFailed to fetch relevant queries from logs:\n"

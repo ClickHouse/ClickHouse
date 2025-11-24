@@ -1106,9 +1106,9 @@ When enabled, allows to use legacy toTime function, which converts a date with t
 Otherwise, uses a new toTime function, that converts different type of data into the Time type.
 The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_time64_type, false, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_time_time64_type, true, R"(
 Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
-)", EXPERIMENTAL, enable_time_time64_type) \
+)", 0, allow_experimental_time_time64_type) \
     DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
 Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
 
@@ -2165,7 +2165,7 @@ DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
     - 'false': Never swap tables (the right table is the build table).
     - 'true': Always swap tables (the left table is the build table).
 )", 0) \
-DECLARE(UInt64, query_plan_optimize_join_order_limit, 1, R"(
+DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
     Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
     Value is the maximum number of tables to optimize.
 )", 0) \
