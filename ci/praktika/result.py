@@ -1139,13 +1139,13 @@ class ResultTranslator:
         )
 
     @classmethod
-    def from_pytest_jsonl(cls, pytest_report_file):
+    def from_pytest_jsonl(cls, pytest_report_file, enable_capture_output_to_info=False):
         """
         Parses a pytest jsonl report file and creates a hierarchical Result object.
 
         Args:
-            jsonl_path (str): Path to the pytest jsonl report file
-            name (str): Name for the root Result object
+            pytest_report_file (str): Path to the pytest jsonl report file
+            enable_capture_output_to_info (bool): Whether to capture test output in Result.info
 
         Returns:
             List[Result]: A list of Result objects representing individual test cases
@@ -1249,21 +1249,22 @@ class ResultTranslator:
                                             info_parts.append(lr_txt)
                                     except Exception:
                                         pass
-                                # Sections (captured output) if any
-                                sections = entry.get("sections", [])
-                                try:
-                                    sec_chunks = []
-                                    for sec in sections:
-                                        if isinstance(sec, list) and len(sec) == 2:
-                                            title, content = sec
-                                            if content:
-                                                sec_chunks.append(
-                                                    f"===== {title} =====\n{content}"
-                                                )
-                                    if sec_chunks:
-                                        info_parts.append("\n".join(sec_chunks))
-                                except Exception:
-                                    pass
+                                if enable_capture_output_to_info:
+                                    # Sections (captured output) if any
+                                    sections = entry.get("sections", [])
+                                    try:
+                                        sec_chunks = []
+                                        for sec in sections:
+                                            if isinstance(sec, list) and len(sec) == 2:
+                                                title, content = sec
+                                                if content:
+                                                    sec_chunks.append(
+                                                        f"===== {title} =====\n{content}"
+                                                    )
+                                        if sec_chunks:
+                                            info_parts.append("\n".join(sec_chunks))
+                                    except Exception:
+                                        pass
 
                                 # Create a result for the module/node that failed to collect
                                 test_results[node_id or "<collection>"] = Result(
@@ -1440,7 +1441,11 @@ class ResultTranslator:
                                 test_failures[node_id][when] = status
 
                             # Include captured sections (stdout/stderr) for failures to help debugging
-                            if outcome in ("failed", "error") and entry.get("sections"):
+                            if (
+                                outcome in ("failed", "error")
+                                and entry.get("sections")
+                                and enable_capture_output_to_info
+                            ):
                                 try:
                                     sec_chunks = []
                                     for sec in entry.get("sections", []):
