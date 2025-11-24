@@ -30,7 +30,7 @@ bool ReadFromPreparedSource::isEmpty() const
         if (!typeid_cast<const NullSource *>(processor.get()))
             return false;
     }
-    
+
     return true;
 }
 

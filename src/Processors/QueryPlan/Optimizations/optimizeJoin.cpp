@@ -1069,10 +1069,10 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 static bool isDefinitelyEmpty(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    
+
     if (const auto * reading = typeid_cast<const ReadFromPreparedSource *>(step))
         return reading->isEmpty();
-    
+
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         auto analyzed_result = reading->getAnalyzedResult();
@@ -1101,16 +1101,16 @@ static bool isDefinitelyEmpty(QueryPlan::Node & node)
         auto total = storage->totalRows({});
         return total.has_value() && *total == 0;
     }
-    
+
     if (const auto * reading = typeid_cast<const ReadFromSystemNumbersStep *>(step))
     {
         auto limit = reading->getLimit();
         return limit.has_value() && limit.value() == 0;
     }
-    
+
     if (node.children.size() == 1)
         return isDefinitelyEmpty(*node.children[0]);
-    
+
     return false;
 }
 
@@ -1173,7 +1173,7 @@ bool tryOptimizeJoinWithEmptyInput(
 
     if (canOptimizeJoinWithEmptyInput(kind, node.children[0], node.children[1]))
     {
-        LOG_DEBUG(getLogger("optimizeJoin"), 
+        LOG_DEBUG(getLogger("optimizeJoin"),
             "Replacing {} with ReadNothingStep because one side is empty",
             toString(kind));
 
