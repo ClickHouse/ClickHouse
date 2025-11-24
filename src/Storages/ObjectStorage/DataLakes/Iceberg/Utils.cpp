@@ -51,8 +51,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/sortBlock.h>
 
 
 using namespace DB;
