@@ -329,16 +329,7 @@ ClusterPtr Clusters::getCluster(const std::string & cluster_name) const
 {
     std::lock_guard lock(mutex);
 
-    std::string expanded_cluster_name;
-    try
-    {
-        expanded_cluster_name = macros_->expand(cluster_name);
-    }
-    catch (Exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to expand macros in cluster name: {}", e.message());
-    }
-
+    auto expanded_cluster_name = macros_->expand(cluster_name);
     auto it = impl.find(expanded_cluster_name);
     return (it != impl.end()) ? it->second : nullptr;
 }

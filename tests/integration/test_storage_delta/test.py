@@ -67,6 +67,7 @@ S3_DATA = [
     "field_ids_struct_test/data/00000-1-7cad83a6-af90-42a9-8a10-114cbc862a42-0-00001.parquet",
 ]
 
+
 def get_spark():
     builder = (
         pyspark.sql.SparkSession.builder.appName("spark_test")
@@ -98,8 +99,6 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
-                "configs/config.d/metadata_log.xml",
-                "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -116,8 +115,6 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
-                "configs/config.d/metadata_log.xml",
-                "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -135,7 +132,6 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/use_environment_credentials.xml",
-                "configs/config.d/metadata_log.xml",
             ],
             env_variables={
                 "AWS_ACCESS_KEY_ID": minio_access_key,
@@ -149,8 +145,6 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
-                "configs/config.d/metadata_log.xml",
-                "configs/config.d/remove_masking_rules.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
@@ -167,7 +161,6 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
-                "configs/config.d/metadata_log.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -2291,23 +2284,21 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100",
             query_id=query_id,
         )
     )
     instance.query("SYSTEM FLUSH LOGS")
-    bytes_read = int(
+    assert 107220 == int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    # Slightly different number depending on reader implementation.
-    assert 107220 <= bytes_read <= 107232
 
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100",
             query_id=query_id,
         )
     )
@@ -2317,13 +2308,12 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    bytes_read = int(
+    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
+    assert 105677 == int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
-    assert 105677 <= bytes_read <= 105689
 
 
 def test_concurrent_reads(started_cluster):
@@ -3713,43 +3703,3 @@ def test_type_from_storage_def(started_cluster, column_mapping):
         "2000-11-11 00:00:00"
         == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
     )
-
-@pytest.mark.parametrize("use_delta_kernel", ["0", "1"])
-def test_system_table(started_cluster, use_delta_kernel):
-    instance = get_node(started_cluster, use_delta_kernel)
-    spark = started_cluster.spark_session
-    minio_client = started_cluster.minio_client
-    bucket = started_cluster.minio_bucket
-    TABLE_NAME = randomize_table_name("test_multiple_log_files")
-
-    write_delta_from_df(
-        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
-    )
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) == 2  # 1 metadata files + 1 data file
-
-    s3_objects = list(
-        minio_client.list_objects(bucket, f"{TABLE_NAME}/_delta_log/", recursive=True)
-    )
-    assert len(s3_objects) == 1
-
-    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 100
-
-    write_delta_from_df(
-        spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
-    )
-    files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert len(files) == 4  # 2 metadata files + 2 data files
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 200
-
-    instance.query("SYSTEM FLUSH LOGS delta_lake_metadata_log")
-
-    assert int(instance.query("SELECT count(DISTINCT file_path) FROM system.delta_lake_metadata_log")) == 2
-    contents = instance.query("SELECT content FROM system.delta_lake_metadata_log").split('\n')
-    for content in contents:
-        if len(content) == 0:
-            continue
-        assert 'commitInfo' in content
-        assert '.parquet' in content
-    instance.query("TRUNCATE TABLE system.delta_lake_metadata_log")
