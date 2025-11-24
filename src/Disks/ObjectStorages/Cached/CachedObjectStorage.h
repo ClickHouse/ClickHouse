@@ -138,6 +138,13 @@ public:
     }
 #endif
 
+#if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    {
+        object_storage->tagObjects(objects, tag_key, tag_value);
+    }
+#endif
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
