@@ -32,7 +32,7 @@ private:
         std::unique_ptr<S3Settings> && s3_settings_,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
-        ObjectStorageKeysGeneratorPtr key_generator_,
+        ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true)
         : uri(uri_)
@@ -130,9 +130,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
 
@@ -153,7 +151,7 @@ private:
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    ObjectStorageKeysGeneratorPtr key_generator;
+    const ObjectStorageKeyGeneratorPtr key_generator;
 
     LoggerPtr log;
 
