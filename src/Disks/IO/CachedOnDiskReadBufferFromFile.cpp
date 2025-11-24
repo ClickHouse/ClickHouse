@@ -1189,8 +1189,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         if (do_download)
         {
             chassert(
-                file_offset_of_buffer_end + size - 1 <= file_segment.range().right,
-                fmt::format("Offset: {}, size: {}, file segment range: {}, impl offset: {}", file_offset_of_buffer_end, size, file_segment.range().toString(), implementation_buffer->getPosition()));
+                offset + size - 1 <= file_segment.range().right,
+                fmt::format("Offset: {}, size: {}, file segment range: {}, impl offset: {}", offset, size, file_segment.range().toString(), state.buf->getPosition()));
 
             std::string failure_reason;
             bool success = file_segment.reserve(
@@ -1403,7 +1403,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         {
             current_info.cache_file_reader.reset();
             current_info.file_segments->front().increasePriority();
-            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download);
+            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download, false);
             current_state.reset();
             continue;
         }
@@ -1429,7 +1429,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             file_segment.increasePriority();
 
             current_info.cache_file_reader.reset();
-            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download);
+            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download, false);
             current_state.reset();
             continue;
         }
