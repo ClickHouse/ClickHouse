@@ -8,6 +8,11 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric NamedCollection;
+}
+
 namespace DB
 {
 
@@ -19,10 +24,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric NamedCollection;
-}
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
 {
