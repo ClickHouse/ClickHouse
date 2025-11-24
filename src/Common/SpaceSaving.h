@@ -5,8 +5,8 @@
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaUtils.h>
 #include <Common/ArenaWithFreeLists.h>
+#include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/HashTable/HashMap.h>
 
 #include <vector>
 
@@ -145,7 +145,7 @@ public:
 
     ~SpaceSaving() { destroyElements(); }
 
-    bool empty() const { return counter_list.size() == 0; }
+    bool empty() const { return counter_list.empty(); }
 
     size_t size() const
     {
@@ -322,13 +322,14 @@ public:
         resize(capacity);
         for (size_t i = 0; i < count; ++i)
         {
-            auto counter = Counter();
+            counter_list.emplace_back();
+            auto & counter = counter_list.back();
             counter.read(rb, arena);
             counter.hash = counter_map.hash(counter.key);
-            push(std::move(counter));
         }
 
         readAlphaMap(rb);
+        truncateIfNeeded(true);
     }
 
     void readAlphaMap(ReadBuffer & rb)
@@ -449,7 +450,7 @@ private:
     }
 
 
-    using CounterMap = HashMapWithStackMemory<TKey, size_t, Hash, 4>;
+    using CounterMap = ClearableHashMapWithStackMemoryAndSavedHash<TKey, size_t, Hash, 4>;
 
     CounterMap counter_map{};
     std::vector<Counter, AllocatorWithMemoryTracking<Counter>> counter_list{};
