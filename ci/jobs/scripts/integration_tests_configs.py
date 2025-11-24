@@ -51,21 +51,24 @@ TEST_CONFIGS = [
     # 2
 
     # TC("test_distributed_respect_user_timeouts/", True, "no idea why i'm sequential"),
-    # TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
-    # TC(
-    #     "test_insert_into_distributed_through_materialized_view/",
-    #     True,
-    #     "no idea why i'm sequential",
-    # ),
     # TC("test_limited_replicated_fetches/", True, "no idea why i'm sequential"),
     # TC("test_parts_delete_zookeeper/", True, "no idea why i'm sequential"),
-    # TC(
-    #     "test_postgresql_replica_database_engine/",
-    #     True,
-    #     "no idea why i'm sequential",
-    # ),
-    TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
-    TC("test_storage_s3/", True, "no idea why i'm sequential"),
+
+    TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
+    TC(
+        "test_insert_into_distributed_through_materialized_view/",
+        True,
+        "no idea why i'm sequential",
+    ),
+    TC(
+        "test_postgresql_replica_database_engine/",
+        True,
+        "no idea why i'm sequential",
+    ),
+
+    # 3 not a problem
+    # TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
+    # TC("test_storage_s3/", True, "no idea why i'm sequential"),
 
     # Sequential
     TC("test_crash_log/", True, "no idea why i'm sequential"),
