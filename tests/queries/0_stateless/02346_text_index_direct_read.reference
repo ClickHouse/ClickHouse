@@ -1,4 +1,4 @@
-Test direct read optimization from text log
+- Test direct read optimization from text log
 Test hasToken:	1
 Test hasAllTokens:	1
 Test hasAnyTokens:	1
@@ -15,3 +15,12 @@ Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f]
 Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8, __text_index_idx_hasToken_c59a18d8fad9a55578502d88319e8999], Removed: [text]
 Added: [__text_index_idx_hasAnyTokens_d6702e45d9f4e5e38c13ef8e3a93dd13, __text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
 Added: [__text_index_idx_hasAllTokens_c9d410e7a461849da4abf4ffd733029b], Removed: [text]
+- Test direct read optimization with EXPLAIN
+Filter column: __text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8 (removed)
+Filter column: __text_index_idx_hasAllTokens_e7a7ab2df53846f18ae5a86c4ce452e9 (removed)
+Filter column: __text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f (removed)
+Filter column: or(hasToken(text, \'Alick\'), greater(length(text), 1)) (removed)
+Prewhere filter column: __text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f (removed)
+Prewhere filter column: and(__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8, __text_index_idx_hasToken_c59a18d8fad9a55578502d88319e8999) (removed)
+Filter column: or(hasAnyTokens(text, [\'Blick\']), hasToken(text, \'Alick\')) (removed)
+Filter column: not(hasAllTokens(text, [\'Blick\'])) (removed)

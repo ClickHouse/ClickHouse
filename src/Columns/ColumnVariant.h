@@ -215,9 +215,9 @@ public:
     void popBack(size_t n) override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
-    const char * skipSerializedInArena(const char * pos) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
+    void skipSerializedInArena(ReadBuffer & in) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
 

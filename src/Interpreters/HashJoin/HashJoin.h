@@ -369,6 +369,16 @@ public:
     {
         const ScatteredColumns * columns;
         ColumnPtr column;
+        size_t selector_rows = 0;
+
+        NullMapHolder() = default;
+        explicit NullMapHolder(const ScatteredColumns * columns_, ColumnPtr column_)
+            : columns(columns_), column(column_)
+        {
+            // we can cache the selector size at construction to make the holder robust
+            // even if columns are moved/cleared later
+            selector_rows = columns ? columns->selector.size() : (this->column ? this->column->size() : 0);
+        }
 
         size_t allocatedBytes() const;
     };
@@ -452,9 +462,13 @@ public:
     void tryRerangeRightTableData() override;
     size_t getAndSetRightTableKeys() const;
 
+    bool hasNonJoinedRows();
+    void updateNonJoinedRowsStatus();
+
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
+    void setUsedFlags(std::shared_ptr<JoinStuff::JoinUsedFlags> flags) { used_flags = std::move(flags); }
 
     bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
 
@@ -472,6 +486,9 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
+
+    bool has_non_joined_rows_checked = false;
+    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;

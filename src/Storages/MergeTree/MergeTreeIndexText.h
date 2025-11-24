@@ -244,8 +244,9 @@ public:
     bool empty() const override { return header->numberOfTokens() == 0; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
-    bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
+    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
+    bool hasAllQueryTokens(const TextSearchQuery & query) const;
+    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();
@@ -371,7 +372,7 @@ public:
     MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.

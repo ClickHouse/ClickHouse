@@ -274,11 +274,11 @@ private:
     ComposeObjectOutcome ComposeObject(ComposeObjectRequest & request) const;
 
     template <typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequest(RequestType & request, RequestFn request_fn) const;
 
     template <bool IsReadMethod, typename RequestType, typename RequestFn>
-    std::invoke_result_t<RequestFn, RequestType>
+    std::invoke_result_t<RequestFn, RequestType &>
     doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request_fn) const;
 
     void updateURIForBucket(const std::string & bucket, S3::URI new_uri) const;

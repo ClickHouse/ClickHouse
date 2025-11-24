@@ -179,23 +179,19 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
     return values->getSerializedValueSize(getValueIndex(n));
 }
 
-const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    const char * res = nullptr;
-    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertFromArena(pos); });
-    return res;
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in); });
 }
 
-const char * ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    const char * res = nullptr;
-    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertAggregationStateValueFromArena(pos); });
-    return res;
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertAggregationStateValueFromArena(in); });
 }
 
-const char * ColumnSparse::skipSerializedInArena(const char * pos) const
+void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const
 {
-    return values->skipSerializedInArena(pos);
+    values->skipSerializedInArena(in);
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

@@ -229,7 +229,7 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    const char * place_for_serialized_columns)
+    ReadBuffer & in)
 {
     size_t columns_size = columns.size();
 
@@ -238,9 +238,9 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         const auto & column = columns[column_index];
 
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
-            place_for_serialized_columns = column->deserializeAndInsertFromArena(place_for_serialized_columns);
+            column->deserializeAndInsertFromArena(in);
         else
-            place_for_serialized_columns = column->skipSerializedInArena(place_for_serialized_columns);
+            column->skipSerializedInArena(in);
     }
 }
 

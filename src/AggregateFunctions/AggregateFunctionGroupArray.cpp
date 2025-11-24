@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/KeyHolderHelpers.h>
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
@@ -464,7 +465,10 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
         return node;
     }
 
-    void insertInto(IColumn & column) { std::ignore = column.deserializeAndInsertAggregationStateValueFromArena(data()); }
+    void insertInto(IColumn & column)
+    {
+        deserializeAndInsert<false>({data(), size}, column);
+    }
 };
 
 template <typename Node, bool has_sampler>

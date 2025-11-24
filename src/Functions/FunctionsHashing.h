@@ -1069,7 +1069,10 @@ private:
                 if (!serialization)
                     serialization = type->getDefaultSerialization();
                 WriteBufferFromOwnString buf;
-                serialization->serializeForHashCalculation(*column, i, buf);
+                if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
+                    serialization->serializeForHashCalculation(column_const->getDataColumn(), 0, buf);
+                else
+                    serialization->serializeForHashCalculation(*column, i, buf);
                 auto bytes = buf.str();
                 hash = apply(key, bytes.data(), bytes.size());
             }
