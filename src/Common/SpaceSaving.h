@@ -152,10 +152,7 @@ public:
         return counter_list.size();
     }
 
-    size_t capacity() const
-    {
-        return m_capacity;
-    }
+    size_t capacity() const { return requested_capacity; }
 
     void clear()
     {
@@ -164,12 +161,14 @@ public:
 
     void resize(size_t new_capacity)
     {
-        if (m_capacity != new_capacity)
+        if (requested_capacity != new_capacity)
         {
             chassert(empty());
-            counter_list.reserve(new_capacity * 2);
             alpha_map.resize(nextAlphaSize(new_capacity), 0);
-            m_capacity = new_capacity;
+            requested_capacity = new_capacity;
+            /// If the requested capacity is really small we would end up sorting and truncating too often
+            target_capacity = std::max(size_t{64}, requested_capacity * 2);
+            counter_list.reserve(target_capacity);
         }
     }
 
@@ -376,7 +375,7 @@ protected:
 
     ALWAYS_INLINE void truncateIfNeeded(bool force_counter_map_rebuild)
     {
-        if (unlikely(counter_list.size() >= capacity() * 2))
+        if (unlikely(counter_list.size() >= target_capacity))
         {
             ::nth_element(
                 counter_list.begin(),
@@ -385,14 +384,14 @@ protected:
                 [](const auto & l, const auto & r) { return l > r; });
 
             const UInt64 alpha_mask = alpha_map.size() - 1;
-            for (size_t i = m_capacity; i < counter_list.size(); ++i)
+            for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
                 size_t pos = counter_list[i].hash & alpha_mask;
                 alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
             }
 
-            counter_list.resize(m_capacity);
+            counter_list.resize(requested_capacity);
             force_counter_map_rebuild = true;
         }
 
@@ -414,7 +413,7 @@ private:
         counter_map.clear();
         counter_list.clear();
         alpha_map.clear();
-        m_capacity = 0;
+        requested_capacity = 0;
     }
 
     ALWAYS_INLINE Counter * findCounter(const TKey & key, size_t hash)
@@ -456,7 +455,10 @@ private:
     std::vector<Counter, AllocatorWithMemoryTracking<Counter>> counter_list{};
     std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map{};
     SpaceSavingArena<TKey> arena{};
-    size_t m_capacity = 0;
+    /// Capacity requested by the user. We will never return more than this many elements in topK().
+    size_t requested_capacity = 0;
+    /// Internal target capacity to avoid frequent truncations.
+    size_t target_capacity = 0;
 };
 
 }
