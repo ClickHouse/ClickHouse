@@ -67,6 +67,7 @@ private:
 
     size_t rows_cnt = 0;
     UInt64 evicted_rows_cnt = 0;
+    UInt64 outputed_rows_cnt = 0;
     struct CacheEntry
     {
         OutputPort * output_port = nullptr;

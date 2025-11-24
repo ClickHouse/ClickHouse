@@ -72,6 +72,7 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
     // Check can we still pull data from input?
     if (num_finished_input_ports != ports_data.size())
     {
+        bool has_full_port = false;
         auto process = [&](size_t pos)
         {
             auto status = pullData(ports_data[pos]);
@@ -89,6 +90,9 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
                 }
                 case IProcessor::Status::NeedData:
                     return;
+                case IProcessor::Status::PortFull:
+                    has_full_port = true;
+                    return;
                 default:
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
@@ -103,12 +107,15 @@ IProcessor::Status FractionalLimitTransform::prepare(const PortNumbers & updated
         for (auto pos : updated_output_ports)
             process(pos);
 
+        if (has_full_port)
+            return Status::PortFull;
+
         if (num_finished_input_ports != ports_data.size())
             // There is still more data
             return Status::NeedData;
 
         // Calculate integral limit and offset
-        limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction));
+        limit = static_cast<UInt64>(std::ceil(rows_cnt * limit_fraction)) - outputed_rows_cnt;
         offset += static_cast<UInt64>(std::ceil(rows_cnt * offset_fraction)) - evicted_rows_cnt;
     }
 
@@ -180,6 +187,51 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
     {
         evicted_rows_cnt += chunks_cache.front().chunk.getNumRows();
         chunks_cache.pop_front();
+    }
+
+    /// If offset_fraction is zero we can detect blocks that 
+    /// will 100% get pushed and push them as early as possible.
+    if (offset_fraction == 0 && !chunks_cache.empty())
+    {
+        auto output = *chunks_cache.front().output_port;
+        /// check can output
+        if (output.isFinished())
+        {
+            input.close();
+            return Status::Finished;
+        }
+        if (!output.canPush())
+            return Status::PortFull;
+
+        auto & chunk = chunks_cache.front().chunk;
+        auto num_rows = chunk.getNumRows();
+
+        if (std::ceil(rows_cnt * limit_fraction) - outputed_rows_cnt >= num_rows - offset)
+        {
+            /// If we still have an integral offset that didn't cause the chunk 
+            /// to be dropped entirely above then its offset in part of the chunk => split it
+            if (offset)
+            {
+                auto num_columns = chunk.getNumColumns();
+                auto columns = chunk.detachColumns();
+
+                for (UInt64 i = 0; i < num_columns; ++i)
+                    columns[i] = columns[i]->cut(offset, num_rows - offset);
+                chunks_cache.front().chunk.setColumns(std::move(columns), num_rows - offset);
+
+                num_rows -= offset;
+                rows_read = num_rows;
+                offset = 0;
+            }
+
+            outputed_rows_cnt += num_rows;
+            if (with_ties)
+                previous_row_chunk = makeChunkWithPreviousRow(chunks_cache.front().chunk, num_rows - 1);
+
+            output.push(std::move(chunks_cache.front().chunk));
+            chunks_cache.pop_front();
+            return Status::PortFull;
+        }
     }
 
     if (input.isFinished())
