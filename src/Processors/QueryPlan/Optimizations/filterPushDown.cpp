@@ -97,6 +97,17 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
     return res;
 }
 
+namespace
+{
+bool isResultConst(const Block & input_header, const ActionsDAG & dag, const String & column_name) {
+    const auto * node = &dag.findInOutputs(column_name);
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column && isColumnConst(*node->column))
+        return true;
+
+    const auto result_block = dag.updateHeader(input_header);
+    return result_block.getByName(column_name).column->isConst();
+}
+}
 static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
@@ -108,11 +119,12 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan
     auto * filter = assert_cast<FilterStep *>(parent.get());
     auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
-    bool removes_filter = filter->removesFilterColumn();
+    const bool removes_filter = filter->removesFilterColumn();
 
     const auto & all_inputs = child->getInputHeaders()[child_idx]->getColumnsWithTypeAndName();
-    bool allow_deterministic_functions = !step_changes_the_number_of_rows;
-    return expression.splitActionsForFilterPushDown(filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
+    const bool allow_deterministic_functions = !step_changes_the_number_of_rows;
+    const bool is_filter_column_const = isResultConst(all_inputs, expression, filter_column_name);
+    return expression.splitActionsForFilterPushDown(filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, is_filter_column_const);
 }
 
 static size_t addNewFilterStepOrThrow(
@@ -401,6 +413,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     Names left_stream_available_columns_to_push_down = get_available_columns_for_filter(true /*push_to_left_stream*/, left_stream_filter_push_down_input_columns_available);
     Names right_stream_available_columns_to_push_down = get_available_columns_for_filter(false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available);
 
+    const bool is_filter_column_const = isResultConst(*join_header, filter->getExpression(), filter->getFilterColumnName());
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         left_stream_available_columns_to_push_down,
@@ -409,7 +422,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         *right_stream_input_header,
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
-        equivalent_right_stream_column_to_left_stream_column);
+        equivalent_right_stream_column_to_left_stream_column,
+        is_filter_column_const);
 
     size_t updated_steps = 0;
 
