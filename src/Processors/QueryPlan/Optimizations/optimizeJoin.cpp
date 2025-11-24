@@ -1180,7 +1180,6 @@ bool tryOptimizeJoinWithEmptyInput(
         auto read_nothing_step = std::make_unique<ReadNothingStep>(join_step->getOutputHeader());
         node.step = std::move(read_nothing_step);
         node.children.clear();
-        join_step->setOptimized();
         return true;
     }
     return false;
