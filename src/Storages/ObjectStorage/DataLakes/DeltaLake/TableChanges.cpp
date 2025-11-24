@@ -181,6 +181,11 @@ DB::Chunk TableChanges::next()
 
     LOG_TEST(log, "Received {} rows", num_rows);
 
+    /// Currently delta-kernel CDF is supported only with disabled columnMapping mode.
+    /// So parquet file column names will exactly match table column names.
+    /// However, once non-default columnMapping modes are supported,
+    /// some adjustments will be needed to make it work here.
+
     DB::ArrowColumnToCHColumn arrow_conv(
         header, format_name, format_settings,
         /* parquet_columns_to_clickhouse */std::nullopt,
