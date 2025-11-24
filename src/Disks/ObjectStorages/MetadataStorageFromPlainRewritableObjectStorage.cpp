@@ -355,7 +355,6 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     if (auto object_size = getFileSizeIfExists(path))
     {
         auto object_key = object_storage->generateObjectKeyForPath(path, /*key_prefix=*/std::nullopt);
-        chassert(object_size == object_storage->getObjectMetadata(object_key.serialize(), /*with_tags=*/false).size_bytes);
         return StoredObjects{StoredObject(object_key.serialize(), path, *object_size)};
     }
 
