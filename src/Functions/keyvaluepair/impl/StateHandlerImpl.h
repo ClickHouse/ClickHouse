@@ -33,7 +33,7 @@ namespace extractKV
  * Each method returns a `StateHandler::NextState` object which contains the next state itself and the number of characters consumed by the previous state.
  *
  * The class is templated with a boolean that controls escaping support. As of now, there are three specializations:
- * `NoEscapingStateHandler`, `InlineEscapingStateHandler` and `ReferencesMapStateHandler`.
+ *
  * `NoEscapingStateHandler` does not handle escape sequences and writes directly to the output columns.
  * `InlineEscapingStateHandler` handles escape sequences, but pays the price of temporary buffers.
  * `ReferencesMapStateHandler` does not handle escape sequences and only store references to the input data. Its output is a map and not a column.
