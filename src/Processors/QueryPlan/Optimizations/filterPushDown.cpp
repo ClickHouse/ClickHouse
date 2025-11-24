@@ -99,7 +99,8 @@ static NameSet findIdentifiersOfNode(const ActionsDAG::Node * node)
 
 namespace
 {
-bool isResultConst(const Block & input_header, const ActionsDAG & dag, const String & column_name) {
+bool isResultConst(const Block & input_header, const ActionsDAG & dag, const String & column_name)
+{
     const auto * node = &dag.findInOutputs(column_name);
     if (node->type == ActionsDAG::ActionType::COLUMN && node->column && isColumnConst(*node->column))
         return true;
