@@ -25,6 +25,7 @@ TEST_CONFIGS = [
     # TC("test_ddl_worker_non_leader/", True, "no idea why i'm sequential"),
     # TC("test_delayed_replica_failover/", True, "no idea why i'm sequential"),
     # TC("test_disabled_mysql_server/", True, "no idea why i'm sequential"),
+
     TC("test_distributed_respect_user_timeouts/", True, "no idea why i'm sequential"),
     TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
     TC(
@@ -32,11 +33,11 @@ TEST_CONFIGS = [
         True,
         "no idea why i'm sequential",
     ),
-    TC("test_keeper_map/", True, "no idea why i'm sequential"),
-    TC("test_keeper_multinode_simple/", True, "no idea why i'm sequential"),
-    TC("test_keeper_two_nodes_cluster/", True, "no idea why i'm sequential"),
+    # TC("test_keeper_map/", True, "no idea why i'm sequential"),
+    # TC("test_keeper_multinode_simple/", True, "no idea why i'm sequential"),
+    # TC("test_keeper_two_nodes_cluster/", True, "no idea why i'm sequential"),
     TC("test_limited_replicated_fetches/", True, "no idea why i'm sequential"),
-    TC("test_mysql_database_engine/", True, "no idea why i'm sequential"),
+    # TC("test_mysql_database_engine/", True, "no idea why i'm sequential"),
     TC("test_parts_delete_zookeeper/", True, "no idea why i'm sequential"),
     TC(
         "test_postgresql_replica_database_engine/",
@@ -44,22 +45,23 @@ TEST_CONFIGS = [
         "no idea why i'm sequential",
     ),
     TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
-    TC("test_replace_partition/", True, "no idea why i'm sequential"),
-    TC("test_replicated_fetches_timeouts/", True, "no idea why i'm sequential"),
-    TC(
-        "test_replicated_merge_tree_wait_on_shutdown/",
-        True,
-        "no idea why i'm sequential",
-    ),
+    # TC("test_replace_partition/", True, "no idea why i'm sequential"),
+    # TC("test_replicated_fetches_timeouts/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_replicated_merge_tree_wait_on_shutdown/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
     TC("test_storage_s3/", True, "no idea why i'm sequential"),
-    TC("test_system_metrics/", True, "no idea why i'm sequential"),
-    TC("test_ttl_move/", True, "no idea why i'm sequential"),
-    TC(
-        "test_zookeeper_config_load_balancing/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC("test_zookeeper_fallback_session/", True, "no idea why i'm sequential"),
+    # TC("test_system_metrics/", True, "no idea why i'm sequential"),
+    # TC("test_ttl_move/", True, "no idea why i'm sequential"),
+
+    # TC(
+    #     "test_zookeeper_config_load_balancing/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC("test_zookeeper_fallback_session/", True, "no idea why i'm sequential"),
 
     # Sequential
     TC("test_crash_log/", True, "no idea why i'm sequential"),
