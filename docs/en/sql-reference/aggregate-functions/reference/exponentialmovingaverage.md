@@ -4,7 +4,6 @@ description: 'Calculates the exponential moving average of values for the determ
 sidebar_position: 132
 slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
 title: 'exponentialMovingAverage'
-doc_type: 'reference'
 ---
 
 ## exponentialMovingAverage {#exponentialmovingaverage}
@@ -159,6 +158,8 @@ SELECT
     10 AS value,
     toDateTime('2020-01-01') + (3600 * number) AS time
 FROM numbers_mt(10);
+
+
 -- Calculate timeunit using intDiv
 SELECT
     value,
@@ -180,6 +181,8 @@ ORDER BY time ASC;
 │    10 │ 2020-01-01 08:00:00 │  9.98046875 │   438296 │
 │    10 │ 2020-01-01 09:00:00 │ 9.990234375 │   438297 │
 └───────┴─────────────────────┴─────────────┴──────────┘
+
+
 -- Calculate timeunit using toRelativeHourNum
 SELECT
     value,

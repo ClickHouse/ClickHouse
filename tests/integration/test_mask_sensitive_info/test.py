@@ -6,8 +6,6 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.config_cluster import minio_secret_key
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -291,8 +289,6 @@ def test_create_table():
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@'",
         f"Kafka() SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '{password}', format_avro_schema_registry_url = 'http://schema_user:{password}@domain.com'",
         f"S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '{password}', compression_method = 'gzip')",
-        f"ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
-        f"ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
     ]
 
     def make_test_case(i):
@@ -372,8 +368,6 @@ def test_create_table():
             "CREATE TABLE table33 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@'",
             "CREATE TABLE table34 (`x` int) ENGINE = Kafka SETTINGS kafka_broker_list = '127.0.0.1', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'JSONEachRow', kafka_security_protocol = 'sasl_ssl', kafka_sasl_mechanism = 'PLAIN', kafka_sasl_username = 'user', kafka_sasl_password = '[HIDDEN]', format_avro_schema_registry_url = 'http://schema_user:[HIDDEN]@domain.com'",
             "CREATE TABLE table35 (`x` int) ENGINE = S3('http://minio1:9001/root/data/test5.csv.gz', 'CSV', access_key_id = 'minio', secret_access_key = '[HIDDEN]', compression_method = 'gzip')",
-            "CREATE TABLE table36 (`x` int) ENGINE = ArrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
-            "CREATE TABLE table37 (`x` int) ENGINE = ArrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -400,10 +394,6 @@ def test_create_database():
         f"S3('http://minio1:9001/root/data', 'minio', '{password}')",
         f"S3(named_collection_2, secret_access_key = '{password}', access_key_id = 'minio')",
         # f"PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '{password}')",
-        (
-            f"Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '{password}'))",
-            "DNS_ERROR",
-        ),
     ]
 
     def make_test_case(i):
@@ -431,7 +421,6 @@ def test_create_database():
             "CREATE DATABASE database2 ENGINE = S3('http://minio1:9001/root/data', 'minio', '[HIDDEN]')",
             "CREATE DATABASE database3 ENGINE = S3(named_collection_2, secret_access_key = '[HIDDEN]', access_key_id = 'minio')",
             # "CREATE DATABASE database4 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
-            "CREATE DATABASE database4 ENGINE = Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '[HIDDEN]'))",
         ],
         must_not_contain=[password],
     )
@@ -498,9 +487,6 @@ def test_table_functions():
         f"icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none', 'auto')",
         f"hudi('http://minio1:9001/root/data/test7.csv', 'minio', '{password}')",
-        f"arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '{password}')",
-        f"arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
-        f"arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '{password}')",
     ]
 
     def make_test_case(i):
@@ -516,10 +502,7 @@ def test_table_functions():
     test_cases = [make_test_case(i) for i in range(len(table_functions))]
 
     for table_name, query, error in test_cases:
-        if error:
-            assert error in node.query_and_get_error(query)
-        else:
-            node.query(query)
+        node.query(query)
 
     for toggle, secret in enumerate(["[HIDDEN]", password]):
         assert (
@@ -589,9 +572,6 @@ def test_table_functions():
             f"CREATE TABLE tablefunc42 (`x` int) AS icebergAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             f"CREATE TABLE tablefunc43 (`x` int) AS deltaLakeAzure('{azure_storage_account_url}', 'cont', 'test_simple_6.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none', 'auto')",
             "CREATE TABLE tablefunc44 (`x` int) AS hudi('http://minio1:9001/root/data/test7.csv', 'minio', '[HIDDEN]')",
-            "CREATE TABLE tablefunc45 (`x` int) AS arrowFlight('arrowflight1:5006', 'dataset', 'arrowflight_user', '[HIDDEN]')",
-            "CREATE TABLE tablefunc46 (`x` int) AS arrowFlight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
-            "CREATE TABLE tablefunc47 (`x` int) AS arrowflight(named_collection_1, host = 'arrowflight1', port = 5006, dataset = 'dataset', username = 'arrowflight_user', password = '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
@@ -643,8 +623,6 @@ def test_table_functions_object_storage_cluster():
         f"hudiCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"deltaLakeCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"deltaLakeCluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
-        f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
-        f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '{s3_secret_access_key}')",
         f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '{s3_secret_access_key}')",
         f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
@@ -655,10 +633,6 @@ def test_table_functions_object_storage_cluster():
         f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
         f"icebergAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
         f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
-        f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '{azure_account_key}')",
-        f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '{azure_account_key}')",
-        f"deltaLakeAzureCluster('{ch_cluster}', '{azure_connection_string}', 'test', 'test')",
-        f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{azure_connection_string}', container_name = 'test', blobpath = 'test')",
     ]
 
     for table_function in table_functions:
@@ -671,8 +645,6 @@ def test_table_functions_object_storage_cluster():
             f"hudiCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeCluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"deltaLakeCluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
-            f"deltaLakeS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
-            f"deltaLakeS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
             f"icebergS3Cluster('{ch_cluster}', '{s3_url}', '{s3_access_key_id}', '[HIDDEN]')",
             f"icebergS3Cluster('{ch_cluster}', {named_collection}, url = '{s3_url}', access_key_id = '{s3_access_key_id}', secret_access_key = '[HIDDEN]')",
             f"azureBlobStorageCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
@@ -683,10 +655,6 @@ def test_table_functions_object_storage_cluster():
             f"icebergAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
             f"icebergAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
             f"icebergAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', '{azure_storage_account_url}', 'test', 'test', '{azure_account_name}', '[HIDDEN]')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, storage_account_url = '{azure_storage_account_url}', container_name = 'test', blobpath = 'test', account_name = '{azure_account_name}', account_key = '[HIDDEN]')",
-            f"deltaLakeAzureCluster('{ch_cluster}', '{masked_azure_connection_string}', 'test', 'test')",
-            f"deltaLakeAzureCluster('{ch_cluster}', {named_collection}, connection_string = '{masked_azure_connection_string}', container_name = 'test', blobpath = 'test')",
         ],
         must_not_contain=[s3_secret_access_key, azure_account_key, azure_connection_string],
     )
@@ -872,17 +840,3 @@ def test_iceberg_cluster_function():
         ],
         must_not_contain=[password, azure_account_key],
     )
-
-
-def test_query_masking_rule_with_ddl():
-    table_name = "test_ddl_masking"
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
-    node.query(
-        f"CREATE TABLE {table_name} ON CLUSTER 'test_shard_localhost' (s String, sensetive_data UInt32) ENGINE = MergeTree ORDER BY s"
-    )
-
-    assert_eq_with_retry(node, "SELECT count(*) FROM system.distribution_queue", "0\n")
-    assert "sensetive_data" in node.query(
-        f"SELECT create_table_query FROM system.tables WHERE table='{table_name}' {show_secrets}"
-    )
-    node.query("DROP TABLE IF EXISTS test_table")

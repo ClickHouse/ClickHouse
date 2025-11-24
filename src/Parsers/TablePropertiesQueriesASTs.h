@@ -26,7 +26,8 @@ struct ASTExistsViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ExistsViewQuery";
     static constexpr auto Query = "EXISTS VIEW";
-    static constexpr auto QueryTemporary = "EXISTS TEMPORARY VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
 };
 
 
@@ -49,7 +50,8 @@ struct ASTShowCreateViewQueryIDAndQueryNames
 {
     static constexpr auto ID = "ShowCreateViewQuery";
     static constexpr auto Query = "SHOW CREATE VIEW";
-    static constexpr auto QueryTemporary = "SHOW CREATE TEMPORARY VIEW";
+    /// No temporary view are supported, just for parsing
+    static constexpr auto QueryTemporary = "";
 };
 
 struct ASTShowCreateDatabaseQueryIDAndQueryNames

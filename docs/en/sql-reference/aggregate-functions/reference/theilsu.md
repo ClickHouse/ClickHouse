@@ -4,7 +4,6 @@ description: 'The `theilsU` function calculates Theils'' U uncertainty coefficie
 sidebar_position: 201
 slug: /sql-reference/aggregate-functions/reference/theilsu
 title: 'theilsU'
-doc_type: 'reference'
 ---
 
 # theilsU
@@ -33,7 +32,7 @@ The following two columns being compared below have a small association with eac
 
 ```sql
 SELECT
-    theilsU(a, b)
+    theilsU(a ,b)
 FROM
     (
         SELECT

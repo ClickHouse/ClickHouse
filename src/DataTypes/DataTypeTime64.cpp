@@ -1,9 +1,8 @@
-#include <string>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/Serializations/SerializationTime64.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/Exception.h>
+#include <string>
 
 
 namespace DB
@@ -11,28 +10,45 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
-extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
-static constexpr UInt32 TIME64_MAX_SCALE = 9;
+static constexpr UInt32 max_scale = 9;
 
-DataTypeTime64::DataTypeTime64(UInt32 scale_)
-    : DataTypeDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_)
+DataTypeTime64::DataTypeTime64(UInt32 scale_, std::string_view time_zone_name)
+    : DataTypeDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_),
+      TimezoneMixin(time_zone_name)
 {
-    if (scale_ > TIME64_MAX_SCALE)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "DataTypeTime64 scale {} is too large, maximum is {}", scale_, TIME64_MAX_SCALE);
+    if (scale > max_scale)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for Time64. "
+            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
-
-std::string DataTypeTime64::doGetName() const
+DataTypeTime64::DataTypeTime64(UInt32 scale_, const TimezoneMixin & time_zone_info)
+    : DataTypeDecimalBase<Time64>(DecimalUtils::max_precision<Time64>, scale_),
+      TimezoneMixin(time_zone_info)
 {
-    return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
+    if (scale > max_scale)
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Scale {} is too large for Time64. "
+            "Maximum is up to nanoseconds (9).", std::to_string(scale));
 }
 
 void DataTypeTime64::updateHashImpl(SipHash & hash) const
 {
-    hash.update(this->scale);
+    hash.update(has_explicit_time_zone);
+    if (has_explicit_time_zone)
+        hash.update(time_zone.getTimeZone());
+}
+
+std::string DataTypeTime64::doGetName() const
+{
+    if (!has_explicit_time_zone)
+        return std::string(getFamilyName()) + "(" + std::to_string(this->scale) + ")";
+
+    WriteBufferFromOwnString out;
+    out << "Time64(" << this->scale << ", " << quote << time_zone.getTimeZone() << ")";
+    return out.str();
 }
 
 bool DataTypeTime64::equals(const IDataType & rhs) const
@@ -47,15 +63,12 @@ SerializationPtr DataTypeTime64::doGetDefaultSerialization() const
     return std::make_shared<SerializationTime64>(scale, *this);
 }
 
-const DateLUTImpl & DataTypeTime64::getTimeZone() const
-{
-    return DateLUT::instance();
-}
-
 std::string getTimeTimezone(const IDataType & data_type)
 {
-    if (typeid_cast<const DataTypeTime *>(&data_type) || typeid_cast<const DataTypeTime64 *>(&data_type))
-        return std::string();
+    if (const auto * type = typeid_cast<const DataTypeTime *>(&data_type))
+        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
+    if (const auto * type = typeid_cast<const DataTypeTime64 *>(&data_type))
+        return type->hasExplicitTimeZone() ? type->getTimeZone().getTimeZone() : std::string();
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get time zone from type {}", data_type.getName());
 }
