@@ -466,7 +466,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
              static const DB::Strings & choices = {"'basic'", "'allow_sparse'"};
              return rg.pickRandomly(choices);
          },
-         {"'single_stream'", "'with_size_stream'"},
+         {"'basic'", "'allow_sparse'"},
          false)},
     {"table_disk", trueOrFalseSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
