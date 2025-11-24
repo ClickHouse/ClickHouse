@@ -35,11 +35,11 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode read_mode_, std::vector<String> tokens_);
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_);
 
     String function_name;
     TextSearchMode search_mode;
-    TextIndexDirectReadMode read_mode;
+    TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
 
     SipHash getHash() const;

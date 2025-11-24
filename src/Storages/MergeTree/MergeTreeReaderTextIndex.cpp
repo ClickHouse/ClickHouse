@@ -353,11 +353,11 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
         {
             granule.is_always_true[i] = true;
         }
-        else if (search_query->read_mode == TextIndexDirectReadMode::Exact)
+        else if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
         {
             useful_tokens.insert(search_query->tokens.begin(), search_query->tokens.end());
         }
-        else if (search_query->read_mode == TextIndexDirectReadMode::Hint)
+        else if (search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
         {
             const auto & settings = condition_text.getContext()->getSettingsRef();
             double selectivity_threshold = settings[Setting::text_index_hint_max_selectivity];

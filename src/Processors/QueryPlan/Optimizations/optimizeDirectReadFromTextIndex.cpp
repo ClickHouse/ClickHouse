@@ -206,6 +206,7 @@ private:
         if (function_node.type != ActionsDAG::ActionType::FUNCTION || !function_node.function || !function_node.function_base)
             return std::nullopt;
 
+        /// If function returns not UInt8 type, it is not a predicate and cannot be optimized by the text index.
         if (!WhichDataType(function_node.result_type).isUInt8())
             return std::nullopt;
 
@@ -232,7 +233,7 @@ private:
                 return std::nullopt;
 
             auto search_query = text_index_condition.createTextSearchQuery(function_node);
-            if (!search_query || search_query->read_mode == TextIndexDirectReadMode::None)
+            if (!search_query || search_query->direct_read_mode == TextIndexDirectReadMode::None)
                 continue;
 
             auto virtual_column_name = text_index_condition.replaceToVirtualColumn(*search_query, index_name);
@@ -242,7 +243,7 @@ private:
             selected_conditions.push_back({search_query, index_name, *virtual_column_name});
             used_index_columns.insert(index_header.begin()->name);
 
-            if (search_query->read_mode == TextIndexDirectReadMode::Exact)
+            if (search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
                 has_exact_search = true;
         }
 
