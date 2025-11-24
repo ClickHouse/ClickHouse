@@ -1471,15 +1471,20 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         /// Dictionary functions
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
         const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
+        const auto dfunc = rg.pickRandomly(dictFuncs);
 
-        sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCdictGet);
+        sfc->mutable_func()->set_catalog_func(dfunc);
         sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + d.getFullName(true) + "'");
         flatTableColumnPath(
             flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, d.cols, [](const SQLColumn &) { return true; });
         sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(this->table_entries).columnPathRef("'"));
         this->table_entries.clear();
         this->depth++;
-        this->generateExpression(rg, sfc->add_args()->mutable_expr());
+        /// May break total width
+        for (uint32_t i = 0; i < dictFuncs.at(dfunc); i++)
+        {
+            this->generateExpression(rg, sfc->add_args()->mutable_expr());
+        }
         this->depth--;
     }
     else

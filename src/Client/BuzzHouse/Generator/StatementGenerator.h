@@ -136,6 +136,7 @@ public:
 
 private:
     std::vector<TableEngineValues> likeEngsDeterministic, likeEngsNotDeterministic, likeEngsInfinite;
+    std::unordered_map<SQLFunc, uint32_t> dictFuncs;
     ExternalIntegrations & connections;
     const bool supports_cloud_features;
     const size_t deterministic_funcs_limit, deterministic_aggrs_limit;

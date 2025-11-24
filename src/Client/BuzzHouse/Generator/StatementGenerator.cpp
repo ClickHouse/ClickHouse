@@ -198,6 +198,80 @@ StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations 
     {
         likeEngsInfinite.emplace_back(GenerateRandom);
     }
+    dictFuncs = {
+        {SQLFunc::FUNCdictGet, 1},
+        {SQLFunc::FUNCdictGetAll, 1},
+        {SQLFunc::FUNCdictGetChildren, 0},
+        {SQLFunc::FUNCdictGetDescendants, 1},
+        {SQLFunc::FUNCdictGetHierarchy, 0},
+        {SQLFunc::FUNCdictGetInt32, 1},
+        {SQLFunc::FUNCdictGetInt32OrDefault, 2},
+        {SQLFunc::FUNCdictGetKeys, 1},
+        {SQLFunc::FUNCdictGetOrDefault, 2},
+        {SQLFunc::FUNCdictGetOrNull, 1},
+        {SQLFunc::FUNCdictHas, 0},
+        {SQLFunc::FUNCdictIsIn, 1},
+    };
+    if ((fc.type_mask & allow_int8))
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetInt8, 1}, {SQLFunc::FUNCdictGetInt8OrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_int16))
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetInt16, 1}, {SQLFunc::FUNCdictGetInt16OrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_int64))
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetInt64, 1}, {SQLFunc::FUNCdictGetInt64OrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_unsigned_int) != 0)
+    {
+        if ((fc.type_mask & allow_int8))
+        {
+            dictFuncs.insert({{SQLFunc::FUNCdictGetUInt8, 1}, {SQLFunc::FUNCdictGetUInt8OrDefault, 2}});
+        }
+        if ((fc.type_mask & allow_int16))
+        {
+            dictFuncs.insert({{SQLFunc::FUNCdictGetUInt16, 1}, {SQLFunc::FUNCdictGetUInt16OrDefault, 2}});
+        }
+        dictFuncs.insert({{SQLFunc::FUNCdictGetUInt32, 1}, {SQLFunc::FUNCdictGetUInt32OrDefault, 2}});
+        if ((fc.type_mask & allow_int64))
+        {
+            dictFuncs.insert({{SQLFunc::FUNCdictGetUInt64, 1}, {SQLFunc::FUNCdictGetUInt64OrDefault, 2}});
+        }
+    }
+    if (fc.fuzz_floating_points && (fc.type_mask & allow_float32) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetFloat32, 1}, {SQLFunc::FUNCdictGetFloat32OrDefault, 2}});
+    }
+    if (fc.fuzz_floating_points && (fc.type_mask & allow_float64) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetFloat64, 1}, {SQLFunc::FUNCdictGetFloat64OrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_dates) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetDate, 1}, {SQLFunc::FUNCdictGetDateOrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_datetimes) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetDateTime, 1}, {SQLFunc::FUNCdictGetDateTimeOrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_uuid) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetUUID, 1}, {SQLFunc::FUNCdictGetUUIDOrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_strings) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetString, 1}, {SQLFunc::FUNCdictGetStringOrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_ipv4) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetIPv4, 1}, {SQLFunc::FUNCdictGetIPv4OrDefault, 2}});
+    }
+    if ((fc.type_mask & allow_ipv6) != 0)
+    {
+        dictFuncs.insert({{SQLFunc::FUNCdictGetIPv6, 1}, {SQLFunc::FUNCdictGetIPv6OrDefault, 2}});
+    }
 }
 
 void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) const
