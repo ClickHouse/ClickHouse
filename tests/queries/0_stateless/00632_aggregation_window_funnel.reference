@@ -196,5 +196,5 @@ from funnel_test_reentry where uid = 2 group by uid format JSONCompactEachRow;
 [2, 3]
 select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c') as res
 from funnel_test_reentry where uid = 3 group by uid format JSONCompactEachRow;
-[3, 2]
+[3, 1]
 drop table funnel_test_reentry;
