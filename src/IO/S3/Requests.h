@@ -9,6 +9,7 @@
 
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/GetObjectTaggingRequest.h>
 #include <aws/s3/model/ListObjectsV2Request.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -147,6 +148,7 @@ public:
 };
 
 using HeadObjectRequest = ExtendedRequest<Model::HeadObjectRequest>;
+using GetObjectTaggingRequest = ExtendedRequest<Model::GetObjectTaggingRequest>;
 using ListObjectsV2Request = ExtendedRequest<Model::ListObjectsV2Request>;
 using ListObjectsRequest = ExtendedRequest<Model::ListObjectsRequest>;
 using GetObjectRequest = ExtendedRequest<Model::GetObjectRequest>;
@@ -224,6 +226,12 @@ private:
     std::vector<Aws::String> component_names;
     Aws::String content_type;
 };
+
+size_t getSDKAttemptNumber(const Aws::Http::HttpRequest & request);
+
+size_t getClickhouseAttemptNumber(const Aws::AmazonWebServiceRequest & request);
+size_t getClickhouseAttemptNumber(const Aws::Http::HttpRequest & request);
+void setClickhouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt);
 
 }
 

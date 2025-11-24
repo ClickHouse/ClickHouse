@@ -179,6 +179,7 @@ function init_clickhouse_db() {
             # port is needed to check if clickhouse-server is ready for connections
             HTTP_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=http_port --try)"
             HTTPS_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=https_port --try)"
+            NATIVE_PORT="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tcp_port --try)"
 
             if [ -n "$HTTP_PORT" ]; then
                 URL="http://127.0.0.1:$HTTP_PORT/ping"
@@ -202,7 +203,7 @@ function init_clickhouse_db() {
                 sleep 1
             done
 
-            clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
+            clickhouseclient=( clickhouse-client --multiquery --host "127.0.0.1" --port "$NATIVE_PORT" -u "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" )
 
             echo
 

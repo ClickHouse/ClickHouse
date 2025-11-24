@@ -78,7 +78,7 @@ namespace ErrorCodes
 
 namespace FailPoints
 {
-extern const char refresh_task_delay_update_coordination_state_running[];
+extern const char refresh_task_stop_racing_for_running_refresh[];
 }
 
 RefreshTask::RefreshTask(
@@ -668,6 +668,8 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
     LOG_DEBUG(log, "Refreshing view {}", view_storage_id.getFullTableName());
     execution.progress.reset();
 
+    static constexpr bool internal = true;
+
     ContextMutablePtr refresh_context = view->getContext();
     ProcessList::EntryPtr process_list_entry;
     std::optional<StorageID> table_to_drop;
@@ -705,7 +707,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
 
             process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             refresh_context->setProgressCallback([this](const Progress & prog)
@@ -729,39 +731,43 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
                 start_time, refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ false, view_storage_id.database_name,
+                &interpreter, /*internal*/ internal, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
-            PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-            executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-
             {
-                std::unique_lock exec_lock(execution.executor_mutex);
+                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+
+                {
+                    std::unique_lock exec_lock(execution.executor_mutex);
+                    if (execution.interrupt_execution.load())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                    execution.executor = &executor;
+                }
+                SCOPE_EXIT({
+                    std::unique_lock exec_lock(execution.executor_mutex);
+                    execution.executor = nullptr;
+                });
+
+                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+
+                /// A cancelled PipelineExecutor may return without exception but with incomplete results.
+                /// In this case make sure to:
+                ///  * report exception rather than success,
+                ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
+                ///    being unexpectedly destroyed before completion and without uncaught exception
+                ///    (specifically, the assert in ~WriteBuffer()).
                 if (execution.interrupt_execution.load())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-                execution.executor = &executor;
+
+                /// `executor` must be destroyed before `pipeline`!
             }
-            SCOPE_EXIT({
-                std::unique_lock exec_lock(execution.executor_mutex);
-                execution.executor = nullptr;
-            });
 
-            executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
-
-            /// A cancelled PipelineExecutor may return without exception but with incomplete results.
-            /// In this case make sure to:
-            ///  * report exception rather than success,
-            ///  * do it before destroying the QueryPipeline; otherwise it may fail assertions about
-            ///    being unexpectedly destroyed before completion and without uncaught exception
-            ///    (specifically, the assert in ~WriteBuffer()).
-            if (execution.interrupt_execution.load())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/false);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
             query_log_elem = std::nullopt;
             query_span = nullptr;
         }
@@ -788,13 +794,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
 
         if (query_log_elem.has_value())
         {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ false, /*log_error*/ !cancelled);
+            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_error*/ !cancelled);
         }
         else
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds());
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
         }
 
         if (cancelled)
@@ -991,10 +997,11 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         ops.emplace_back(zkutil::makeSetRequest(coordination.path, root.toString(), root.version));
         if (running)
         {
-            fiu_do_on(FailPoints::refresh_task_delay_update_coordination_state_running, {
-                std::chrono::milliseconds sleep_time{3000 + thread_local_rng() % 2000};
-                std::this_thread::sleep_for(sleep_time);
-            });
+            bool stop_racing_for_running_refresh = false;
+            fiu_do_on(FailPoints::refresh_task_stop_racing_for_running_refresh, { stop_racing_for_running_refresh = true; });
+            if (stop_racing_for_running_refresh)
+                return false;
+
             ops.emplace_back(
                 zkutil::makeCreateRequest(coordination.path + "/running", coordination.replica_name, zkutil::CreateMode::Ephemeral));
         }

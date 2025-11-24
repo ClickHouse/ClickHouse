@@ -60,6 +60,7 @@ public:
         const ContextPtr & local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
+        ASTPtr order_by,
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
@@ -77,12 +78,14 @@ public:
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
+    bool supportsParallelInsert() const override { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
     std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
 
+    bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
 
     ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
 
@@ -147,6 +150,7 @@ private:
     const StorageObjectStorageConfigurationWeakPtr configuration;
     LoggerPtr log;
     DB::Iceberg::PersistentTableComponents persistent_components;
+    KeyDescription getSortingKey(ContextPtr local_context, Iceberg::TableStateSnapshot actual_table_state_snapshot) const;
 };
 }
 

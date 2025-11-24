@@ -193,7 +193,7 @@ private:
     String setMergeTableParameter(RandomGenerator & rg, const String & initial);
 
     template <typename T>
-    const std::unordered_map<uint32_t, T> & getNextCollection() const
+    std::unordered_map<uint32_t, T> & getNextCollection()
     {
         if constexpr (std::is_same_v<T, SQLTable>)
         {
@@ -219,9 +219,9 @@ private:
 
 public:
     template <typename T>
-    bool collectionHas(const std::function<bool(const T &)> func) const
+    bool collectionHas(const std::function<bool(const T &)> func)
     {
-        const auto & input = getNextCollection<T>();
+        auto & input = getNextCollection<T>();
 
         for (const auto & entry : input)
         {
@@ -235,10 +235,10 @@ public:
 
 private:
     template <typename T>
-    uint32_t collectionCount(const std::function<bool(const T &)> func) const
+    uint32_t collectionCount(const std::function<bool(const T &)> func)
     {
         uint32_t res = 0;
-        const auto & input = getNextCollection<T>();
+        auto & input = getNextCollection<T>();
 
         for (const auto & entry : input)
         {
@@ -285,7 +285,7 @@ public:
     template <typename T>
     std::vector<std::reference_wrapper<const T>> & filterCollection(const std::function<bool(const T &)> func)
     {
-        const auto & input = getNextCollection<T>();
+        auto & input = getNextCollection<T>();
         auto & res = getNextCollectionResult<T>();
 
         res.clear();
@@ -319,7 +319,7 @@ private:
     void addRandomRelation(RandomGenerator & rg, std::optional<String> rel_name, uint32_t ncols, Expr * expr);
     void generateStorage(RandomGenerator & rg, Storage * store) const;
     void generateNextCodecs(RandomGenerator & rg, CodecList * cl);
-    void generateTableExpression(RandomGenerator & rg, bool use_global_agg, Expr * expr);
+    void generateTableExpression(RandomGenerator & rg, std::optional<SQLRelation> & rel, bool use_global_agg, Expr * expr);
     void generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr);
     void generateNextTTL(RandomGenerator & rg, const std::optional<SQLTable> & t, const TableEngine * te, TTLExpr * ttl_expr);
     void generateNextStatistics(RandomGenerator & rg, ColumnStatistics * cstats);
@@ -340,6 +340,8 @@ private:
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool allow_asc_desc, TableKey * tkey);
     void setClusterInfo(RandomGenerator & rg, SQLBase & b) const;
+    template <typename T>
+    void randomEngineParams(RandomGenerator & rg, std::optional<SQLRelation> & rel, T * te);
     void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLRelation & rel, const SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, const SQLRelation & rel, SQLBase & b, bool add_pkey, TableEngine * te);
 
@@ -348,7 +350,7 @@ private:
     void setRandomShardKey(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * expr);
     void getNextPeerTableDatabase(RandomGenerator & rg, SQLBase & b);
 
-    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * cv);
+    void generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv);
     void generateNextCreateView(RandomGenerator & rg, CreateView * cv);
     void generateNextCreateDictionary(RandomGenerator & rg, CreateDictionary * cd);
     void generateNextDrop(RandomGenerator & rg, Drop * dp);
@@ -400,7 +402,7 @@ private:
     void prepareNextExplain(RandomGenerator & rg, ExplainQuery * eq);
     void generateOrderBy(RandomGenerator & rg, uint32_t ncols, bool allow_settings, bool is_window, OrderByStatement * ob);
     void generateLimitExpr(RandomGenerator & rg, Expr * expr);
-    void generateLimit(RandomGenerator & rg, bool has_order_by, uint32_t ncols, LimitStatement * ls);
+    void generateLimit(RandomGenerator & rg, bool has_order_by, LimitStatement * ls);
     void generateOffset(RandomGenerator & rg, bool has_order_by, OffsetStatement * off);
     void generateGroupByExpr(
         RandomGenerator & rg,
@@ -458,7 +460,7 @@ private:
     SQLType * bottomType(RandomGenerator & rg, uint64_t allowed_types, bool low_card, BottomTypeName * tp);
 
     void dropTable(bool staged, bool drop_peer, uint32_t tname);
-    void dropDatabase(uint32_t dname);
+    void dropDatabase(uint32_t dname, bool all);
 
     void generateNextTablePartition(RandomGenerator & rg, bool allow_parts, const SQLTable & t, PartitionExpr * pexpr);
 
@@ -491,16 +493,17 @@ private:
         uint32_t added_structure = 0;
         uint32_t added_storage_class_name = 0;
         const uint32_t toadd_path = 1;
-        const uint32_t toadd_format = (b.file_format.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 91;
-        const uint32_t toadd_compression = (b.file_comp.has_value() || this->allow_not_deterministic) && rg.nextMediumNumber() < 51;
-        const uint32_t toadd_partition_strategy
-            = (b.partition_strategy.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
-            && rg.nextMediumNumber() < 21;
+        const uint32_t toadd_format = (b.file_format.has_value() && !this->allow_not_deterministic)
+            || (this->allow_not_deterministic && rg.nextMediumNumber() < 91);
+        const uint32_t toadd_compression
+            = (b.file_comp.has_value() && !this->allow_not_deterministic) || (this->allow_not_deterministic && rg.nextMediumNumber() < 51);
+        const uint32_t toadd_partition_strategy = (b.partition_strategy.has_value() && !this->allow_not_deterministic)
+            || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
         const uint32_t toadd_partition_columns_in_data_file
-            = (b.partition_columns_in_data_file.has_value() || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic))
-            && rg.nextMediumNumber() < 21;
-        const uint32_t toadd_storage_class_name
-            = (b.storage_class_name.has_value() || (b.isS3Engine() && this->allow_not_deterministic)) && rg.nextMediumNumber() < 21;
+            = (b.partition_columns_in_data_file.has_value() && !this->allow_not_deterministic)
+            || ((b.isS3Engine() || b.isAzureEngine()) && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
+        const uint32_t toadd_storage_class_name = (b.storage_class_name.has_value() && !this->allow_not_deterministic)
+            || (b.isS3Engine() && this->allow_not_deterministic && rg.nextMediumNumber() < 21);
         const uint32_t toadd_structure = !std::is_same_v<U, TableEngine> && (!this->allow_not_deterministic || rg.nextMediumNumber() < 91);
         const uint32_t total_to_add = toadd_path + toadd_format + toadd_compression + toadd_partition_strategy
             + toadd_partition_columns_in_data_file + toadd_storage_class_name + toadd_structure;
@@ -532,7 +535,8 @@ private:
             if (add_path && nopt < (add_path + 1))
             {
                 /// Path to the bucket
-                next->set_key(b.isOnS3() ? "filename" : (b.isOnAzure() ? "blob_path" : "path"));
+                next->set_key(
+                    b.isOnS3() ? (b.getLakeCatalog() == LakeCatalog::None ? "filename" : "url") : (b.isOnAzure() ? "blob_path" : "path"));
                 next->set_value(b.getTablePath(rg, fc, this->allow_not_deterministic));
                 added_path++;
             }
@@ -609,7 +613,7 @@ private:
                 next->set_key("structure");
                 if constexpr (std::is_same_v<U, TableEngine>)
                 {
-                    chassert(0);
+                    UNREACHABLE();
                 }
                 else
                 {
@@ -619,7 +623,7 @@ private:
             }
             else
             {
-                chassert(0);
+                UNREACHABLE();
             }
         }
     }
@@ -673,6 +677,7 @@ public:
 
     void updateGenerator(const SQLQuery & sq, ExternalIntegrations & ei, bool success);
     void setInTransaction(const bool value) { in_transaction = value; }
+    bool getAllowNotDetermistic() const { return allow_not_deterministic; }
 
     friend class QueryOracle;
 };

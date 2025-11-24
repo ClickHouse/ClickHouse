@@ -136,6 +136,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             part_info,
             columns_to_read,
             extras.storage_snapshot,
+            read_info->data_part->storage.getSettings(),
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -169,6 +170,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
             extras.storage_snapshot,
+            read_info->data_part->storage.getSettings(),
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
@@ -193,7 +195,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     const Readers & task_readers,
     const PrewhereExprInfo & prewhere_actions,
-    ReadStepsPerformanceCounters & read_steps_performance_counters)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
     {
@@ -245,7 +247,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
 void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
-    ReadStepsPerformanceCounters & read_steps_performance_counters)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
@@ -351,7 +353,12 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
     if (read_result.num_rows != 0)
     {
         for (const auto & column : read_result.columns)
-            column->assumeMutableRef().shrinkToFit();
+        {
+            /// We may have columns that has other references, usually it is a constant column that has been created during analysis
+            /// (that will not be const here anymore, i.e. after materialize()), and we do not need to shrink it anyway.
+            if (column->use_count() == 1)
+                column->assumeMutableRef().shrinkToFit();
+        }
         block = sample_block.cloneWithColumns(read_result.columns);
     }
 

@@ -209,7 +209,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     call_with_retry(make_query_command("SYSTEM START REPLICATION QUEUES"))
     call_with_retry(make_query_command("SYSTEM DROP MARK CACHE"))
 
-    # Issue #21004, live views are experimental, so let's just suppress it
+    # Issue #21004, window views are experimental, so let's just suppress it
     call_with_retry(make_query_command("KILL QUERY WHERE upper(query) LIKE 'WATCH %'"))
 
     # Kill other queries which known to be slow

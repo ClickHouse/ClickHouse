@@ -63,7 +63,6 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
-    extern const SettingsBool s3_slow_all_threads_after_retryable_error;
     extern const SettingsBool enable_s3_requests_logging;
     extern const SettingsUInt64 s3_connect_timeout_ms;
     extern const SettingsUInt64 s3_request_timeout_ms;
@@ -128,7 +127,7 @@ GlueCatalog::GlueCatalog(
         s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
 
     bool s3_slow_all_threads_after_network_error = global_settings[DB::Setting::s3_slow_all_threads_after_network_error];
-    bool s3_slow_all_threads_after_retryable_error = global_settings[DB::Setting::s3_slow_all_threads_after_retryable_error];
+    bool s3_slow_all_threads_after_retryable_error = false;
     bool enable_s3_requests_logging = global_settings[DB::Setting::enable_s3_requests_logging];
 
     DB::S3::PocoHTTPClientConfiguration poco_config = DB::S3::ClientFactory::instance().createClientConfiguration(
@@ -141,8 +140,7 @@ GlueCatalog::GlueCatalog(
         enable_s3_requests_logging,
         /* for_disk_s3 = */ false,
         /* opt_disk_name = */ {},
-        /* get_request_throttler = */ nullptr,
-        /* put_request_throttler = */ nullptr);
+        /* request_throttler = */ {});
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
@@ -479,7 +477,7 @@ bool GlueCatalog::classifyTimestampTZ(const String & column_name, const TableMet
         DB::StoredObject metadata_stored_object(metadata_path);
         auto read_buf = object_storage->readObject(metadata_stored_object, read_settings);
         String metadata_file;
-        readString(metadata_file, *read_buf);
+        readStringUntilEOF(metadata_file, *read_buf);
 
         Poco::JSON::Parser parser;
         Poco::Dynamic::Var result = parser.parse(metadata_file);

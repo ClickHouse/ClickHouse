@@ -1,5 +1,4 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
@@ -47,6 +46,38 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
+}
+
+namespace
+{
+
+std::exception_ptr copyBlobsToOtherObjectStorage(
+    const StoredObjects & objects_to_copy,
+    const std::string & to_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    IObjectStorage & src_object_storage,
+    IObjectStorage & dst_object_storage,
+    StoredObjects & copied_objects) noexcept
+{
+    try
+    {
+        for (const auto & object_from : objects_to_copy)
+        {
+            const ObjectStorageKey object_key(dst_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt));
+            const StoredObject object_to(object_key.serialize(), to_path, object_from.bytes_size);
+            copied_objects.push_back(object_to);
+            src_object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, dst_object_storage);
+        }
+
+        return {};
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+}
+
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -104,7 +135,7 @@ struct PureMetadataObjectStorageOperation final : public IDiskObjectStorageOpera
         on_execute(transaction);
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -191,9 +222,8 @@ struct RemoveObjectStorageOperation final : public IDiskObjectStorageOperation
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
-
     }
 
     void finalize(StoredObjects & to_remove) override
@@ -294,7 +324,7 @@ struct RemoveManyObjectStorageOperation final : public IDiskObjectStorageOperati
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -406,12 +436,19 @@ struct RemoveRecursiveObjectStorageOperation final : public IDiskObjectStorageOp
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
-        if (metadata_storage.existsFileOrDirectory(path))
-            removeMetadataRecursive(tx, path);
+        if (metadata_storage.getType() == MetadataStorageType::Plain || metadata_storage.getType() == MetadataStorageType::PlainRewritable)
+        {
+            tx->removeRecursive(path);
+        }
+        else
+        {
+            /// Similar to DiskLocal and https://en.cppreference.com/w/cpp/filesystem/remove
+            if (metadata_storage.existsFileOrDirectory(path))
+                removeMetadataRecursive(tx, path);
+        }
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
     }
 
@@ -487,9 +524,8 @@ struct ReplaceFileObjectStorageOperation final : public IDiskObjectStorageOperat
             tx->moveFile(path_from, path_to);
     }
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
-
     }
 
     void finalize(StoredObjects & to_remove) override
@@ -559,11 +595,11 @@ struct WriteFileObjectStorageOperation final : public IDiskObjectStorageOperatio
         }
     }
 
-    void undo() override
+    void undo(StoredObjects & to_remove) override
     {
         LOG_DEBUG(getLogger("DiskObjectStorageTransaction"), "Undoing WriteFileObjectStorageOperation for path {}, key {}", object->local_path, object->remote_path);
         /// If the file was created, we need to remove it
-        object_storage.removeObjectIfExists(*object);
+        to_remove.push_back(*object);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
@@ -608,53 +644,22 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// We need this call to clear to_path metadata file if it exists
-        tx->createMetadataFile(to_path, /*objects=*/{});
-        auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
+        const auto blobs_to_copy = metadata_storage.getStorageObjects(from_path);
 
-        if (source_blobs.empty())
-            return;
+        auto copy_error = copyBlobsToOtherObjectStorage(blobs_to_copy, to_path, read_settings, write_settings, object_storage, destination_object_storage, created_objects);
+        if (copy_error)
+            std::rethrow_exception(copy_error);
 
-        if (!tx->supportAddingBlobToMetadata())
-        {
-            if (source_blobs.size() > 1)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Unable to copy file '{}' with multiple blobs ({}), disk doesn't support addBlobToMetadata",
-                    from_path,
-                    source_blobs.size());
-
-            copySingleObject</*support_adding_blob_to_metadata=*/false>(tx, source_blobs.front());
-            return;
-        }
-
-        for (const auto & object_from : source_blobs)
-            copySingleObject</*support_adding_blob_to_metadata=*/true>(tx, object_from);
+        tx->createMetadataFile(to_path, created_objects);
     }
 
-
-    void undo() override
+    void undo(StoredObjects & to_remove) override
     {
-         destination_object_storage.removeObjectsIfExist(created_objects);
+        to_remove.append_range(created_objects);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
     {
-    }
-
-    template <bool support_adding_blob_to_metadata>
-    void copySingleObject(MetadataTransactionPtr tx, const StoredObject & object_from)
-    {
-        auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt);
-        auto object_to = StoredObject(object_key.serialize());
-
-        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, destination_object_storage);
-        created_objects.push_back(object_to);
-
-        if constexpr (support_adding_blob_to_metadata)
-            tx->addBlobToMetadata(to_path, StoredObject(object_key.serialize(), to_path, object_from.bytes_size));
-        else
-            tx->createMetadataFile(to_path, {StoredObject(object_key.serialize(), to_path, object_from.bytes_size)});
     }
 };
 
@@ -701,9 +706,8 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
     }
 
 
-    void undo() override
+    void undo(StoredObjects & /*to_remove*/) override
     {
-        // no op
     }
 
     void finalize(StoredObjects & to_remove) override
@@ -720,6 +724,7 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
 struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
+    std::string path;
     StoredObject object;
 
     CreateEmptyFileObjectStorageOperation(
@@ -727,9 +732,10 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         IMetadataStorage & metadata_storage_,
         const std::string & path_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , path(path_)
     {
-        const auto key = object_storage.generateObjectKeyForPath(path_, std::nullopt);
-        object = StoredObject(key.serialize(), path_, /* file_size */0);
+        const auto key = object_storage.generateObjectKeyForPath(path, std::nullopt);
+        object = StoredObject(key.serialize(), path, /* file_size */0);
     }
 
     std::string getInfoForLog() const override
@@ -737,15 +743,16 @@ struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOp
         return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object.remote_path, object.local_path);
     }
 
-    void execute(MetadataTransactionPtr /* tx */) override
+    void execute(MetadataTransactionPtr tx) override
     {
         auto buf = object_storage.writeObject(object, WriteMode::Rewrite);
         buf->finalize();
+        tx->createMetadataFile(path, /*objects=*/{object});
     }
 
-    void undo() override
+    void undo(StoredObjects & to_remove) override
     {
-        object_storage.removeObjectIfExists(object);
+        to_remove.push_back(object);
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
@@ -1019,12 +1026,14 @@ void DiskObjectStorageTransaction::createFile(const std::string & path)
         operations_to_execute.emplace_back(
             std::make_shared<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
     }
-
-    operations_to_execute.emplace_back(
-        std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
-        {
-            tx->createMetadataFile(path, /*objects=*/{});
-        }));
+    else
+    {
+        operations_to_execute.emplace_back(
+            std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
+            {
+                tx->createMetadataFile(path, /*objects=*/{});
+            }));
+    }
 }
 
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)
@@ -1124,20 +1133,7 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
             ex.addMessage(fmt::format("While executing operation #{}", i));
 
             if (needRollbackBlobs(options))
-            {
-                for (int64_t j = i; j >= 0; --j)
-                {
-                    try
-                    {
-                        operations_to_execute[j]->undo();
-                    }
-                    catch (Exception & rollback_ex)
-                    {
-                        rollback_ex.addMessage(fmt::format("While undoing operation #{}", i));
-                        throw;
-                    }
-                }
-            }
+                undo();
 
             throw;
         }
@@ -1227,18 +1223,17 @@ void DiskObjectStorageTransaction::undo() noexcept
         return;
     }
 
+    StoredObjects objects_to_remove;
     for (const auto & operation : operations_to_execute | std::views::reverse)
+        operation->undo(objects_to_remove);
+
+    try
     {
-        try
-        {
-            operation->undo();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(
-                        getLogger("DiskObjectStorageTransaction"),
-                        fmt::format("An error occurred while undoing transaction's operation #({})", operation->getInfoForLog()));
-        }
+        object_storage.removeObjectsIfExist(objects_to_remove);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("DiskObjectStorageTransaction"), "An error occurred during transaction cleanup");
     }
 
     operations_to_execute.clear();

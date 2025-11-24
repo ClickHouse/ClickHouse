@@ -17,7 +17,7 @@ void SerializationStringSize::enumerateStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             settings.path.push_back(Substream::Regular);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -40,7 +40,7 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -52,7 +52,7 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
 void SerializationStringSize::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    if (version == MergeTreeStringSerializationVersion::DEFAULT)
+    if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
     {
         settings.path.push_back(Substream::Regular);
         if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
@@ -193,7 +193,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         if (rows_offset)
             column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows);
+            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache);
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {

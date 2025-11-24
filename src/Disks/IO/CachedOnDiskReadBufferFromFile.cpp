@@ -1188,7 +1188,9 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         bool download_current_segment_succeeded = false;
         if (do_download)
         {
-            chassert(offset + size - 1 <= file_segment.range().right);
+            chassert(
+                file_offset_of_buffer_end + size - 1 <= file_segment.range().right,
+                fmt::format("Offset: {}, size: {}, file segment range: {}, impl offset: {}", file_offset_of_buffer_end, size, file_segment.range().toString(), implementation_buffer->getPosition()));
 
             std::string failure_reason;
             bool success = file_segment.reserve(

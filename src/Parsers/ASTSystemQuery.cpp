@@ -454,17 +454,21 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::FLUSH_LOGS:
         {
             bool comma = false;
-            for (const auto & cur_log : logs)
+            for (const auto & cur_log : tables)
             {
                 if (comma)
                     ostr << ',';
                 else
                     comma = true;
                 ostr << ' ';
-                print_identifier(cur_log);
+
+                if (!cur_log.first.empty())
+                    print_identifier(cur_log.first) << ".";
+                print_identifier(cur_log.second);
             }
             break;
         }
@@ -481,6 +485,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
+        case Type::DROP_TEXT_INDEX_HEADER_CACHE:
+        case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::DROP_TEXT_INDEX_CACHES:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::DROP_ICEBERG_METADATA_CACHE:
@@ -502,7 +510,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
-        case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
@@ -510,6 +517,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_PAGE_CACHE:
         case Type::STOP_REPLICATED_DDL_QUERIES:
         case Type::START_REPLICATED_DDL_QUERIES:
+        case Type::RECONNECT_ZOOKEEPER:
             break;
         case Type::UNKNOWN:
         case Type::END:

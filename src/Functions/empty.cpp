@@ -170,7 +170,7 @@ An array is considered empty if it does not contain any elements.
 Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/operations/settings/settings#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
-The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
+The function also works for Strings or UUIDs.
     )";
     FunctionDocumentation::Description description_not_empty = R"(
 Checks whether the input array is non-empty.
@@ -181,7 +181,7 @@ An array is considered non-empty if it contains at least one element.
 Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
-The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
+The function also works for Strings or UUIDs.
     )";
     FunctionDocumentation::Syntax syntax_empty = "empty(arr)";
     FunctionDocumentation::Syntax syntax_not_empty = "notEmpty(arr)";

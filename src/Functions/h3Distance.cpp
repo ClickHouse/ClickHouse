@@ -114,7 +114,35 @@ public:
 
 REGISTER_FUNCTION(H3Distance)
 {
-    factory.registerFunction<FunctionH3Distance>();
+    FunctionDocumentation::Description description = R"(
+Returns the distance in grid cells between two [H3](#h3-index) indices.
+
+This function calculates the minimum number of grid cells between the start and end indices, following the connections of the H3 grid.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3Distance(start, end)";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "Hexagon index number that represents the starting point.", {"UInt64"}},
+        {"end", "Hexagon index number that represents the ending point.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the number of grid cells between the start and end indices. Returns a negative number if the distance cannot be computed.",
+        {"Int64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Calculate distance between two H3 indices",
+            "SELECT h3Distance(590080540275638271, 590103561300344831) AS distance",
+            R"(
+┌─distance─┐
+│        7 │
+└──────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3Distance>(documentation);
 }
 
 }
