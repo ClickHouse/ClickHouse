@@ -10,6 +10,7 @@
 #include <Core/Types.h>
 
 #include <Common/CacheBase.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 
 namespace DB
 {
@@ -47,6 +48,7 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
+    bool areBlobPathsRandom() const override { return false; }
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -72,6 +74,7 @@ private:
     const String storage_path_full;
 
     mutable ObjectMetadataCachePtr object_metadata_cache;
+    const ObjectStorageKeyGeneratorPtr key_generator;
 };
 
 class MetadataStorageFromPlainObjectStorageTransaction : public IMetadataTransaction
@@ -93,6 +96,8 @@ public:
 
     void removeDirectory(const std::string & path) override;
     void removeRecursive(const std::string &) override;
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 
 private:
     MetadataStorageFromPlainObjectStorage & metadata_storage;
