@@ -48,6 +48,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString query_cache_tag;
+    extern const SettingsBool query_cache_ignore_certain_non_query_cache_settings;
 }
 
 namespace
@@ -194,43 +195,49 @@ bool isQueryResultCacheRelatedSetting(const String & setting_name)
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
-bool settingDoesNotAffectQueryResultCache(const String & setting_name)
+bool settingDoesNotAffectQueryResultCache(const String & setting_name, bool ignore_certain_non_query_cache_settings)
 {
-    return setting_name == "log_comment"
-        /// As of today, the output format settings only affect the final output.
-        /// However, it should be taken with caution - we should not use these settings in deterministic SQL functions.
-        || setting_name.starts_with("output_format_")
-        /// This setting is used to tune the server response, but does not affect the query behavior.
-        /// An example why it should not affect query caching:
-        /// - if you run a query as usual, and then run the same query with asking the server
-        /// for Content-Disposition: attachment to download the result.
-        || setting_name == "http_response_headers";
+    if (ignore_certain_non_query_cache_settings)
+        return setting_name == "log_comment"
+            /// As of today, the output format settings only affect the final output.
+            /// However, it should be taken with caution - we should not use these settings in deterministic SQL functions.
+            || setting_name.starts_with("output_format_")
+            /// This setting is used to tune the server response, but does not affect the query behavior.
+            /// An example why it should not affect query caching:
+            /// - if you run a query as usual, and then run the same query with asking the server
+            /// for Content-Disposition: attachment to download the result.
+            || setting_name == "http_response_headers";
+    else
+        return false;
 }
 
-bool isSettingIgnoredInQueryResultCache(const String & setting_name)
+bool isSettingIgnoredByQueryResultCache(const String & setting_name, bool ignore_certain_non_query_cache_settings)
 {
-    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name);
+    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name, ignore_certain_non_query_cache_settings);
 }
 
 class RemoveQueryResultCacheSettingsMatcher
 {
 public:
-    struct Data {};
+    struct Data
+    {
+        bool ignore_certain_non_query_cache_settings;
+    };
 
     static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
 
-    static void visit(ASTPtr & ast, Data &)
+    static void visit(ASTPtr & ast, Data & data)
     {
         if (auto * set_clause = ast->as<ASTSetQuery>())
         {
             chassert(!set_clause->is_standalone);
 
-            auto is_query_cache_related_setting = [](const auto & change)
+            auto is_ignored_setting = [&](const auto & change)
             {
-                return isSettingIgnoredInQueryResultCache(change.name);
+                return isSettingIgnoredByQueryResultCache(change.name, data.ignore_certain_non_query_cache_settings);
             };
 
-            std::erase_if(set_clause->changes, is_query_cache_related_setting);
+            std::erase_if(set_clause->changes, is_ignored_setting);
         }
         else
         {
@@ -258,11 +265,12 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
 /// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
 /// have been parsed already, they are not lost or discarded.
-ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
+ASTPtr removeQueryResultCacheSettings(ASTPtr ast, const Settings & settings)
 {
     ASTPtr transformed_ast = ast->clone();
 
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
+    visitor_data.ignore_certain_non_query_cache_settings = settings[Setting::query_cache_ignore_certain_non_query_cache_settings];
     RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
@@ -270,7 +278,7 @@ ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 
 IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
-    ast = removeQueryResultCacheSettings(ast);
+    ast = removeQueryResultCacheSettings(ast, settings);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -288,7 +296,8 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() why this is a good idea
+        /// See removeQueryResultCacheSettings() why this is a good idea
+        if (!isSettingIgnoredByQueryResultCache(name, settings[Setting::query_cache_ignore_certain_non_query_cache_settings]))
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });

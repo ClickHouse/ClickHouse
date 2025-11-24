@@ -5101,6 +5101,14 @@ Possible values:
 
 - Any string
 )", 0) \
+    DECLARE(Bool, query_cache_ignore_certain_non_query_cache_settings, true, R"(
+If turned on, the [query cache](../query-cache.md) ignores certain non-query-cache-related setting during cache lookups, for example 'log_comment' and 'http_response_headers'
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0) \
     DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
