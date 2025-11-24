@@ -34,6 +34,6 @@ DROP TABLE tab SYNC;
 -- Should be 0
 SELECT name, value FROM system.metrics where name like '%VectorSimilarityIndexCacheBytes%';
 
--- We cannot test ALTER TABLE ... DROP INDEX vector_index, because even with mutations_sync=2
--- the mutation happens in the background. But verified that eventually vector similarity
--- index cache entries are cleared (25.12).
+-- ALTER TABLE ... DROP INDEX <vector index> and MERGE PARTS will also clear
+-- any corresponding loaded granules in the vector index cache. These happen
+-- in the background as mutations and unused parts are deleted after "old_parts_lifetime"
