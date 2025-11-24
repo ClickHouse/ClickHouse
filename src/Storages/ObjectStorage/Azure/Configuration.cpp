@@ -887,6 +887,7 @@ void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & coll
     AzureStorageParsableArguments parsable_arguments;
     parsable_arguments.fromNamedCollectionImpl(collection, context);
     initializeFromParsableArguments(parsable_arguments);
+    setPaths({parsable_arguments.blob_path});
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
@@ -905,7 +906,7 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
 
     }
     initializeFromParsableArguments(parsable_arguments);
-    blobs_paths = {parsable_arguments.blob_path};
+    setPaths({parsable_arguments.blob_path});
 }
 
 void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -916,7 +917,6 @@ void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, 
     initializeFromParsableArguments(parsable_arguments);
     setPathForRead(parsable_arguments.blob_path.path + "/");
     setPaths({parsable_arguments.blob_path.path + "/"});
-    blobs_paths = {parsable_arguments.blob_path};
 }
 
 
