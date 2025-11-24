@@ -115,6 +115,9 @@ def _build_dockers(workflow, job_name):
     job_status = Result.Status.SUCCESS
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
+    for d in dockers:
+        if isinstance(d.platforms, str):
+            d.platforms = [d.platforms]
     docker_digests = {}  # type: Dict[str, str]
     arm_only = False
     amd_only = False
