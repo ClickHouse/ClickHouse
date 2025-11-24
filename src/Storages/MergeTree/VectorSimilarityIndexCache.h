@@ -72,7 +72,7 @@ public:
 
     /// LoadFunc should have signature () -> MergeTreeIndexGranulePtr.
     template <typename LoadFunc>
-    MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
+    MergeTreeIndexGranulePtr getOrSet(const String & path_of_part, const Key & key, LoadFunc && load)
     {
         auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell>
         {
@@ -87,7 +87,26 @@ public:
         else
             ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheHits);
 
+        if (result.second)
+        {
+            std::lock_guard lock(mutex);
+            part_keys_map[path_of_part].emplace_back(key);
+        }
         return result.first->granule;
+    }
+
+    void removePartGranulesFromCache(const String & path_of_part)
+    {
+        std::vector<Key> keys;
+        {
+            std::lock_guard lock(mutex);
+            keys = part_keys_map[path_of_part];
+            part_keys_map.erase(path_of_part);
+        }
+        for (const auto & key : keys)
+        {
+            Base::remove(key);
+        }
     }
 
 private:
@@ -97,6 +116,8 @@ private:
         ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
         UNUSED(mapped_ptr);
     }
+
+    std::unordered_map<String, std::vector<Key>> part_keys_map; /// TSA_GUARDED_BY(CacheBase::mutex);
 };
 
 using VectorSimilarityIndexCachePtr = std::shared_ptr<VectorSimilarityIndexCache>;

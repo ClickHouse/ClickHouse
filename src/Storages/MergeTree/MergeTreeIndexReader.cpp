@@ -163,6 +163,10 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     ///
     /// The same cannot be done for other skip indexes. Because their GRANULARITY is small (e.g. 1), the sheer number of skip index granules
     /// would create too much lock contention in the cache (this was learned the hard way).
+    ///
+    /// We put the index->getFileName() and mark in the key because i) A table/part can have multiple vector indexes ii) If vector index
+    /// granularity is smaller than number of granules/marks in the part, then multiple vector index granules starting at 'mark' will be
+    /// created on the part.
     if (index->isVectorSimilarityIndex())
     {
         UInt128 key = VectorSimilarityIndexCache::hash(
@@ -170,7 +174,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             index->getFileName(),
             mark);
 
-        granule = vector_similarity_index_cache->getOrSet(key, load_func);
+        granule = vector_similarity_index_cache->getOrSet(part->getRelativePathOfActivePart(), key, load_func);
     }
     else
     {
