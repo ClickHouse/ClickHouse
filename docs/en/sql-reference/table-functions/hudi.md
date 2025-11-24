@@ -5,7 +5,6 @@ sidebar_label: 'hudi'
 sidebar_position: 85
 slug: /sql-reference/table-functions/hudi
 title: 'hudi'
-doc_type: 'reference'
 ---
 
 # hudi Table Function
