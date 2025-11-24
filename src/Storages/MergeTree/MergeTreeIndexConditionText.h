@@ -22,17 +22,24 @@ enum class TextSearchMode : uint8_t
     All,
 };
 
+enum class TextIndexDirectReadMode : uint8_t
+{
+    /// Do not use direct read.
+    None,
+    /// Use direct read and remove the original condition.
+    Exact,
+    /// Use direct read and add a hint to the original condition.
+    Hint,
+};
+
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(String function_name_, TextSearchMode mode_, std::vector<String> tokens_)
-        : function_name(std::move(function_name_)), mode(std::move(mode_)), tokens(std::move(tokens_))
-    {
-        std::sort(tokens.begin(), tokens.end());
-    }
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_);
 
     String function_name;
-    TextSearchMode mode;
+    TextSearchMode search_mode;
+    TextIndexDirectReadMode direct_read_mode;
     std::vector<String> tokens;
 
     SipHash getHash() const;
@@ -46,19 +53,19 @@ using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPrep
 /// Condition for text index.
 /// Unlike conditions for other indexes, it can be used after analysis
 /// of granules on reading from text index step (see MergeTreeReaderTextIndex)
-class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, WithContext
+class MergeTreeIndexConditionText final : public IMergeTreeIndexCondition, public WithContext
 {
 public:
     MergeTreeIndexConditionText(
         const ActionsDAG::Node * predicate,
-        ContextPtr context,
+        ContextPtr context_,
         const Block & index_sample_block,
         TokenExtractorPtr token_extractor_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_);
 
     ~MergeTreeIndexConditionText() override = default;
-    static bool isSupportedFunctionForDirectRead(const String & function_name);
     static bool isSupportedFunction(const String & function_name);
+    TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
     bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
@@ -124,6 +131,10 @@ private:
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out) const;
+
+    TextIndexDirectReadMode getHintOrNoneMode() const;
+    bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+    bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
 
     std::vector<String> stringToTokens(const Field & field) const;
     std::vector<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
