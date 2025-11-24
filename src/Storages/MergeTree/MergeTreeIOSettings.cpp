@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -111,7 +112,6 @@ MergeTreeReaderSettings MergeTreeReaderSettings::create(const ContextPtr & conte
         .merge_tree_min_bytes_for_seek = settings[Setting::merge_tree_min_bytes_for_seek],
         .merge_tree_min_rows_for_seek = settings[Setting::merge_tree_min_rows_for_seek],
         .filesystem_prefetches_limit = settings[Setting::filesystem_prefetches_limit],
-        .enable_analyzer = settings[Setting::allow_experimental_analyzer],
     };
 }
 

@@ -63,7 +63,6 @@ Binary encoding for ClickHouse data types:
 | BFloat16                                                                                                | 0x31                                                                                                                                                                                                                                                                                                                                                                     |
 | Time                                                                                                    | 0x32                                                                                                                                                                                                                                                                                                                                                                     |
 | Time64(P)                                                                                               | 0x34<uint8_precision>                                                                                                                                                                                                                                                                                                                                                    |
-| QBit(T, N)                                                                                              | 0x36<element_type_encoding><var_uint_dimension>                                                                                                                                                                                                                                                                                                                          |
 |---------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 
 Interval kind binary encoding:
@@ -116,10 +115,6 @@ Aggregate function parameter binary encoding (binary encoding of a Field, see sr
 
 String encodeDataType(const DataTypePtr & type);
 void encodeDataType(const DataTypePtr & type, WriteBuffer & buf);
-
-/// Special version of type encoding that is used for generic hash calculation.
-/// It can skip serializing some data types parameters.
-void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf);
 
 DataTypePtr decodeDataType(const String & data);
 DataTypePtr decodeDataType(ReadBuffer & buf);

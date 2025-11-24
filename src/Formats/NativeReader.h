@@ -10,8 +10,6 @@
 namespace DB
 {
 
-using ValueSizeMap = std::map<std::string, double>;
-
 class CompressedReadBufferFromFile;
 
 /** Deserializes the stream of blocks from the native binary format (with names and column types).
@@ -52,8 +50,7 @@ public:
         ReadBuffer & istr,
         const FormatSettings * format_settings,
         size_t rows,
-        const NameAndTypePair * name_and_type,
-        ValueSizeMap * avg_value_size_hints_);
+        double avg_value_size_hint);
 
 private:
     ReadBuffer & istr;
@@ -70,8 +67,9 @@ private:
     /// If an index is specified, then `istr` must be CompressedReadBufferFromFile. Unused otherwise.
     CompressedReadBufferFromFile * istr_concrete = nullptr;
 
-    /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
-    ValueSizeMap avg_value_size_hints;
+    PODArray<double> avg_value_size_hints;
+
+    void updateAvgValueSizeHints(const Block & block);
 };
 
 }

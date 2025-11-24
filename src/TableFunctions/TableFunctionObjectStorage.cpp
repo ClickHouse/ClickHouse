@@ -26,9 +26,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/HivePartitioningUtils.h>
-
 
 namespace DB
 {
@@ -204,7 +202,8 @@ ColumnsDescription TableFunctionObjectStorage<
         configuration->update(
             object_storage,
             context,
-            /* if_not_updated_before */ true);
+            /* if_not_updated_before */true,
+            /* check_consistent_with_previous_metadata */true);
 
         std::string sample_path;
         ColumnsDescription columns;
@@ -430,19 +429,6 @@ template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, Storage
 template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration, true>;
 #endif
 
-#if USE_AVRO && USE_AWS_S3
-template class TableFunctionObjectStorage<PaimonS3ClusterDefinition, StorageS3PaimonConfiguration, true>;
-template class TableFunctionObjectStorage<PaimonClusterDefinition, StorageS3PaimonConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_AZURE_BLOB_STORAGE
-template class TableFunctionObjectStorage<PaimonAzureClusterDefinition, StorageAzurePaimonConfiguration, true>;
-#endif
-
-#if USE_AVRO && USE_HDFS
-template class TableFunctionObjectStorage<PaimonHDFSClusterDefinition, StorageHDFSPaimonConfiguration, true>;
-#endif
-
 #if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
 template class TableFunctionObjectStorage<DeltaLakeS3ClusterDefinition, StorageS3DeltaLakeConfiguration, true>;
@@ -500,49 +486,6 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 #endif
 
 
-#if USE_AVRO
-void registerTableFunctionPaimon(TableFunctionFactory & factory)
-{
-#if USE_AWS_S3
-    factory.registerFunction<TableFunctionPaimon>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store. Alias to paimonS3)",
-            .examples{{"paimon", "SELECT * FROM paimon(url, access_key_id, secret_access_key)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
-    factory.registerFunction<TableFunctionPaimonS3>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
-            .examples{{"paimonS3", "SELECT * FROM paimonS3(url, access_key_id, secret_access_key)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
-
-#endif
-#if USE_AZURE_BLOB_STORAGE
-    factory.registerFunction<TableFunctionPaimonAzure>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
-            .examples{{"paimonAzure", "SELECT * FROM paimonAzure(url, access_key_id, secret_access_key)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
-#endif
-#if USE_HDFS
-    factory.registerFunction<TableFunctionPaimonHDFS>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
-            .examples{{"paimonHDFS", "SELECT * FROM paimonHDFS(url)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
-#endif
-    factory.registerFunction<TableFunctionPaimonLocal>(
-        {.documentation
-         = {.description = R"(The table function can be used to read the Paimon table stored locally.)",
-            .examples{{"paimonLocal", "SELECT * FROM paimonLocal(filename)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction},
-         .allow_readonly = false});
-}
-#endif
-
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
@@ -598,10 +541,6 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
     UNUSED(factory);
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
-#endif
-
-#if USE_AVRO
-    registerTableFunctionPaimon(factory);
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS

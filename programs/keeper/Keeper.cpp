@@ -465,7 +465,6 @@ try
 
     auto tcp_receive_timeout = config().getInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC);
     auto tcp_send_timeout = config().getInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC);
-    auto tcp_nodelay = config().getBool("keeper_server.tcp_nodelay", true);
 
     for (const auto & listen_host : listen_hosts)
     {
@@ -477,10 +476,6 @@ try
             auto address = socketBindListen(socket, listen_host, port);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-
-            Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
-            tcp_params->setNoDelay(tcp_nodelay);
-
             servers->emplace_back(
                 listen_host,
                 port_name,
@@ -488,7 +483,7 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket, tcp_params));
+                        tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -499,10 +494,6 @@ try
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
             socket.setReceiveTimeout(Poco::Timespan{tcp_receive_timeout, 0});
             socket.setSendTimeout(Poco::Timespan{tcp_send_timeout, 0});
-
-            Poco::Net::TCPServerParams::Ptr tcp_params = new Poco::Net::TCPServerParams;
-            tcp_params->setNoDelay(tcp_nodelay);
-
             servers->emplace_back(
                 listen_host,
                 secure_port_name,
@@ -510,7 +501,7 @@ try
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
                         config_getter, global_context->getKeeperDispatcher(),
-                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket, tcp_params));
+                        tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.");
