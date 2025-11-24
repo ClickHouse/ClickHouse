@@ -221,17 +221,8 @@ class CommandRequest:
         if not stderr:
             return stderr
         lines = stderr.split("\n")
-        def _is_trash(msg):
-            return (
-                "completion_queue" in msg or
-                "Kick failed" in msg or
-                # Can be returned as a warning in VM setups. Reference
-                # https://github.com/ClickHouse/ClickHouse/issues/45770
-                "Number of CPUs detected is not deterministic" in msg
-            )
-
         lines = [
-            x for x in lines if not _is_trash(x)
+            x for x in lines if ("completion_queue" not in x and "Kick failed" not in x)
         ]
         return "\n".join(lines)
 
