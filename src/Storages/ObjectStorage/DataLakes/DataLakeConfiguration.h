@@ -84,42 +84,6 @@ public:
     }
 
     /// Returns true, if metadata is of the latest version, false if unknown.
-    void update(ObjectStoragePtr object_storage, ContextPtr local_context, bool if_not_updated_before) override
-    {
-        const bool updated_before = current_metadata != nullptr;
-        if (updated_before && if_not_updated_before)
-            return;
-
-        BaseStorageConfiguration::update(object_storage, local_context, if_not_updated_before);
-        if (current_metadata && current_metadata->supportsUpdate())
-        {
-            current_metadata->update(local_context);
-            return;
-        }
-        current_metadata = DataLakeMetadata::create(object_storage, weak_from_this(), local_context);
-    }
-
-    void create(
-        ObjectStoragePtr object_storage,
-        ContextPtr local_context,
-        const std::optional<ColumnsDescription> & columns,
-        ASTPtr partition_by,
-        bool if_not_exists,
-        std::shared_ptr<DataLake::ICatalog> catalog,
-        const StorageID & table_id_) override
-    {
-        if (object_storage->getType() == ObjectStorageType::Local)
-        {
-            auto user_files_path = local_context->getUserFilesPath();
-            if (!fileOrSymlinkPathStartsWith(this->getPathForRead().path, user_files_path))
-                throw Exception(
-                    ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", this->getPathForRead().path, user_files_path);
-        }
-        BaseStorageConfiguration::update(object_storage, local_context, true);
-
-        DataLakeMetadata::createInitial(
-            object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
-    }
 
     bool supportsDelete() const override
     {
@@ -160,7 +124,6 @@ public:
     {
         assertInitialized();
         current_metadata->alter(params, context);
-
     }
 
     ObjectStoragePtr createObjectStorage(ContextPtr context, bool is_readonly) override

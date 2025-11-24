@@ -32,17 +32,6 @@ void StorageObjectStorageConfiguration::update( ///NOLINT
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
-void StorageObjectStorageConfiguration::create( ///NOLINT
-    ObjectStoragePtr /*object_storage_ptr*/,
-    ContextPtr /*context*/,
-    const std::optional<ColumnsDescription> & /*columns*/,
-    ASTPtr /*partition_by*/,
-    bool /*if_not_exists*/,
-    std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-        const StorageID & /*table_id_*/)
-{
-}
-
 ReadFromFormatInfo StorageObjectStorageConfiguration::prepareReadingFromFormat(
     ObjectStoragePtr,
     const Strings & requested_columns,

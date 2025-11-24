@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
+#include <Storages/Iceberg/IcebergTableStateSnapshot.h>
 
 namespace DB
 {
