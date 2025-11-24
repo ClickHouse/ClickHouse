@@ -195,7 +195,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/test-mysql57",
         path="./ci/docker/integration/mysql57",
-        platforms=Docker.Platforms.arm_amd,
+        platforms=Docker.Platforms.AMD,
         depends_on=[],
     ),
     Docker.Config(
