@@ -177,15 +177,6 @@ public:
         return current_metadata->getStorageSnapshotMetadata(context);
     }
 
-    /// This method should work even if metadata is not initialized
-    bool needsUpdateForSchemaConsistency() const override
-    {
-#if USE_AVRO
-        return std::is_same_v<IcebergMetadata, DataLakeMetadata>;
-#endif
-        return false;
-    }
-
     IDataLakeMetadata * getExternalMetadata() override
     {
         assertInitialized();

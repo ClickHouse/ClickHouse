@@ -2,7 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
+#include <Storages/Iceberg/ManifestFilesPruning.h>
 
 namespace DB
 {

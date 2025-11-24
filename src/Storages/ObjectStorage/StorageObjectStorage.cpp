@@ -254,15 +254,6 @@ StorageObjectStorage::StorageObjectStorage(
         sample_path));
 
     setInMemoryMetadata(metadata);
-
-    /// This will update metadata for table function which contains specific information about table
-    /// state (e.g. for Iceberg). It is done because select queries for table functions are executed
-    /// in a different way and clickhouse can execute without calling updateExternalDynamicMetadataIfExists.
-    if (!do_lazy_init && is_table_function && configuration->needsUpdateForSchemaConsistency())
-    {
-        auto metadata_snapshot = configuration->getStorageSnapshotMetadata(context);
-        setInMemoryMetadata(metadata_snapshot);
-    }
 }
 
 String StorageObjectStorage::getName() const
@@ -326,25 +317,6 @@ void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr quer
         auto metadata_snapshot = configuration->getStorageSnapshotMetadata(query_context);
         setInMemoryMetadata(metadata_snapshot);
     }
-}
-
-
-std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-    return configuration->totalRows(query_context);
-}
-
-std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
-{
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */ false);
-    return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorage::read(
@@ -448,9 +420,6 @@ SinkToStoragePtr StorageObjectStorage::write(
 
     if (!configuration->supportsWrites())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Writes are not supported for engine");
-
-    if (configuration->isDataLakeConfiguration() && configuration->supportsWrites())
-        return configuration->write(sample_block, storage_id, object_storage, format_settings, local_context, catalog);
 
     /// Not a data lake, just raw object storage
 

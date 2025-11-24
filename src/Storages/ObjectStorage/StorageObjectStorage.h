@@ -87,15 +87,13 @@ public:
 
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
-
     bool supportsSubsetOfColumns(const ContextPtr & context) const;
 
-    bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
+    bool isDataLake() const override { return false; }
 
     bool isObjectStorage() const override { return true; }
 
-    bool supportsReplication() const override { return configuration->isDataLakeConfiguration(); }
+    bool supportsReplication() const override { return false; }
 
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
