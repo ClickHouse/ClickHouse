@@ -39,7 +39,6 @@ from helpers.config_cluster import minio_access_key, minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
-    AzureUploader,
     LocalUploader,
     S3Uploader,
     get_file_contents,
@@ -91,9 +90,7 @@ def started_cluster():
         cluster.add_instance(
             "instance1",
             main_configs=[
-                "configs/config.d/named_collections.xml",
                 "configs/config.d/filesystem_caches.xml",
-                "configs/config.d/metadata_log.xml",
                 "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
@@ -101,10 +98,7 @@ def started_cluster():
                 "configs/users.d/enable_writes.xml",
             ],
             with_minio=True,
-            with_azurite=True,
             stay_alive=True,
-            with_zookeeper=True,
-            macros={"shard": 0, "replica": 1},
         )
 
         logging.info("Starting cluster...")

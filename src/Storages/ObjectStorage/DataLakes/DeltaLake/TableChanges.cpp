@@ -46,10 +46,18 @@ TableChangesVersionRange TableChanges::getVersionRange(int64_t start_version, in
             DB::ErrorCodes::BAD_ARGUMENTS,
             "Snapshot start version cannot be a negative value ({})", start_version);
 
-    if (end_version != TableSnapshot::LATEST_SNAPSHOT_VERSION && end_version < 0)
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "Snapshot end version cannot be a negative value ({})", end_version);
+    if (end_version != TableSnapshot::LATEST_SNAPSHOT_VERSION)
+    {
+        if (end_version < 0)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Snapshot end version cannot be a negative value ({})", end_version);
+
+        if (end_version < start_version)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Snapshot end version cannot be less than snapshot start version ({} < {})", end_version, start_version);
+    }
 
     return end_version == TableSnapshot::LATEST_SNAPSHOT_VERSION
         ? DeltaLake::TableChangesVersionRange{start_version, std::nullopt}
