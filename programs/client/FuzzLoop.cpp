@@ -602,7 +602,7 @@ bool Client::buzzHouse()
         String full_query3;
         std::vector<BuzzHouse::SQLQuery> peer_queries;
         bool has_cloud_features = true;
-        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length);
+        BuzzHouse::RandomGenerator rg(fuzz_config->seed, fuzz_config->min_string_length, fuzz_config->max_string_length, fuzz_config->random_limited_values);
         BuzzHouse::SQLQuery sq1;
         BuzzHouse::SQLQuery sq2;
         BuzzHouse::SQLQuery sq3;

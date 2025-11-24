@@ -677,11 +677,11 @@ void StatementGenerator::generateNextTablePartition(RandomGenerator & rg, const 
         {
             if (allow_parts && rg.nextBool())
             {
-                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, false, dname, tname));
+                pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
             }
             else
             {
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
             set_part = true;
         }
@@ -844,10 +844,10 @@ bool StatementGenerator::tableOrFunctionRef(RandomGenerator & rg, const SQLTable
         bool first = true;
         URLFunc * ufunc = tof->mutable_tfunc()->mutable_url();
         const OutFormat outf = rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                                             : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
+                                             : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
         const InFormat iinf = (outIn.contains(outf)) && rg.nextBool()
             ? outIn.at(outf)
-            : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1);
+            : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
 
         if (cluster.has_value() || (!fc.clusters.empty() && rg.nextMediumNumber() < 16))
         {
@@ -1112,7 +1112,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
                 first = false;
             }
             grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
-            grf->set_random_seed(rg.nextRandomUInt64());
+            grf->set_random_seed(rg.nextInFullRange());
             grf->set_max_string_length(string_length_dist(rg.generator));
             grf->set_max_array_length(nested_rows_dist(rg.generator));
             ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
@@ -2115,11 +2115,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                 if (table_has_partitions && nopt3 < 5)
                 {
-                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 }
                 else if (table_has_partitions && nopt3 < 9)
                 {
-                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, false, dname, tname));
+                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
                 }
                 else
                 {
@@ -2141,11 +2141,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                 if (table_has_partitions && nopt3 < 5)
                 {
-                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 }
                 else if (table_has_partitions && nopt3 < 9)
                 {
-                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, false, dname, tname));
+                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname));
                 }
                 else
                 {
@@ -2168,11 +2168,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                 if (table_has_detached_partitions && nopt3 < 5)
                 {
-                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), true, true, dname, tname));
+                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, true, dname, tname));
                 }
                 else if (table_has_detached_partitions && nopt3 < 9)
                 {
-                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), true, false, dname, tname));
+                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, false, dname, tname));
                 }
                 else
                 {
@@ -2191,7 +2191,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
             {
                 PartitionExpr * pexpr = ati->mutable_forget_partition()->mutable_partition();
 
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
             }
             else if (
                 attach_partition
@@ -2209,11 +2209,11 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
 
                 if (table_has_detached_partitions && nopt3 < 5)
                 {
-                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), true, true, dname, tname));
+                    pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, true, dname, tname));
                 }
                 else if (table_has_detached_partitions && nopt3 < 9)
                 {
-                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), true, false, dname, tname));
+                    pexpr->set_part(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), true, false, dname, tname));
                 }
                 else
                 {
@@ -2234,7 +2234,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 PartitionExpr * pexpr = apf->mutable_single_partition()->mutable_partition();
                 const SQLTable & t2 = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
 
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 t2.setName(apf->mutable_est(), false);
             }
             else if (
@@ -2250,7 +2250,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 ClearColumnInPartition * ccip = ati->mutable_clear_column_partition();
                 PartitionExpr * pexpr = ccip->mutable_single_partition()->mutable_partition();
 
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 flatTableColumnPath(flat_nested, t.cols, [](const SQLColumn &) { return true; });
                 columnPathRef(rg.pickRandomly(this->entries), ccip->mutable_col());
                 this->entries.clear();
@@ -2271,7 +2271,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 if (table_has_partitions && rg.nextSmallNumber() < 9)
                 {
                     fp->mutable_single_partition()->mutable_partition()->set_partition_id(
-                        fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                        fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 }
                 fp->set_fname(t.freeze_counter++);
             }
@@ -2310,7 +2310,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 ClearIndexInPartition * ccip = ati->mutable_clear_index_partition();
                 PartitionExpr * pexpr = ccip->mutable_single_partition()->mutable_partition();
 
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 ccip->mutable_idx()->set_index("i" + std::to_string(rg.pickRandomly(t.idxs)));
             }
             else if (
@@ -2327,7 +2327,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 MovePartition * mp = ati->mutable_move_partition();
                 PartitionExpr * pexpr = mp->mutable_single_partition()->mutable_partition();
 
-                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+                pexpr->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
                 generateStorage(rg, mp->mutable_storage());
             }
             else if (
@@ -2378,7 +2378,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
 
                 pexpr->set_partition_id(
-                    table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname2, tname2) : "0");
+                    table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname2, tname2) : "0");
                 t2.setName(apf->mutable_est(), false);
             }
             else if (
@@ -2401,7 +2401,7 @@ void StatementGenerator::generateAlter(RandomGenerator & rg, Alter * at)
                 const bool table_has_partitions2 = t2.isMergeTreeFamily() && fc.tableHasPartitions(false, dname2, tname2);
 
                 pexpr->set_partition_id(
-                    table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname2, tname2) : "0");
+                    table_has_partitions2 ? fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname2, tname2) : "0");
                 t2.setName(apf->mutable_est(), false);
             }
             else if (
@@ -3815,9 +3815,10 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
     {
         ShowIndex * si = st->mutable_indexes();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+        std::uniform_int_distribution<uint32_t> i_range(1, static_cast<uint32_t>(ShowIndex::IndexShow_MAX));
 
         si->set_extended(rg.nextBool());
-        si->set_key(static_cast<ShowIndex_IndexShow>((rg.nextRandomUInt32() % static_cast<uint32_t>(ShowIndex::IndexShow_MAX)) + 1));
+        si->set_key(static_cast<ShowIndex_IndexShow>(i_range(rg.generator)));
         t.setName(si->mutable_est(), false);
     }
     else if (
@@ -3827,9 +3828,10 @@ void StatementGenerator::generateNextShowStatement(RandomGenerator & rg, ShowSta
                + show_dictionaries + show_columns + show_columns_system_table + show_indexes + show_indexes_system_table + 1))
     {
         ShowIndex * si = st->mutable_indexes();
+        std::uniform_int_distribution<uint32_t> i_range(1, static_cast<uint32_t>(ShowIndex::IndexShow_MAX));
 
         si->set_extended(rg.nextBool());
-        si->set_key(static_cast<ShowIndex_IndexShow>((rg.nextRandomUInt32() % static_cast<uint32_t>(ShowIndex::IndexShow_MAX)) + 1));
+        si->set_key(static_cast<ShowIndex_IndexShow>(i_range(rg.generator)));
         rg.pickRandomly(systemTables).setName(si->mutable_est());
     }
     else if (
@@ -4127,7 +4129,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         cluster = backupOrRestoreObject(bro, SQLObject::TABLE, t);
         if (table_has_partitions && rg.nextSmallNumber() < 4)
         {
-            bro->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextRandomUInt64(), false, true, dname, tname));
+            bro->add_partitions()->set_partition_id(fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname));
         }
     }
     else if (backup_system_table && nopt < (backup_table + backup_system_table + 1))
@@ -4176,7 +4178,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         /// Most of the times, use formats that can be read later
         br->set_outformat(
             rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                          : static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+                          : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
     }
 }
 
@@ -4257,7 +4259,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         br->set_informat(
             outIn.contains(backup.out_format.value()) && rg.nextBool()
                 ? outIn.at(backup.out_format.value())
-                : static_cast<InFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(InFormat_MAX)) + 1));
+                : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1));
     }
     br->set_backup_number(backup.backup_num);
 }
@@ -4390,7 +4392,7 @@ void StatementGenerator::generateNextKill(RandomGenerator & rg, Kill * kil)
 
     bexpr->set_op(BinaryOperator::BINOP_EQ);
     bexpr->mutable_lhs()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column("mutation_id");
-    bexpr->mutable_rhs()->mutable_lit_val()->set_string_lit(fc.getRandomMutation(rg.nextRandomUInt64()));
+    bexpr->mutable_rhs()->mutable_lit_val()->set_string_lit(fc.getRandomMutation(rg.nextInFullRange()));
 
     kil->set_command(Kill_KillEnum_MUTATION);
     if (rg.nextSmallNumber() < 3)

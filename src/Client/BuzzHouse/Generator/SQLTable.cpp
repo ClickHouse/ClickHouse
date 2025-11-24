@@ -488,11 +488,11 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         IntervalExpr * ie = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_interval();
         IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
         std::uniform_int_distribution<int64_t> next_dist(-15, 15);
+        std::uniform_int_distribution<uint32_t> i_range(1, static_cast<uint32_t>(IntervalExpr_Interval_MINUTE));
 
         bexpr->set_op(rg.nextMediumNumber() < 76 ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);
         columnPathRef(rg.pickRandomly(filtered_entries).get(), bexpr->mutable_lhs());
-        ie->set_interval(
-            static_cast<IntervalExpr_Interval>((rg.nextRandomUInt32() % static_cast<uint32_t>(IntervalExpr_Interval_MINUTE)) + 1));
+        ie->set_interval(static_cast<IntervalExpr_Interval>(i_range(rg.generator)));
         il->set_int_lit(next_dist(rg.generator));
         filtered_entries.clear();
     }
@@ -715,7 +715,9 @@ void StatementGenerator::entryOrConstant(RandomGenerator & rg, const ColumnPathC
     }
     else
     {
-        expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+        std::uniform_int_distribution<uint32_t> op_range(0, rg.nextBool() ? 1024 : 65536);
+
+        expr->mutable_lit_val()->mutable_int_lit()->set_uint_lit(op_range(rg.generator));
     }
 }
 
@@ -1319,26 +1321,26 @@ void StatementGenerator::generateEngineDetails(
         else if (b.isBufferEngine())
         {
             /// num_layers
-            te->add_params()->set_num(static_cast<uint32_t>(rg.nextRandomUInt32() % 101));
+            te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 101));
             /// min_time, max_time, min_rows, max_rows, min_bytes, max_bytes
             for (int i = 0; i < 6; i++)
             {
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextRandomUInt32() % 1001));
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_time
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextRandomUInt32() % 61));
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 61));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_rows
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextRandomUInt32() % 1001));
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
             if (rg.nextSmallNumber() < 7)
             {
                 /// flush_bytes
-                te->add_params()->set_num(static_cast<uint32_t>(rg.nextRandomUInt32() % 1001));
+                te->add_params()->set_num(static_cast<uint32_t>(rg.nextLargeNumber() % 1001));
             }
         }
     }
@@ -1350,7 +1352,7 @@ void StatementGenerator::generateEngineDetails(
     }
     else if (te->has_engine() && b.isGenerateRandomEngine())
     {
-        te->add_params()->set_num(rg.nextRandomUInt64());
+        te->add_params()->set_num(rg.nextInFullRange());
         if (rg.nextBool())
         {
             std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
@@ -1684,11 +1686,9 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             Expr * expr2 = bexpr->mutable_rhs();
             ExprSchemaTableColumn * estc1 = expr1->mutable_comp_expr()->mutable_expr_stc();
             ExprSchemaTableColumn * estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
+            std::uniform_int_distribution<uint32_t> op_range(1, static_cast<uint32_t>(BinaryOperator::BINOP_LEEQGR));
 
-            bexpr->set_op(
-                rg.nextSmallNumber() < 8
-                    ? BinaryOperator::BINOP_EQ
-                    : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
+            bexpr->set_op(rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_EQ : static_cast<BinaryOperator>(op_range(rg.generator)));
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             columnPathRef(this->entries[0], estc1->mutable_col()->mutable_path());
             columnPathRef(this->entries[1], estc2->mutable_col()->mutable_path());
@@ -2487,9 +2487,9 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
             dsd->set_password(sc.password);
             if (rg.nextBool())
             {
-                dsd->set_redis_storage(
-                    static_cast<DictionarySourceDetails_RedisStorageType>(
-                        (rg.nextRandomUInt32() % static_cast<uint32_t>(DictionarySourceDetails::RedisStorageType_MAX)) + 1));
+                std::uniform_int_distribution<uint32_t> op_range(1, static_cast<uint32_t>(DictionarySourceDetails::RedisStorageType_MAX));
+
+                dsd->set_redis_storage(static_cast<DictionarySourceDetails_RedisStorageType>(op_range(rg.generator)));
             }
             dsd->set_source(DictionarySourceDetails::REDIS);
         }

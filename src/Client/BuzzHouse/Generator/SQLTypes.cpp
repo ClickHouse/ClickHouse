@@ -1759,7 +1759,9 @@ SQLType * StatementGenerator::randomDecimalType(RandomGenerator & rg, const uint
 
         if (rg.nextBool())
         {
-            precision = std::optional<uint32_t>((rg.nextRandomUInt32() % ((allowed_types & set_no_decimal_limit) ? 76 : 65)) + 1);
+            std::uniform_int_distribution<uint32_t> p_range(1, (allowed_types & set_no_decimal_limit) ? 76 : 65);
+
+            precision = std::optional<uint32_t>(p_range(rg.generator));
             if (dec)
             {
                 ds->set_precision(precision.value());
@@ -1979,7 +1981,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
             }
             if (noption < 4)
             {
-                const uint32_t max_dpaths = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextRandomUInt32() % 1025);
+                const uint32_t max_dpaths = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextLargeNumber() % 1025);
 
                 if (tp)
                 {
@@ -1990,7 +1992,7 @@ SQLType * StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t al
             }
             else if (this->depth >= this->fc.max_depth || noption < 8)
             {
-                const uint32_t max_dtypes = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextRandomUInt32() % 33);
+                const uint32_t max_dtypes = rg.nextBool() ? (rg.nextMediumNumber() % 5) : (rg.nextLargeNumber() % 33);
 
                 if (tp)
                 {

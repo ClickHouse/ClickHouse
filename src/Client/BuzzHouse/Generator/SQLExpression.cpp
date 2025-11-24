@@ -221,10 +221,10 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
         il->set_int_lit(rg.nextRandomInt64());
         if (complex && rg.nextSmallNumber() < 9)
         {
-            il->set_integers(
-                static_cast<Integers>(
-                    (rg.nextRandomUInt32() % static_cast<uint32_t>(Integers::Int - Integers::UInt256))
-                    + static_cast<uint32_t>(Integers::Int8)));
+            std::uniform_int_distribution<uint32_t> integers_range(
+                static_cast<uint32_t>(Integers::Int8), static_cast<uint32_t>(Integers::Int));
+
+            il->set_integers(static_cast<Integers>(integers_range(rg.generator)));
         }
     }
     else if (uint_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + 1))
@@ -588,17 +588,14 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else if (binary_expr && noption < (unary_expr + binary_expr + 1))
         {
+            const bool limited = rg.nextBool();
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             BinaryExpr * bexpr = cexpr->mutable_binary_expr();
+            std::uniform_int_distribution<uint32_t> op_range(
+                limited ? static_cast<uint32_t>(BinaryOperator::BINOP_AND) : 1,
+                static_cast<uint32_t>(limited ? BinaryOperator::BINOP_OR : BinaryOperator_MAX));
 
-            if (rg.nextBool())
-            {
-                bexpr->set_op(rg.nextBool() ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
-            }
-            else
-            {
-                bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator_MAX)) + 1));
-            }
+            bexpr->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
             this->depth++;
             this->generateExpression(rg, bexpr->mutable_lhs());
             this->width++;
@@ -663,8 +660,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         {
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprAny * eany = cexpr->mutable_expr_any();
+            std::uniform_int_distribution<uint32_t> op_range(
+                1, static_cast<uint32_t>(rg.nextLargeNumber() < 5 ? BinaryOperator_MAX : BinaryOperator::BINOP_LEEQGR));
 
-            eany->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
+            eany->set_op(static_cast<BinaryOperator>(op_range(rg.generator)));
             eany->set_anyall(rg.nextBool());
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
@@ -1173,10 +1172,11 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (unary_expr && noption < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + 1))
     {
         UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
+        std::uniform_int_distribution<uint32_t> op_range(1, static_cast<uint32_t>(UnaryOperator::UNOP_PLUS));
 
         this->depth++;
         uexpr->set_paren(rg.nextMediumNumber() < 96);
-        uexpr->set_unary_op(static_cast<UnaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(UnaryOperator::UNOP_PLUS)) + 1));
+        uexpr->set_unary_op(static_cast<UnaryOperator>(op_range(rg.generator)));
         this->generateExpression(rg, uexpr->mutable_expr());
         this->depth--;
     }
@@ -1273,18 +1273,11 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                + subquery_expr + binary_expr + 1))
     {
         BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+        std::uniform_int_distribution<uint32_t> binop_range(
+            rg.nextSmallNumber() < 9 ? static_cast<uint32_t>(BinaryOperator::BINOP_CONCAT) : 1, static_cast<uint32_t>(BinaryOperator_MAX));
 
+        bexpr->set_op(static_cast<BinaryOperator>(binop_range(rg.generator)));
         this->depth++;
-        if (rg.nextSmallNumber() < 9)
-        {
-            bexpr->set_op(static_cast<BinaryOperator>((rg.nextRandomUInt32() % 6) + 13));
-        }
-        else
-        {
-            std::uniform_int_distribution<uint32_t> binop_range(1, static_cast<uint32_t>(BinaryOperator_MAX));
-
-            bexpr->set_op(static_cast<BinaryOperator>(binop_range(rg.generator)));
-        }
         this->generateExpression(rg, bexpr->mutable_lhs());
         this->width++;
         this->generateExpression(rg, bexpr->mutable_rhs());
@@ -1417,8 +1410,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         }
         if (this->levels[this->current_level].window_counter > 0 && rg.nextBool())
         {
-            wfc->mutable_window()->set_window(
-                "w" + std::to_string(rg.nextRandomUInt32() % this->levels[this->current_level].window_counter));
+            std::uniform_int_distribution<uint32_t> w_range(0, this->levels[this->current_level].window_counter);
+
+            wfc->mutable_window()->set_window("w" + std::to_string(w_range(rg.generator)));
         }
         else
         {

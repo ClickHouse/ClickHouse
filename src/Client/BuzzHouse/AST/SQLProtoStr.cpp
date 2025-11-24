@@ -792,11 +792,11 @@ CONV_FN(BinaryOperator, bop)
         case BINOP_LEGR:
             ret += " <> ";
             break;
-        case BINOP_IS_NOT_DISTINCT_FROM:
-            ret += " IS NOT DISTINCT FROM ";
-            break;
         case BINOP_LEEQGR:
             ret += " <=> ";
+            break;
+        case BINOP_IS_NOT_DISTINCT_FROM:
+            ret += " IS NOT DISTINCT FROM ";
             break;
         case BINOP_AND:
             ret += " AND ";

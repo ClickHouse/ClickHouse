@@ -380,6 +380,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"enable_fault_injection_settings", [&](const JSONObjectType & value) { enable_fault_injection_settings = value.getBool(); }},
         {"enable_force_settings", [&](const JSONObjectType & value) { enable_force_settings = value.getBool(); }},
         {"enable_overflow_settings", [&](const JSONObjectType & value) { enable_overflow_settings = value.getBool(); }},
+        {"random_limited_values", [&](const JSONObjectType & value) { random_limited_values = value.getBool(); }},
         {"truncate_output", [&](const JSONObjectType & value) { truncate_output = value.getBool(); }},
         {"allow_transactions", [&](const JSONObjectType & value) { allow_transactions = value.getBool(); }},
         {"clickhouse", [&](const JSONObjectType & value) { clickhouse_server = loadServerCredentials(value, "clickhouse", 9004, 9005); }},
