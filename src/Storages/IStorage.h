@@ -185,6 +185,9 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
+    virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
+
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
@@ -199,6 +202,9 @@ public:
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
     virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
+
+    /// Same as getInMemoryMetadataPtr() but may return nullopt in some specific engines like Alias
+    virtual std::optional<StorageMetadataPtr> tryGetInMemoryMetadataPtr() const { return getInMemoryMetadataPtr(); }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -284,6 +290,9 @@ public:
 
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
     virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
+
+    /// Same as getSerializationHints() but may return nullopt in some specific engines like Alias
+    virtual std::optional<SerializationInfoByName> tryGetSerializationHints() const { return getSerializationHints(); }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
@@ -670,8 +679,14 @@ public:
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
+    /// Same as getDataPaths() but may return nullopt in some specific engines like Alias
+    virtual std::optional<Strings> tryGetDataPaths() const { return getDataPaths(); }
+
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
+
+    /// Same as getStoragePolicy() but may return nullopt in some specific engines like Alias
+    virtual std::optional<StoragePolicyPtr> tryGetStoragePolicy() const { return getStoragePolicy(); }
 
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
@@ -717,10 +732,16 @@ public:
     /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeRows() const { return {}; }
 
+    /// Same as lifetimeRows() but may return nullopt in some specific engines like Alias
+    virtual std::optional<std::optional<UInt64>> tryLifetimeRows() const { return lifetimeRows(); }
+
     /// Number of bytes INSERTed since server start.
     ///
     /// Does not take the underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
+
+    /// Same as lifetimeBytes() but may return nullopt in some specific engines like Alias
+    virtual std::optional<std::optional<UInt64>> tryLifetimeBytes() const { return lifetimeBytes(); }
 
     /// Creates a storage snapshot from given metadata.
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
