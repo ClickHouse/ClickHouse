@@ -11,11 +11,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <base/defines.h>
 
-namespace DB::ErrorCodes
-{
-    extern const int INCORRECT_QUERY;
-}
-
 namespace DB::QueryPlanOptimizations
 {
 
