@@ -275,8 +275,7 @@ public:
         ::partial_sort(
             new_list.begin(), new_list.begin() + return_size, new_list.end(), [](const auto & l, const auto & r) { return l > r; });
 
-        if (k < new_list.size())
-            new_list.resize(k);
+        new_list.resize(return_size);
 
         return new_list;
     }
