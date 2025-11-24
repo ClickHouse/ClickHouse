@@ -69,6 +69,7 @@ namespace CoordinationSetting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -181,7 +182,8 @@ KeeperResponsesForSessions processWatchesImplBase(
             {
                 [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
                     KeeperStorageBase::WatchInfo{.path = path, .is_list_watch = false, .is_persistent = should_delete, .trigger_on_exists = false});
-                chassert(erased);
+                if (!erased)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not deleted {}", path);
             }
             result.push_back(KeeperResponseForSession{watcher_session, watch_response});
         }
