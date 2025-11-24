@@ -160,7 +160,8 @@ def _build_dockers(workflow, job_name):
                 continue
             elif arm_only and Docker.Platforms.ARM not in docker.platforms:
                 continue
-            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
+            platforms = docker.platforms if isinstance(docker.platforms, list) else [docker.platforms]
+            if any(p not in Docker.Platforms.arm_amd for p in platforms):
                 Utils.raise_with_error(
                     f"TODO: add support for all docker platforms [{docker.platforms}]"
                 )
