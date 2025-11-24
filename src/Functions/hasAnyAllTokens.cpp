@@ -104,7 +104,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 
 TokensWithPosition extractTokensFromString(std::string_view value)
 {
-    DefaultTokenExtractor default_token_extractor;
+    SplitByNonAlphaTokenExtractor default_token_extractor;
 
     size_t cur = 0;
     size_t token_start = 0;
@@ -396,14 +396,14 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
-        static DefaultTokenExtractor default_token_extractor;
+        static SplitByNonAlphaTokenExtractor default_token_extractor;
 
         execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, &default_token_extractor, search_tokens_from_args);
     }
     else
     {
         /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
-        if (token_extractor->getType() == ITokenExtractor::Type::SparseGram)
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
         {
             /// The sparse gram token extractor stores an internal state which modified during the execution.
             /// This leads to an error while executing this function multi-threaded because that state is not protected.
