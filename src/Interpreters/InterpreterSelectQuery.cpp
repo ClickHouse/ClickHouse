@@ -813,10 +813,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
+                const auto parts = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts;
+
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),
                     storage_snapshot,
-                    storage->getConditionSelectivityEstimator(*assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data).parts, context),
+                    storage->getConditionSelectivityEstimator(parts ? *parts : RangesInDataParts{}, context),
                     queried_columns,
                     supported_prewhere_columns,
                     log};

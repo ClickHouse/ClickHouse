@@ -11,7 +11,7 @@ echo '/llvm/cmake/*' >> $FILES_TO_CHECKOUT
 echo '/llvm/projects/*' >> $FILES_TO_CHECKOUT
 echo '/llvm/include/*' >> $FILES_TO_CHECKOUT
 echo '/llvm/lib/*' >> $FILES_TO_CHECKOUT
-echo '/llvm/utils/TableGen/*' >> $FILES_TO_CHECKOUT
+echo '/llvm/utils/*' >> $FILES_TO_CHECKOUT
 echo '/libcxxabi/*' >> $FILES_TO_CHECKOUT
 echo '!/libcxxabi/test/*' >> $FILES_TO_CHECKOUT
 echo '/libcxx/*' >> $FILES_TO_CHECKOUT

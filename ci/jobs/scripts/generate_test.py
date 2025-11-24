@@ -52,11 +52,19 @@ class FuzzerTestGenerator:
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
         failure_output = Shell.get_output(
-            f"grep -A10 -a 'Logical error:' {self.server_log}", verbose=True
+            f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
+            verbose=True,
         )
+        if not failure_output:
+            return None
+        if "Inconsistent AST formatting: the query:" in failure_output:
+            query_command = failure_output.splitlines()[1]
+            return query_command
+
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
         assert failure_first_line, "No failure first line found in server log"
+        print(failure_first_line)
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
         assert query_id, "No query id found in server log"
         query_command = Shell.get_output(
@@ -97,17 +105,21 @@ class FuzzerTestGenerator:
         from_matches = re.findall(from_pattern, query_command, re.IGNORECASE)
         join_matches = re.findall(join_pattern, query_command, re.IGNORECASE)
 
+        table_finctions = set()
         for match in from_matches + join_matches:
             if match.startswith("file("):
                 # Extract filename from file(...) function, handling nested functions
                 # Search for any quoted string within the file() call
-                file_match = re.search(r"['\"]([^'\"]+\.parquet)['\"]", match)
+                file_match = re.search(r"['\"]([^'\"]+)['\"]", match)
                 if file_match:
                     table_files.add(file_match.group(1))
+            if match.startswith("numbers(") or match.startswith("file("):
+                table_finctions.add(match)
             else:
                 tables.add(match)
-        assert tables or table_files, "No tables found in query command"
-        print(f"Tables found: {tables}, Files found: {table_files}")
+        assert (
+            tables or table_files or table_finctions
+        ), "No tables found in query command"
 
         # get all write commands for found tables
         commands_to_reproduce = []
@@ -166,8 +178,8 @@ class FuzzerTestGenerator:
 
 
 if __name__ == "__main__":
-    fuzzer_log = "fuzzer.log"
-    server_log = "server.log"
+    fuzzer_log = "fuzzer_10.log"
+    server_log = "server_10.log"
     FTG = FuzzerTestGenerator(server_log, fuzzer_log)
     failed_query = FTG.get_failed_query()
     print("Failed query:")
