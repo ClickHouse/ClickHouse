@@ -1060,6 +1060,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
 
                 auto parallel_replicas_enabled_for_storage = [](const StoragePtr & table, const Settings & query_settings)
                 {
+                    if (const auto * mv = typeid_cast<const StorageMaterializedView *>(table.get()))
+                        return mv->getTargetTable()->isMergeTree();
+
                     if (!table->isMergeTree())
                         return false;
 
