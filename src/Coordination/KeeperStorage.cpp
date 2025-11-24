@@ -183,7 +183,7 @@ KeeperResponsesForSessions processWatchesImplBase(
                 [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
                     KeeperStorageBase::WatchInfo{.path = path, .is_list_watch = false, .is_persistent = should_delete, .trigger_on_exists = false});
                 if (!erased)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not deleted {}", path);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not deleted {} {}", path, should_delete);
             }
             result.push_back(KeeperResponseForSession{watcher_session, watch_response});
         }
