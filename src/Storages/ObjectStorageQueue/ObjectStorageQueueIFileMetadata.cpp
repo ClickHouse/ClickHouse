@@ -55,6 +55,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
     processing_start_time = now();
     processing_end_time = {};
     processed_rows = 0;
+    last_exception = {};
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
@@ -163,6 +164,10 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
             }
             else
                 file_status->onFailed("Unprocessed exception");
+        }
+        else
+        {
+            chassert(file_status->state == FileStatus::State::Failed);
         }
 
         LOG_TEST(log, "Removing processing node in destructor for file: {} "
@@ -320,7 +325,8 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     {
         /// This is possible in case on the same server
         /// there are more than one S3(Azure)Queue table processing the same keeper path.
-        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        LOG_TEST(log, "File {} is being processed by another table on this server or"
+                 " another process insert thread in case parallel_insert = 1", path);
         return std::nullopt;
     }
 
