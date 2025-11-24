@@ -87,7 +87,7 @@ FLAKY_CHECK_TEST_REPEAT_COUNT = 3
 FLAKY_CHECK_MODULE_REPEAT_COUNT = 2
 
 
-def tests_to_run(
+def get_parallel_sequential_tests_to_run(
     batch_num: int, total_batches: int, args_test: List[str], workers: int
 ) -> Tuple[List[str], List[str]]:
     if args_test:
@@ -233,7 +233,11 @@ def main():
             # TODO: reduce scope to modified test cases instead of entire modules
             changed_files = info.get_changed_files()
             for file in changed_files:
-                if file.startswith("tests/integration/test") and file.endswith(".py"):
+                if (
+                    file.startswith("tests/integration/test")
+                    and file.endswith(".py")
+                    and not file.endswith("__init__.py")
+                ):
                     changed_test_modules.append(file.removeprefix("tests/integration/"))
 
     if is_bugfix_validation:
@@ -285,11 +289,13 @@ def main():
         _start_docker_in_docker()
     Shell.check("docker info > /dev/null", verbose=True, strict=True)
 
-    parallel_test_modules, sequential_test_modules = tests_to_run(
-        batch_num,
-        total_batches,
-        args.test or targeted_tests or changed_test_modules,
-        workers,
+    parallel_test_modules, sequential_test_modules = (
+        get_parallel_sequential_tests_to_run(
+            batch_num,
+            total_batches,
+            args.test or targeted_tests or changed_test_modules,
+            workers,
+        )
     )
 
     if is_sequential:
@@ -329,6 +335,8 @@ def main():
     if is_flaky_check:
         module_repeat_cnt = FLAKY_CHECK_MODULE_REPEAT_COUNT
 
+    failed_test_cases = []
+
     if parallel_test_modules:
         for attempt in range(module_repeat_cnt):
             test_result_parallel = Result.from_pytest_run(
@@ -343,6 +351,9 @@ def main():
                 )
                 break
         test_results.extend(test_result_parallel.results)
+        failed_test_cases.extend(
+            [t.name for t in test_result_parallel.results if t.is_failure()]
+        )
         if test_result_parallel.files:
             failed_tests_files.extend(test_result_parallel.files)
         if test_result_parallel.is_error():
@@ -364,32 +375,16 @@ def main():
                 )
                 break
         test_results.extend(test_result_sequential.results)
+        failed_test_cases.extend(
+            [t.name for t in test_result_sequential.results if t.is_failure()]
+        )
         if test_result_sequential.files:
             failed_tests_files.extend(test_result_sequential.files)
         if test_result_sequential.is_error():
             has_error = True
             error_info.append(test_result_sequential.info)
 
-    # Remove iptables rule added in tests
-    Shell.check("sudo iptables -D DOCKER-USER 1 ||:", verbose=True)
-
-    if not info.is_local_run:
-        print("Dumping dmesg")
-        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
-        failed_tests_files.append("dmesg.log")
-        with open("dmesg.log", "rb") as dmesg:
-            dmesg = dmesg.read()
-            if (
-                b"Out of memory: Killed process" in dmesg
-                or b"oom_reaper: reaped process" in dmesg
-                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
-            ):
-                test_results.append(
-                    Result(
-                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
-                    )
-                )
-
+    # Collect logs before rerun
     files = []
     if not info.is_local_run:
         failed_suits = []
@@ -411,6 +406,45 @@ def main():
         files.append(
             Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
         )
+
+    # Rerun failed tests if any to check if failure is reproducible
+    if 0 < len(failed_test_cases) < 10 and not (
+        is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
+    ):
+        test_result_retries = Result.from_pytest_run(
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile",
+            env=test_env,
+            cwd="./tests/integration/",
+            pytest_report_file=f"{temp_path}/pytest_retries.jsonl",
+        )
+        successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
+        failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
+        if successful_retries or failed_retries:
+            for test_case in test_results:
+                if test_case.name in successful_retries:
+                    test_case.set_label(Result.Label.OK_ON_RETRY)
+                elif test_case.name in failed_retries:
+                    test_case.set_label(Result.Label.FAILED_ON_RETRY)
+
+    # Remove iptables rule added in tests
+    Shell.check("sudo iptables -D DOCKER-USER 1 ||:", verbose=True)
+
+    if not info.is_local_run:
+        print("Dumping dmesg")
+        Shell.check("dmesg -T > dmesg.log", verbose=True, strict=True)
+        failed_tests_files.append("dmesg.log")
+        with open("dmesg.log", "rb") as dmesg:
+            dmesg = dmesg.read()
+            if (
+                b"Out of memory: Killed process" in dmesg
+                or b"oom_reaper: reaped process" in dmesg
+                or b"oom-kill:constraint=CONSTRAINT_NONE" in dmesg
+            ):
+                test_results.append(
+                    Result(
+                        name=OOM_IN_DMESG_TEST_NAME, status=Result.StatusExtended.FAIL
+                    )
+                )
 
     R = Result.create_from(results=test_results, stopwatch=sw, files=files)
 
