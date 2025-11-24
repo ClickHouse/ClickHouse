@@ -1150,6 +1150,7 @@ static const std::unordered_map<BinaryOperator, SQLFunc> binopToFunc{
     {BinaryOperator::BINOP_NOTEQ, SQLFunc::FUNCnotEquals},
     {BinaryOperator::BINOP_LEGR, SQLFunc::FUNCnotEquals},
     {BinaryOperator::BINOP_LEEQGR, SQLFunc::FUNCisNotDistinctFrom},
+    {BinaryOperator::BINOP_IS_DISTINCT_FROM, SQLFunc::FUNCisDistinctFrom},
     {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, SQLFunc::FUNCisNotDistinctFrom},
     {BinaryOperator::BINOP_AND, SQLFunc::FUNCand},
     {BinaryOperator::BINOP_OR, SQLFunc::FUNCor},
