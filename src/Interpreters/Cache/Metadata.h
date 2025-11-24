@@ -162,6 +162,8 @@ using KeyMetadataPtr = std::shared_ptr<KeyMetadata>;
 class CacheMetadata : private boost::noncopyable
 {
     friend struct KeyMetadata;
+    class IteratorImpl;
+
 public:
     using Key = FileCacheKey;
     using IterateFunc = std::function<void(LockedKey &)>;
@@ -189,6 +191,10 @@ public:
         const UserInfo & user) const;
 
     void iterate(IterateFunc && func, const UserID & user_id);
+
+    class Iterator;
+    using IteratorPtr = std::unique_ptr<Iterator>;
+    IteratorPtr getIterator(const UserID & user_id);
 
     enum class KeyNotFoundPolicy : uint8_t
     {
@@ -239,8 +245,8 @@ private:
     private:
         mutable CacheMetadataGuard guard;
     };
-
-    std::vector<MetadataBucket> metadata_buckets{buckets_num};
+    using MetadataBuckets = std::vector<MetadataBucket>;
+    MetadataBuckets metadata_buckets{buckets_num};
 
     struct DownloadThread
     {
@@ -275,6 +281,18 @@ private:
     void cleanupThreadFunc();
 };
 
+class CacheMetadata::Iterator
+{
+public:
+    using ImplPtr = std::shared_ptr<CacheMetadata::IteratorImpl>;
+    explicit Iterator(ImplPtr impl_) : impl(std::move(impl_)) {}
+
+    using OnFileSegmentFunc = std::function<void(const FileSegmentInfo &)>;
+    bool next(OnFileSegmentFunc func);
+
+protected:
+    ImplPtr impl;
+};
 
 /**
  * `LockedKey` is an object which makes sure that as long as it exists the following is true:

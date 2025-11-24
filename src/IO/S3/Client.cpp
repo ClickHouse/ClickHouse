@@ -588,6 +588,12 @@ Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
 }
 
+Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
+{
+    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+        request, [this](const Model::PutObjectTaggingRequest & req) { return PutObjectTagging(req); });
+}
+
 Model::UploadPartOutcome Client::UploadPart(UploadPartRequest & request) const
 {
     return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
