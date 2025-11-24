@@ -757,7 +757,7 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena1)
     column->serializeValueIntoArena(2, arena, pos);
     column->serializeValueIntoArena(3, arena, pos);
 
-    ReadBufferFromString in({ref1.data(), arena.usedBytes()});
+    ReadBufferFromString in({ref1.data(), arena.usedBytes()}); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     column->deserializeAndInsertFromArena(in);
     column->deserializeAndInsertFromArena(in);
     column->deserializeAndInsertFromArena(in);
