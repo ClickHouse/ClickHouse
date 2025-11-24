@@ -204,7 +204,7 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
         if (columns.empty() && wildcard)
             buffer << "*";
     }
-    else
+    else if (!database.empty())
     {
         buffer << backQuoteIfNeed(database);
 
@@ -213,6 +213,8 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
 
         buffer << ".*";
     }
+    else
+        buffer << "*";
 }
 
 
