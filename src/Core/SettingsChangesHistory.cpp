@@ -39,6 +39,16 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.12",
+        {
+            {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
+            {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
+            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
+            {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+        });
         addSettingsChanges(settings_changes_history, "25.11",
         {
             {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
