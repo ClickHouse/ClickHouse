@@ -3081,9 +3081,12 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         if (type == "prometheus")
+        {
+            const std::string handler_name = config.getBool("prometheus.keeper_metrics_only", false) ? "KeeperPrometheusHandler-factory" : "PrometheusHandler-factory";
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, handler_name), ProfileEvents::InterfacePrometheusReceiveBytes, ProfileEvents::InterfacePrometheusSendBytes)
             );
+        }
         if (type == "interserver")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
