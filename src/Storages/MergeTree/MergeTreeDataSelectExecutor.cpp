@@ -989,7 +989,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 if (min_max_granules) /// minmax index may have not been materialized for this part, not a fatal error
                 {
-                    std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule> result;
                     min_max_granules->getTopNMarks(top_n_filter_info->limit_n, parts_top_n_granules[part_index]);
                 }
                 top_n_elapsed_us.fetch_add(watch.elapsed(), std::memory_order_relaxed);
@@ -1071,14 +1070,14 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t sum_parts_after_top_n = 0;
     if (perform_top_n_optimization)
     {
-        std::vector<MarkRanges> result;
+        std::vector<MarkRanges> top_n_granules_result;
         MergeTreeIndexBulkGranulesMinMax::getTopNMarks(top_n_filter_info->direction, top_n_filter_info->limit_n,
-                                                       parts_top_n_granules, result);
+                                                       parts_top_n_granules, top_n_granules_result);
         for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
         {
             if (!parts_top_n_granules[part_index].empty())
             {
-                parts_with_ranges[part_index].ranges = std::move(result[part_index]);
+                parts_with_ranges[part_index].ranges = std::move(top_n_granules_result[part_index]);
             }
             if (!parts_with_ranges[part_index].ranges.empty())
             {

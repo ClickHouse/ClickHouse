@@ -48,6 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_paimon_partition_pruning", false, false, "New setting."},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"use_skip_indexes_for_top_n", false, false, "New setting."},
+            {"use_top_n_dynamic_filtering", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -77,8 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_verify_checksums", true, true, "New setting."},
             {"output_format_parquet_write_checksums", false, true, "New setting."},
             {"database_shared_drop_table_delay_seconds", 8 * 60 * 60, 8 * 60 * 60, "New setting."},
-            {"use_skip_indexes_for_top_n", false, false, "New setting."},
-            {"use_top_n_dynamic_filtering", false, false, "New setting."},
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
         });
