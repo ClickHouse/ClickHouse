@@ -321,7 +321,13 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_pytest_run(
-        cls, command, cwd=None, name="Tests", env=None, pytest_report_file=None
+        cls,
+        command,
+        cwd=None,
+        name="Tests",
+        env=None,
+        pytest_report_file=None,
+        logfile=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -331,21 +337,26 @@ class Result(MetaClasses.Serializable):
             cwd (str, optional): Working directory to run the command in
             name (str, optional): Name for the root Result object
             env (dict, optional): Environment variables for the pytest command
-            verbose (bool, optional): Whether to print pytest output to console
+            pytest_report_file (str, optional): Path to write the pytest jsonl report
+            logfile (str, optional): Path to write pytest output logs
 
         Returns:
             Result: A Result object with test cases as sub-Results
         """
         sw = Utils.Stopwatch()
+        files = []
         if pytest_report_file:
-            files = [pytest_report_file]
+            files.append(pytest_report_file)
         else:
-            files = []
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
+        if logfile:
+            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
+            if logfile:
+                full_command += f" --log-file={logfile}"
 
             # Apply environment
             for key, value in (env or {}).items():
