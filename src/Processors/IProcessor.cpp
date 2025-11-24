@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/logger_useful.h>
 #include <Common/CurrentThread.h>
 
 
@@ -65,6 +66,7 @@ Processors IProcessor::expandPipeline()
 
 void IProcessor::cancel() noexcept
 {
+    LOG_DEBUG(getLogger("ProcessorCancel"), "Canceling processor: {}", getName());
 
     bool already_cancelled = is_cancelled.exchange(true, std::memory_order_acq_rel);
     if (already_cancelled)
