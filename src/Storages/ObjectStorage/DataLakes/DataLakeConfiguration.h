@@ -104,6 +104,7 @@ public:
         ContextPtr local_context,
         const std::optional<ColumnsDescription> & columns,
         ASTPtr partition_by,
+        ASTPtr order_by,
         bool if_not_exists,
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_) override
@@ -118,7 +119,7 @@ public:
         BaseStorageConfiguration::update(object_storage, local_context, true);
 
         DataLakeMetadata::createInitial(
-            object_storage, weak_from_this(), local_context, columns, partition_by, if_not_exists, catalog, table_id_);
+            object_storage, weak_from_this(), local_context, columns, partition_by, order_by, if_not_exists, catalog, table_id_);
     }
 
     bool supportsDelete() const override
@@ -188,6 +189,12 @@ public:
     {
         assertInitialized();
         return current_metadata->totalBytes(local_context);
+    }
+
+    bool isDataSortedBySortingKey(StorageMetadataPtr metadata_snapshot, ContextPtr local_context) const override
+    {
+        assertInitialized();
+        return current_metadata->isDataSortedBySortingKey(metadata_snapshot, local_context);
     }
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override

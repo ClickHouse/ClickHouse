@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -32,11 +33,18 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsSeconds prefer_fetch_merged_part_time_threshold;
 }
 
+namespace FailPoints
+{
+    extern const char rmt_mutate_task_pause_in_prepare[];
+}
+
 ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 {
     const String & source_part_name = entry.source_parts.at(0);
     const auto storage_settings_ptr = storage.getSettings();
     LOG_TRACE(log, "Executing log entry to mutate part {} to {}", source_part_name, entry.new_part_name);
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_mutate_task_pause_in_prepare);
 
     new_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version);
 

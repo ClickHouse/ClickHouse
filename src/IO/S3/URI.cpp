@@ -55,6 +55,25 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         uri_str = uri_;
 
     uri = Poco::URI(uri_str);
+    /// Keep a copy of how Poco parsed the original string before any mapping
+    Poco::URI original_uri(uri_str);
+    bool looks_like_presigned = false;
+    for (const auto & [qk, qv] : original_uri.getQueryParameters())
+    {
+        if (
+            qk == "versionId" ||
+            qk == "AWSAccessKeyId" ||
+            qk == "Signature" ||
+            qk == "Expires" ||
+            qk.starts_with("X-Amz-") ||
+            qk == "GoogleAccessId" ||
+            qk.starts_with("X-Goog-")
+        )
+        {
+            looks_like_presigned = true;
+            break;
+        }
+    }
 
     std::unordered_map<std::string, std::string> mapper;
     auto context = Context::getGlobalContextInstance();
@@ -95,22 +114,12 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         }
     }
 
-    /// Poco::URI will ignore '?' when parsing the path, but if there is a versionId in the http parameter,
-    /// '?' can not be used as a wildcard, otherwise it will be ambiguous.
-    /// If no "versionId" in the http parameter, '?' can be used as a wildcard.
-    /// It is necessary to encode '?' to avoid deletion during parsing path.
-    if (!has_version_id && uri_.contains('?'))
-    {
-        String uri_with_question_mark_encode;
-        Poco::URI::encode(uri_, "?", uri_with_question_mark_encode);
-        uri = Poco::URI(uri_with_question_mark_encode);
-    }
+    /// Defer handling of non-versionId, non-presigned queries until after style detection.
 
     String name;
     String endpoint_authority_from_uri;
 
     bool is_using_aws_private_link_interface = re2::RE2::FullMatch(uri.getAuthority(), aws_private_link_style_pattern);
-
     if (!is_using_aws_private_link_interface
         && re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket, &name, &endpoint_authority_from_uri))
     {
@@ -152,6 +161,24 @@ URI::URI(const std::string & uri_, bool allow_archive_path_syntax)
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
         if (!uri.getPath().empty())
             key = uri.getPath().substr(1);
+    }
+
+    /// If there is a '?' in the original string, but no actual query, it means
+    /// the user intended to use '?' as a wildcard in the path. Preserve it (even if trailing)
+    if (original_uri.getRawQuery().empty() && uri_str.find('?') != std::string::npos && !has_version_id && !looks_like_presigned)
+    {
+        key += "?";
+    }
+
+    /// Merge non-presigned, non-versionId query into key as required.
+    const std::string original_query = original_uri.getQuery();
+    if (!original_query.empty() && !has_version_id && !looks_like_presigned)
+    {
+        // For all styles except pre-signed/versioned, fold query into key
+        // This ensures consistent behavior for wildcard parsing and format detection
+        key += "?";
+        key += original_query;
+        uri.setQuery("");
     }
 
     validateBucket(bucket, uri);
