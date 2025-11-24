@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/ObjectUtils.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>

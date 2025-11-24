@@ -293,7 +293,10 @@ void forEachTokenCase(const ITokenExtractor & extractor, const char * __restrict
             const auto & ngram_extractor = assert_cast<const NgramTokenExtractor &>(extractor);
 
             if (length < ngram_extractor.getN())
+            {
+                callback(data, length);
                 return;
+            }
 
             forEachTokenImpl<is_padded>(ngram_extractor, data, length, callback);
             return;
