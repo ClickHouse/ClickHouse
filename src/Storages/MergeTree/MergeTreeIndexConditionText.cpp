@@ -153,10 +153,10 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "mapContainsValue")
     {
         /// These functions compare the searched token as a whole and therefore
-        /// exact direct read is only possible with noop token extractor, that doesn't
+        /// exact direct read is only possible with array token extractor, that doesn't
         /// split documents into tokens. Otherwise we can only use direct read as a hint.
-        bool is_noop_extractor = typeid_cast<const NoOpTokenExtractor *>(token_extractor);
-        return is_noop_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+        bool is_array_extractor = typeid_cast<const ArrayTokenExtractor *>(token_extractor);
+        return is_array_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
     }
 
     if (function_name == "like"
