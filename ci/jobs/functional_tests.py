@@ -20,6 +20,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
     TEST = "test"
+    RETRIES = "retries"
     CHECK_ERRORS = "check_errors"
     COLLECT_LOGS = "collect_logs"
     COLLECT_COVERAGE = "collect_coverage"
@@ -285,6 +286,14 @@ def main():
             stages.remove(JobStages.COLLECT_LOGS)
         if JobStages.COLLECT_COVERAGE in stages:
             stages.remove(JobStages.COLLECT_COVERAGE)
+    if (
+        is_flaky_check
+        or is_coverage
+        or is_bugfix_validation
+        or is_targeted_check
+        or info.is_local_run
+    ):
+        stages.remove(JobStages.RETRIES)
 
     tests = args.test
     targeter = Targeting(info=info)
@@ -425,15 +434,26 @@ def main():
         step_name = "Tests"
         print(step_name)
 
-        # Experimental mode for targeted flavor: run a test subset N times instead of repeating each test N times
-        #   in a single run to avoid failures for tests that cannot run in parallel with themselves
+        # FIXME: Determine optimal mode for targeted job:
+        # Mode (1): Run all tests N times in one go (flaky-mode)
+        #   - Drawback: Noisy errors when tests can't run in parallel with themselves
+        #   - Skips tests marked as no-flaky-check
+        # Mode (2): N consequent runs for chosen tests
+        #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
+        #
+        # Currently using Mode (1):
         run_sets_cnt = 1
-        if is_targeted_check:
-            run_sets_cnt = rerun_count
-            rerun_count = 1
+        # To use Mode (2), uncomment:
+        # run_sets_cnt = rerun_count if is_targeted_check else 1
+        # rerun_count = 1 if is_targeted_check else rerun_count
+
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
+
+        # Track collected test results across multiple runs (only used when run_sets_cnt > 1)
+        collected_test_results = []
+        seen_test_names = set()
+
         for cnt in range(run_sets_cnt):
-            ft_res_processor.debug_files = []
             run_tests(
                 batch_num=batch_num if not tests else 0,
                 batch_total=total_batches if not tests else 0,
@@ -445,10 +465,32 @@ def main():
                 rerun_count=rerun_count,
             )
             test_result = ft_res_processor.run()
-            if is_targeted_check:
-                test_result.set_info(f"Run attempt {cnt + 1} out of {run_sets_cnt}")
-            if not test_result.is_ok():
-                break
+
+            # Experimental mode for targeted check: collect first failure of each test,
+            # or all results on the final attempt
+            if run_sets_cnt > 1:
+                is_final_run = cnt == run_sets_cnt - 1
+
+                for test_case_result in test_result.results:
+                    # Only collect each test once (first failure or final result)
+                    if test_case_result.name not in seen_test_names:
+                        # On non-final runs: collect only failed test cases
+                        # On final run: collect all remaining test cases
+                        should_collect = not test_case_result.is_ok() or is_final_run
+                        if should_collect:
+                            test_case_result.set_info(
+                                f"Run attempt {cnt + 1} out of {run_sets_cnt}"
+                            )
+                            collected_test_results.append(test_case_result)
+                            seen_test_names.add(test_case_result.name)
+
+                # On final run, replace results with collected ones
+                if is_final_run:
+                    test_result.results = collected_test_results
+                    # Set overall status to failed if any collected test cases failed
+                    has_failures = any(not t.is_ok() for t in collected_test_results)
+                    if has_failures and test_result.is_ok():
+                        test_result.set_failed()
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -478,6 +520,43 @@ def main():
             results[-1].info = ""
 
         res = results[-1].is_ok()
+
+    if JobStages.RETRIES in stages and test_result and test_result.is_failure():
+        # retry all failed tests and mark original failed either as success on retry or failed on retry
+        failed_tests = [t.name for t in test_result.results if t.is_failure()]
+        if len(failed_tests) > 10:
+            results.append(
+                Result(
+                    name="Retries",
+                    status=Result.Status.SKIPPED,
+                    info="Too many failed tests",
+                )
+            )
+        elif failed_tests:
+            ft_res_processor = FTResultsProcessor(wd=temp_dir)
+            run_tests(
+                batch_num=0,
+                batch_total=0,
+                tests=failed_tests,
+                extra_args=runner_options,
+                random_order=True,
+                rerun_count=1,
+            )
+            retry_result = ft_res_processor.run(task_name="Retries")
+            if retry_result.is_failure():
+                # do not produce noise failures
+                retry_result.set_success()
+            success_after_rerun = [t.name for t in retry_result.results if t.is_ok()]
+            failed_after_rerun = [
+                t.name for t in retry_result.results if t.is_failure()
+            ]
+            if success_after_rerun or failed_after_rerun:
+                for test_case in test_result.results:
+                    if test_case.name in success_after_rerun:
+                        test_case.set_label(Result.Label.OK_ON_RETRY)
+                    elif test_case.name in failed_after_rerun:
+                        test_case.set_label(Result.Label.FAILED_ON_RETRY)
+            results.append(retry_result)
 
     CH.terminate()
 
