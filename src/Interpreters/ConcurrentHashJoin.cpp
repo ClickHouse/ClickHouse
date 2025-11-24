@@ -699,6 +699,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
             auto & current_columns = getData(hash_joins[0])->columns;
             current_columns.splice(current_columns.end(), getData(hash_joins[i])->columns);
+            getData(hash_joins[0])->allocated_size += getData(hash_joins[i])->allocated_size;
+            getData(hash_joins[i])->allocated_size = 0;
         }
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that
