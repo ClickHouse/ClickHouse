@@ -251,6 +251,12 @@ private:
 
         NodeReplacement replacement;
 
+        /// Sort conditions to produce stable output for EXPLAIN query.
+        std::ranges::sort(selected_conditions, [](const auto & lhs, const auto & rhs)
+        {
+            return lhs.virtual_column_name < rhs.virtual_column_name;
+        });
+
         /// If we have only one condition with exact search, we can use
         /// only virtual column and remove the original condition.
         if (selected_conditions.size() == 1 && has_exact_search)

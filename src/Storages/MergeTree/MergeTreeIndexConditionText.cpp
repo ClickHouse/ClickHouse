@@ -463,7 +463,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
         /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
         /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
-        if (function_name == "mapContainsKey" || function_name == "has" || function_name == "mapContainsValue")
+        bool is_supported_key_function = has_map_keys_column && (function_name == "mapContainsKey" || function_name == "has");
+        bool is_supported_value_function = has_map_values_column && function_name == "mapContainsValue";
+
+        if (is_supported_key_function || is_supported_value_function)
         {
             auto tokens = stringToTokens(value_field);
             out.function = RPNElement::FUNCTION_HAS;
