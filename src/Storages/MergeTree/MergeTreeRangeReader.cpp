@@ -47,34 +47,70 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
+static void replaceSharedSubcolumns(const ColumnPtr & target_column, Columns & columns)
 {
+    ColumnPtr replacement_column = nullptr;
+
+    std::function<void(ColumnPtr &)> replace_in_column = [&](ColumnPtr & column)
+    {
+        if (!column)
+            return;
+
+        if (column == target_column)
+        {
+            if (!replacement_column)
+                replacement_column = target_column->cloneResized(target_column->size());
+            column = replacement_column;
+            return;
+        }
+
+        column->assumeMutable()->forEachMutableSubcolumn([&](ColumnPtr & subcolumn)
+        {
+            replace_in_column(subcolumn);
+        });
+    };
+
+    for (auto & column : columns)
+    {
+        replace_in_column(column);
+    }
+}
+
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache * cache)
+{
+    replaceSharedSubcolumns(filter.getColumn(), columns);
+
     const auto & filter_data = filter.getData();
+
+    for (auto & column : columns)
+    {
+        const IColumn * column_ptr = column.get();
+        if (cache && cache->contains(column_ptr))
+        {
+            continue;
+        }
+
+        if (column && column->size() != filter.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+                column->size(), filter.size());
+    }
 
     for (auto & column : columns)
     {
         if (column)
         {
             const IColumn * column_ptr = column.get();
-            if (cache.contains(column_ptr))
+            if (cache)
             {
-                column = cache[column_ptr];
-                continue;
+                auto iter = cache->find(column_ptr);
+                if (iter != cache->end())
+                {
+                    column = iter->second;
+                    continue;
+                }
             }
 
-            if (column->size() != filter.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
-                    column->size(), filter.size());
-
-            if (filter.getColumn() != column)
-            {
-                column->assumeMutable()->filter(filter_data);
-            }
-            else
-            {
-                /// Column is the same as filter column, so it cannot be filtered in-place
-                column = column->filter(filter_data, filter.countBytesInFilter());
-            }
+            column->assumeMutable()->filter(filter_data);
 
             if (column->empty())
             {
@@ -82,12 +118,13 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 return;
             }
 
-            cache[column_ptr] = column;
+            if (cache)
+                cache->emplace(column_ptr, column);
         }
     }
 }
 
-void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
+void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache * cache)
 {
     if (filter.alwaysTrue())
         return;
@@ -107,7 +144,7 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
 void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     auto columns = block.getColumns();
-    filterColumns(columns, filter, cache);
+    filterColumns(columns, filter, &cache);
 
     if (!columns.empty())
         block.setColumns(columns);
@@ -524,7 +561,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     /// Prevents repeated in-place filter execution on the same column
     ColumnFilterCache cache;
-    filterColumns(columns, filter, cache);
+    filterColumns(columns, filter, &cache);
     filterBlock(additional_columns, filter, cache);
     filterBlock(columns_for_patches, filter, cache);
     filterBlock(patch_versions_block, filter, cache);

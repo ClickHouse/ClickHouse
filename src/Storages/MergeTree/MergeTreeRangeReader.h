@@ -155,6 +155,12 @@ public:
             cached_count_bytes = DB::countBytesInFilter(*data);
         return cached_count_bytes;
     }
+
+    void copyColumn()
+    {
+        column = column->cloneResized(size());
+        data = &assert_cast<const ColumnUInt8 &>(*column).getData();
+    }
 };
 
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
@@ -426,7 +432,7 @@ public:
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }
 
-    static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache);
+    static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache * cache = nullptr);
     static void filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache);
 
 private:

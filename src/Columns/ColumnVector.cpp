@@ -780,9 +780,14 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
 template <typename T>
 void ColumnVector<T>::filter(const IColumn::Filter & filt)
 {
-    size_t size = data.size();
-    if (size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+    const auto size = data.size();
+    const auto filter_size = filt.size();
+
+    if (size < filter_size)
+        return;
+
+    if (size != filter_size)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
 
     const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
