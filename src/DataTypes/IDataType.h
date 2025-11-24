@@ -172,7 +172,7 @@ public:
 
     /** Creates a column with specified size, without initializing values.
       * This is useful when you need to create a large column to fill later (e.g. the result of a function)
-      * Default implementation use createColumn and cloneResized.
+      * Default implementation uses createColumn and cloneResized.
       */
     virtual MutableColumnPtr createUninitializedColumnWithSize(size_t size) const;
 

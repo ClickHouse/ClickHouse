@@ -45,7 +45,7 @@ MutableColumnPtr DataTypeNullable::createColumn() const
 
 MutableColumnPtr DataTypeNullable::createUninitializedColumnWithSize(size_t size) const
 {
-    return ColumnNullable::create(nested_data_type->createUninitializedColumnWithSize(size), ColumnUInt8::create());
+    return ColumnNullable::create(nested_data_type->createUninitializedColumnWithSize(size), ColumnUInt8::create(size));
 }
 
 Field DataTypeNullable::getDefault() const
