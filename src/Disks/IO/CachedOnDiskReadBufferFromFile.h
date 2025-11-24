@@ -108,6 +108,9 @@ private:
         size_t bytes_to_predownload = 0;
         bool set_downloader = false;
 
+        void setReadBuffer(std::shared_ptr<ReadBufferFromFileBase> buf_, ReadType read_type_) { buf = buf_; read_type = read_type_; }
+        void resetReadBuffer() { buf.reset(); read_type = ReadType::NONE; }
+
         void reset()
         {
             bytes_to_predownload = 0;
@@ -124,8 +127,7 @@ private:
 
     static bool canStartFromCache(size_t current_offset, const FileSegment & file_segment);
 
-    static void prepareReadFromFileSegmentState(
-        ReadFromFileSegmentState & state,
+    static ReadFromFileSegmentState prepareReadFromFileSegmentState(
         FileSegment & file_segment,
         size_t offset,
         ReadInfo & info,
@@ -177,6 +179,8 @@ private:
     bool completeFileSegmentAndGetNext();
 
     void appendFilesystemCacheLog(const FileSegment & file_segment, ReadType read_type);
+
+    static String toString(ReadType type);
 
     const LoggerPtr log;
     const FileCachePtr cache;
