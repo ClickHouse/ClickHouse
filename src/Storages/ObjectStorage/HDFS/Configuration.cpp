@@ -110,7 +110,7 @@ void HDFSStorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, 
     }
 }
 
-void HDFSStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr)
+void HDFSStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr /*context*/)
 {
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
@@ -209,10 +209,10 @@ static void addStructureAndFormatToArgsIfNeededImpl(
     }
 }
 
-void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr, bool with_structure)
+void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     HDFSStorageParsableArguments parsable_arguments;
-    parsable_arguments.fromASTImpl(args, nullptr, with_structure);
+    parsable_arguments.fromASTImpl(args, context, with_structure);
     initializeFromParsableArguments(parsable_arguments);
     setURL(parsable_arguments.url_str);
 }
