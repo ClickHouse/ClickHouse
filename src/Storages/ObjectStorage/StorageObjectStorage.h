@@ -51,6 +51,7 @@ public:
         bool is_datalake_query,
         bool distributed_processing_ = false,
         ASTPtr partition_by_ = nullptr,
+        ASTPtr order_by_ = nullptr,
         bool is_table_function_ = false,
         bool lazy_init = false);
 
