@@ -367,26 +367,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
         new_values["QueriesPeakMemoryUsage"] = { queries_peak_memory_usage, "Peak memory usage for queries, in bytes." };
     }
 
-    {
-        bool zookeeper_connection_loss = false;
-        try
-        {
-            const auto zookeeper = getContext()->getZooKeeper();
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-            {
-                zookeeper_connection_loss = true;
-            }
-        }
-        catch (...) // NOLINT(bugprone-empty-catch)
-        {
-        }
-
-        new_values["ZooKeeperClientConnectionLoss"] = { zookeeper_connection_loss, "Indicates if all attempts to establish a ZooKeeper session failed."};
-        new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
-    }
+    new_values["ZooKeeperClientLastZXIDSeen"] = { getContext()->getZooKeeperLastZXIDSeen(), "The last ZXID the ZooKeeper client has seen."};
 
 #if USE_NURAFT
     {

@@ -28,19 +28,28 @@ def test_session_refused_on_stale_keeper(started_cluster):
     node.query("DROP DATABASE IF EXISTS t SYNC")
     node.query("DROP DATABASE IF EXISTS t2 SYNC")
 
+    def last_zxid_seen_metric():
+        return int(
+            node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientLastZXIDSeen'").strip()
+        )
+
+    def connection_loss_started_timestamp_metric():
+        return int(
+            node.query("SELECT value FROM system.metrics WHERE name = 'ZooKeeperConnectionLossStartedTimestampSeconds'").strip()
+        )
+
+    def last_zxid_seen_column():
+        return int(
+            node.query(
+                "SELECT last_zxid_seen FROM system.zookeeper_connection WHERE name = 'default'"
+            ).strip()
+        )
+
     # sanity check the value of last_zxid_seen
     node.query("CREATE DATABASE t ENGINE = Replicated('/clickhouse/databases/t', 's1', 'r1')")
-    last_zxid_seen_column = int(
-        node.query(
-            "SELECT last_zxid_seen FROM system.zookeeper_connection WHERE name = 'default'"
-        ).strip()
-    )
-    assert 1 <= last_zxid_seen_column <= 1000
-
-    last_zxid_seen_metric = int(
-        node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientLastZXIDSeen'").strip()
-    )
-    assert 1 <= last_zxid_seen_metric <= 1000
+    assert connection_loss_started_timestamp_metric() == 0
+    assert 1 <= last_zxid_seen_column() <= 1000
+    assert 1 <= last_zxid_seen_metric() <= 1000
 
     # remove all the logs and snapshots from keepers and restart them
     for zookeeper_container in ZOOKEEPER_CONTAINERS:
@@ -63,29 +72,20 @@ def test_session_refused_on_stale_keeper(started_cluster):
     )
 
     node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
-
-    # make sure ZooKeeperClientLastZXIDSeen is still correct when keeper session is expired
-    last_zxid_seen_metric = int(
-        node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientLastZXIDSeen'").strip()
-    )
-    assert 1 <= last_zxid_seen_metric <= 1000
-
-    connection_loss_metric = int(
-        node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientConnectionLoss'").strip()
-    )
-    assert connection_loss_metric == 1
+    assert connection_loss_started_timestamp_metric() > 0
+    assert 1 <= last_zxid_seen_metric() <= 1000
 
     # after restart, the keeper client's last_zxid_seen is reset to 0
     # this behaviour is not ideal, but persisting last_zxid_seen to the disk would:
     # (a) still not help with horizontal scaling and MBB releases
     # (b) introduce complexity
     node.restart_clickhouse()
-    node.query("CREATE DATABASE t2 ENGINE = Replicated('/clickhouse/databases/t2', 's1', 'r1')")
 
-    connection_loss_metric = int(
-        node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientConnectionLoss'").strip()
-    )
-    assert connection_loss_metric == 0
+    assert connection_loss_started_timestamp_metric() == 0
+    assert 1 <= last_zxid_seen_metric() <= 1000
+    assert 1 <= last_zxid_seen_column() <= 1000
+
+    node.query("CREATE DATABASE t2 ENGINE = Replicated('/clickhouse/databases/t2', 's1', 'r1')")
 
     node.query("DROP DATABASE t SYNC")
     node.query("DROP DATABASE t2 SYNC")
