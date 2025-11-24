@@ -112,13 +112,13 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     if ((settings.use_skip_indexes_for_top_n &&
             read_from_mergetree_step->isSkipIndexAvailableForTopN(sort_column_name) && settings.use_skip_indexes_on_data_read) ||
-        (settings.use_top_n_dynamic_filtering && filter_step))
+        (settings.use_top_n_dynamic_filtering && !read_from_mergetree_step->getPrewhereInfo()))
     {
         threshold_tracker = std::make_shared<TopNThresholdTracker>(direction);
         sorting_step->setTopNThresholdTracker(threshold_tracker);
     }
 
-    if  (settings.use_top_n_dynamic_filtering && filter_step &&
+    if  (settings.use_top_n_dynamic_filtering &&
          !read_from_mergetree_step->getPrewhereInfo())
     {
         auto new_prewhere_info = std::make_shared<PrewhereInfo>();

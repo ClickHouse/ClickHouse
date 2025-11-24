@@ -14,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -25,6 +26,14 @@ public:
     explicit FunctionTopNFilter(TopNThresholdTrackerPtr threshold_tracker_)
         : threshold_tracker(threshold_tracker_)
     {
+        if (!threshold_tracker_)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopNFilter got NULL threshold_tracker");
+        String comparator = "less";
+
+        if (threshold_tracker->getDirection() == -1) /// DESC
+            comparator = "greater";
+        auto context = Context::getGlobalContextInstance();
+        compare_function = FunctionFactory::instance().get(comparator, context);
         direction = threshold_tracker_->getDirection();
     }
 
@@ -65,29 +74,15 @@ public:
         if (threshold_tracker && threshold_tracker->isSet())
         {
             auto current_threshold = threshold_tracker->getValue();
+
             auto data_type = arguments[0].type;
+            ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
 
-            auto threshold_column = data_type->createColumn();
-            threshold_column->insert(current_threshold);
-
-            PaddedPODArray<Int8> compare_results;
-            compare_results.resize(input_rows_count);
-
-            auto filter = ColumnVector<UInt8>::create();
-            auto & filter_data = filter->getData();
-            filter_data.resize(input_rows_count);
-
-            /// The next lines are the key! Will the (compareColumn() + for loop
-            /// to set filter_data[i]) be cheaper than (other predicates + sorting) ?
-            /// e.g URL like '%google%' looks costly and optimization should help in
-            /// SELECT * FROM hits WHERE URL LIKE '%google%' ORDER BY EventTime LIMIT 10.
-            /// Can we avoid the for loop?
-            arguments[0].column->compareColumn(*threshold_column, 0, nullptr, compare_results, direction, 1);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                filter_data[i] = (compare_results[i] < 0); /// will handle both ASC and DESC
-            }
-            return filter;
+            ColumnsWithTypeAndName args{ arguments[0], {threshold_column, data_type, {}} };
+            auto elem_compare = compare_function->build(args);
+            /// Note that using "greater" / "less" function here is more optimal than using Column::compareColumn()
+            /// because greater/less implementation is AVX specific optimized.
+            return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, /* dry_run = */ false);
         }
         else
         {
@@ -96,6 +91,8 @@ public:
     }
 private:
     TopNThresholdTrackerPtr threshold_tracker;
+    FunctionOverloadResolverPtr compare_function;
+
     int direction;
 };
 
