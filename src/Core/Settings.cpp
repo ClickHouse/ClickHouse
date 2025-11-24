@@ -7194,7 +7194,13 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
-Allow to perform full text search filtering using only the inverted index in query plan.
+Allow to perform full text search filtering using only the inverted text index in query plan.
+)", 0) \
+    DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
+Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
+)", 0) \
+    DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
+Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
     DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
 Whether to use a cache of deserialized text index dictionary block.
