@@ -13,16 +13,14 @@ ClickHouse has experimental support for s390x.
 
 ## Building ClickHouse for s390x {#building-clickhouse-for-s390x}
 
-s390x has two OpenSSL-related build options:
-- By default, OpenSSL is build on s390x as a shared library. This is different from all other platforms, where OpenSSL is build as static library.
-- To build OpenSSL as a static library regardless, pass `-DENABLE_OPENSSL_DYNAMIC=0` to CMake.
+s390x, as other platforms, builds OpenSSL as a static library. If you want to build with dynamic OpenSSL, you need to pass `-DENABLE_OPENSSL_DYNAMIC=1` to CMake.
 
-These instructions assume that the host machine is x86_64 and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
+These instructions assume that the host machine is Linux x86_64/ARM and has all the tooling required to build natively based on the [build instructions](../development/build.md). It also assumes that the host is Ubuntu 22.04 but the following instructions should also work on Ubuntu 20.04.
 
 In addition to installing the tooling used to build natively, the following additional packages need to be installed:
 
 ```bash
-apt-get install binutils-s390x-linux-gnu libc6-dev-s390x-cross gcc-s390x-linux-gnu binfmt-support qemu-user-static
+apt-get install binutils-s390x-linux-gnu libc6-dev-s390x-cross gcc-s390x-linux-gnu binfmt-support qemu-user-static mold
 ```
 
 If you wish to cross compile rust code install the rust cross compile target for s390x:
@@ -30,9 +28,6 @@ If you wish to cross compile rust code install the rust cross compile target for
 ```bash
 rustup target add s390x-unknown-linux-gnu
 ```
-
-The s390x build uses the mold linker, download it from https://github.com/rui314/mold/releases/download/v2.0.0/mold-2.0.0-x86_64-linux.tar.gz
-and place it into your `$PATH`.
 
 To build for s390x:
 
@@ -46,7 +41,8 @@ ninja
 Once built, the binary can be run with, e.g.:
 
 ```bash
-qemu-s390x-static -L /usr/s390x-linux-gnu ./clickhouse
+qemu-s390x-static -L /usr/s390x-linux-gnu ./programs/clickhouse local --query "Select 2"
+2
 ```
 
 ## Debugging {#debugging}
@@ -54,7 +50,7 @@ qemu-s390x-static -L /usr/s390x-linux-gnu ./clickhouse
 Install LLDB:
 
 ```bash
-apt-get install lldb-15
+apt-get install lldb-21
 ```
 
 To Debug a s390x executable, run clickhouse using QEMU in debug mode:
