@@ -4,6 +4,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/finalizeSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultColumns.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeSelector.h>
@@ -26,6 +27,24 @@ namespace
     {
         switch (node->node_type)
         {
+            case NodeType::ScalarLiteral:
+            {
+                const auto * scalar_node = static_cast<const PQT::ScalarLiteral *>(node);
+                return fromLiteral(scalar_node, context);
+            }
+
+            case NodeType::StringLiteral:
+            {
+                const auto * string_node = static_cast<const PQT::StringLiteral *>(node);
+                return fromLiteral(string_node, context);
+            }
+
+            case NodeType::Duration:
+            {
+                const auto * duration_node = static_cast<const PQT::Duration *>(node);
+                return fromLiteral(duration_node, context);
+            }
+
             case NodeType::InstantSelector:
             {
                 const auto * instant_selector = static_cast<const PQT::InstantSelector *>(node);
