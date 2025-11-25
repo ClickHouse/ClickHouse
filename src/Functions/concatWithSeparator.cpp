@@ -102,12 +102,16 @@ public:
             const ColumnPtr & column = arguments[i + 1].column;
             if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
             {
+                chassert(col->size() == input_rows_count);
+
                 has_column_string = true;
                 data[2 * i] = &col->getChars();
                 offsets[2 * i] = &col->getOffsets();
             }
             else if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
             {
+                chassert(fixed_col->size() == input_rows_count);
+
                 has_column_fixed_string = true;
                 data[2 * i] = &fixed_col->getChars();
                 fixed_string_sizes[2 * i] = fixed_col->getN();
@@ -116,10 +120,24 @@ public:
             {
                 constant_strings[2 * i] = const_col->getValue<String>();
             }
+            else if (const auto * const_col_any = checkAndGetColumn<ColumnConst>(column.get()))
+            {
+                WriteBufferFromOwnString buf;
+                FormatSettings format_settings;
+                auto serialization = arguments[i + 1].type->getDefaultSerialization();
+
+                const auto & nested = const_col_any->getDataColumn();
+                serialization->serializeText(nested, 0, buf, format_settings);
+
+                constant_strings[2 * i] = buf.str();
+            }
             else
             {
                 /// A non-String/non-FixedString-type argument: use the default serialization to convert it to String
                 auto full_column = column->convertToFullIfNeeded();
+
+                chassert(full_column->size() == input_rows_count);
+
                 auto serialization = arguments[i +1].type->getDefaultSerialization();
                 auto converted_col_str = ColumnString::create();
                 ColumnStringHelpers::WriteHelper<ColumnString> write_helper(*converted_col_str, column->size());

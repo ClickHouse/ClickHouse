@@ -451,7 +451,9 @@ def main():
     if res and not info.is_local_run:
 
         def prepare_historical_data():
-            cidb = CIDBCluster()
+            cidb = CIDBCluster(
+                url="https://play.clickhouse.com?user=play", user="", pwd=""
+            )
             assert cidb.is_ready()
             result = cidb.do_select_query(
                 query=GET_HISTORICAL_TRESHOLDS_QUERY, timeout=10, retries=3
@@ -520,6 +522,7 @@ def main():
             f"rm {perf_right_config}/config.d/memory_profiler.yaml ||:",
             f"rm {perf_right_config}/config.d/serverwide_trace_collector.xml ||:",
             f"rm {perf_right_config}/config.d/jemalloc_flush_profile.yaml ||:",
+            f"rm -vf {perf_right_config}/config.d/keeper_max_request_size.xml",
             # backups disk uses absolute path, and this overlaps between servers, that could lead to errors
             f"rm {perf_right_config}/config.d/backups.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",

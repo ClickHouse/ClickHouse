@@ -82,28 +82,6 @@ If the table already exists and `IF NOT EXISTS` is specified, the query won't do
 
 There can be other clauses after the `ENGINE` clause in the query. See detailed documentation on how to create tables in the descriptions of [table engines](/engines/table-engines).
 
-:::tip
-In ClickHouse Cloud please split this into two steps:
-1. Create the table structure
-
-  ```sql
-  CREATE TABLE t1
-  ENGINE = MergeTree
-  ORDER BY ...
-  -- highlight-next-line
-  EMPTY AS
-  SELECT ...
-  ```
-
-2. Populate the table
-
-  ```sql
-  INSERT INTO t1
-  SELECT ...
-  ```
-
-:::
-
 **Example**
 
 Query:
@@ -547,7 +525,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 To create a temporary table, use the following syntax:
 
 ```sql
-CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
+CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],

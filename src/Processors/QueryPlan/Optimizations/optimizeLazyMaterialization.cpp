@@ -119,7 +119,6 @@ static void collectLazilyReadColumnNames(
     NameSet lazily_read_column_name_set;
 
     const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
-        .withExtendedObjects()
         .withSubcolumns(storage_snapshot->storage.supportsSubcolumns());
 
     for (const auto & column_name : all_column_names)
@@ -131,13 +130,11 @@ static void collectLazilyReadColumnNames(
     for (const auto & column_name : lazily_read_column_name_set)
         alias_index.emplace(column_name, column_name);
 
-    if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
-    {
-        if (prewhere_info->row_level_filter)
-            removeUsedColumnNames(*prewhere_info->row_level_filter, lazily_read_column_name_set, alias_index, prewhere_info->row_level_column_name);
+    if (const auto & row_level_filter = read_from_merge_tree->getRowLevelFilter())
+        removeUsedColumnNames(row_level_filter->actions, lazily_read_column_name_set, alias_index, row_level_filter->column_name);
 
+    if (const auto & prewhere_info = read_from_merge_tree->getPrewhereInfo())
         removeUsedColumnNames(prewhere_info->prewhere_actions, lazily_read_column_name_set, alias_index, prewhere_info->prewhere_column_name);
-    }
 
     for (auto step_it = steps.rbegin(); step_it != steps.rend(); ++step_it)
     {
@@ -241,7 +238,7 @@ bool optimizeLazyMaterialization(QueryPlan::Node & root, Stack & stack, QueryPla
     if (!sorting_step)
         return false;
 
-    if (sorting_step->getType() != SortingStep::Type::Full)
+    if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
         return false;
 
     const auto limit = limit_step->getLimit();

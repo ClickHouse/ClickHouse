@@ -34,7 +34,9 @@ from integration.helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
+from integration.helpers.config_cluster import minio_access_key, minio_secret_key
 from generators import Generator, BuzzHouseGenerator
+from leaks import ElOracloDeLeaks
 from oracles import ElOraculoDeTablas
 from properties import (
     modify_server_settings,
@@ -258,6 +260,12 @@ parser.add_argument(
     help="Add 'shared_database_catalog' settings",
 )
 parser.add_argument(
+    "--without-database-replicated",
+    action="store_false",
+    dest="add_database_replicated",
+    help="Add 'database_replicated' settings",
+)
+parser.add_argument(
     "--compare-table-dump-prob",
     type=int,
     default=50,
@@ -302,6 +310,15 @@ parser.add_argument(
     type=pathlib.Path,
     help="With Unity catalog for Spark, path to Unity dir",
 )
+parser.add_argument(
+    "--with-leak-detection", action="store_true", help="Check for memory leaks"
+)
+parser.add_argument(
+    "--time-between-leak-detections",
+    type=ordered_pair,
+    default=(20, 30),
+    help="In seconds. Two ordered integers separated by comma (e.g., 30,60)",
+)
 
 args = parser.parse_args()
 
@@ -341,13 +358,31 @@ os.environ["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = server_path
 
 # Find if private binary is being used
 is_private_binary = False
-with open(current_server, "r+") as f:
-    mm = mmap.mmap(f.fileno(), 0)
-    is_private_binary = mm.find(b"LRU_OVERCOMMIT") > -1
+with open(current_server, "rb") as f:
+    mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+    is_private_binary = mm.find(b"isCoordinatedMergesTasksActivated") > -1
     mm.close()
 
 logger.info(f"Private binary {"" if is_private_binary else "not "}detected")
 keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
+
+if args.with_minio:
+    # Set environment variables before cluster starts
+    credentials_file = tempfile.NamedTemporaryFile()
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+    os.environ["AWS_REGION"] = "us-east-1"
+    os.environ["AWS_ENDPOINT_URL"] = "http://localhost:3000"
+    os.environ["MINIO_ACCESS_KEY"] = minio_access_key
+    os.environ["MINIO_SECRET_KEY"] = minio_secret_key
+    with open(credentials_file.name, "w+") as file:
+        file.write(
+            f"[default]\naws_access_key_id = testing\naws_secret_access_key = testing\naws_session_token = testing\naws_region = us-east-1\naws_endpoint_url = http://localhost:3000\n"
+        )
+    os.environ["AWS_CONFIG_FILE"] = credentials_file.name
+    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
+
 cluster = ClickHouseCluster(
     __file__, custom_keeper_configs=keeper_configs, azurite_default_port=10000
 )
@@ -420,19 +455,9 @@ servers[len(servers) - 1].wait_start(8)
 servers[0].give_user_files_permissions()
 
 # Uploaders for object storage
-credentials_file = tempfile.NamedTemporaryFile()
 if args.with_minio:
     prepare_s3_bucket(cluster)
     cluster.default_s3_uploader = S3Uploader(cluster.minio_client, cluster.minio_bucket)
-    os.environ["AWS_ACCESS_KEY_ID"] = cluster.minio_access_key
-    os.environ["AWS_SECRET_ACCESS_KEY"] = cluster.minio_secret_key
-    os.environ["AWS_REGION"] = "us-east-1"
-    with open(credentials_file.name, "w+") as file:
-        file.write(
-            f"[default]\naws_access_key_id = {cluster.minio_access_key}\naws_secret_access_key = {cluster.minio_secret_key}\n"
-        )
-    os.environ["AWS_CONFIG_FILE"] = credentials_file.name
-    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
 if args.with_azurite:
     cluster.blob_service_client = cluster.blob_service_client
     cluster.container_client = cluster.blob_service_client.create_container(
@@ -538,25 +563,60 @@ if args.with_redis:
 # This is the main loop, run while client and server are running
 all_running = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
+# Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
 integration_lower_bound, integration_upper_bound = (
     args.time_between_integration_shutdowns
 )
+# Leak detection
+leak_detector: ElOracloDeLeaks = ElOracloDeLeaks()
+leak_lower_bound, leak_upper_bound = args.time_between_leak_detections
+if args.with_leak_detection:
+    leak_detector.reset_and_capture_baseline(cluster)
+
+
+def explain_returncode(rc: int) -> str:
+    if rc == 0:
+        return "successfully (0)."
+    if rc < 0:
+        sig = -rc
+        try:
+            name = signal.Signals(sig).name
+        except ValueError:
+            name = f"SIG{sig}"
+        try:
+            reason = signal.strsignal(sig)  # Py3.8+ (wording varies by platform)
+        except Exception:
+            reason = ""
+        extra = f" - {reason}" if reason else ""
+        return f"terminated by signal {sig} ({name}){extra}."
+    return f"with status {rc}."
+
+
 while all_running:
     start = time.time()
     finish = start + random.randint(lower_bound, upper_bound)
+    next_leak_detection = start + random.randint(leak_lower_bound, leak_upper_bound)
 
     while all_running and start < finish:
         interval = 1
         if client.process.poll() is not None:
-            logger.info("Load generator finished")
+            logger.info(
+                f"Load generator finished {explain_returncode(client.process.returncode)}"
+            )
             all_running = False
         for server in servers:
-            try:
-                server.query("SELECT 1;")
-            except:
+            pid = server.get_process_pid("clickhouse")
+            if pid is None:
                 logger.info(f"The server {server.name} is not running")
                 all_running = False
+        if (
+            all_running
+            and args.with_leak_detection
+            and next_leak_detection < time.time()
+        ):
+            leak_detector.run_next_leak_detection(cluster, client)
+            next_leak_detection += random.randint(leak_lower_bound, leak_upper_bound)
         time.sleep(interval)
         start += interval
 
@@ -600,6 +660,9 @@ while all_running:
             os.rename(new_temp_server_path, server_path)
         time.sleep(15)  # Let the zookeeper session expire
         next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
+        if args.with_leak_detection and next_pick.name == "node0":
+            # Has to reset leak detector
+            leak_detector.reset_and_capture_baseline(cluster)
     elif len(integrations) > 0:
         # Restart any other integration
         next_pick = random.choice(integrations)

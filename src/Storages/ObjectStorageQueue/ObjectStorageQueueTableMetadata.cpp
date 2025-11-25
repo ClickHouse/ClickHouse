@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
@@ -55,7 +56,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     const ColumnsDescription & columns_,
     const std::string & format_)
     : format_name(format_)
-    , columns(columns_.toString())
+    , columns(columns_.toString(true))
     , mode(engine_settings[ObjectStorageQueueSetting::mode].toString())
     , last_processed_path(engine_settings[ObjectStorageQueueSetting::last_processed_path])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
@@ -97,6 +98,10 @@ ObjectStorageQueueAction ObjectStorageQueueTableMetadata::actionFromString(const
         return ObjectStorageQueueAction::KEEP;
     if (action == "delete")
         return ObjectStorageQueueAction::DELETE;
+    if (action == "move")
+        return ObjectStorageQueueAction::MOVE;
+    if (action == "tag")
+        return ObjectStorageQueueAction::TAG;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected ObjectStorageQueue action: {}", action);
 }
 
@@ -108,6 +113,10 @@ std::string ObjectStorageQueueTableMetadata::actionToString(ObjectStorageQueueAc
             return "delete";
         case ObjectStorageQueueAction::KEEP:
             return "keep";
+        case ObjectStorageQueueAction::MOVE:
+            return "move";
+        case ObjectStorageQueueAction::TAG:
+            return "tag";
     }
 }
 

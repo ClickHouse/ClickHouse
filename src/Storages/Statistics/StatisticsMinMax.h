@@ -18,8 +18,10 @@ public:
     void serialize(WriteBuffer & buf) override;
     void deserialize(ReadBuffer & buf) override;
 
-    Float64 estimateLess(const Field & val) const override;
+    Float64 getMin() const { return min; }
+    Float64 getMax() const { return max; }
 
+    Float64 estimateLess(const Field & val) const override;
     String getNameForLogs() const override { return "MinMax : (" + toString(min) + ", " + toString(max); }
 private:
     Float64 min = std::numeric_limits<Float64>::max();
@@ -29,7 +31,7 @@ private:
     DataTypePtr data_type;
 };
 
-void minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
+bool minMaxStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
 
 }

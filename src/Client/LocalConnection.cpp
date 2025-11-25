@@ -16,6 +16,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
+#include <Common/config_version.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -286,14 +287,10 @@ void LocalConnection::sendQuery(
                 state->block = state->pushing_executor->getHeader();
             }
 
-            const auto & table_id = query_context->getInsertionTable();
             if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
-                if (!table_id.empty())
-                {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    state->columns_description = storage_ptr->getInMemoryMetadataPtr()->getColumns();
-                }
+                if (query_context->hasInsertionTableColumnsDescription())
+                    state->columns_description = query_context->getInsertionTableColumnsDescription();
             }
         }
         else if (state->io.pipeline.pulling())
@@ -693,9 +690,7 @@ Packet LocalConnection::receivePacket()
         {
             if (state->columns_description)
             {
-                /// Send external table name (empty name is the main table)
-                /// (see TCPHandler::sendTableColumns)
-                packet.multistring_message = {"", state->columns_description->toString()};
+                packet.columns_description = state->columns_description->toString(/* include_comments = */ false);
             }
 
             if (state->block)
@@ -732,11 +727,15 @@ Packet LocalConnection::receivePacket()
 }
 
 void LocalConnection::getServerVersion(
-    const ConnectionTimeouts & /* timeouts */, String & /* name */,
-    UInt64 & /* version_major */, UInt64 & /* version_minor */,
-    UInt64 & /* version_patch */, UInt64 & /* revision */)
+    const ConnectionTimeouts & /* timeouts */, String & name,
+    UInt64 & version_major, UInt64 & version_minor,
+    UInt64 & version_patch, UInt64 & revision)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+    name = std::string(VERSION_NAME);
+    version_major = VERSION_MAJOR;
+    version_minor = VERSION_MINOR;
+    version_patch = VERSION_PATCH;
+    revision = DBMS_TCP_PROTOCOL_VERSION;
 }
 
 void LocalConnection::setDefaultDatabase(const String & database)

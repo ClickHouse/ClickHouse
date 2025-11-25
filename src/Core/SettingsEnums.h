@@ -347,6 +347,16 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
+enum class AlterColumnSecondaryIndexMode : uint8_t
+{
+    THROW,
+    DROP,
+    REBUILD,
+    COMPATIBILITY,
+};
+
+DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
+
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
@@ -363,6 +373,8 @@ enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
+    MOVE,
+    TAG,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)
@@ -394,6 +406,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     UNITY,
     GLUE,
     ICEBERG_HIVE,
+    ICEBERG_ONELAKE,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -422,6 +435,22 @@ enum class GeoToH3ArgumentOrder : uint8_t
 };
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
+
+enum class MergeTreeSerializationInfoVersion : uint8_t
+{
+    BASIC = 0,
+    WITH_TYPES = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
+
+enum class MergeTreeStringSerializationVersion : uint8_t
+{
+    SINGLE_STREAM = 0,
+    WITH_SIZE_STREAM = 1,
+};
+
+DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
 
 enum class MergeTreeObjectSerializationVersion : uint8_t
 {
@@ -459,6 +488,14 @@ enum class SearchOrphanedPartsDisks : uint8_t
 
 DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 
+enum class DecorrelationJoinKind : uint8_t
+{
+    LEFT = 0,
+    RIGHT,
+};
+
+DECLARE_SETTING_ENUM(DecorrelationJoinKind)
+
 enum class IcebergMetadataLogLevel : uint8_t
 {
     None = 0,
@@ -470,4 +507,20 @@ enum class IcebergMetadataLogLevel : uint8_t
 };
 
 DECLARE_SETTING_ENUM(IcebergMetadataLogLevel)
+
+enum class ObjectStorageGranularityLevel : uint8_t
+{
+    FILE = 0,
+    BUCKET = 1,
+};
+
+DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
+enum class ArrowFlightDescriptorType : uint8_t
+{
+    Path = 0,
+    Command
+};
+
+DECLARE_SETTING_ENUM(ArrowFlightDescriptorType)
+
 }

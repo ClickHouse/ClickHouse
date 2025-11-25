@@ -1,13 +1,14 @@
 #pragma once
 
-#include "config.h"
-
 #include <string>
 #include <string_view>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Columns/IColumn.h>
+#include <Storages/KeyDescription.h>
+#include <Core/SortDescription.h>
 
 #if USE_AVRO
 
@@ -16,7 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 
@@ -28,8 +29,23 @@ void writeMessageToFile(
     const String & filename,
     DB::ObjectStoragePtr object_storage,
     DB::ContextPtr context,
-    std::function<void()> cleanup,
+    const std::string & write_if_none_match,
+    const std::string & write_if_match = "",
     DB::CompressionMethod compression_method = DB::CompressionMethod::None);
+
+/// Tries to write metadata file and version hint file. Uses If-None-Match header to avoid overwriting existing files.
+/// Maybe return false if failed to write metadata.json
+/// Will try to write hint multiple times, but will not report failure to write hint.
+bool writeMetadataFileAndVersionHint(
+    const std::string & metadata_file_path,
+    const std::string & metadata_file_content,
+    const std::string & version_hint_path,
+    std::string version_hint_content,
+    DB::ObjectStoragePtr object_storage,
+    DB::ContextPtr context,
+    DB::CompressionMethod compression_method,
+    bool try_write_version_hint
+);
 
 std::string getProperFilePathFromMetadataInfo(std::string_view data_path, std::string_view common_path, std::string_view table_location);
 
@@ -65,6 +81,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
+    ASTPtr order_by,
+    ContextPtr context,
     UInt64 format_version = 2);
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -73,6 +91,20 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log);
+
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// Parse transform and argument from input parameter
+/// "x" -> {"identity", "x"}
+/// "identity(x)" -> {"identity", "x"}
+/// "bucket(16, x)" -> {"bucket[16]", "x"}
+std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i);
+DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
+
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+
 }
 
 #endif
