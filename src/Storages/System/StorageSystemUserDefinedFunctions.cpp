@@ -36,12 +36,16 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             }),
             "Loading status. Possible values: "
             "SUCCESS — UDF loaded and ready to use, "
-            "FAILED — UDF failed to load (see error_message for details)."},
-        {"error_message", std::make_shared<DataTypeString>(),
+            "FAILED — UDF failed to load (see loading_error_message for details)."},
+        {"loading_error_message", std::make_shared<DataTypeString>(),
             "Detailed error message when loading fails. Empty if loaded successfully."},
         {"last_loading_time", std::make_shared<DataTypeDateTime>(),
             "Timestamp when the last loading attempt started."},
-        {"type", std::make_shared<DataTypeString>(),
+        {"type", std::make_shared<DataTypeEnum8>(
+            DataTypeEnum8::Values{
+                {"executable", 0},
+                {"executable_pool", 1}
+            }),
             "UDF type: 'executable' (single process) or 'executable_pool' (process pool)."},
         {"command", std::make_shared<DataTypeString>(),
             "Script or command to execute for this UDF."},
@@ -116,7 +120,8 @@ void StorageSystemUserDefinedFunctions::fillData(
             const auto coordinator = udf_ptr->getCoordinator();
             const auto & exec_config = coordinator->getConfiguration();
 
-            res_columns[i++]->insert(exec_config.is_executable_pool ? "executable_pool" : "executable");
+            // Type enum: 0 = executable, 1 = executable_pool
+            res_columns[i++]->insert(exec_config.is_executable_pool ? Int8(1) : Int8(0));
 
             // Reconstruct full command with arguments for user visibility
             String full_command = config.command;
@@ -158,9 +163,10 @@ void StorageSystemUserDefinedFunctions::fillData(
         else
         {
             // Failed to load - configuration unavailable, insert defaults for all config fields
-            // Calculate: total columns - current position - statistics fields (3)
-            constexpr size_t stats_fields_count = 3; // last_successful_update_time, loading_duration, error_count
-            size_t config_fields_count = res_columns.size() - i - stats_fields_count;
+            // Config fields: type, command, format, return_type, return_name, argument_types, argument_names,
+            // max_command_execution_time, command_termination_timeout, command_read_timeout, command_write_timeout,
+            // pool_size, send_chunk_header, execute_direct, lifetime, deterministic
+            constexpr size_t config_fields_count = 16;
             for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }

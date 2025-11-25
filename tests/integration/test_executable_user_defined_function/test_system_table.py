@@ -124,24 +124,18 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
             command,
             format,
             return_type,
-            error_message
+            loading_error_message
         FROM system.user_defined_functions
         WHERE name = 'test_working_udf'
-        FORMAT Vertical
+        FORMAT TSV
         """
     )
 
     print("LOADED UDF result:")
     print(result)
 
-    assert "name: test_working_udf" in result
-    assert "status: SUCCESS" in result
-    assert "type: executable" in result
-    assert "command: working_script.sh" in result
-    assert "format: TabSeparated" in result
-    assert "return_type: String" in result
-    # Error message should be empty for loaded UDFs
-    assert "error_message:" in result
+    expected = "test_working_udf\tSUCCESS\texecutable\tworking_script.sh\tTabSeparated\tString\t"
+    assert result.strip() == expected.strip()
 
     # Query pool UDF configuration
     result = node.query(
@@ -156,55 +150,40 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
             argument_names
         FROM system.user_defined_functions
         WHERE name = 'test_working_pool_udf'
-        FORMAT Vertical
+        FORMAT TSV
         """
     )
 
     print("\nPool UDF configuration:")
     print(result)
 
-    assert "name: test_working_pool_udf" in result
-    assert "type: executable_pool" in result
-    assert "pool_size: 4" in result
-    assert "max_command_execution_time: 30" in result
-    assert "send_chunk_header: 1" in result
-    assert "deterministic: 1" in result
-    assert "argument_names: ['value']" in result
+    expected = "test_working_pool_udf\texecutable_pool\t4\t30\t1\t1\t['value']"
+    assert result.strip() == expected.strip()
 
 
 def test_system_user_defined_functions_failed_status(started_cluster):
     """Test querying FAILED UDFs and their error messages"""
     skip_test_msan(node)
 
-    # Query failed UDF
+    # Query failed UDF - check specific fields
     result = node.query(
         """
         SELECT
             name,
             status,
-            error_message,
-            error_count,
-            last_loading_time
+            error_count > 0 AS has_errors,
+            position(loading_error_message, 'InvalidTypeName123') > 0 OR position(loading_error_message, 'UNKNOWN_TYPE') > 0 AS has_error_info
         FROM system.user_defined_functions
         WHERE name = 'test_failed_udf_invalid_type'
-        FORMAT Vertical
+        FORMAT TSV
         """
     )
 
     print("FAILED UDF result:")
     print(result)
 
-    assert "name: test_failed_udf_invalid_type" in result
-    assert "status: FAILED" in result
-
-    # Error message should contain information about the failure
-    assert "error_message:" in result
-    # The actual error message will mention the invalid type
-    assert "InvalidTypeName123" in result or "UNKNOWN_TYPE" in result
-    assert len(result) > 100  # Should have substantial error message
-
-    # error_count should be > 0 for failed UDFs
-    assert "error_count:" in result
+    expected = "test_failed_udf_invalid_type\tFAILED\t1\t1"
+    assert result.strip() == expected.strip()
 
 
 def test_system_user_defined_functions_list_all_statuses(started_cluster):
@@ -220,71 +199,77 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
         FROM system.user_defined_functions
         GROUP BY status
         ORDER BY status
-        FORMAT Vertical
+        FORMAT TSV
         """
     )
 
     print("UDFs by status:")
     print(result)
 
-    # Should have both SUCCESS and FAILED
-    assert "status: SUCCESS" in result or "status: 0" in result
-    assert "status: FAILED" in result or "status: 1" in result
+    # Should have both SUCCESS (2 working UDFs) and FAILED (1 broken UDF)
+    lines = result.strip().split('\n')
+    assert len(lines) == 2
+    assert lines[0] == "SUCCESS\t2"
+    assert lines[1] == "FAILED\t1"
 
-    # List all failed UDFs with their errors
+    # List all failed UDFs
     result = node.query(
         """
-        SELECT
-            name,
-            status,
-            substring(error_message, 1, 100) as error_preview
+        SELECT name
         FROM system.user_defined_functions
         WHERE status = 'FAILED'
-        FORMAT Vertical
+        FORMAT TSV
         """
     )
 
     print("\nAll FAILED UDFs:")
     print(result)
 
-    assert "test_failed_udf_invalid_type" in result
+    assert result.strip() == "test_failed_udf_invalid_type"
 
 
 def test_system_user_defined_functions_columns(started_cluster):
     """Verify all expected columns exist"""
     skip_test_msan(node)
 
-    result = node.query("DESCRIBE system.user_defined_functions")
+    result = node.query(
+        """
+        SELECT name
+        FROM system.columns
+        WHERE database = 'system' AND table = 'user_defined_functions'
+        ORDER BY name
+        FORMAT TSV
+        """
+    )
 
-    print("Table schema:")
+    print("Table columns:")
     print(result)
 
-    # Core status columns
-    assert "name\t" in result
-    assert "status\t" in result
-    assert "error_message\t" in result
-    assert "last_loading_time\t" in result
+    expected_columns = [
+        "argument_names",
+        "argument_types",
+        "command",
+        "command_read_timeout",
+        "command_termination_timeout",
+        "command_write_timeout",
+        "deterministic",
+        "error_count",
+        "execute_direct",
+        "format",
+        "last_loading_time",
+        "last_successful_update_time",
+        "lifetime",
+        "loading_duration",
+        "loading_error_message",
+        "max_command_execution_time",
+        "name",
+        "pool_size",
+        "return_name",
+        "return_type",
+        "send_chunk_header",
+        "status",
+        "type",
+    ]
 
-    # Configuration columns
-    assert "type\t" in result
-    assert "command\t" in result
-    assert "format\t" in result
-    assert "return_type\t" in result
-    assert "return_name\t" in result
-    assert "argument_types\t" in result
-    assert "argument_names\t" in result
-
-    # Execution parameter columns
-    assert "max_command_execution_time\t" in result
-    assert "command_termination_timeout\t" in result
-    assert "command_read_timeout\t" in result
-    assert "command_write_timeout\t" in result
-    assert "pool_size\t" in result
-    assert "send_chunk_header\t" in result
-    assert "execute_direct\t" in result
-
-    # Additional metadata
-    assert "lifetime\t" in result
-    assert "deterministic\t" in result
-    assert "loading_duration\t" in result
-    assert "error_count\t" in result
+    actual_columns = result.strip().split('\n')
+    assert actual_columns == expected_columns
