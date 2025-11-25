@@ -906,7 +906,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     auto object = std::make_shared<StoredObject>(object_key.serialize(), path);
 
     /// Previous remote blobs have to be deleted IFF metadata transaction is committed.
-    if (mode == WriteMode::Rewrite && !object_storage.isPlain())
+    if (mode == WriteMode::Rewrite && !metadata_storage.isPlain())
         truncateFile(object->local_path, /*size*/ 0);
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, create_blob_if_empty));
@@ -965,7 +965,7 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
 
     auto object = std::make_shared<StoredObject>(object_key.serialize(), path);
 
-    if (mode == WriteMode::Rewrite && !object_storage.isPlain())
+    if (mode == WriteMode::Rewrite && !metadata_storage.isPlain())
         truncateFile(object->local_path, /*size*/ 0);
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, /*do_not_write_empty_blob*/ false));
@@ -1021,7 +1021,7 @@ void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
-    if (object_storage.isPlain() && !object_storage.isWriteOnce())
+    if (metadata_storage.isPlain())
     {
         operations_to_execute.emplace_back(
             std::make_shared<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
