@@ -6634,6 +6634,12 @@ Enables Test level logs of DeltaLake expression visitor. These logs can be too v
     DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
 Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
 )", 0) \
+    DECLARE(Int64, delta_lake_snapshot_start_version, -1, R"(
+Start version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_end_version, -1, R"(
+End version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
     DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
 Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
 )", 0) \
