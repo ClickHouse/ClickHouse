@@ -903,9 +903,10 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
             onelake_client_id,
             onelake_client_secret
         );
-    } else {
+    }
+    else
+    {
         parsable_arguments.fromASTImpl(engine_args, context, with_structure);
-
     }
     initializeFromParsedArguments(parsable_arguments);
     setPaths({parsable_arguments.blob_path});

@@ -4,7 +4,8 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Common/Exception.h>
 
-namespace DB {
+namespace DB
+{
 struct StorageParsedArguments
 {
     String format = "auto";

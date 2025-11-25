@@ -17,7 +17,8 @@
 #include <Common/Exception.h>
 #include <Formats/FormatFilterInfo.h>
 
-namespace DB {
+namespace DB
+{
 
 class NamedCollection;
 class SinkToStorage;
