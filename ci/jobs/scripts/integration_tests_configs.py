@@ -109,6 +109,7 @@ TEST_CONFIGS = [
     TC("test_keeper_ipv4_fallback/test.py", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark/", True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_with_spark_xx/", True, "no idea why i'm sequential"),
     TC(
         "test_storage_iceberg_schema_evolution/",
         True,
