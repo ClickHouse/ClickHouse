@@ -700,8 +700,14 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
             auto & current_columns = getData(hash_joins[0])->columns;
             current_columns.splice(current_columns.end(), getData(hash_joins[i])->columns);
             getData(hash_joins[0])->allocated_size += getData(hash_joins[i])->allocated_size;
+            getData(hash_joins[0])->rows_to_join += getData(hash_joins[i])->rows_to_join;
+            getData(hash_joins[0])->keys_to_join += getData(hash_joins[i])->keys_to_join;
+
             getData(hash_joins[i])->allocated_size = 0;
+            getData(hash_joins[i])->rows_to_join = 0;
+            getData(hash_joins[i])->keys_to_join = 0;
         }
+        getData(hash_joins[0])->sorted = false;
 
         /// rebuild per-slot right-side nullmaps into slot 0 so that
         /// non-joined rows saved due to NULL keys or ON-filtered rows are emitted only once
