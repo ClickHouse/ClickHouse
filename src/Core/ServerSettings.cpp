@@ -771,6 +771,18 @@ namespace DB
     ```
     )", 0) \
     DECLARE(UInt64, max_database_num_to_throw, 0lu, R"(If number of databases is greater than this value, server will throw an exception. 0 means no limitation.)", 0) \
+    DECLARE(UInt64, max_access_entities_per_storage_to_throw, 0lu, R"(
+    If number of access entities in the access storage is greater than this value, server will throw an exception. Entity count is not shared across different storages.
+
+    :::note
+    A value of `0` means no limitation.
+    :::
+
+    **Example**
+    ```xml
+    <max_access_entities_num_to_throw>400</max_access_entities_num_to_throw>
+    ```
+    )", 0) \
     DECLARE(UInt64, max_authentication_methods_per_user, 100, R"(
     The maximum number of authentication methods a user can be created with or altered to.
     Changing this setting does not affect existing users. Create/alter authentication-related queries will fail if they exceed the limit specified in this setting.

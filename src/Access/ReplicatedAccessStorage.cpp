@@ -28,9 +28,10 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    bool allow_backup_)
+    bool allow_backup_,
+    UInt64 access_entities_num_limit_)
     : IAccessStorage(storage_name_)
-    , memory_storage(storage_name_, changes_notifier_, false)
+    , memory_storage(storage_name_, changes_notifier_, false, access_entities_num_limit_)
     , replicator(storage_name_, zookeeper_path_, get_zookeeper_, changes_notifier_, memory_storage)
     , backup_allowed(allow_backup_)
 {

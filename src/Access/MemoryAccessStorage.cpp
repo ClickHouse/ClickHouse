@@ -7,8 +7,13 @@
 
 namespace DB
 {
-MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_)
-    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_)
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_ACCESS_ENTITIES;
+}
+
+MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_, UInt64 access_entities_num_limit_)
+    : IAccessStorage(storage_name_), changes_notifier(changes_notifier_), backup_allowed(allow_backup_), access_entities_num_limit(access_entities_num_limit_)
 {
 }
 
@@ -68,7 +73,15 @@ bool MemoryAccessStorage::insertImpl(const UUID & id, const AccessEntityPtr & ne
 }
 
 
-bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify)
+bool MemoryAccessStorage::insertIgnoreLimit(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
+{
+    std::lock_guard lock{mutex};
+    UUID conflicting_id;
+    return insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, &conflicting_id, /* notify = */ true, /* ignore_limit = */ true);
+}
+
+
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify, bool ignore_limit)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
@@ -111,6 +124,9 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
             return false;
         }
     }
+
+    if (!ignore_limit && !(name_collision && (id_by_name != id)) && !id_collision && entityLimitReached())
+        throwTooManyEntities(entries_by_id.size() + 1);
 
     /// Remove collisions if necessary.
     if (name_collision && (id_by_name != id))
@@ -281,6 +297,10 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     auto entities_without_conflicts = all_entities;
     clearConflictsInEntitiesList(entities_without_conflicts, getLogger());
 
+    /// It is ok if total count equals access_entities_num_limit, so throw only if it is greater than limit
+    if (entityLimitWillBeReached(all_entities.size() - 1))
+        throwTooManyEntities(all_entities.size());
+
     /// Remove entities which are not used anymore.
     boost::container::flat_set<UUID> ids_to_keep;
     ids_to_keep.reserve(entities_without_conflicts.size());
@@ -291,6 +311,25 @@ void MemoryAccessStorage::setAll(const std::vector<std::pair<UUID, AccessEntityP
     /// Insert or update entities.
     for (const auto & [id, entity] : entities_without_conflicts)
         insertNoLock(id, entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false, /* conflicting_id = */ nullptr, /* notify= */ notify);
+}
+
+bool MemoryAccessStorage::entityLimitReached() const
+{
+    return entityLimitWillBeReached(entries_by_id.size());
+}
+
+bool MemoryAccessStorage::entityLimitWillBeReached(const UInt64 result_number) const
+{
+    return access_entities_num_limit > 0 && result_number >= access_entities_num_limit;
+}
+
+void MemoryAccessStorage::throwTooManyEntities(UInt64 result_number) const
+{
+    result_number = result_number ? result_number : entries_by_id.size();
+    throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
+                                    "Too many access entities. "
+                                    "The limit (server configuration parameter `max_access_entities_num_to_throw`) is set to {}, the current number is {}, the result number will be {}",
+                                        access_entities_num_limit, entries_by_id.size(), result_number);
 }
 
 }

@@ -289,6 +289,8 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     if (config_.has("custom_settings_prefixes"))
         setCustomSettingsPrefixes(config_.getString("custom_settings_prefixes"));
 
+    access_entities_num_limit = config_.getUInt64("max_access_entities_num_to_throw", 0);
+
     setImplicitNoPasswordAllowed(config_.getBool("allow_implicit_no_password", true));
     setNoPasswordAllowed(config_.getBool("allow_no_password", true));
     setPlaintextPasswordAllowed(config_.getBool("allow_plaintext_password", true));
@@ -332,7 +334,7 @@ void AccessControl::setUsersConfig(const Poco::Util::AbstractConfiguration & use
 
 void AccessControl::addUsersConfigStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & users_config_, bool allow_backup_)
 {
-    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this, allow_backup_);
+    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this, allow_backup_, access_entities_num_limit);
     new_storage->setConfig(users_config_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
@@ -356,7 +358,7 @@ void AccessControl::addUsersConfigStorage(
                 return;
         }
     }
-    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this, allow_backup_);
+    auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, *this, allow_backup_, access_entities_num_limit);
     new_storage->load(users_config_path_, include_from_path_, preprocessed_dir_, get_zookeeper_function_);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
@@ -375,7 +377,7 @@ void AccessControl::addReplicatedStorage(
         if (auto replicated_storage = typeid_cast<std::shared_ptr<ReplicatedAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, *changes_notifier, allow_backup_);
+    auto new_storage = std::make_shared<ReplicatedAccessStorage>(storage_name_, zookeeper_path_, get_zookeeper_function_, *changes_notifier, allow_backup_, access_entities_num_limit);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -395,7 +397,7 @@ void AccessControl::addDiskStorage(const String & storage_name_, const String & 
             }
         }
     }
-    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, *changes_notifier, readonly_, allow_backup_);
+    auto new_storage = std::make_shared<DiskAccessStorage>(storage_name_, directory_, *changes_notifier, readonly_, allow_backup_, access_entities_num_limit);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
@@ -409,7 +411,7 @@ void AccessControl::addMemoryStorage(const String & storage_name_, bool allow_ba
         if (auto memory_storage = typeid_cast<std::shared_ptr<MemoryAccessStorage>>(storage))
             return;
     }
-    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_, *changes_notifier, allow_backup_);
+    auto new_storage = std::make_shared<MemoryAccessStorage>(storage_name_, *changes_notifier, allow_backup_, access_entities_num_limit);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}'", String(new_storage->getStorageType()), new_storage->getStorageName());
 }
@@ -417,7 +419,7 @@ void AccessControl::addMemoryStorage(const String & storage_name_, bool allow_ba
 
 void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
 {
-    auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, *this, config_, prefix_);
+    auto new_storage = std::make_shared<LDAPAccessStorage>(storage_name_, *this, config_, prefix_, access_entities_num_limit);
     addStorage(new_storage);
     LOG_DEBUG(getLogger(), "Added {} access storage '{}', LDAP server name: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getLDAPServerName());
 }

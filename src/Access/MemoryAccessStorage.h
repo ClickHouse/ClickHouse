@@ -19,7 +19,7 @@ class MemoryAccessStorage : public IAccessStorage
 public:
     static constexpr char STORAGE_TYPE[] = "memory";
 
-    explicit MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_);
+    explicit MemoryAccessStorage(const String & storage_name_, AccessChangesNotifier & changes_notifier_, bool allow_backup_, UInt64 access_entities_num_limit_);
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
 
@@ -38,6 +38,12 @@ public:
 
     bool isEphemeral() const override { return true; }
 
+    bool insertIgnoreLimit(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists);
+
+    bool entityLimitReached() const;
+
+    [[noreturn]] void throwTooManyEntities(UInt64 result_number = 0) const;
+
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
@@ -46,12 +52,14 @@ private:
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
 
-    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify = true);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id, bool notify = true, bool ignore_limit = false);
     bool removeNoLock(const UUID & id, bool throw_if_not_exists, bool notify = true);
     bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, bool notify = true);
 
     void removeAllExceptNoLock(const std::vector<UUID> & ids_to_keep);
     void removeAllExceptNoLock(const boost::container::flat_set<UUID> & ids_to_keep);
+
+    bool entityLimitWillBeReached(UInt64 result_number) const;
 
     struct Entry
     {
@@ -64,5 +72,6 @@ private:
     std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
     AccessChangesNotifier & changes_notifier;
     const bool backup_allowed = false;
+    UInt64 access_entities_num_limit = 0;
 };
 }

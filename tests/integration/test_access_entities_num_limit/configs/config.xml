@@ -1,0 +1,3 @@
+<clickhouse>
+    <max_access_entities_num_to_throw>10</max_access_entities_num_to_throw>
+</clickhouse>
