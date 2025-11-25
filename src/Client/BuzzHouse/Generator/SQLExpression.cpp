@@ -242,26 +242,32 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     else if (time_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + 1))
     {
         const SQLType * tp = randomTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
+        this->allow_not_deterministic = complex;
+        lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
+        this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
     }
     else if (date_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + 1))
     {
         const SQLType * tp;
-
+        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
         std::tie(tp, std::ignore) = randomDateType(rg, std::numeric_limits<uint32_t>::max());
-        lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
+
+        this->allow_not_deterministic = complex;
+        lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
+        this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
     }
     else if (datetime_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + 1))
     {
         const SQLType * tp = randomDateTimeType(rg, std::numeric_limits<uint32_t>::max(), nullptr);
+        const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
-        lv->set_no_quote_str(
-            fmt::format("{}{}{}", tp->appendRandomRawValue(rg, *this), complex ? "::" : "", complex ? tp->typeName(false, false) : ""));
+        this->allow_not_deterministic = complex;
+        lv->set_no_quote_str(tp->appendRandomRawValue(rg, *this));
+        this->allow_not_deterministic = prev_allow_not_deterministic;
         delete tp;
     }
     else if (dec_lit && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + 1))
