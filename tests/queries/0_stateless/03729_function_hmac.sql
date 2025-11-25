@@ -38,3 +38,6 @@ DROP TABLE hmac_test;
 
 -- Test invalid algorithm (should throw error)
 SELECT HMAC('invalid_algo', 'message', 'key'); -- { serverError BAD_ARGUMENTS }
+
+-- Test big column
+SELECT hmac('sha256', toString(number), 'key') FROM system.numbers LIMIT 100000 FORMAT Null;
