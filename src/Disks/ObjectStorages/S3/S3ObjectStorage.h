@@ -32,7 +32,7 @@ private:
         std::unique_ptr<S3Settings> && s3_settings_,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
-        ObjectStorageKeysGeneratorPtr key_generator_,
+        ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true)
         : uri(uri_)
@@ -93,6 +93,8 @@ public:
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
@@ -128,9 +130,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
 
@@ -151,7 +151,7 @@ private:
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    ObjectStorageKeysGeneratorPtr key_generator;
+    const ObjectStorageKeyGeneratorPtr key_generator;
 
     LoggerPtr log;
 

@@ -89,7 +89,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     : DatabaseOrdinary(
           name_,
           metadata_path_,
-          std::filesystem::path("data") / escapeForFileName(name_) / "",
+          DatabaseCatalog::getDataDirPath(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
           database_metadata_disk_settings_)

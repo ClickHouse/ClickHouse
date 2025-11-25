@@ -777,7 +777,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
 MergeTreeIndexPtr bloomFilterIndexTextCreator(
     const IndexDescription & index)
 {
-    if (index.type == NgramTokenExtractor::getName())
+    if (index.type == NgramsTokenExtractor::getName())
     {
         size_t n = index.arguments[0].safeGet<size_t>();
         BloomFilterParameters params(
@@ -785,20 +785,20 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
             index.arguments[2].safeGet<size_t>(),
             index.arguments[3].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<NgramTokenExtractor>(n);
+        auto tokenizer = std::make_unique<NgramsTokenExtractor>(n);
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == DefaultTokenExtractor::getName())
+    if (index.type == SplitByNonAlphaTokenExtractor::getName())
     {
         BloomFilterParameters params(
             index.arguments[0].safeGet<size_t>(), index.arguments[1].safeGet<size_t>(), index.arguments[2].safeGet<size_t>());
 
-        auto tokenizer = std::make_unique<DefaultTokenExtractor>();
+        auto tokenizer = std::make_unique<SplitByNonAlphaTokenExtractor>();
 
         return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
     }
-    if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
+    if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() == 5)
         {
@@ -810,7 +810,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
                 index.arguments[3].safeGet<size_t>(),
                 index.arguments[4].safeGet<size_t>());
 
-            auto tokenizer = std::make_unique<SparseGramTokenExtractor>(min_ngram_length, max_ngram_length);
+            auto tokenizer = std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length);
 
             return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
         }
@@ -825,7 +825,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(
                 index.arguments[4].safeGet<size_t>(),
                 index.arguments[5].safeGet<size_t>());
 
-            auto tokenizer = std::make_unique<SparseGramTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
+            auto tokenizer = std::make_unique<SparseGramsTokenExtractor>(min_ngram_length, max_ngram_length, min_cutoff_length);
 
             return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
 
@@ -857,17 +857,17 @@ void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach
                 "Ngram and token bloom filter indexes can only be used with column types `String`, `FixedString`, `LowCardinality(String)`, `LowCardinality(FixedString)`, `Array(String)` or `Array(FixedString)`");
     }
 
-    if (index.type == NgramTokenExtractor::getName())
+    if (index.type == NgramsTokenExtractor::getName())
     {
         if (index.arguments.size() != 4)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`ngrambf` index must have exactly 4 arguments.");
     }
-    else if (index.type == DefaultTokenExtractor::getName())
+    else if (index.type == SplitByNonAlphaTokenExtractor::getName())
     {
         if (index.arguments.size() != 3)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`tokenbf` index must have exactly 3 arguments.");
     }
-    else if (index.type == SparseGramTokenExtractor::getBloomFilterIndexName())
+    else if (index.type == SparseGramsTokenExtractor::getBloomFilterIndexName())
     {
         if (index.arguments.size() != 5 && index.arguments.size() != 6)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "`sparseGrams` index must have exactly 5 or 6 arguments.");

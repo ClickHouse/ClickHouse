@@ -400,12 +400,15 @@ def main():
         for failed_suit in failed_suits:
             failed_tests_files.append(f"tests/integration/{failed_suit}")
 
-        files.append(
-            Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
-        )
-        files.append(
-            Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
-        )
+        if failed_suits:
+            files.append(
+                Utils.compress_files_gz(failed_tests_files, f"{temp_path}/logs.tar.gz")
+            )
+            files.append(
+                Utils.compress_files_gz(config_files, f"{temp_path}/configs.tar.gz")
+            )
+            if Path("./ci/tmp/docker-in-docker.log").exists():
+                files.append("./ci/tmp/docker-in-docker.log")
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (

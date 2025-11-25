@@ -160,7 +160,7 @@ def test_write_failover(
             # Disable request failing.
             fail_request(cluster, 0)
 
-            assert node.query("CHECK TABLE s3_failover_test") == "1\n"
+            assert node.query("CHECK TABLE s3_failover_test SETTINGS check_query_single_value_result = 1") == "1\n"
             assert (
                 success_count > 1
                 or node.query("SELECT * FROM s3_failover_test FORMAT Values") == data
@@ -238,7 +238,7 @@ def test_move_failover(cluster):
     assert exception.find("Expected Error") != -1, exception
 
     # Ensure data is not corrupted.
-    assert node.query("CHECK TABLE s3_failover_test") == "1\n"
+    assert node.query("CHECK TABLE s3_failover_test SETTINGS check_query_single_value_result = 1") == "1\n"
     assert (
         node.query("SELECT id,data FROM s3_failover_test FORMAT Values")
         == "(0,'data'),(1,'data')"
