@@ -256,7 +256,9 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE}})
+                        {"delete", ObjectStorageQueueAction::DELETE},
+                        {"move", ObjectStorageQueueAction::MOVE},
+                        {"tag", ObjectStorageQueueAction::TAG}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},

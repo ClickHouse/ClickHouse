@@ -494,15 +494,11 @@ class JobConfigs:
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
-        *[
-            Job.ParamSet(
-                parameter=f"amd_tsan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_TSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter=f"amd_tsan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_tsan, sequential, {batch}/{total_batches}",
@@ -512,15 +508,11 @@ class JobConfigs:
             for total_batches in (2,)
             for batch in range(1, total_batches + 1)
         ],
-        *[
-            Job.ParamSet(
-                parameter=f"amd_msan, parallel, {batch}/{total_batches}",
-                runs_on=RunnerLabels.AMD_LARGE,
-                requires=[ArtifactNames.CH_AMD_MSAN],
-            )
-            for total_batches in (2,)
-            for batch in range(1, total_batches + 1)
-        ],
+        Job.ParamSet(
+            parameter=f"amd_msan, parallel",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
         *[
             Job.ParamSet(
                 parameter=f"amd_msan, sequential, {batch}/{total_batches}",
@@ -532,7 +524,7 @@ class JobConfigs:
         ],
         Job.ParamSet(
             parameter="amd_ubsan, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_SMALL_MEM,  # it runs much faster than many job, no need larger machine
             requires=[ArtifactNames.CH_AMD_UBSAN],
         ),
         Job.ParamSet(
@@ -552,7 +544,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="amd_tsan, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM_CPU,
+            runs_on=RunnerLabels.AMD_MEDIUM,
             requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         *[

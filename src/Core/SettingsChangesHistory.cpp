@@ -43,12 +43,19 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
+            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
+            {"check_query_single_value_result", true, false, "Changed setting to make CHECK TABLE more useful"},
             {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"query_plan_text_index_add_hint", true, true, "New setting"},
+            {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
+            {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
+            {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
-            {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
             {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
             {"cluster_table_function_split_granularity", "file", "file", "New setting."},
@@ -58,7 +65,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
