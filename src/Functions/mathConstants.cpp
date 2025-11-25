@@ -16,6 +16,9 @@ namespace
         static constexpr auto name = Impl::name;
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathConstFloat64>(); }
         FunctionMathConstFloat64() : FunctionConstantBase<FunctionMathConstFloat64<Impl>, Float64, DataTypeFloat64>(Impl::value) {}
+
+        bool isDeterministic() const override { return true; }
+        bool isSuitableForConstantFolding() const override { return true; }
     };
 
 
