@@ -268,6 +268,7 @@ struct QueryPlanSettings
             {"sorting", query_plan_options.sorting},
             {"distributed", query_plan_options.distributed},
             {"keep_logical_steps", keep_logical_steps},
+            {"input_headers", query_plan_options.input_headers},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -657,16 +658,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             }
             else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
             {
+                auto insert_context = Context::createCopy(getContext());
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
-                    query_context,
+                    insert_context,
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
-                    /* async_isnert */ false);
+                    /* async_insert */ false);
                 auto io = insert.execute();
                 printPipeline(io.pipeline.getProcessors(), buf);
-                // we do not need it anymore, it would be executed
+                // we do not need it anymore, it would not be executed
                 io.pipeline.cancel();
             }
             else

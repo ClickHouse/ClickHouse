@@ -333,7 +333,7 @@ public:
             tokens.insert(tokens.end(), n - 1, std::string_view(end_token));
         }
 
-        /// Now, create n-grams and calculate probability on the fly; each ngram will consist of n consecutive tokens
+        /// Now, create n-grams and calculate probability on the fly; each n-gram will consist of n consecutive tokens
         if (tokens.size() >= n)
         {
             std::string ngram;

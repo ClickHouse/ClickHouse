@@ -104,7 +104,7 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 
 TokensWithPosition extractTokensFromString(std::string_view value)
 {
-    DefaultTokenExtractor default_token_extractor;
+    SplitByNonAlphaTokenExtractor default_token_extractor;
 
     size_t cur = 0;
     size_t token_start = 0;
@@ -274,8 +274,8 @@ void executeString(
 {
     if (tokens.empty())
     {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_rows_count, UInt8(1));
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_rows_count, UInt8(0));
         return;
     }
 
@@ -302,8 +302,8 @@ void executeArray(
 
     if (tokens.empty())
     {
-        /// No needles mean we don't filter and all rows pass
-        col_result.assign(input_size, UInt8(1));
+        /// if no search tokens we explicitly return no matches to avoid potential undefined behavior in HasAllTokensMatcher
+        col_result.assign(input_size, UInt8(0));
         return;
     }
 
@@ -396,14 +396,25 @@ ColumnPtr FunctionHasAnyAllTokens<HasTokensTraits>::executeImpl(
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Needles argument for function '{}' has unsupported type", getName());
 
-        static DefaultTokenExtractor default_token_extractor;
+        static SplitByNonAlphaTokenExtractor default_token_extractor;
 
         execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, &default_token_extractor, search_tokens_from_args);
     }
     else
     {
         /// If token_extractor != nullptr, a text index exists and we are doing text index lookups
-        execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens.value());
+        if (token_extractor->getType() == ITokenExtractor::Type::SparseGrams)
+        {
+            /// The sparse gram token extractor stores an internal state which modified during the execution.
+            /// This leads to an error while executing this function multi-threaded because that state is not protected.
+            /// To avoid this case, a clone of the sparse gram token extractor will be used.
+            auto sparse_gram_extractor = token_extractor->clone();
+            execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, sparse_gram_extractor.get(), search_tokens.value());
+        }
+        else
+        {
+            execute<HasTokensTraits>(col_input, col_result->getData(), input_rows_count, token_extractor.get(), search_tokens.value());
+        }
     }
 
     return col_result;
@@ -538,7 +549,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_hasAnyTokens = {25, 10};
     FunctionDocumentation::Category category_hasAnyTokens = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation_hasAnyTokens = {description_hasAnyTokens, syntax_hasAnyTokens, arguments_hasAnyTokens, returned_value_hasAnyTokens, examples_hasAnyTokens, introduced_in_hasAnyTokens, category_hasAnyTokens};
 
@@ -672,7 +683,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_hasAllTokens = {25, 10};
     FunctionDocumentation::Category category_hasAllTokens = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation_hasAllTokens = {description_hasAllTokens, syntax_hasAllTokens, arguments_hasAllTokens, returned_value_hasAllTokens, examples_hasAllTokens, introduced_in_hasAllTokens, category_hasAllTokens};
 

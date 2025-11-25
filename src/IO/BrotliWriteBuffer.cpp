@@ -71,7 +71,7 @@ void BrotliWriteBuffer::nextImpl()
     }
 }
 
-void BrotliWriteBuffer::finalizeBefore()
+void BrotliWriteBuffer::finalFlushBefore()
 {
     next();
 
