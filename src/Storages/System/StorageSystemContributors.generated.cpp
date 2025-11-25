@@ -990,6 +990,7 @@ const char * auto_contributors[] {
     "Nicolae Vartolomei",
     "Niek",
     "Nihal Z.",
+    "Nihal Z. Miaji",
     "Nik",
     "NikBarykin",
     "Nikhil Nadig",
