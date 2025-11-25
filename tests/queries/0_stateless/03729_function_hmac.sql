@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- The function HMAC requires openssl library disabled in fasttest builds.
+
 -- HMAC basic function, test it's case insensitivity and correctness with known values
 SELECT
     hex(hmac('md5', 'The quick brown fox jumps over the lazy dog', 'secret_key'))    AS hmac_md5,
