@@ -4,6 +4,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLQueryPiece.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/finalizeSQL.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getResultType.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeSelector.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/modifyEvaluationTime.h>
@@ -25,6 +26,24 @@ namespace
     {
         switch (node->node_type)
         {
+            case PrometheusQueryTree::NodeType::ScalarLiteral:
+            {
+                const auto * scalar_node = static_cast<const PrometheusQueryTree::ScalarLiteral *>(node);
+                return fromLiteral(scalar_node, context);
+            }
+
+            case PrometheusQueryTree::NodeType::IntervalLiteral:
+            {
+                const auto * interval_node = static_cast<const PrometheusQueryTree::IntervalLiteral *>(node);
+                return fromLiteral(interval_node, context);
+            }
+
+            case PrometheusQueryTree::NodeType::StringLiteral:
+            {
+                const auto * string_node = static_cast<const PrometheusQueryTree::StringLiteral *>(node);
+                return fromLiteral(string_node, context);
+            }
+
             case PrometheusQueryTree::NodeType::InstantSelector:
             {
                 const auto * instant_selector = static_cast<const PrometheusQueryTree::InstantSelector *>(node);
