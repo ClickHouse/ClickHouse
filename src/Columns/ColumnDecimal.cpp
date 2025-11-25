@@ -476,8 +476,7 @@ void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
 
         if (0xffffffffffffffff == mask)
         {
-            // res_data.insert(data_pos, data_pos + SIMD_BYTES);
-            memmove(res_data, data_pos, SIMD_BYTES * sizeof(T));
+            memmove(res_data + res_size, data_pos, SIMD_BYTES * sizeof(T));
             res_size += SIMD_BYTES;
         }
         else
