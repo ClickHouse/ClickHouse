@@ -3763,6 +3763,8 @@ def main(args):
         print("All tests have finished.")
 
     try:
+        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
+
         unchecked_memory = int(clickhouse_execute(args, f"""
         SELECT sum(size) FROM system.trace_log
         WHERE
