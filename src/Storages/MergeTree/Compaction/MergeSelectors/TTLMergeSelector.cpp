@@ -186,17 +186,17 @@ PartsRanges ITTLMergeSelector::select(
     return result;
 }
 
-TTLPartDeleteMergeSelector::TTLPartDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(merge_due_times_, current_time_)
+TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_)
+    : ITTLMergeSelector(/*merge_due_times_=*/{}, current_time_)
 {
 }
 
-time_t TTLPartDeleteMergeSelector::getTTLForPart(const PartProperties & part) const
+time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) const
 {
     return part.general_ttl_info->part_max_ttl;
 }
 
-bool TTLPartDeleteMergeSelector::canConsiderPart(const PartProperties & part) const
+bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
 {
     return part.general_ttl_info.has_value();
 }
