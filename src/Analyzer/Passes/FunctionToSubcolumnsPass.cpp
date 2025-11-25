@@ -338,6 +338,9 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     if (!storage->supportsOptimizationToSubcolumns() || storage->isVirtualColumn(column.name, storage_snapshot->metadata))
         return {};
 
+    if (column.name.find('.') != String::npos)
+        return {};
+
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions::All, column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
