@@ -664,7 +664,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
             if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
                 return false;
 
-            key_const_value = const_key_argument->column->getDataAt(0).toString();
+            key_const_value = std::string{const_key_argument->column->getDataAt(0)};
         }
         else
         {

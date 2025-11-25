@@ -404,7 +404,7 @@ void MergeTreeReaderTextIndex::readPostingsIfNeeded(Granule & granule, size_t in
     PostingListPtr posting_list = nullptr;
     for (const auto & [token, postings] : remaining_tokens)
     {
-        if (!useful_tokens.contains(token.toView()))
+        if (!useful_tokens.contains(token))
         {
             continue;
         }
