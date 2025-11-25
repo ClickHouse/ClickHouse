@@ -8,6 +8,9 @@
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
+#include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/SharedMutex.h>
+
 namespace DB
 {
 
@@ -19,11 +22,12 @@ private:
     friend class MetadataStorageFromDiskTransaction;
 
     mutable SharedMutex metadata_mutex;
-    DiskPtr disk;
-    String compatible_key_prefix;
+    const DiskPtr disk;
+    const std::string compatible_key_prefix;
+    const ObjectStorageKeyGeneratorPtr key_generator;
 
 public:
-    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix);
+    MetadataStorageFromDisk(DiskPtr disk_, String compatible_key_prefix_, ObjectStorageKeyGeneratorPtr key_generator_);
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -35,6 +39,8 @@ public:
 
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return true; }
+
+    bool areBlobPathsRandom() const override { return key_generator->isRandom(); }
 
     bool existsFile(const std::string & path) const override;
     bool existsDirectory(const std::string & path) const override;
@@ -134,6 +140,8 @@ public:
     TruncateFileOperationOutcomePtr truncateFile(const std::string & src_path, size_t target_size) override;
 
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path) const override;
 };
 
 }

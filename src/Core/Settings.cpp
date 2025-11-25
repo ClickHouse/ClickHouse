@@ -3877,7 +3877,7 @@ Possible values:
 You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
 :::
 )", 0) \
-    DECLARE(Bool, check_query_single_value_result, true, R"(
+    DECLARE(Bool, check_query_single_value_result, false, R"(
 Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
 
 Possible values:
@@ -6602,7 +6602,7 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
+Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
 )", 0) \
     DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
@@ -7159,7 +7159,13 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
-Allow to perform full text search filtering using only the inverted index in query plan.
+Allow to perform full text search filtering using only the inverted text index in query plan.
+)", 0) \
+    DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
+Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
+)", 0) \
+    DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
+Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
     DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
 Whether to use a cache of deserialized text index dictionary block.
