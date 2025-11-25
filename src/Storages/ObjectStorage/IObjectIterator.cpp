@@ -112,8 +112,18 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
     if (!last_object_info)
         return {};
 
+    auto needed_format = last_object_info->getFileFormat();
 
-    auto splitter = FormatFactory::instance().getSplitter(format);
+    if (!needed_format)
+        needed_format = format;
+
+    if (!needed_format)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Format must be specified for splitting by buckets either but object info or for iterator");
+    }
+
+    auto splitter = FormatFactory::instance().getSplitter(*needed_format);
     if (splitter)
     {
         auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, object_storage, getContext(), log);

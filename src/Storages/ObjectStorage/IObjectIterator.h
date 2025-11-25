@@ -102,7 +102,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    String format;
+    std::optional<String> format;
     ObjectStoragePtr object_storage;
     FormatSettings format_settings;
 

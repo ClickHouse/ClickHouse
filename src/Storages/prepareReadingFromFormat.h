@@ -81,4 +81,11 @@ namespace DB
 
     /// Returns the serialization hints from the insertion table (if it's set in the Context).
     SerializationInfoByName getSerializationHintsForFileLikeStorage(const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
+
+    ReadFromFormatInfo prepareReadingFromFormatWithoutHiveParameters(
+        const Strings & requested_columns,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        bool supports_subset_of_columns,
+        bool supports_tuple_elements = false);
 }

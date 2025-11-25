@@ -501,14 +501,14 @@ void IcebergMetadata::mutate(
     DB::Iceberg::mutate(commands, context, metadata_snapshot, storage_id, object_storage, configuration_ptr, format_settings, catalog);
 }
 
-void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
+void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands) const
 {
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
 }
 
-void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
+void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands) const
 {
     for (const auto & command : commands)
     {
@@ -619,7 +619,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
 }
 
 
-DataLakeMetadataPtr IcebergMetadata::create(
+IcebergMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
     const ContextPtr & local_context)
@@ -863,7 +863,7 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
 
 ObjectIterator IcebergMetadata::iterate(
     const ActionsDAG * filter_dag,
-    FileProgressCallback callback,
+    IDataLakeMetadata::FileProgressCallback callback,
     size_t /* list_batch_size */,
     StorageMetadataPtr storage_metadata,
     ContextPtr local_context) const

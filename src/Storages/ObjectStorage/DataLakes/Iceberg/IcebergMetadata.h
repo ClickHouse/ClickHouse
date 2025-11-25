@@ -32,14 +32,17 @@
 namespace DB
 {
 
-class IcebergMetadata : public IDataLakeMetadata
+class IcebergMetadata;
+using IcebergMetadataPtr = std::shared_ptr<IcebergMetadata>;
+
+class IcebergMetadata
 {
 public:
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
 
     static constexpr auto name = "Iceberg";
 
-    const char * getName() const override { return name; }
+    const char * getName() const { return name; }
 
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
@@ -48,11 +51,11 @@ public:
         IcebergMetadataFilesCachePtr cache_ptr);
 
     /// Get table schema parsed from metadata.
-    NamesAndTypesList getTableSchema(ContextPtr local_context) const override;
+    NamesAndTypesList getTableSchema(ContextPtr local_context) const;
 
-    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const override;
+    StorageInMemoryMetadata getStorageSnapshotMetadata(ContextPtr local_context) const;
 
-    bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
+    bool operator==(const IDataLakeMetadata & /*other*/) const { return false; }
 
     static void createInitial(
         const ObjectStoragePtr & object_storage,
@@ -64,31 +67,31 @@ public:
         std::shared_ptr<DataLake::ICatalog> catalog,
         const StorageID & table_id_);
 
-    static DataLakeMetadataPtr create(
+    static IcebergMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const StorageObjectStorageConfigurationWeakPtr & configuration,
         const ContextPtr & local_context);
 
-    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const override;
-    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
+    std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr local_context, ObjectInfoPtr object_info) const;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const;
 
     static Int32 parseTableSchema(
         const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
-    bool supportsUpdate() const override { return true; }
-    bool supportsWrites() const override { return true; }
-    bool supportsParallelInsert() const override { return true; }
+    bool supportsUpdate() const { return true; }
+    bool supportsWrites() const { return true; }
+    bool supportsParallelInsert() const { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
 
-    std::optional<size_t> totalRows(ContextPtr Local_context) const override;
-    std::optional<size_t> totalBytes(ContextPtr Local_context) const override;
+    std::optional<size_t> totalRows(ContextPtr Local_context) const;
+    std::optional<size_t> totalBytes(ContextPtr Local_context) const;
 
-    bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+    bool isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const;
 
-    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const override;
+    ColumnMapperPtr getColumnMapperForObject(ObjectInfoPtr object_info) const;
 
-    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override;
+    ColumnMapperPtr getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const;
 
     SinkToStoragePtr write(
         SharedHeader sample_block,
@@ -97,34 +100,39 @@ public:
         StorageObjectStorageConfigurationPtr configuration,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr context,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+        std::shared_ptr<DataLake::ICatalog> catalog);
 
     CompressionMethod getCompressionMethod() const { return persistent_components.metadata_compression_method; }
 
-    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings) override;
-    bool supportsDelete() const override { return true; }
-    void mutate(const MutationCommands & commands,
+    bool optimize(const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings);
+    bool supportsDelete() const { return true; }
+    void mutate(
+        const MutationCommands & commands,
         ContextPtr context,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
         std::shared_ptr<DataLake::ICatalog> catalog,
-        const std::optional<FormatSettings> & format_settings) override;
+        const std::optional<FormatSettings> & format_settings);
 
-    void checkMutationIsPossible(const MutationCommands & commands) override;
+    void checkMutationIsPossible(const MutationCommands & commands) const;
 
-    void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, ContextPtr local_context) const override;
-    void checkAlterIsPossible(const AlterCommands & commands) override;
-    void alter(const AlterCommands & params, ContextPtr context) override;
+    void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const;
+    void addDeleteTransformers(
+        ObjectInfoPtr object_info,
+        QueryPipelineBuilder & builder,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr local_context) const;
+    void checkAlterIsPossible(const AlterCommands & commands) const;
+    void alter(const AlterCommands & params, ContextPtr context);
 
     ObjectIterator iterate(
         const ActionsDAG * filter_dag,
-        FileProgressCallback callback,
+        IDataLakeMetadata::FileProgressCallback callback,
         size_t list_batch_size,
         StorageMetadataPtr storage_metadata,
-        ContextPtr local_context) const override;
+        ContextPtr local_context) const;
 
-    void drop(ContextPtr context) override;
+    void drop(ContextPtr context);
 
 private:
     Iceberg::PersistentTableComponents initializePersistentTableComponents(
