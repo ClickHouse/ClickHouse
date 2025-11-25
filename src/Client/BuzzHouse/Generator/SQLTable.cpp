@@ -2160,6 +2160,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     uint32_t tname = 0;
     bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
+    const bool alltables = rg.nextMediumNumber() < 26;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
 
@@ -2169,8 +2170,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
 
-    const auto tableLikeLambda
-        = [&next](const SQLTable & t) { return t.isAttached() && !t.is_temp && (t.is_deterministic || !next.is_deterministic); };
+    const auto tableLikeLambda = [&next, &alltables](const SQLTable & t)
+    { return t.isAttached() && (!t.is_temp || alltables) && (t.is_deterministic || !next.is_deterministic); };
     const auto replaceTableLambda
         = [&next](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer() && (t.is_deterministic || !next.is_deterministic); };
     const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
@@ -2183,7 +2184,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     }
     else
     {
-        if (!next.is_temp && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
+        if ((!next.is_temp || alltables) && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
         {
             next.db = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
         }

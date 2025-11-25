@@ -498,6 +498,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     SQLView next;
     uint32_t tname = 0;
     const uint32_t view_ncols = rg.randomInt<uint32_t>(1, fc.max_columns);
+    const bool alltables = rg.nextMediumNumber() < 26;
     const bool prev_enforce_final = this->enforce_final;
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
     SelectParen * sparen = cv->mutable_select();
@@ -518,7 +519,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     }
     else
     {
-        if (!next.is_temp && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
+        if ((!next.is_temp || alltables) && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases) && rg.nextSmallNumber() < 9)
         {
             next.db = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases));
         }
@@ -526,7 +527,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     }
     cv->set_create_opt(
         replace ? (rg.nextBool() ? CreateReplaceOption::CreateOrReplace : CreateReplaceOption::Replace) : CreateReplaceOption::Create);
-    next.is_materialized = !next.is_temp && rg.nextBool();
+    next.is_materialized = (!next.is_temp || rg.nextMediumNumber() < 26) && rg.nextBool();
     cv->set_materialized(next.is_materialized);
     next.setName(cv->mutable_est(), false);
     if (next.is_materialized)
