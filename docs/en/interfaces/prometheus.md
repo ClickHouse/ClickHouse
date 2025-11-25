@@ -21,6 +21,7 @@ ClickHouse can expose its own metrics for scraping from Prometheus:
 <prometheus>
     <port>9363</port>
     <endpoint>/metrics</endpoint>
+    <info>true</info>
     <metrics>true</metrics>
     <asynchronous_metrics>true</asynchronous_metrics>
     <events>true</events>
@@ -58,7 +59,8 @@ Settings:
 |------------------------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `port`                       | none       | Port for serving the exposing metrics protocol.                                                                                                                                              |
 | `endpoint`                   | `/metrics` | HTTP endpoint for scraping metrics by prometheus server. Starts with `/`. Should not be used with the `<handlers>` section.                                                                  |
-| `url` / `headers` / `method` | none       | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/interfaces/http) section.                                    |
+| `url` / `headers` / `method` | none       | Filters used to find a matching handler for a request. Similar to the fields with the same names in the [`<http_handlers>`](/interfaces/http) section.
+| `info`                       | true       | Expose server information from the [system.build_options](/operations/system-tables/build_options) table.                                                                                                        |
 | `metrics`                    | true       | Expose metrics from the [system.metrics](/operations/system-tables/metrics) table.                                                                                                        |
 | `asynchronous_metrics`       | true       | Expose current metrics values from the [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) table.                                                               |
 | `events`                     | true       | Expose metrics from the [system.events](/operations/system-tables/events) table.                                                                                                          |
