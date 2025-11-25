@@ -6933,7 +6933,7 @@ Both database and table names have to be unquoted - only simple identifiers are 
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
-    DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
+    DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::BUCKET, R"(
 Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 
 This setting defines the granularity of work distribution across the cluster:
