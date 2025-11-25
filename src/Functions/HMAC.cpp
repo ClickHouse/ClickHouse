@@ -103,9 +103,7 @@ public:
 
         // Pre-allocate result data
         {
-            size_t total_size = 0;
-            for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
-                total_size += digest_length;
+            size_t total_size = input_rows_count * digest_length;
             result_data.resize(total_size);
         }
 
@@ -133,7 +131,7 @@ public:
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "HMAC digest length mismatch: expected {}, got {}", digest_length, actual_digest_length);
 
             result_ptr += digest_length;
-            result_offsets.push_back(result_offsets.empty() ? digest_length : result_offsets.back() + digest_length);
+            result_offsets.push_back((row_idx + 1) * digest_length);
         }
 
         return result_column;

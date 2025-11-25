@@ -30,7 +30,7 @@ SELECT '';
 -- Test with table data
 CREATE TEMPORARY TABLE hmac_test (message String, key String);
 INSERT INTO hmac_test VALUES ('hello', 'world'), ('foo', 'bar'), ('test', 'key');
-SELECT message, key, hex(HMAC('sha256', message, key)) AS hmac_length FROM hmac_test ORDER BY message;
+SELECT message, key, hex(HMAC('sha256', message, key)) AS hmac_hex FROM hmac_test ORDER BY message;
 DROP TABLE hmac_test;
 
 -- Test invalid algorithm (should throw error)
