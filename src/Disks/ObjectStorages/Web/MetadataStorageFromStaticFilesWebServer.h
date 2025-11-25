@@ -59,7 +59,6 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return true; }
-    bool areBlobPathsRandom() const override { return false; }
 };
 
 }

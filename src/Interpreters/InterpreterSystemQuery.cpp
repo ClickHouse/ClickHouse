@@ -1453,7 +1453,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
 
 std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_)
 {
-    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
+    fs::path metadata_dir_path("metadata");
     auto default_db_disk = getContext()->getDatabaseDisk();
     for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
@@ -1462,8 +1462,8 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
             continue;
 
         String db_name = sub_path.filename().string();
-        if (sub_path.extension() == ".sql")
-            db_name = sub_path.stem();
+        if (fs::path(db_name).extension() == ".sql")
+            db_name = fs::path(db_name).stem();
 
         auto buf = default_db_disk->readFile(sub_path, getContext()->getReadSettings());
         std::string query;

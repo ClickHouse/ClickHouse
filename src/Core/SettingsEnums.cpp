@@ -209,12 +209,6 @@ IMPLEMENT_SETTING_ENUM(DeduplicateMergeProjectionMode, ErrorCodes::BAD_ARGUMENTS
      {"drop", DeduplicateMergeProjectionMode::DROP},
      {"rebuild", DeduplicateMergeProjectionMode::REBUILD}})
 
-IMPLEMENT_SETTING_ENUM(AlterColumnSecondaryIndexMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", AlterColumnSecondaryIndexMode::THROW},
-     {"drop", AlterColumnSecondaryIndexMode::DROP},
-     {"rebuild", AlterColumnSecondaryIndexMode::REBUILD},
-     {"compatibility", AlterColumnSecondaryIndexMode::COMPATIBILITY}})
-
 IMPLEMENT_SETTING_ENUM(ParallelReplicasMode, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", ParallelReplicasMode::AUTO},
      {"read_tasks", ParallelReplicasMode::READ_TASKS},
@@ -256,9 +250,7 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueMode, ErrorCodes::BAD_ARGUMENTS,
 
 IMPLEMENT_SETTING_ENUM(ObjectStorageQueueAction, ErrorCodes::BAD_ARGUMENTS,
                        {{"keep", ObjectStorageQueueAction::KEEP},
-                        {"delete", ObjectStorageQueueAction::DELETE},
-                        {"move", ObjectStorageQueueAction::MOVE},
-                        {"tag", ObjectStorageQueueAction::TAG}})
+                        {"delete", ObjectStorageQueueAction::DELETE}})
 
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},

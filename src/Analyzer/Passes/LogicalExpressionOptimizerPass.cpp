@@ -165,8 +165,8 @@ bool isTwoArgumentsFromDifferentSides(const FunctionNode & node_function, const 
     if (argument_nodes.size() != 2)
         return false;
 
-    auto first_src = getExpressionSource(argument_nodes[0]).first;
-    auto second_src = getExpressionSource(argument_nodes[1]).first;
+    auto first_src = getExpressionSource(argument_nodes[0]);
+    auto second_src = getExpressionSource(argument_nodes[1]);
     if (!first_src || !second_src)
         return false;
 

@@ -6,8 +6,6 @@
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
-#include <Interpreters/Context_fwd.h>
-
 namespace DB
 {
 class ASTStorage;
@@ -67,7 +65,7 @@ struct KafkaSettings
 
     SettingsChanges getFormatSettings() const;
 
-    void sanityCheck(ContextPtr global_context) const;
+    void sanityCheck() const;
 
     static bool hasBuiltin(std::string_view name);
 

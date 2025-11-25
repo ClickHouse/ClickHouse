@@ -347,16 +347,6 @@ enum class DeduplicateMergeProjectionMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateMergeProjectionMode)
 
-enum class AlterColumnSecondaryIndexMode : uint8_t
-{
-    THROW,
-    DROP,
-    REBUILD,
-    COMPATIBILITY,
-};
-
-DECLARE_SETTING_ENUM(AlterColumnSecondaryIndexMode)
-
 DECLARE_SETTING_ENUM(ParallelReplicasMode)
 
 DECLARE_SETTING_ENUM(LocalFSReadMethod)
@@ -373,8 +363,6 @@ enum class ObjectStorageQueueAction : uint8_t
 {
     KEEP,
     DELETE,
-    MOVE,
-    TAG,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueAction)

@@ -244,9 +244,8 @@ public:
     bool empty() const override { return header->numberOfTokens() == 0; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
+    bool hasAnyTokenFromQuery(const TextSearchQuery & query) const;
+    bool hasAllTokensFromQuery(const TextSearchQuery & query) const;
 
     const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
     void resetAfterAnalysis();

@@ -1277,11 +1277,6 @@ void FileCache::iterate(IterateFunc && func, const UserID & user_id)
     }, user_id);
 }
 
-FileCache::CacheIteratorPtr FileCache::getCacheIterator(const UserID & user_id)
-{
-    return metadata.getIterator(user_id);
-}
-
 void FileCache::removeKey(const Key & key, const UserID & user_id)
 {
     assertInitialized();

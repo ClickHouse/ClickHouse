@@ -163,7 +163,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
+    auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client),

@@ -1,9 +1,7 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
-#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
 
 #include <memory>
 
@@ -32,24 +30,11 @@ namespace DB
   * /aaealinyzgdzycgcnpgaapdssrjirnnr/test2.txt
   * /gfkoqxvyhaasroiodbeurnftnwieiihy/test1.txt
   */
-class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
+class MetadataStorageFromPlainRewritableObjectStorage final : public MetadataStorageFromPlainObjectStorage
 {
-    friend class MetadataStorageFromPlainRewritableObjectStorageTransaction;
-
-    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
-
 public:
-    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_);
-
+    MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, std::string storage_path_prefix_, size_t object_metadata_cache_size);
     MetadataStorageType getType() const override { return MetadataStorageType::PlainRewritable; }
-    const std::string & getPath() const override { return storage_path_full; }
-    uint32_t getHardlinkCount(const std::string & /* path */) const override { return 0; }
-    bool supportsChmod() const override { return false; }
-    bool supportsStat() const override { return false; }
-    bool isReadOnly() const override { return false; }
-    bool areBlobPathsRandom() const override { return false; }
-
-    MetadataTransactionPtr createTransaction() override;
 
     /// Will reload in-memory structure from scratch.
     void dropCache() override;
@@ -63,7 +48,6 @@ public:
     std::optional<uint64_t> getFileSizeIfExists(const std::string & path) const override;
 
     std::vector<std::string> listDirectory(const std::string & path) const override;
-    DirectoryIteratorPtr iterateDirectory(const std::string & path) const override;
 
     StoredObjects getStorageObjects(const std::string & path) const override;
     std::optional<StoredObjects> getStorageObjectsIfExist(const std::string & path) const override;
@@ -72,52 +56,15 @@ public:
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
 
 private:
-    const ObjectStoragePtr object_storage;
-    const std::string storage_path_prefix;
-    const std::string storage_path_full;
     const std::string metadata_key_prefix;
-
-    std::mutex metadata_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
-    std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
-
-    std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
-};
 
-class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetadataTransaction
-{
-protected:
-    MetadataStorageFromPlainRewritableObjectStorage & metadata_storage;
-    MetadataOperationsHolder operations;
+    void load(bool is_initial_load, bool do_not_load_unchanged_directories);
+    std::mutex load_mutex;
 
-public:
-    explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
-
-    bool supportsChmod() const override { return false; }
-    void setLastModified(const String &, const Poco::Timestamp &) override { /* Noop */ }
-    void setReadOnly(const std::string & /*path*/) override { /* Noop */ }
-
-    void commit(const TransactionCommitOptionsVariant & options) override;
-
-    void createMetadataFile(const std::string & /* path */, const StoredObjects & /* objects */) override;
-    void createDirectory(const std::string & path) override;
-    void createDirectoryRecursive(const std::string & path) override;
-    void moveDirectory(const std::string & path_from, const std::string & path_to) override;
-
-    UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path) override;
-    void removeDirectory(const std::string & path) override;
-    void removeRecursive(const std::string &) override;
-
-    /// Hard links are simulated using server-side copying.
-    void createHardLink(const std::string & path_from, const std::string & path_to) override;
-    void moveFile(const std::string & path_from, const std::string & path_to) override;
-    void replaceFile(const std::string & path_from, const std::string & path_to) override;
-
-    const IMetadataStorage & getStorageForNonTransactionalReads() const override;
-    std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
-
-    ObjectStorageKey generateObjectKeyForPath(const std::string &path) const override;
+    std::string getMetadataKeyPrefix() const override { return metadata_key_prefix; }
+    std::shared_ptr<InMemoryDirectoryTree> getFsTree() const override { return fs_tree; }
 };
 
 }

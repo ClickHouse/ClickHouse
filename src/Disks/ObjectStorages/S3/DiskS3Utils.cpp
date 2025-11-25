@@ -13,7 +13,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-ObjectStorageKeyGeneratorPtr getKeyGenerator(
+ObjectStorageKeysGeneratorPtr getKeyGenerator(
     const S3::URI & uri,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
@@ -37,7 +37,7 @@ ObjectStorageKeyGeneratorPtr getKeyGenerator(
                             "Setting 'key_compatibility_prefix' can be defined only with setting 'key_template'.",
                             config_prefix);
 
-        return createObjectStorageKeyGeneratorByPrefix(uri.key);
+        return createObjectStorageKeysGeneratorByPrefix(uri.key);
     }
 
     if (!uri.key.empty())
@@ -48,7 +48,7 @@ ObjectStorageKeyGeneratorPtr getKeyGenerator(
                         config_prefix,
                         uri.key, uri.bucket);
 
-    return createObjectStorageKeyGeneratorByTemplate(object_key_template);
+    return createObjectStorageKeysGeneratorByTemplate(object_key_template);
 }
 
 }

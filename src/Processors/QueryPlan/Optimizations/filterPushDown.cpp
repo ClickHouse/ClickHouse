@@ -155,7 +155,10 @@ static size_t addNewFilterStepOrThrow(
 
     if (update_parent_filter)
     {
-        if (!filter_node || split_filter.is_filter_const_after_push_down)
+        /// Filter column was replaced to constant.
+        const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
+
+        if (!filter_node || filter_is_constant)
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
@@ -442,13 +445,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
 
         const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
-        updated_steps += addNewFilterStepOrThrow(
-            parent_node,
+        updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
-            {std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down),
-             0,
-             join_filter_push_down_actions.left_stream_filter_removes_filter,
-             false},
+            {std::move(*join_filter_push_down_actions.left_stream_filter_to_push_down), 0, join_filter_push_down_actions.left_stream_filter_removes_filter},
             0 /*child_idx*/,
             false /*update_parent_filter*/);
         LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
@@ -468,13 +467,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         }
 
         const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
-        updated_steps += addNewFilterStepOrThrow(
-            parent_node,
+        updated_steps += addNewFilterStepOrThrow(parent_node,
             nodes,
-            {std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down),
-             0,
-             join_filter_push_down_actions.right_stream_filter_removes_filter,
-             false},
+            {std::move(*join_filter_push_down_actions.right_stream_filter_to_push_down), 0, join_filter_push_down_actions.right_stream_filter_removes_filter},
             1 /*child_idx*/,
             false /*update_parent_filter*/);
         LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
@@ -496,7 +491,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 
 
         /// Filter column was replaced to constant.
-        if (!filter_node || join_filter_push_down_actions.is_filter_const_after_all_push_downs)
+        const bool filter_is_constant = filter_node && filter_node->column && isColumnConst(*filter_node->column);
+
+        if (!filter_node || filter_is_constant)
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.

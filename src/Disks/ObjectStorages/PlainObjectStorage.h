@@ -25,6 +25,11 @@ public:
     bool isWriteOnce() const override { return true; }
 
     bool isPlain() const override { return true; }
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & /* key_prefix */) const override
+    {
+        return ObjectStorageKey::createAsRelative(BaseObjectStorage::getCommonKeyPrefix(), path);
+    }
 };
 
 }

@@ -42,6 +42,8 @@ ManifestFileCacheKeys getManifestList(
     const String & filename,
     LoggerPtr log);
 
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 }
 
 #endif

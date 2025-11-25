@@ -977,6 +977,7 @@ Pipe ReadFromMergeTree::readByLayers(
         std::move(split_parts),
         storage_snapshot->metadata->getPrimaryKey(),
         std::move(reading_step_getter),
+        false,
         context);
     return Pipe::unitePipes(std::move(pipes));
 }

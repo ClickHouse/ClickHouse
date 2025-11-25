@@ -1,19 +1,11 @@
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 
-#include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/getRandomASCIIString.h>
 
-namespace fs = std::filesystem;
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
     String storage_key_prefix_, std::weak_ptr<InMemoryDirectoryTree> tree_)
@@ -21,38 +13,32 @@ FlatDirectoryStructureKeyGenerator::FlatDirectoryStructureKeyGenerator(
 {
 }
 
-ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & path) const
+ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & path, bool is_directory, const std::optional<String> & key_prefix) const
 {
-    const auto tree_ptr = tree.lock();
+    if (is_directory)
+        chassert(path.empty() || path.ends_with('/'));
+
     const auto fs_path = std::filesystem::path(path);
-    const auto directory = fs_path.parent_path();
-    const auto filename = fs_path.filename();
-    if (filename.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "File name is empty for path '{}'", fs_path.string());
+    std::filesystem::path directory = fs_path.parent_path();
 
-    auto [exists_directory, remote_info] = tree_ptr->existsDirectory(directory);
-    if (!exists_directory)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", directory.string());
-    else if (!remote_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", directory.string());
+    std::optional<std::filesystem::path> remote_path;
+    {
+        const auto ptr = tree.lock();
+        if (auto [exists, remote_info] = ptr->existsDirectory(fs_path); exists && remote_info)
+            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, remote_info->remote_path);
 
-    return ObjectStorageKey::createAsAbsolute(fs::path(storage_key_prefix) / remote_info->remote_path / filename);
-}
+        if (auto [exists, remote_info] = ptr->existsDirectory(directory); exists && remote_info)
+            remote_path = remote_info->remote_path;
+    }
+    constexpr size_t part_size = 32;
+    std::filesystem::path key = remote_path.has_value() ? *remote_path
+        : is_directory                                  ? std::filesystem::path(getRandomASCIIString(part_size))
+                                                        : directory;
 
-std::string FlatDirectoryStructureKeyGenerator::generateForDirectory(const String & path) const
-{
-    const auto tree_ptr = tree.lock();
-    const auto fs_path = std::filesystem::path(path);
-    auto [exists_directory, remote_info] = tree_ptr->existsDirectory(fs_path);
-    if (exists_directory && !remote_info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' is virtual", fs_path.string());
+    if (!is_directory)
+        key /= fs_path.filename();
 
-    /// Take from cache
-    if (exists_directory)
-        return remote_info->remote_path;
-
-    /// Generate new one
-    return getRandomASCIIString(32);
+    return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, key);
 }
 
 }

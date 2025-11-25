@@ -259,7 +259,7 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     uri.bucket = "test_bucket";
     DB::S3Capabilities cap;
     String disk_name = "s3";
-    DB::ObjectStorageKeyGeneratorPtr gen;
+    DB::ObjectStorageKeysGeneratorPtr gen;
     auto object_storage = std::make_shared<DB::S3ObjectStorage>(
         std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
 

@@ -237,25 +237,20 @@ struct ToTimeImpl
 
     static Int32 execute(Int64 dt64, const DateLUTImpl & time_zone)
     {
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
-        Int64 offset = time_zone.timezoneOffset(dt64);
-        Int64 local_seconds = (dt64 + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-
-        if (local_seconds > MAX_TIME_TIMESTAMP) [[unlikely]]
+        if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+            return static_cast<Int32>(time_zone.toTime(dt64));
+        else
         {
-            if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+            if (dt64 > MAX_TIME_TIMESTAMP || dt64 < (-1 * MAX_TIME_TIMESTAMP))
             {
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
+                if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                    return MAX_TIME_TIMESTAMP;
+                else
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Time", dt64);
             }
-            else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
-            {
-                return MAX_TIME_TIMESTAMP;
-            }
+            else
+                return static_cast<Int32>(time_zone.toTime(dt64));
         }
-
-        return static_cast<Int32>(local_seconds);
     }
 };
 
@@ -399,12 +394,9 @@ struct ToTimeTransformFromDateTime
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         auto utc_seconds = from;
-        /// Compute local seconds-of-day using timezone offset (aligned with DateTime64 -> Time64)
-        Int64 offset = time_zone.timezoneOffset(utc_seconds);
+        UInt64 offset = time_zone.timezoneOffset(utc_seconds);
         /// compute local time-of-day in seconds
-        Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
+        UInt64 local_seconds = (utc_seconds + offset) % 86400;
 
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
@@ -671,20 +663,15 @@ struct ToTime64Transform
         return execute(dt, time_zone);
     }
 
-    Time64::NativeType execute(Int32 d, const DateLUTImpl & /*time_zone*/) const
+    Time64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
     {
-        // DataTypeTime stores seconds (or total seconds for hhh:mm:ss). Preserve value and add scale
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(d, 0, scale_multiplier);
+        Int32 dt = static_cast<Int32>(time_zone.fromDayNum(ExtendedDayNum(static_cast<int>(d))));
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(dt, 0, scale_multiplier);
     }
 
     Time64::NativeType execute(UInt32 dt, const DateLUTImpl & time_zone) const
     {
-        /// Compute local seconds-of-day using timezone offset at this moment.
-        Int64 offset = time_zone.timezoneOffset(dt);
-        Int64 local_seconds = (static_cast<Int64>(dt) + offset) % 86400;
-        if (local_seconds < 0)
-            local_seconds += 86400;
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(local_seconds, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(time_zone.toTime(dt), 0, scale_multiplier);
     }
 };
 
@@ -1718,9 +1705,8 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            // Prefer the source DateTime64's timezone so Time64 reflects the same wall-clock time
-            const auto & from_type = static_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-            time_zone = &from_type.getTimeZone();
+            if (!time_zone && arguments.size() <= 2)
+                time_zone = &DateLUT::instance();
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -1753,11 +1739,11 @@ struct ConvertImpl
                 auto utc_seconds = vec_to[i] / scale_mult;
                 auto fraction = vec_to[i] % scale_mult;
 
-                /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
-                Int64 offset = time_zone->timezoneOffset(utc_seconds);
-                Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
-                if (local_seconds < 0)
-                    local_seconds += 86400;
+                // Get the timezone offset (in seconds) for the target timezone at this moment
+                UInt64 offset = time_zone->timezoneOffset(utc_seconds);
+
+                // Compute local time-of-day in seconds
+                UInt64 local_seconds = (utc_seconds + offset) % 86400;
 
                 // Reassemble the result
                 vec_to[i] = local_seconds * scale_mult + fraction;
@@ -2226,7 +2212,6 @@ struct ConvertImpl
                 {
                     vec_to[i] = static_cast<ToFieldType>(0); // when we convert date toTime, we should have 000:00:00 as a result, and conversely
                 }
-                /// Time64->Time64 scale conversion is handled by the generic decimal conversion logic below.
                 else if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
                 {
                     if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
