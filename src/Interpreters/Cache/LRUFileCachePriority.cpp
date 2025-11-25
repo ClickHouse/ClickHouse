@@ -338,11 +338,13 @@ EvictionInfoPtr LRUFileCachePriority::collectEvictionInfo(
         return std::make_unique<EvictionInfo>(queue_id, std::move(info));
     }
 
-    const size_t available_size = max_size.load() - state->getSize(lock);
+    /// max_size == 0 => unlimitted size
+    const size_t available_size = max_size ? max_size - state->getSize(lock) : size;
     if (available_size < size)
         info->size_to_evict = size - available_size;
 
-    const size_t available_elements = max_elements.load() - state->getElementsCount(lock);
+    /// max_elements == 0 => unlimitted elements
+    const size_t available_elements = max_elements ? max_elements - state->getElementsCount(lock) : elements;
     if (available_elements < elements)
         info->elements_to_evict = elements - available_elements;
 
@@ -685,9 +687,6 @@ void LRUFileCachePriority::holdImpl(
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
     state->sub(size, elements);
-
-    state->current_size -= size;
-    state->current_elements_num -= elements;
 
     total_hold_size -= size;
     total_hold_elements -= elements;

@@ -999,8 +999,8 @@ bool FileCache::doTryReserve(
                 {
                     LOG_TEST(
                         log, "Query limit exceeded, space reservation failed, "
-                        "recache_on_query_limit_exceeded is disabled (while reserving for {}:{})",
-                        file_segment.key(), file_segment.offset());
+                        "recache_on_query_limit_exceeded is disabled (while reserving for {}:{} with size {}): {}",
+                        file_segment.key(), file_segment.offset(), size, query_priority->getStateInfoForLog(lock));
 
                     failure_reason = "query limit exceeded";
                     return false;

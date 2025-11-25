@@ -100,7 +100,7 @@ public:
         virtual const Iterator * getNestedOrThis() const { return this; }
         virtual Iterator * getNestedOrThis() { return this; }
 
-        virtual void check(const CachePriorityGuard::Lock &) const {}
+        virtual void check(const CacheStateGuard::Lock &) const {}
     };
     using IteratorPtr = std::shared_ptr<Iterator>;
 
