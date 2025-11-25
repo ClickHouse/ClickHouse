@@ -117,25 +117,25 @@ bool SerializationMacAddress::tryDeserializeTextCSV(IColumn & column, ReadBuffer
 void SerializationMacAddress::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
     const auto x = field.safeGet<MacAddress>();
-    writeBinaryLittleEndian(x, ostr);
+    writeBinary(x.toUInt64(), ostr);
 }
 
 void SerializationMacAddress::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
-    MacAddress x;
-    readBinaryLittleEndian(x, istr);
-    field = NearestFieldType<MacAddress>(x);
+    UInt64 u;
+    readBinary(u, istr);
+    field = NearestFieldType<MacAddress>(MacAddress(u));
 }
 
 void SerializationMacAddress::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeBinaryLittleEndian(assert_cast<const ColumnVector<MacAddress> &>(column).getData()[row_num], ostr);
+    writeBinary(assert_cast<const ColumnVector<MacAddress> &>(column).getData()[row_num], ostr);
 }
 
 void SerializationMacAddress::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     MacAddress x;
-    readBinaryLittleEndian(x, istr);
+    readBinary(x.toUnderType(), istr);
     assert_cast<ColumnVector<MacAddress> &>(column).getData().push_back(x);
 }
 
