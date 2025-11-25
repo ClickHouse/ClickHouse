@@ -94,6 +94,8 @@ public:
 
     bool isBlank() const;
 
+    bool isPoint() const;
+
     bool intersectsRange(const Range & r) const;
 
     bool containsRange(const Range & r) const;

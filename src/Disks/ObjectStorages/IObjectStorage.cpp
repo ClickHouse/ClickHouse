@@ -8,6 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/WriteBufferFromString.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 
 namespace DB

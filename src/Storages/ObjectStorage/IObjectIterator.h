@@ -18,6 +18,8 @@ struct ObjectInfo
 {
     RelativePathWithMetadata relative_path_with_metadata;
     std::optional<DataLakeObjectMetadata> data_lake_metadata;
+    /// Information about columns
+    std::optional<DataFileMetaInfoPtr> file_meta_info;
 
     ObjectInfo() = default;
 
@@ -44,6 +46,11 @@ struct ObjectInfo
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
+
+    void setFileMetaInfo(std::optional<DataFileMetaInfoPtr> file_meta_info_)
+        { file_meta_info = file_meta_info_; }
+    std::optional<DataFileMetaInfoPtr> getFileMetaInfo() const
+        { return file_meta_info; }
 
     FileBucketInfoPtr file_bucket_info;
 

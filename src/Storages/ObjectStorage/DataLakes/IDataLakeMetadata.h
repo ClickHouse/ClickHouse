@@ -3,6 +3,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
+#include <Core/Range.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -13,6 +14,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 namespace DataLake
 {
@@ -25,7 +27,45 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNSUPPORTED_METHOD;
-}
+};
+
+#if USE_AVRO
+namespace Iceberg
+{
+struct ColumnInfo;
+};
+#endif
+
+class DataFileMetaInfo
+{
+public:
+    DataFileMetaInfo() = default;
+
+    // subset of Iceberg::ColumnInfo now
+    struct ColumnInfo
+    {
+        std::optional<Int64> rows_count;
+        std::optional<Int64> nulls_count;
+        std::optional<DB::Range> hyperrectangle;
+    };
+
+#if USE_AVRO
+    // Extract metadata from Iceberg structure
+    explicit DataFileMetaInfo(
+        const Iceberg::IcebergSchemaProcessor & schema_processor,
+        Int32 schema_id,
+        const std::unordered_map<Int32, Iceberg::ColumnInfo> & columns_info_);
+#endif
+
+    void serialize(WriteBuffer & out) const;
+    static DataFileMetaInfo deserialize(ReadBuffer & in);
+
+    bool empty() const { return columns_info.empty(); }
+
+    std::unordered_map<std::string, ColumnInfo> columns_info;
+};
+
+using DataFileMetaInfoPtr = std::shared_ptr<DataFileMetaInfo>;
 
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;

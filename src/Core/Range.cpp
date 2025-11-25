@@ -151,6 +151,13 @@ bool Range::isInfinite() const
     return left.isNegativeInfinity() && right.isPositiveInfinity();
 }
 
+/// [x, x]
+bool Range::isPoint() const
+{
+    return fullBounded() && left_included && right_included && equals(left, right)
+        && !left.isNegativeInfinity() && !left.isPositiveInfinity();
+}
+
 bool Range::intersectsRange(const Range & r) const
 {
     /// r to the left of me.

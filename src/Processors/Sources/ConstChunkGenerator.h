@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
+#include <Processors/Formats/IInputFormat.h>
 
 
 namespace DB
@@ -13,7 +14,7 @@ class ConstChunkGenerator : public ISource
 public:
     ConstChunkGenerator(SharedHeader header, size_t total_num_rows, size_t max_block_size_)
         : ISource(std::move(header))
-        , remaining_rows(total_num_rows), max_block_size(max_block_size_)
+        , generated_rows(0), remaining_rows(total_num_rows), max_block_size(max_block_size_)
     {
     }
 
@@ -27,10 +28,14 @@ protected:
 
         size_t num_rows = std::min(max_block_size, remaining_rows);
         remaining_rows -= num_rows;
-        return cloneConstWithDefault(Chunk{getPort().getHeader().getColumns(), 0}, num_rows);
+        auto chunk = cloneConstWithDefault(Chunk{getPort().getHeader().getColumns(), 0}, num_rows);
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(generated_rows));
+        generated_rows += num_rows;
+        return chunk;
     }
 
 private:
+    size_t generated_rows;
     size_t remaining_rows;
     size_t max_block_size;
 };

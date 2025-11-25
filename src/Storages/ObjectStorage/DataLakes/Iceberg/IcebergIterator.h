@@ -91,7 +91,7 @@ public:
         IDataLakeMetadata::FileProgressCallback callback_,
         Iceberg::TableStateSnapshotPtr table_snapshot_,
         Iceberg::IcebergDataSnapshotPtr data_snapshot_,
-        Iceberg::PersistentTableComponents persistent_components);
+        Iceberg::PersistentTableComponents persistent_components_);
 
     ObjectInfoPtr next(size_t) override;
 
@@ -112,6 +112,7 @@ private:
     std::vector<Iceberg::ManifestFileEntry> equality_deletes_files;
     std::exception_ptr exception;
     std::mutex exception_mutex;
+    Int32 table_schema_id;
 };
 }
 

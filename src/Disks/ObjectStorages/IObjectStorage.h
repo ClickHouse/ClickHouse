@@ -109,6 +109,9 @@ struct ObjectMetadata
     ObjectAttributes attributes;
 };
 
+class DataFileMetaInfo;
+using DataFileMetaInfoPtr = std::shared_ptr<DataFileMetaInfo>;
+
 struct DataLakeObjectMetadata;
 
 struct RelativePathWithMetadata
@@ -119,7 +122,8 @@ struct RelativePathWithMetadata
 
     RelativePathWithMetadata() = default;
 
-    explicit RelativePathWithMetadata(String relative_path_, std::optional<ObjectMetadata> metadata_ = std::nullopt)
+    explicit RelativePathWithMetadata(String relative_path_
+        , std::optional<ObjectMetadata> metadata_ = std::nullopt)
         : relative_path(std::move(relative_path_))
         , metadata(std::move(metadata_))
     {}
