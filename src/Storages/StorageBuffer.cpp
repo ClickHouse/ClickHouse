@@ -1119,7 +1119,7 @@ void StorageBuffer::backgroundFlush()
 void StorageBuffer::reschedule()
 {
     time_t min_first_write_time = std::numeric_limits<time_t>::max();
-    time_t rows = 0;
+    size_t rows = 0;
 
     for (auto & buffer : buffers)
     {
