@@ -214,7 +214,9 @@ void AccessRightsElement::formatONClause(WriteBuffer & buffer) const
         buffer << ".*";
     }
     else
+    {
         buffer << "*";
+    }
 }
 
 

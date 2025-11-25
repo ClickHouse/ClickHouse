@@ -1,4 +1,0 @@
-DROP USER IF EXISTS test_user_03732;
-CREATE USER test_user_03732;
-
-GRANT SELECT ON * to test_user_03732;
