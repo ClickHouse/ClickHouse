@@ -6,16 +6,13 @@ CreatingSets (Create sets before main query execution)
   Expression ((Project names + Projection))
     Filter ((WHERE + Change column names to column identifiers))
       ReadFromObjectStorage
-  CreatingSet (Create set for subquery)
-    Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromObjectStorage
 Expression ((Project names + Projection))
   Aggregating
     Expression ((Before GROUP BY + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
       ReadFromObjectStorage
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers
@@ -24,7 +21,7 @@ Expression ((Project names + Projection))
           ReadFromObjectStorage
 Expression ((Project names + Projection))
   Expression (Post Join Actions)
-    Join
+    Join (JOIN FillRightFirst)
       Expression (Left Pre Join Actions)
         Expression (Change column names to column identifiers)
           ReadFromSystemNumbers

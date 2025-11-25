@@ -13,7 +13,7 @@ namespace DB
 class TableFunctionArrowFlight : public ITableFunction
 {
 public:
-    static constexpr auto name = "arrowflight";
+    static constexpr auto name = "arrowFlight";
     String getName() const override { return name; }
 
 private:

@@ -32,7 +32,7 @@ private:
         std::unique_ptr<S3Settings> && s3_settings_,
         S3::URI uri_,
         const S3Capabilities & s3_capabilities_,
-        ObjectStorageKeysGeneratorPtr key_generator_,
+        ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
         bool for_disk_s3_ = true)
         : uri(uri_)
@@ -68,6 +68,12 @@ public:
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {}) const override;
 
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const override;
+
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -78,7 +84,7 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
@@ -87,11 +93,11 @@ public:
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path) const override;
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -124,9 +130,7 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isReadOnly() const override { return s3_settings.get()->request_settings[S3RequestSetting::read_only]; }
 
@@ -147,7 +151,7 @@ private:
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
-    ObjectStorageKeysGeneratorPtr key_generator;
+    const ObjectStorageKeyGeneratorPtr key_generator;
 
     LoggerPtr log;
 

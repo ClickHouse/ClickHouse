@@ -13,13 +13,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-ObjectStorageKeysGeneratorPtr getKeyGenerator(
+ObjectStorageKeyGeneratorPtr getKeyGenerator(
     const S3::URI & uri,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix)
 {
-    bool storage_metadata_write_full_object_key = DiskObjectStorageMetadata::getWriteFullObjectKeySetting();
-
     String object_key_compatibility_prefix = config.getString(config_prefix + ".key_compatibility_prefix", String());
     String object_key_template = config.getString(config_prefix + ".key_template", String());
 
@@ -39,14 +37,8 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
                             "Setting 'key_compatibility_prefix' can be defined only with setting 'key_template'.",
                             config_prefix);
 
-        return createObjectStorageKeysGeneratorByPrefix(uri.key);
+        return createObjectStorageKeyGeneratorByPrefix(uri.key);
     }
-
-    if (!storage_metadata_write_full_object_key)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Wrong configuration in {}. "
-                        "Feature 'storage_metadata_write_full_object_key' has to be enabled in order to use setting 'key_template'.",
-                        config_prefix);
 
     if (!uri.key.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -56,7 +48,7 @@ ObjectStorageKeysGeneratorPtr getKeyGenerator(
                         config_prefix,
                         uri.key, uri.bucket);
 
-    return createObjectStorageKeysGeneratorByTemplate(object_key_template);
+    return createObjectStorageKeyGeneratorByTemplate(object_key_template);
 }
 
 }

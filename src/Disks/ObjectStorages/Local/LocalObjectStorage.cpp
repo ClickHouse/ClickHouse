@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/ObjectStorageKeyGenerator.h>
+#include <Common/StackTrace.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
@@ -133,7 +135,7 @@ void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     ObjectMetadata object_metadata;
     LOG_TEST(log, "Getting metadata for path: {}", path);
@@ -141,6 +143,29 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path) c
     auto time = fs::last_write_time(path);
 
     object_metadata.size_bytes = fs::file_size(path);
+    object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
+    object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
+        std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
+    return object_metadata;
+}
+
+std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
+{
+    ObjectMetadata object_metadata;
+    LOG_TEST(log, "Getting metadata for path: {}", path);
+
+    std::error_code error;
+    auto time = fs::last_write_time(path, error);
+    if (error)
+    {
+        if (error == std::errc::no_such_file_or_directory)
+            return {};
+        throw fs::filesystem_error("Got unexpected error while getting last write time", path, error);
+    }
+
+    /// no_such_file_or_directory is ignored only for last_write_time for consistency
+    object_metadata.size_bytes = fs::file_size(path);
+
     object_metadata.etag = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(time.time_since_epoch()).count());
     object_metadata.last_modified = Poco::Timestamp::fromEpochTime(
         std::chrono::duration_cast<std::chrono::seconds>(time.time_since_epoch()).count());
@@ -160,7 +185,7 @@ void LocalObjectStorage::listObjects(const std::string & path, RelativePathsWith
             continue;
         }
 
-        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path())));
+        children.emplace_back(std::make_shared<RelativePathWithMetadata>(entry.path(), getObjectMetadata(entry.path(), false)));
     }
 }
 
@@ -199,11 +224,9 @@ void LocalObjectStorage::throwIfReadonly() const
         throw Exception(ErrorCodes::READONLY, "Local object storage `{}` is readonly", getName());
 }
 
-ObjectStorageKey
-LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
-    constexpr size_t key_name_total_size = 32;
-    return ObjectStorageKey::createAsRelative(settings.key_prefix, getRandomASCIIString(key_name_total_size));
+    return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
 }
 
 }

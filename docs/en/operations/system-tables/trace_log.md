@@ -38,6 +38,8 @@ Columns:
   - `MemorySample` represents collecting random allocations and deallocations.
   - `MemoryPeak` represents collecting updates of peak memory usage.
   - `ProfileEvent` represents collecting of increments of profile events.
+  - `JemallocSample` represents collecting of jemalloc samples.
+  - `MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only).
 - `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Thread identifier.
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query_log](/operations/system-tables/query_log) system table.
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.

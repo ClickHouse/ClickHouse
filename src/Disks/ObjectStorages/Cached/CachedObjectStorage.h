@@ -65,9 +65,9 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
-    ObjectStorageConnectionInfoPtr getConnectionInfo() const override { return object_storage->getConnectionInfo(); }
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
 
     void shutdown() override;
 
@@ -83,16 +83,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
-
-    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
-
-    bool isPlain() const override { return object_storage->isPlain(); }
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
@@ -103,8 +94,6 @@ public:
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
-
-    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
 
     const std::string & getCacheConfigName() const { return cache_config_name; }
 
@@ -135,6 +124,13 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
     {
         return object_storage->tryGetS3StorageClient();
+    }
+#endif
+
+#if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    {
+        object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
 

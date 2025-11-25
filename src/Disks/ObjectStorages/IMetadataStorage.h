@@ -12,6 +12,7 @@
 #include <Disks/DirectoryIterator.h>
 #include <Disks/WriteMode.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
@@ -25,7 +26,6 @@ namespace ErrorCodes
 }
 
 class IMetadataStorage;
-struct PartitionCommand;
 
 /// Return the result of operation to the caller.
 /// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
@@ -53,11 +53,16 @@ using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOut
 class IMetadataTransaction : private boost::noncopyable
 {
 public:
-    virtual void commit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) = 0; // NOLINT
+    virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
+    void commit() { commit(NoCommitOptions{}); }
 
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & = NoCommitOptions{}) // NOLINT
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
     {
         throwNotImplemented();
+    }
+    TransactionCommitOutcomeVariant tryCommit()
+    {
+        return tryCommit(NoCommitOptions{});
     }
 
     virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;
@@ -139,18 +144,17 @@ public:
 
     /// Metadata related methods
 
-    /// Create empty file in metadata storage
-    virtual void createEmptyMetadataFile(const std::string & path) = 0;
+    /// Generate blob name for passed absolute local path.
+    /// Path can be generated either independently or based on `path`.
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
 
-    virtual void createEmptyFile(const std::string & /* path */) {}
-
-    /// Create metadata file on paths with content (blob_name, size_in_bytes)
-    virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
+    /// Create metadata file on paths with content consisting of objects
+    virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
 
     virtual bool supportAddingBlobToMetadata() { return false; }
     /// Add to new blob to metadata file (way to implement appends).
     /// If `addBlobToMetadata` is supported, `supportAddingBlobToMetadata` must return `true`
-    virtual void addBlobToMetadata(const std::string & /* path */, ObjectStorageKey /* key */, uint64_t /* size_in_bytes */)
+    virtual void addBlobToMetadata(const std::string & /* path */, const StoredObject & /* object */)
     {
         throwNotImplemented();
     }
@@ -203,6 +207,9 @@ public:
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
     virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
 
+    /// Returns true if underlying blob ids generator uses random.
+    virtual bool areBlobPathsRandom() const = 0;
+
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool existsFile(const std::string & path) const = 0;
@@ -239,8 +246,6 @@ public:
     {
         throwNotImplemented();
     }
-
-    virtual bool supportsPartitionCommand(const PartitionCommand & /* command */) const = 0;
 
     virtual std::vector<std::string> listDirectory(const std::string & path) const = 0;
 
@@ -308,6 +313,16 @@ public:
         return false;
     }
 
+    virtual bool isPlain() const
+    {
+        return false;
+    }
+
+    virtual bool isWriteOnce() const
+    {
+        return false;
+    }
+
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.
     virtual void updateCache(const std::vector<std::string> & /* paths */, bool /* recursive */, bool /* enforce_fresh */,
@@ -324,6 +339,9 @@ public:
         const Poco::Util::AbstractConfiguration & /* config */,
         const std::string & /* config_prefix */,
         ContextPtr /* context */) {}
+
+    /// Only support writing with Append if MetadataTransactionPtr created by `createTransaction` has `supportAddingBlobToMetadata`
+    virtual bool supportWritingWithAppend() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotImplemented()

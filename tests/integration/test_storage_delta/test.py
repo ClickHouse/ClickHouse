@@ -60,7 +60,9 @@ from helpers.s3_tools import (
 from helpers.test_tools import TSV
 
 
-SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(os.path.dirname(os.path.realpath(__file__)))
+SCRIPT_DIR = "/var/lib/clickhouse/user_files" + os.path.join(
+    os.path.dirname(os.path.realpath(__file__))
+)
 cluster = ClickHouseCluster(__file__, with_spark=True, azurite_default_port=10000)
 
 S3_DATA = [
@@ -76,7 +78,10 @@ def get_spark():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files")
+        .config(
+            "spark.sql.catalog.spark_catalog.warehouse",
+            "/var/lib/clickhouse/user_files",
+        )
         .config("spark.driver.memory", "8g")
         .config("spark.executor.memory", "8g")
         .master("local")
@@ -100,11 +105,15 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
+                "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
                 "configs/users.d/enable_writes.xml",
             ],
+            env_variables={
+                "RUST_BACKTRACE": "1",
+            },
             with_minio=True,
             with_azurite=True,
             stay_alive=True,
@@ -117,6 +126,7 @@ def started_cluster():
                 "configs/config.d/named_collections.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
+                "configs/config.d/disable_s3_retries.xml",
             ],
             user_configs=[
                 "configs/users.d/users.xml",
@@ -149,6 +159,7 @@ def started_cluster():
                 "configs/config.d/filesystem_caches.xml",
                 "configs/config.d/remote_servers.xml",
                 "configs/config.d/metadata_log.xml",
+                "configs/config.d/remove_masking_rules.xml",
             ],
             user_configs=["configs/users.d/users.xml"],
             with_installed_binary=True,
@@ -211,7 +222,9 @@ def started_cluster():
             cluster.minio_client.fput_object(
                 bucket_name=cluster.minio_bucket,
                 object_name=file,
-                file_path=os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))), file),
+                file_path=os.path.join(
+                    os.path.join(os.path.dirname(os.path.realpath(__file__))), file
+                ),
             )
 
         yield cluster
@@ -363,7 +376,8 @@ def create_initial_data_file(
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
-        os.path.join(os.path.dirname(os.path.realpath(__file__))), f"{cluster.instances_dir_name}/{node_name}/database/user_files"
+        os.path.join(os.path.dirname(os.path.realpath(__file__))),
+        f"{cluster.instances_dir_name}/{node_name}/database/user_files",
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
@@ -2016,7 +2030,9 @@ deltaLake(
     )
 
 
-@pytest.mark.parametrize("new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"]])
+@pytest.mark.parametrize(
+    "new_analyzer, storage_type", [["1", "s3"], ["1", "azure"], ["0", "s3"]]
+)
 def test_cluster_function(started_cluster, new_analyzer, storage_type):
     instance = started_cluster.instances["node1"]
     instance_old = started_cluster.instances["node_old"]
@@ -2028,7 +2044,7 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         pa.array(["aa", "bb", "cc", "aa", "bb"], type=pa.string()),
     ]
 
-    if storage_type == "s3" :
+    if storage_type == "s3":
         storage_options = {
             "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
             "AWS_ACCESS_KEY_ID": minio_access_key,
@@ -2038,7 +2054,9 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         }
         path = f"s3://root/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
+        write_deltalake(
+            path, table, storage_options=storage_options, partition_by=["b"]
+        )
 
         table_function = f"""
     deltaLakeCluster(cluster,
@@ -2075,12 +2093,14 @@ def test_cluster_function(started_cluster, new_analyzer, storage_type):
         storage_options = {
             "AZURE_STORAGE_ACCOUNT_NAME": "devstoreaccount1",
             "AZURE_STORAGE_ACCOUNT_KEY": "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==",
-            "AZURE_STORAGE_CONTAINER_NAME" : "{cluster.azure_container_name}",
-            "AZURE_STORAGE_USE_EMULATOR": "true"
+            "AZURE_STORAGE_CONTAINER_NAME": "{cluster.azure_container_name}",
+            "AZURE_STORAGE_USE_EMULATOR": "true",
         }
         path = f"abfss://{cluster.azure_container_name}@devstoreaccount1.dfs.core.windows.net/{table_name}"
         table = pa.Table.from_arrays(data, schema=schema)
-        write_deltalake(path, table, storage_options=storage_options, partition_by=["b"])
+        write_deltalake(
+            path, table, storage_options=storage_options, partition_by=["b"]
+        )
 
         table_function = f"""
         deltaLakeAzureCluster(cluster, azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '{table_name}')
@@ -2113,13 +2133,15 @@ def test_partition_columns_3(started_cluster):
     bucket = started_cluster.minio_bucket
     num_rows = 10
 
-    schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-        pa.field("age", pa.int32(), nullable=False),
-        pa.field("country", pa.string(), nullable=False),
-        pa.field("year", pa.string(), nullable=False),
-    ])
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+            pa.field("age", pa.int32(), nullable=False),
+            pa.field("country", pa.string(), nullable=False),
+            pa.field("year", pa.string(), nullable=False),
+        ]
+    )
     data = {
         "id": list(range(num_rows)),
         "name": [f"name_{i}" for i in range(num_rows)],
@@ -2133,7 +2155,7 @@ def test_partition_columns_3(started_cluster):
         pa.Table.from_pydict(data, schema=schema),
         mode="append",
         storage_options=get_storage_options(started_cluster),
-        partition_by=partition_columns
+        partition_by=partition_columns,
     )
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
@@ -2168,13 +2190,15 @@ def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
     bucket = started_cluster.minio_bucket
     num_rows = 10
 
-    schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-        pa.field("age", pa.int32(), nullable=False),
-        pa.field("country", pa.string(), nullable=False),
-        pa.field("year", pa.string(), nullable=False),
-    ])
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+            pa.field("age", pa.int32(), nullable=False),
+            pa.field("country", pa.string(), nullable=False),
+            pa.field("year", pa.string(), nullable=False),
+        ]
+    )
     data = {
         "id": list(range(num_rows)),
         "name": [f"name_{i}" for i in range(num_rows)],
@@ -2187,7 +2211,7 @@ def test_filtering_by_virtual_columns(started_cluster, use_delta_kernel):
         pa.Table.from_pydict(data, schema=schema),
         mode="append",
         storage_options=get_storage_options(started_cluster),
-        partition_by=partition_columns
+        partition_by=partition_columns,
     )
 
     table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
@@ -2289,21 +2313,23 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
     instance.query("SYSTEM FLUSH LOGS")
-    assert 107220 == int(
+    bytes_read = int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+    # Slightly different number depending on reader implementation.
+    assert 107220 <= bytes_read <= 107232
 
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
@@ -2313,12 +2339,13 @@ def test_column_pruning(started_cluster):
             f"SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
-    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
-    assert 105677 == int(
+    bytes_read = int(
         instance.query(
             f"SELECT ProfileEvents['ReadBufferFromS3Bytes'] FROM system.query_log WHERE query_id = '{query_id}' and type = 'QueryFinish'"
         )
     )
+    # Small diff because in case of delta-kernel metadata reading is not counted in the metric.
+    assert 105677 <= bytes_read <= 105689
 
 
 def test_concurrent_reads(started_cluster):
@@ -2332,13 +2359,15 @@ def test_concurrent_reads(started_cluster):
     bucket = started_cluster.minio_bucket
     num_rows = 500000
 
-    schema = pa.schema([
-        pa.field("id", pa.int32(), nullable=False),
-        pa.field("name", pa.string(), nullable=False),
-        pa.field("age", pa.int32(), nullable=False),
-        pa.field("country", pa.string(), nullable=False),
-        pa.field("year", pa.string(), nullable=False),
-    ])
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int32(), nullable=False),
+            pa.field("name", pa.string(), nullable=False),
+            pa.field("age", pa.int32(), nullable=False),
+            pa.field("country", pa.string(), nullable=False),
+            pa.field("year", pa.string(), nullable=False),
+        ]
+    )
     data = {
         "id": list(range(num_rows)),
         "name": [f"name_{i}" for i in range(num_rows)],
@@ -3446,9 +3475,10 @@ deltaLake(
         '{minio_access_key}',
         '{minio_secret_key}')
     """
-    assert "1\t('Alice','Smith')\n2\t('Bob','Johnson')" ==  node.query(
-        f"SELECT * FROM {delta_function} ORDER BY all"
-    ).strip()
+    assert (
+        "1\t('Alice','Smith')\n2\t('Bob','Johnson')"
+        == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
+    )
 
 
 @pytest.mark.parametrize("column_mapping", ["", "name"])
@@ -3480,7 +3510,11 @@ def test_subcolumns(started_cluster, column_mapping):
         "col_x2D6\tNullable(Int64)" == node.query(f"describe table {func}").strip()
     )
 
-    df = spark.read.parquet(os.path.join(os.path.join(os.path.dirname(os.path.realpath(__file__))), data_file))
+    df = spark.read.parquet(
+        os.path.join(
+            os.path.join(os.path.dirname(os.path.realpath(__file__))), data_file
+        )
+    )
     write_delta_from_df(spark, df, path, mode="overwrite")
     default_upload_directory(started_cluster, "s3", path, "")
 
@@ -3657,14 +3691,22 @@ def test_type_from_storage_def(started_cluster, column_mapping):
     spark = started_cluster.spark_session
     path = f"/var/lib/clickhouse/user_files/{table_name}"
 
-    spark_schema = StructType([
-        StructField("c0", IntegerType(), nullable=False),
-        StructField("c1", TimestampType(), nullable=False),
-        StructField("c2", StructType([
-            StructField("created_at", TimestampType(), nullable=True),
-            StructField("updated_at", TimestampType(), nullable=True),
-        ]), nullable=False),
-    ])
+    spark_schema = StructType(
+        [
+            StructField("c0", IntegerType(), nullable=False),
+            StructField("c1", TimestampType(), nullable=False),
+            StructField(
+                "c2",
+                StructType(
+                    [
+                        StructField("created_at", TimestampType(), nullable=True),
+                        StructField("updated_at", TimestampType(), nullable=True),
+                    ]
+                ),
+                nullable=False,
+            ),
+        ]
+    )
     data = [
         (
             1,
@@ -3672,19 +3714,15 @@ def test_type_from_storage_def(started_cluster, column_mapping):
             {
                 "created_at": datetime(2000, 11, 11, 0, 0, 0),
                 "updated_at": datetime(2000, 12, 12, 0, 0, 0),
-            }
+            },
         )
     ]
 
     df = spark.createDataFrame(data, schema=spark_schema)
     if len(column_mapping) > 0:
-        df.write.format("delta").option(
-            "delta.minReaderVersion", "2"
-        ).option("delta.minWriterVersion", "5").option(
-            "delta.columnMapping.mode", column_mapping
-        ).save(
-            path
-        )
+        df.write.format("delta").option("delta.minReaderVersion", "2").option(
+            "delta.minWriterVersion", "5"
+        ).option("delta.columnMapping.mode", column_mapping).save(path)
     else:
         df.write.format("delta").save(path)
 
@@ -3694,7 +3732,8 @@ def test_type_from_storage_def(started_cluster, column_mapping):
         f"""CREATE TABLE {table_name}
         (c0 Int32, c1 DateTime, c2 Tuple(created_at DateTime, updated_at DateTime))
         ENGINE = DeltaLakeLocal('{path}') SETTINGS output_format_parquet_compression_method = 'none'
-    """)
+    """
+    )
 
     assert (
         "('2000-11-11 00:00:00','2000-12-12 00:00:00')"
@@ -3708,6 +3747,7 @@ def test_type_from_storage_def(started_cluster, column_mapping):
         "2000-11-11 00:00:00"
         == instance.query(f"SELECT c2.created_at FROM {table_name}").strip()
     )
+
 
 @pytest.mark.parametrize("use_delta_kernel", ["0", "1"])
 def test_system_table(started_cluster, use_delta_kernel):
@@ -3729,22 +3769,47 @@ def test_system_table(started_cluster, use_delta_kernel):
     assert len(s3_objects) == 1
 
     create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 100
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME}",
+                settings={"delta_lake_log_metadata": 1},
+            )
+        )
+        == 100
+    )
 
     write_delta_from_df(
         spark, generate_data(spark, 100, 200), f"/{TABLE_NAME}", mode="append"
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 4  # 2 metadata files + 2 data files
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}", settings={"delta_lake_log_metadata":1})) == 200
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME}",
+                settings={"delta_lake_log_metadata": 1},
+            )
+        )
+        == 200
+    )
 
     instance.query("SYSTEM FLUSH LOGS delta_lake_metadata_log")
 
-    assert int(instance.query("SELECT count(DISTINCT file_path) FROM system.delta_lake_metadata_log")) == 2
-    contents = instance.query("SELECT content FROM system.delta_lake_metadata_log").split('\n')
+    assert (
+        int(
+            instance.query(
+                "SELECT count(DISTINCT file_path) FROM system.delta_lake_metadata_log"
+            )
+        )
+        == 2
+    )
+    contents = instance.query(
+        "SELECT content FROM system.delta_lake_metadata_log"
+    ).split("\n")
     for content in contents:
         if len(content) == 0:
             continue
-        assert 'commitInfo' in content
-        assert '.parquet' in content
+        assert "commitInfo" in content
+        assert ".parquet" in content
     instance.query("TRUNCATE TABLE system.delta_lake_metadata_log")

@@ -111,10 +111,10 @@ void registerMetadataStorageFromDisk(MetadataStorageFactory & factory)
         auto metadata_keep_free_space_bytes = config.getUInt64(config_prefix + ".metadata_keep_free_space_bytes", 0);
 
         fs::create_directories(metadata_path);
-        auto db_disk
-            = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
+        auto db_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, metadata_keep_free_space_bytes, config, config_prefix);
         auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromDisk>(db_disk, key_compatibility_prefix);
+        auto key_generator = object_storage->createKeyGenerator();
+        return std::make_shared<MetadataStorageFromDisk>(db_disk, std::move(key_compatibility_prefix), std::move(key_generator));
     });
 }
 
@@ -149,9 +149,9 @@ void registerPlainMetadataStorage(MetadataStorageFactory & factory)
         const std::string & config_prefix,
         ObjectStoragePtr object_storage) -> MetadataStoragePtr
     {
-        auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-        return std::make_shared<MetadataStorageFromPlainObjectStorage>(
-            object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
+        std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
+        size_t object_metadata_cache_size = config.getUInt64(config_prefix + ".object_metadata_cache_size", 0);
+        return std::make_shared<MetadataStorageFromPlainObjectStorage>(object_storage, key_compatibility_prefix, object_metadata_cache_size);
     });
 }
 
@@ -164,9 +164,8 @@ void registerPlainRewritableMetadataStorage(MetadataStorageFactory & factory)
            const std::string & config_prefix,
            ObjectStoragePtr object_storage) -> MetadataStoragePtr
         {
-            auto key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
-            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(
-                object_storage, key_compatibility_prefix, config.getUInt64(config_prefix + ".object_metadata_cache_size", 0));
+            std::string key_compatibility_prefix = getObjectKeyCompatiblePrefix(*object_storage, config, config_prefix);
+            return std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, key_compatibility_prefix);
         });
 }
 
@@ -194,4 +193,8 @@ void registerMetadataStorages()
 #endif
 }
 
+void MetadataStorageFactory::clearRegistry()
+{
+    registry.clear();
+}
 }

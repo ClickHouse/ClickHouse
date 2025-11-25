@@ -75,11 +75,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Setting
-{
-    extern const SettingsString datalake_disk_name;
-}
-
 static const std::unordered_set<std::string_view> required_configuration_keys =
 {
     "url",
@@ -128,11 +123,11 @@ std::string StorageS3Configuration::getPathInArchive() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is not an archive", getRawPath().path);
 }
 
-void StorageS3Configuration::check(ContextPtr context) const
+void StorageS3Configuration::check(ContextPtr context)
 {
     validateNamespace(url.bucket);
     context->getGlobalContext()->getRemoteHostFilter().checkURL(url.uri);
-    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(headers_from_ast);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_from_ast);
     StorageObjectStorageConfiguration::check(context);
 }
 
@@ -168,7 +163,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
+    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
@@ -700,13 +695,13 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
             ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
+            auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
             ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
+            auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
     }

@@ -334,8 +334,6 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
             what = "VIEW";
         else if (is_materialized_view)
             what = "MATERIALIZED VIEW";
-        else if (is_live_view)
-            what = "LIVE VIEW";
         else if (is_window_view)
             what = "WINDOW VIEW";
 
@@ -639,4 +637,8 @@ void ASTCreateQuery::setTargetInnerEngine(ViewTarget::Kind target_kind, ASTPtr s
     targets->setInnerEngine(target_kind, storage_def);
 }
 
+bool ASTCreateQuery::isCreateQueryWithImmediateInsertSelect() const
+{
+    return select && !attach && !is_create_empty && !is_ordinary_view && (!(is_materialized_view || is_window_view) || is_populate);
+}
 }

@@ -6,6 +6,7 @@
 #include <boost/algorithm/string.hpp>
 #include <Poco/SHA1Engine.h>
 
+#include <Common/HistogramMetrics.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -47,12 +48,19 @@ namespace ProfileEvents
     extern const Event KeeperProcessElapsedMicroseconds;
 }
 
+namespace HistogramMetrics
+{
+    extern Metric & KeeperServerPreprocessRequestDuration;
+    extern MetricFamily & KeeperServerProcessRequestDuration;
+}
+
 namespace DB
 {
 
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 log_slow_cpu_threshold_ms;
+    extern const CoordinationSettingsBool check_node_acl_on_remove;
 }
 
 namespace ErrorCodes
@@ -1431,6 +1439,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
             return function(static_cast<const Coordination::ZooKeeperListRequest &>(zk_request));
         case Coordination::OpNum::Check:
         case Coordination::OpNum::CheckNotExists:
+        case Coordination::OpNum::CheckStat:
             return function(static_cast<const Coordination::ZooKeeperCheckRequest &>(zk_request));
         case Coordination::OpNum::Multi:
         case Coordination::OpNum::MultiRead:
@@ -1819,6 +1828,12 @@ processLocal(const Coordination::ZooKeeperGetRequest & zk_request, Storage & sto
 template <typename Storage>
 bool checkAuth(const Coordination::ZooKeeperRemoveRequest & zk_request, Storage & storage, int64_t session_id, bool is_local)
 {
+    if (auto check_node_acl = storage.keeper_context->getCoordinationSettings()[CoordinationSetting::check_node_acl_on_remove];
+        check_node_acl && !storage.checkACL(zk_request.getPath(), Coordination::ACL::Delete, session_id, is_local))
+    {
+        return false;
+    }
+
     return storage.checkACL(Coordination::parentNodePath(zk_request.getPath()), Coordination::ACL::Delete, session_id, is_local);
 }
 
@@ -2577,6 +2592,39 @@ bool checkAuth(const Coordination::ZooKeeperCheckRequest & zk_request, Storage &
         is_local);
 }
 
+namespace
+{
+
+bool checkNodeStat(const NodeStats & verifiable, const Coordination::Stat & validator)
+{
+    if (validator.czxid != -1 && validator.czxid != verifiable.czxid)
+        return false;
+    else if (validator.mzxid != -1 && validator.mzxid != verifiable.mzxid)
+        return false;
+    else if (validator.ctime != -1 && validator.ctime != verifiable.ctime())
+        return false;
+    else if (validator.mtime != -1 && validator.mtime != verifiable.mtime)
+        return false;
+    else if (validator.version != -1 && validator.version != verifiable.version)
+        return false;
+    else if (validator.cversion != -1 && validator.cversion != verifiable.cversion)
+        return false;
+    else if (validator.aversion != -1 && validator.aversion != verifiable.aversion)
+        return false;
+    else if (validator.ephemeralOwner != -1 && validator.ephemeralOwner != verifiable.ephemeralOwner())
+        return false;
+    else if (validator.dataLength != -1 && validator.dataLength != static_cast<int32_t>(verifiable.data_size))
+        return false;
+    else if (validator.numChildren != -1 && validator.numChildren != verifiable.numChildren())
+        return false;
+    else if (validator.pzxid != -1 && validator.pzxid != verifiable.pzxid)
+        return false;
+
+    return true;
+}
+
+}
+
 template <typename Storage>
 std::list<KeeperStorageBase::Delta> preprocess(
     const Coordination::ZooKeeperCheckRequest & zk_request,
@@ -2602,6 +2650,9 @@ std::list<KeeperStorageBase::Delta> preprocess(
 
         if (zk_request.version != -1 && zk_request.version != node->stats.version)
             return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
+
+        if (zk_request.getOpNum() == Coordination::OpNum::CheckStat && !checkNodeStat(node->stats, zk_request.stat_to_check.value()))
+            return {KeeperStorageBase::Delta{zxid, Coordination::Error::ZBADVERSION}};
     }
 
     return {};
@@ -2610,9 +2661,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <bool local, typename Storage>
 Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperCheckRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCheckResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCheckNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCheckResponse>();
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperCheckResponse>(zk_request.makeResponse());
 
     if constexpr (!local)
     {
@@ -2646,6 +2695,8 @@ Coordination::ZooKeeperResponsePtr processImpl(const Coordination::ZooKeeperChec
         if (node_it == container.end())
             on_error(Coordination::Error::ZNONODE);
         else if (zk_request.version != -1 && zk_request.version != node_it->value.stats.version)
+            on_error(Coordination::Error::ZBADVERSION);
+        else if (zk_request.getOpNum() == Coordination::OpNum::CheckStat && !checkNodeStat(node_it->value.stats, zk_request.stat_to_check.value()))
             on_error(Coordination::Error::ZBADVERSION);
         else
             response->error = Coordination::Error::ZOK;
@@ -3070,8 +3121,12 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
 {
     Stopwatch watch;
     SCOPE_EXIT({
-        auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
+        watch.stop();
+
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        const auto elapsed_us = watch.elapsedMicroseconds();
+
+        if (elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3079,7 +3134,10 @@ KeeperDigest KeeperStorage<Container>::preprocessRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed);
+
+        ProfileEvents::increment(ProfileEvents::KeeperPreprocessElapsedMicroseconds, elapsed_us);
+
+        HistogramMetrics::observe(HistogramMetrics::KeeperServerPreprocessRequestDuration, elapsed_ms);
     });
 
     if (!initialized)
@@ -3278,8 +3336,12 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 {
     Stopwatch watch;
     SCOPE_EXIT({
-        auto elapsed = watch.elapsedMicroseconds();
-        if (auto elapsed_ms = elapsed / 1000; elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
+        watch.stop();
+
+        const auto elapsed_us = watch.elapsedMicroseconds();
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+
+        if (elapsed_ms > keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_cpu_threshold_ms])
         {
             LOG_INFO(
                 getLogger("KeeperStorage"),
@@ -3287,7 +3349,13 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
                 elapsed_ms,
                 zk_request->toString(/*short_format=*/true));
         }
-        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed);
+
+        ProfileEvents::increment(ProfileEvents::KeeperProcessElapsedMicroseconds, elapsed_us);
+
+        HistogramMetrics::observe(
+            HistogramMetrics::KeeperServerProcessRequestDuration,
+            {toOperationTypeMetricLabel(zk_request->getOpNum())},
+            elapsed_ms);
     });
 
     if (!initialized)

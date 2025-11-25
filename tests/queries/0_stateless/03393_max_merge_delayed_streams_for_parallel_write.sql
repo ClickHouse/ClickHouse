@@ -21,8 +21,8 @@ settings
     --- avoid excessive memory usage (due to default buffer size of 1MiB that is created for each column)
     max_merge_delayed_streams_for_parallel_write = 100,
     -- avoid superfluous merges
-    merge_selector_base = 1000
-;
+    merge_selector_base = 1000,
+    auto_statistics_types = '';
 
 insert into metric_log select * from generateRandom() limit 10;
 
