@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_reverse_dictionary_lookup_cache_size_bytes", 100 * 1024 * 1024, 100 * 1024 * 1024, "New setting. Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query."},
             {"query_plan_max_limit_for_lazy_materialization", 10, 100, "More optimal"},
             {"create_table_empty_primary_key_by_default", false, true, "Better usability"},
-            {"cluster_table_function_split_granularity", "file", "bucket", "New setting."},
+            {"cluster_table_function_split_granularity", "file", "file", "New setting."},
             {"cluster_table_function_buckets_batch_size", 0, 0, "New setting."},
             {"arrow_flight_request_descriptor_type", "path", "path", "New setting. Type of descriptor to use for Arrow Flight requests: 'path' or 'command'. Dremio requires 'command'."},
             {"send_profile_events", true, true, "New setting. Whether to send profile events to the clients."},
