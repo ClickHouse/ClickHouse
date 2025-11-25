@@ -225,7 +225,7 @@ void ColumnArray::insertData(const char * pos, size_t length)
 }
 
 
-StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -237,7 +237,7 @@ StringRef ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char con
 
     for (size_t i = 0; i < array_size; ++i)
     {
-        auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin);
+        auto value_ref = getData().serializeValueIntoArena(offset + i, arena, begin, settings);
         res.data = value_ref.data - res.size;
         res.size += value_ref.size;
     }
@@ -267,7 +267,7 @@ StringRef ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena &
 }
 
 
-char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     size_t array_size = sizeAt(n);
     size_t offset = offsetAt(n);
@@ -275,7 +275,7 @@ char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory) const
     memcpy(memory, &array_size, sizeof(array_size));
     memory += sizeof(array_size);
     for (size_t i = 0; i < array_size; ++i)
-        memory = getData().serializeValueIntoMemory(offset + i, memory);
+        memory = getData().serializeValueIntoMemory(offset + i, memory, settings);
     return memory;
 }
 
@@ -299,13 +299,13 @@ std::optional<size_t> ColumnArray::getSerializedValueSize(size_t n) const
 }
 
 
-void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     size_t array_size;
     readBinaryLittleEndian<size_t>(array_size, in);
 
     for (size_t i = 0; i < array_size; ++i)
-        getData().deserializeAndInsertFromArena(in);
+        getData().deserializeAndInsertFromArena(in, settings);
 
     getOffsets().push_back(getOffsets().back() + array_size);
 }

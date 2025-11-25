@@ -159,9 +159,9 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
+    return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
 StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -169,9 +169,9 @@ StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena 
     return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
 }
 
-char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return values->serializeValueIntoMemory(getValueIndex(n), memory);
+    return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
 }
 
 std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
@@ -179,9 +179,9 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
     return values->getSerializedValueSize(getValueIndex(n));
 }
 
-void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in); });
+    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
 }
 
 void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)

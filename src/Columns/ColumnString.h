@@ -205,15 +205,15 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
+    void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;

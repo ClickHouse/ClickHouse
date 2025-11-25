@@ -193,8 +193,8 @@ public:
         variant_column_ptr->popBack(n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
 

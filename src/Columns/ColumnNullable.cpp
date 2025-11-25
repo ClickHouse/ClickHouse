@@ -171,7 +171,7 @@ void ColumnNullable::insertData(const char * pos, size_t length)
     }
 }
 
-StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     const auto & arr = getNullMapData();
 
@@ -184,7 +184,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
         return StringRef(pos, 1);
 
     /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
-    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin);
+    auto nested_ref = getNestedColumn().serializeValueIntoArena(n, arena, begin, settings);
 
     /// serializeValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
     return StringRef(nested_ref.data - 1, nested_ref.size + 1);
@@ -209,7 +209,7 @@ StringRef ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Aren
     return StringRef(nested_ref.data - 1, nested_ref.size + 1);
 }
 
-char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     const auto & arr = getNullMapData();
 
@@ -219,7 +219,7 @@ char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory) const
     if (arr[n])
         return memory;
 
-    return getNestedColumn().serializeValueIntoMemory(n, memory);
+    return getNestedColumn().serializeValueIntoMemory(n, memory, settings);
 }
 
 std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
@@ -230,7 +230,7 @@ std::optional<size_t> ColumnNullable::getSerializedValueSize(size_t n) const
     return 1 + *nested_size; /// +1 for null mask byte.
 }
 
-void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     UInt8 val;
     readBinaryLittleEndian<UInt8>(val, in);
@@ -238,7 +238,7 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in)
     getNullMapData().push_back(val);
 
     if (val == 0)
-        getNestedColumn().deserializeAndInsertFromArena(in);
+        getNestedColumn().deserializeAndInsertFromArena(in, settings);
     else
         getNestedColumn().insertDefault();
 }

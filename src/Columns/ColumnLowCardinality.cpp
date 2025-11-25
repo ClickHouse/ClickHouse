@@ -276,9 +276,9 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
+    return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin, settings);
 }
 
 StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -286,12 +286,12 @@ StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n
     return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
-char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnLowCardinality::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory);
+    return getDictionary().serializeValueIntoMemory(getIndexes().getUInt(n), memory, settings);
 }
 
-void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally.
     chassert(is_null == nullptr);
@@ -305,14 +305,14 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows);
 
     PaddedPODArray<UInt64> dict_sizes;
-    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr);
+    getDictionary().collectSerializedValueSizes(dict_sizes, nullptr, settings);
     idx.collectSerializedValueSizes(sizes, dict_sizes);
 }
 
-void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     compactIfSharedDictionary();
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in));
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in, settings));
 }
 
 void ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)

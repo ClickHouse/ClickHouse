@@ -791,7 +791,7 @@ void ColumnVariant::rollback(const ColumnCheckpoint & checkpoint)
         variants[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr = globalDiscriminatorAt(n);
@@ -802,7 +802,7 @@ StringRef ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena, char c
     if (global_discr == NULL_DISCRIMINATOR)
         return res;
 
-    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin);
+    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoArena(offsetAt(n), arena, begin, settings);
     res.data = value_ref.data - res.size;
     res.size += value_ref.size;
 
@@ -827,7 +827,7 @@ StringRef ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena
     return res;
 }
 
-void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
     Discriminator global_discr;
@@ -842,7 +842,7 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in)
     }
 
     getOffsets().push_back(variants[local_discr]->size());
-    variants[local_discr]->deserializeAndInsertFromArena(in);
+    variants[local_discr]->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
@@ -874,7 +874,7 @@ void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const
     variants[localDiscriminatorByGlobal(global_discr)]->skipSerializedInArena(in);
 }
 
-char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     Discriminator global_discr = globalDiscriminatorAt(n);
     memcpy(memory, &global_discr, sizeof(global_discr));
@@ -882,7 +882,7 @@ char * ColumnVariant::serializeValueIntoMemory(size_t n, char * memory) const
     if (global_discr == NULL_DISCRIMINATOR)
         return memory;
 
-    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory);
+    return variants[localDiscriminatorByGlobal(global_discr)]->serializeValueIntoMemory(offsetAt(n), memory, settings);
 }
 
 std::optional<size_t> ColumnVariant::getSerializedValueSize(size_t n) const

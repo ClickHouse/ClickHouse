@@ -329,7 +329,7 @@ void ColumnTuple::rollback(const ColumnCheckpoint & checkpoint)
         columns[i]->rollback(*checkpoints[i]);
 }
 
-StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -342,7 +342,7 @@ StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char con
     StringRef res(begin, 0);
     for (const auto & column : columns)
     {
-        auto value_ref = column->serializeValueIntoArena(n, arena, begin);
+        auto value_ref = column->serializeValueIntoArena(n, arena, begin, settings);
         res.data = value_ref.data - res.size;
         res.size += value_ref.size;
     }
@@ -371,7 +371,7 @@ StringRef ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena &
     return res;
 }
 
-char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
     {
@@ -380,7 +380,7 @@ char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory) const
     }
 
     for (const auto & column : columns)
-        memory = column->serializeValueIntoMemory(n, memory);
+        memory = column->serializeValueIntoMemory(n, memory, settings);
 
     return memory;
 }
@@ -403,7 +403,7 @@ std::optional<size_t> ColumnTuple::getSerializedValueSize(size_t n) const
 }
 
 
-void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     ++column_length;
 
@@ -414,7 +414,7 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in)
     }
 
     for (auto & column : columns)
-        column->deserializeAndInsertFromArena(in);
+        column->deserializeAndInsertFromArena(in, settings);
 }
 
 void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)

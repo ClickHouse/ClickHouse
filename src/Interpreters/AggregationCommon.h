@@ -232,7 +232,7 @@ static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
 
     size_t sum_size = 0;
     for (size_t j = 0; j < keys_size; ++j)
-        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin).size;
+        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin, nullptr).size;
 
     return {begin, sum_size};
 }

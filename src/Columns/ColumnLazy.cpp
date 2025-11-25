@@ -152,7 +152,7 @@ void ColumnLazy::popBack(size_t)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method popBack is not supported for {}", getName());
 }
 
-void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &)
+void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }

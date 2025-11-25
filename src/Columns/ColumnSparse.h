@@ -77,11 +77,11 @@ public:
     ColumnPtr convertToFullColumnIfSparse() const override;
 
     void insertData(const char * pos, size_t length) override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

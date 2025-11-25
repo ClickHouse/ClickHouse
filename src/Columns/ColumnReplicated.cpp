@@ -133,9 +133,9 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin);
+    return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin, settings);
 }
 
 StringRef ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -143,9 +143,9 @@ StringRef ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Ar
     return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
 }
 
-char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
-    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory);
+    return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
 }
 
 std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
@@ -153,9 +153,9 @@ std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
     return nested_column->getSerializedValueSize(indexes.getIndexAt(n));
 }
 
-void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in)
+void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    nested_column->deserializeAndInsertFromArena(in);
+    nested_column->deserializeAndInsertFromArena(in, settings);
     indexes.insertIndex(nested_column->size() - 1);
 }
 

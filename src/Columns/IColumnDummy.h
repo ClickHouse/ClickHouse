@@ -55,9 +55,9 @@ public:
         ++s;
     }
 
-    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin) const override;
+    StringRef serializeValueIntoArena(size_t /*n*/, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 
