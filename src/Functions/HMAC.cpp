@@ -197,8 +197,8 @@ SELECT
             "Case-insensitive mode",
             R"(
 SELECT
-    HMAC('SHA256', 'message', 'key') = HMAC('sha256', 'message', 'key') AS same_result,
-    HMAC('SHA256', 'message', 'key') = HMAC('Sha256', 'message', 'key') AS also_same;
+    hmac('SHA256', 'message', 'key') = HMAC('sha256', 'message', 'key') AS same_result,
+    HMAC('SHA256', 'message', 'key') = Hmac('Sha256', 'message', 'key') AS also_same;
             )",
             R"(
 ┌─same_result─┬─also_same─┐
