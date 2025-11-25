@@ -1,7 +1,9 @@
 #pragma once
 
 #include <mutex>
+#include <tuple>
 #include <base/defines.h>
+#include <Common/AggregatedMetrics.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
@@ -855,7 +857,7 @@ public:
     /// It includes parts that have been just removed by these method
     /// and Outdated parts covered by drop_range that were removed earlier for any reason.
     PartsToRemoveFromZooKeeper removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(
-        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part = true);
+        MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock, bool create_empty_part = true, bool clone_to_detached = false);
 
     /// Restores Outdated part and adds it to working set
     void restoreAndActivatePart(const DataPartPtr & part);
@@ -1395,6 +1397,26 @@ protected:
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
+private:
+    struct NamesAndTypesListHash
+    {
+        size_t operator()(const NamesAndTypesList & list) const noexcept;
+    };
+    struct ColumnsDescriptionCache
+    {
+        std::shared_ptr<const ColumnsDescription> original;
+        std::shared_ptr<const ColumnsDescription> with_collected_nested;
+    };
+    mutable AggregatedMetrics::MetricHandle columns_descriptions_metric_handle;
+    mutable std::mutex columns_descriptions_cache_mutex;
+    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+
+public:
+    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
+    void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
+    size_t getColumnsDescriptionsCacheSize() const;
+
+protected:
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
 

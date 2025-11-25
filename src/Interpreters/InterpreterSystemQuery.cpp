@@ -445,6 +445,12 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
             system_context->clearTextIndexPostingsCache();
             break;
+        case Type::DROP_TEXT_INDEX_CACHES:
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
+            system_context->clearTextIndexDictionaryBlockCache();
+            system_context->clearTextIndexHeaderCache();
+            system_context->clearTextIndexPostingsCache();
+            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -567,7 +573,13 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::DROP_DISK_METADATA_CACHE:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
+
+            auto metadata = getContext()->getDisk(query.disk)->getMetadataStorage();
+            if (metadata)
+                metadata->dropCache();
+
+            break;
         }
         case Type::DROP_PAGE_CACHE:
         {
@@ -1321,6 +1333,8 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     String create_query = fmt::format("CREATE DATABASE `{}` ENGINE=Atomic", restoring_database_name);
 
     auto create_ctx = Context::createCopy(Context::getGlobalContextInstance());
+    create_ctx->makeQueryContext();
+    create_ctx->setCurrentQueryId({});
     executeQuery(create_query, create_ctx, QueryFlags{.internal = true});
 
     TablesDependencyGraph tables_dependencies("Memory (" + restoring_database_name + ")");
@@ -1439,7 +1453,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
 
 std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(const ASTSystemQuery & query_)
 {
-    fs::path metadata_dir_path("metadata");
+    auto metadata_dir_path = DatabaseCatalog::getMetadataDirPath();
     auto default_db_disk = getContext()->getDatabaseDisk();
     for (const auto it = default_db_disk->iterateDirectory(metadata_dir_path); it->isValid(); it->next())
     {
@@ -1448,8 +1462,8 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
             continue;
 
         String db_name = sub_path.filename().string();
-        if (fs::path(db_name).extension() == ".sql")
-            db_name = fs::path(db_name).stem();
+        if (sub_path.extension() == ".sql")
+            db_name = sub_path.stem();
 
         auto buf = default_db_disk->readFile(sub_path, getContext()->getReadSettings());
         std::string query;
@@ -1585,6 +1599,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
             String restoring_database_name = RESTORING_DATABASE_NAME_FOR_TABLE_DROPPING_PREFIX + getRandomASCIIString(32);
             SCOPE_EXIT({
                 auto drop_ctx = Context::createCopy(Context::getGlobalContextInstance());
+                drop_ctx->makeQueryContext();
                 drop_ctx->setCurrentQueryId(toString(UUIDHelpers::generateV4()));
                 String drop_query = fmt::format("DROP DATABASE IF EXISTS `{}` SYNC", restoring_database_name);
                 executeQuery(drop_query, drop_ctx);
@@ -1871,6 +1886,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_TEXT_INDEX_DICTIONARY_CACHE:
         case Type::DROP_TEXT_INDEX_HEADER_CACHE:
         case Type::DROP_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::DROP_TEXT_INDEX_CACHES:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:

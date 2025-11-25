@@ -536,6 +536,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* is_datalake_query*/true,
         /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
+        /* order_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
 }
@@ -710,10 +711,10 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
-ASTPtr DatabaseDataLake::getCreateDatabaseQuery() const
+ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->setDatabase(database_name);
     create_query->set(create_query->storage, database_engine_definition);
     create_query->uuid = db_uuid;
     return create_query;

@@ -604,12 +604,12 @@ bool DiskObjectStorage::isReadOnly() const
 
 bool DiskObjectStorage::isPlain() const
 {
-    return object_storage->isPlain();
+    return metadata_storage->isPlain();
 }
 
 bool DiskObjectStorage::isWriteOnce() const
 {
-    return object_storage->isWriteOnce();
+    return metadata_storage->isWriteOnce();
 }
 
 bool DiskObjectStorage::isSharedCompatible() const
@@ -637,7 +637,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return !isWriteOnce() && !object_storage->isPlain();
+    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 
 DiskObjectStoragePtr DiskObjectStorage::createDiskObjectStorage()
@@ -871,7 +871,7 @@ Strings DiskObjectStorage::getBlobPath(const String & path) const
 
 bool DiskObjectStorage::areBlobPathsRandom() const
 {
-    return object_storage->areObjectKeysRandom();
+    return metadata_storage->areBlobPathsRandom();
 }
 
 void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)

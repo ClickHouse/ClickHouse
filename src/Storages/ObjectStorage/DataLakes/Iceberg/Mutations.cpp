@@ -26,6 +26,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 namespace DB::ErrorCodes
 {

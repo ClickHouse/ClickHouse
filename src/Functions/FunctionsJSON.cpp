@@ -1416,11 +1416,11 @@ SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') AS res;
         FunctionDocumentation::Description description = R"(
 Parses JSON and extracts a value with given ClickHouse data type.
         )";
-        FunctionDocumentation::Syntax syntax = "JSONExtract(json, return_type[, indices_or_keys, ...])";
+        FunctionDocumentation::Syntax syntax = "JSONExtract(json[, indices_or_keys, ...], return_type)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse.", {"String"}},
-            {"return_type", "ClickHouse data type to return.", {"String"}},
-            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
+            {"return_type", "ClickHouse data type to return.", {"String"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a value of specified ClickHouse data type if possible, otherwise returns the default value for that type.", {}};
         FunctionDocumentation::Examples examples = {
@@ -1447,11 +1447,11 @@ SELECT JSONExtract('{"a": "hello", "b": [-100, 200.0, 300]}', 'Tuple(String, Arr
         FunctionDocumentation::Description description = R"(
 Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
         )";
-        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json, value_type[, indices_or_keys, ...])";
+        FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)";
         FunctionDocumentation::Arguments arguments = {
             {"json", "JSON string to parse.", {"String"}},
-            {"value_type", "ClickHouse data type of the values.", {"String"}},
-            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
+            {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
+            {"value_type", "ClickHouse data type of the values.", {"String"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with the parsed key-value pairs.", {"Array(Tuple(String, value_type))"}};
         FunctionDocumentation::Examples examples = {
