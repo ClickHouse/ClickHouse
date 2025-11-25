@@ -229,12 +229,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto default_db_disk = getContext()->getDatabaseDisk();
 
     /// Will write file with database metadata, if needed.
-    String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_dir_path("metadata");
-    fs::path store_dir_path("store");
-    default_db_disk->createDirectories(metadata_dir_path);
-    fs::path metadata_file_tmp_path = metadata_dir_path / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = metadata_dir_path / (database_name_escaped + ".sql");
+    default_db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
+    auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
 
     fs::path metadata_path;
     if (!create.storage && create.attach)
@@ -287,7 +284,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (create.uuid == UUIDHelpers::Nil)
             create.uuid = UUIDHelpers::generateV4();
 
-        metadata_path = store_dir_path / DatabaseCatalog::getPathForUUID(create.uuid);
+        metadata_path = DatabaseCatalog::getStoreDirPath(create.uuid);
 
         if (!create.attach && default_db_disk->existsDirectory(metadata_path) && !default_db_disk->isDirectoryEmpty(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists and is not empty", metadata_path.string());
@@ -302,7 +299,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// a) the initiator of `ON CLUSTER` query generated it to ensure the same UUIDs are used on different hosts; or
         /// b) `RESTORE from backup` query generated it to ensure the same UUIDs are used on different hosts.
         create.uuid = UUIDHelpers::Nil;
-        metadata_path = metadata_dir_path / database_name_escaped;
+        metadata_path = DatabaseCatalog::getMetadataDirPath(database_name);
     }
 
     if (create.storage->engine->name == "MaterializedPostgreSQL"
@@ -342,12 +339,12 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         String statement = statement_buf.str();
 
         /// Needed to make database creation retriable if it fails after the file is created
-        default_db_disk->removeFileIfExists(metadata_file_tmp_path);
+        default_db_disk->removeFileIfExists(metadata_tmp_file_path);
 
         /// Exclusive flag guarantees, that database is not created right now in another thread.
         writeMetadataFile(
             default_db_disk,
-            /*file_path=*/metadata_file_tmp_path,
+            /*file_path=*/metadata_tmp_file_path,
             /*content=*/statement,
             /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
     }
@@ -366,7 +363,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (need_write_metadata)
         {
             /// Prevents from overwriting metadata of detached database
-            default_db_disk->moveFile(metadata_file_tmp_path, metadata_file_path);
+            default_db_disk->moveFile(metadata_tmp_file_path, metadata_file_path);
             renamed = true;
         }
 

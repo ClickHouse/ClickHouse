@@ -46,8 +46,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"query_plan_text_index_add_hint", true, true, "New setting"},
+            {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
+            {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {
@@ -60,7 +64,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"into_outfile_create_parent_directories", false, false, "New setting"},
             {"correlated_subqueries_default_join_kind", "left", "right", "New setting. Default join kind for decorrelated query plan."},
             {"use_statistics_cache", 0, 0, "New setting"},
-            {"enable_shared_storage_snapshot_in_query", false, true, "Better consistency guarantees."},
             {"input_format_parquet_use_native_reader_v3", false, true, "Seems stable"},
             {"max_projection_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},
             {"min_table_rows_to_use_projection_index", 1'000'000, 1'000'000, "New setting"},

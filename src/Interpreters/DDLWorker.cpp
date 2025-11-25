@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int NO_ZOOKEEPER;
+    extern const int INVALID_CONFIG_PARAMETER;
 }
 
 constexpr const char * TASK_PROCESSED_OUT_REASON = "Task has been already processed";
@@ -1308,27 +1309,6 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
 
     active_node_holders.clear();
 
-    for (auto it = active_node_holders.begin(); it != active_node_holders.end();)
-    {
-        auto & zk = it->second.first;
-        if (zk->expired())
-        {
-            const auto & host_id = it->first;
-            String active_path = fs::path(replicas_dir) / host_id / "active";
-            LOG_DEBUG(log, "Zookeeper of active_path {} expired, removing the holder", active_path);
-
-            auto & active_node_holder = it->second.second;
-            if (active_node_holder)
-                active_node_holder->setAlreadyRemoved();
-            it = active_node_holders.erase(it);
-        }
-        else
-        {
-            ++it;
-        }
-    }
-
-
     const auto maybe_secure_port = context->getTCPPortSecure();
     const auto port = context->getTCPPort();
 
@@ -1337,13 +1317,10 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
     NameSet local_host_ids;
     for (const auto & host_id : host_ids)
     {
-        if (active_node_holders.contains(host_id))
-            continue;
-
         try
         {
             HostID host = HostID::fromString(host_id);
-            if (DDLTask::IsSelfHostID(host, maybe_secure_port, port))
+            if (DDLTask::isSelfHostID(log, host, maybe_secure_port, port))
                 local_host_ids.emplace(host_id);
         }
         catch (const Exception & e)
@@ -1409,6 +1386,17 @@ void DDLWorker::markReplicasActive(bool /*reinitialized*/)
         auto active_node_holder_zookeeper = zookeeper;
         auto active_node_holder = zkutil::EphemeralNodeHolder::existing(active_path, *active_node_holder_zookeeper);
         active_node_holders[host_id] = {active_node_holder_zookeeper, active_node_holder};
+    }
+
+    if (active_node_holders.empty())
+    {
+        for (const auto & it : context->getClusters())
+        {
+            const auto & cluster = it.second;
+            if (!cluster->getHostIDs().empty())
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER, "There are clusters with host ids but no local host found for this replica.");
+        }
     }
 }
 

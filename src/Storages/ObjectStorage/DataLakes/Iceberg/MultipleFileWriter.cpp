@@ -32,29 +32,34 @@ MultipleFileWriter::MultipleFileWriter(
 {
 }
 
+void MultipleFileWriter::startNewFile()
+{
+    if (buffer)
+        finalize();
+
+    current_file_num_rows = 0;
+    current_file_num_bytes = 0;
+    auto filename = filename_generator.generateDataFileName();
+
+    data_file_names.push_back(filename.path_in_storage);
+    buffer = object_storage->writeObject(
+        StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+
+    if (format_settings)
+    {
+        format_settings->parquet.write_page_index = true;
+        format_settings->parquet.bloom_filter_push_down = true;
+        format_settings->parquet.filter_push_down = true;
+    }
+    output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
+        configuration->format, *buffer, *sample_block, context, format_settings);
+}
+
 void MultipleFileWriter::consume(const Chunk & chunk)
 {
     if (!current_file_num_rows || *current_file_num_rows >= max_data_file_num_rows || *current_file_num_bytes >= max_data_file_num_bytes)
     {
-        if (buffer)
-            finalize();
-
-        current_file_num_rows = 0;
-        current_file_num_bytes = 0;
-        auto filename = filename_generator.generateDataFileName();
-
-        data_file_names.push_back(filename.path_in_storage);
-        buffer = object_storage->writeObject(
-            StoredObject(filename.path_in_storage), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
-
-        if (format_settings)
-        {
-            format_settings->parquet.write_page_index = true;
-            format_settings->parquet.bloom_filter_push_down = true;
-            format_settings->parquet.filter_push_down = true;
-        }
-        output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-            configuration->format, *buffer, *sample_block, context, format_settings);
+        startNewFile();
     }
     output_format->write(sample_block->cloneWithColumns(chunk.getColumns()));
     output_format->flush();
