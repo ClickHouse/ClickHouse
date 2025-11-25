@@ -61,6 +61,9 @@
     <!-- Do not send clickhouse-client to background on C-z -->
     <!-- <ignore_shell_suspend>true</ignore_shell_suspend> -->
 
+    <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
+    <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
+
     <!--
         Settings adjustable via command-line parameters
         can take their defaults from that config file, see examples:
