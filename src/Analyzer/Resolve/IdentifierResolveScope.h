@@ -164,6 +164,9 @@ struct IdentifierResolveScope
     /// Table expressions in resolve process
     std::unordered_set<const IQueryTreeNode *> table_expressions_in_resolve_process;
 
+    /// Cached resolved identifiers
+    std::unordered_map<IdentifierLookup, IdentifierResolveResult, IdentifierLookupHash> identifier_to_resolved_expression_cache;
+
     /// Table expression node to data
     std::unordered_map<QueryTreeNodePtr, AnalysisTableExpressionData> table_expression_node_to_data;
 

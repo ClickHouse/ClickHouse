@@ -17,9 +17,6 @@ struct ScopeAliases
     /// Alias name to table expression node
     std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_table_expression_node;
 
-    /// Cached fully resolved expression aliases
-    std::unordered_map<std::string, QueryTreeNodePtr> alias_name_to_resolved_expression_node;
-
     /// Nodes with duplicated aliases
     QueryTreeNodes nodes_with_duplicated_aliases;
 
