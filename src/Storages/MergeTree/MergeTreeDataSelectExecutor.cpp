@@ -97,9 +97,6 @@ namespace Setting
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool parallel_replicas_support_projection;
     extern const SettingsBool vector_search_with_rescoring;
-    extern const SettingsUInt64 max_rows_to_read_leaf;
-    extern const SettingsOverflowMode read_overflow_mode_leaf;
-
 }
 
 namespace MergeTreeSetting
@@ -118,7 +115,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_PARTITIONS;
-    extern const int TOO_MANY_ROWS;
     extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
 }
@@ -662,7 +658,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     RangesInDataParts parts_with_ranges,
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-    const SelectQueryInfo & query_info,
     const ContextPtr & context,
     const KeyCondition & key_condition,
     const std::optional<KeyCondition> & part_offset_condition,
@@ -675,28 +670,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     bool use_skip_indexes,
     bool find_exact_ranges,
     bool is_final_query,
-    bool is_parallel_reading_from_replicas,
-    ReadFromMergeTree::AnalysisResult & result)
+    bool is_parallel_reading_from_replicas)
 {
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
-
-    /// Check if we have projections, as that can determine whether we fail during reading parts
-    /// or analyze projection candidates to see if we can serve the query more efficiently
-    bool projection_parts_exist = !parts_with_ranges.empty() && std::any_of(
-        parts_with_ranges.begin(),
-        parts_with_ranges.end(),
-        [](const auto & part) { return part.data_part->isProjectionPart(); });
-
-    bool has_projections = metadata_snapshot->hasProjections() || projection_parts_exist;
-
-    bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection]
-        && (has_projections || find_exact_ranges);
 
     if (context->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator])
     {
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
+        bool is_handling_projection_parts = std::any_of(
+            parts_with_ranges.begin(),
+            parts_with_ranges.end(),
+            [](const auto & part) { return part.data_part->isProjectionPart(); }) || find_exact_ranges;
+        bool support_projection_optimization = settings[Setting::parallel_replicas_support_projection] && (is_handling_projection_parts || metadata_snapshot->hasProjections());
+
         if (!support_projection_optimization)
             // Skip index analysis and return parts with all marks
             // The coordinator will choose ranges to read for workers based on index analysis on its side
@@ -789,12 +777,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         auto query_status = context->getProcessListElement();
 
-        // These limits are checked per part so that we can fail very quickly
-        // if we hit row limits on large datasets. Row counts use an atomic
-        // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
-        std::atomic<size_t> total_rows{0};
-
         auto process_part = [&](size_t part_index)
         {
             if (query_status)
@@ -867,8 +849,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 {
                     for (const auto & index : indices)
                     {
-                        if (auto index_result = can_use_index(index); !index_result)
-                            return index_result;
+                        if (auto result = can_use_index(index); !result)
+                            return result;
                     }
                     return {};
                 };
@@ -895,9 +877,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     size_t total_granules = ranges.ranges.getNumberOfMarks();
                     stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
 
-                    if (auto index_result = can_use_index(index_and_condition.index); !index_result)
+                    if (auto result = can_use_index(index_and_condition.index); !result)
                     {
-                        LOG_TRACE(log, "{}", index_result.error().text);
+                        LOG_TRACE(log, "{}", result.error().text);
                         continue;
                     }
 
@@ -934,9 +916,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     auto & stat = merged_indices_stat[idx];
                     stat.total_parts.fetch_add(1, std::memory_order_relaxed);
 
-                    if (auto index_result = can_use_merged_index(indices_and_condition.indices); !index_result)
+                    if (auto result = can_use_merged_index(indices_and_condition.indices); !result)
                     {
-                        LOG_TRACE(log, "{}", index_result.error().text);
+                        LOG_TRACE(log, "{}", result.error().text);
                         continue;
                     }
 
@@ -962,35 +944,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     if (ranges.ranges.empty())
                         stat.parts_dropped.fetch_add(1, std::memory_order_relaxed);
-                }
-            }
-
-            if (!ranges.ranges.empty())
-            {
-                if (limits.max_rows || leaf_limits.max_rows)
-                {
-                    auto current_rows_estimate = ranges.getRowsCount();
-                    size_t prev_rows_estimate = total_rows.fetch_add(current_rows_estimate, std::memory_order_relaxed);
-                    size_t total_rows_estimate = current_rows_estimate + prev_rows_estimate;
-
-                    if (query_info.trivial_limit > 0 && total_rows_estimate > query_info.trivial_limit)
-                    {
-                        total_rows_estimate = query_info.trivial_limit;
-                    }
-
-                    bool exceeds_limits = (limits.max_rows && total_rows_estimate > limits.max_rows)
-                                       || (leaf_limits.max_rows && total_rows_estimate > leaf_limits.max_rows);
-
-                    /// Even though we exceeded limits on parent parts, we may be able to use a projection
-                    /// mark the result as unusable and return gracefully to analyze projection candidates
-                    if (exceeds_limits && has_projections)
-                    {
-                        result.exceeded_row_limits = true;
-                        return;
-                    }
-
-                    limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read' setting)", ErrorCodes::TOO_MANY_ROWS);
-                    leaf_limits.check(total_rows_estimate, 0, "rows (controlled by 'max_rows_to_read_leaf' setting)", ErrorCodes::TOO_MANY_ROWS);
                 }
             }
         };
@@ -1140,31 +1093,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         });
 
     return parts_with_ranges;
-}
-
-MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits(
-    const Settings & settings,
-    const SelectQueryInfo & query_info)
-{
-    RowLimits row_limits;
-
-    /// Do not check number of read rows if we are
-    /// reading in order via the sorting key with limit.
-    /// In the general case, when you have a WHERE clause
-    /// it's impossible to estimate number of rows precisely,
-    /// because we can stop reading at any time, especially given
-    /// part processing is done in multiple threads (max_threads)
-    if (settings[Setting::read_overflow_mode] == OverflowMode::THROW
-        && settings[Setting::max_rows_to_read]
-        && !query_info.input_order_info)
-        row_limits.limits = SizeLimits(settings[Setting::max_rows_to_read], 0, settings[Setting::read_overflow_mode]);
-
-    if (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW
-        && settings[Setting::max_rows_to_read_leaf]
-        && !query_info.input_order_info)
-        row_limits.leaf_limits = SizeLimits(settings[Setting::max_rows_to_read_leaf], 0, settings[Setting::read_overflow_mode_leaf]);
-
-    return row_limits;
 }
 
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(

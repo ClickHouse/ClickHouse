@@ -5123,7 +5123,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
+    DECLARE(Bool, enable_shared_storage_snapshot_in_query, false, R"(
 If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
 This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
 
@@ -6602,7 +6602,7 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into file cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
+Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
 )", 0) \
     DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
@@ -6633,6 +6633,12 @@ Enables Test level logs of DeltaLake expression visitor. These logs can be too v
 )", 0) \
     DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
 Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_start_version, -1, R"(
+Start version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_end_version, -1, R"(
+End version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
 )", 0) \
     DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
 Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
@@ -7159,7 +7165,13 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
 If set to true, allow using the experimental text index.
 )", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
-Allow to perform full text search filtering using only the inverted index in query plan.
+Allow to perform full text search filtering using only the inverted text index in query plan.
+)", 0) \
+    DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
+Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
+)", 0) \
+    DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
+Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0) \
     DECLARE(Bool, use_text_index_dictionary_cache, false, R"(
 Whether to use a cache of deserialized text index dictionary block.
