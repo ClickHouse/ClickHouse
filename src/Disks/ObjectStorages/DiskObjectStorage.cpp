@@ -871,7 +871,7 @@ Strings DiskObjectStorage::getBlobPath(const String & path) const
 
 bool DiskObjectStorage::areBlobPathsRandom() const
 {
-    return object_storage->areObjectKeysRandom();
+    return metadata_storage->areBlobPathsRandom();
 }
 
 void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
