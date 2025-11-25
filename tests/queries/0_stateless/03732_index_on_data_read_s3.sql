@@ -24,18 +24,22 @@ SET use_uncompressed_cache = 0;
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
+SYSTEM DROP INDEX UNCOMPRESSED CACHE;
 SELECT count() FROM t_index_on_data_read_s3 WHERE v = 100 SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 1;
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
+SYSTEM DROP INDEX UNCOMPRESSED CACHE;
 SELECT count() FROM t_index_on_data_read_s3 WHERE v = 100 SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 0;
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
+SYSTEM DROP INDEX UNCOMPRESSED CACHE;
 SELECT count() FROM t_index_on_data_read_s3 WHERE v = 300 SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 1;
 
 SYSTEM DROP MARK CACHE;
 SYSTEM DROP INDEX MARK CACHE;
+SYSTEM DROP INDEX UNCOMPRESSED CACHE;
 SELECT count() FROM t_index_on_data_read_s3 WHERE v = 300 SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 0;
 
 SYSTEM FLUSH LOGS query_log;

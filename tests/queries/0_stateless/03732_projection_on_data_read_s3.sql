@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas, no-fasttest
+-- Tags: no-parallel, no-parallel-replicas, no-fasttest, no-random-settings
 
 DROP TABLE IF EXISTS t_projection_on_data_read_s3;
 
