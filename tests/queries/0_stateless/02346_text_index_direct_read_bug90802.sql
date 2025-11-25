@@ -1,4 +1,4 @@
--- 03580_text_index_direct_read_optimization_bug0001.sql
+-- Test cases for optimization for like using text index
 
 SET allow_experimental_full_text_index = 1;
 SET allow_experimental_analyzer = 1;
