@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
 #include <Interpreters/Context_fwd.h>
