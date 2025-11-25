@@ -169,12 +169,12 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
     /// created on the part.
     if (index->isVectorSimilarityIndex())
     {
-        UInt128 key = VectorSimilarityIndexCache::hash(
+        auto key = VectorSimilarityIndexCache::hash(
             part->getDataPartStorage().getFullPath(),
             index->getFileName(),
             mark);
 
-        granule = vector_similarity_index_cache->getOrSet(part->getRelativePathOfActivePart(), key, load_func);
+        granule = vector_similarity_index_cache->getOrSet(key, load_func);
     }
     else
     {

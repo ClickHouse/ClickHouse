@@ -3,6 +3,7 @@
 -- no-parallel: Vector index cache should not be touched by another test
 
 SET enable_analyzer = 1;
+SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 
 DROP TABLE IF EXISTS tab;
 
@@ -13,7 +14,7 @@ INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1
 
 -- Make sure vector index is loaded and used
 WITH [0.0, 2.0] AS reference_vec
-SELECT id 
+SELECT id
 FROM tab
 ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3;

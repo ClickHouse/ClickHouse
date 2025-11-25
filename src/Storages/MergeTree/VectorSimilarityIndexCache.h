@@ -48,18 +48,42 @@ struct VectorSimilarityIndexCacheWeightFunction
     }
 };
 
+struct VectorSimilarityIndexCacheKey
+{
+    /// The actual key:
+    UInt128 key;
+
+    /// Auxiliary information, conceptually not part of the key
+    String path_to_data_part;
+
+    bool operator==(const VectorSimilarityIndexCacheKey & rhs) const
+    {
+        return (key == rhs.key && path_to_data_part == rhs.path_to_data_part);
+    }
+};
+
+struct VectorSimilarityIndexCacheHashFunction
+{
+    size_t operator()(const VectorSimilarityIndexCacheKey & key) const
+    {
+        UInt128TrivialHash hash;
+        return hash(key.key);
+    }
+};
+
 
 /// Cache of deserialized vector index granules.
-class VectorSimilarityIndexCache : public CacheBase<UInt128, VectorSimilarityIndexCacheCell, UInt128TrivialHash, VectorSimilarityIndexCacheWeightFunction>
+class VectorSimilarityIndexCache : public CacheBase<VectorSimilarityIndexCacheKey, VectorSimilarityIndexCacheCell, VectorSimilarityIndexCacheHashFunction, VectorSimilarityIndexCacheWeightFunction>
 {
 public:
-    using Base = CacheBase<UInt128, VectorSimilarityIndexCacheCell, UInt128TrivialHash, VectorSimilarityIndexCacheWeightFunction>;
+
+    using Base = CacheBase<VectorSimilarityIndexCacheKey, VectorSimilarityIndexCacheCell, VectorSimilarityIndexCacheHashFunction, VectorSimilarityIndexCacheWeightFunction>;
 
     VectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::VectorSimilarityIndexCacheBytes, CurrentMetrics::VectorSimilarityIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
 
-    static UInt128 hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
+    static VectorSimilarityIndexCacheKey hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
     {
         SipHash hash;
         hash.update(path_to_data_part.size());
@@ -67,12 +91,12 @@ public:
         hash.update(index_name.size());
         hash.update(index_name.data(), index_name.size());
         hash.update(index_mark);
-        return hash.get128();
+        return VectorSimilarityIndexCacheKey{hash.get128(), path_to_data_part};
     }
 
     /// LoadFunc should have signature () -> MergeTreeIndexGranulePtr.
     template <typename LoadFunc>
-    MergeTreeIndexGranulePtr getOrSet(const String & path_of_part, const Key & key, LoadFunc && load)
+    MergeTreeIndexGranulePtr getOrSet(const Key & key, LoadFunc && load)
     {
         auto wrapped_load = [&]() -> std::shared_ptr<VectorSimilarityIndexCacheCell>
         {
@@ -87,26 +111,12 @@ public:
         else
             ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheHits);
 
-        if (result.second)
-        {
-            std::lock_guard lock(mutex);
-            part_keys_map[path_of_part].emplace_back(key);
-        }
         return result.first->granule;
     }
 
-    void removePartGranulesFromCache(const String & path_of_part)
+    void removePartGranulesFromCache(const String & path_to_data_part)
     {
-        std::vector<Key> keys;
-        {
-            std::lock_guard lock(mutex);
-            keys = part_keys_map[path_of_part];
-            part_keys_map.erase(path_of_part);
-        }
-        for (const auto & key : keys)
-        {
-            Base::remove(key);
-        }
+        Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
     }
 
 private:
@@ -116,8 +126,6 @@ private:
         ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
         UNUSED(mapped_ptr);
     }
-
-    std::unordered_map<String, std::vector<Key>> part_keys_map; /// TSA_GUARDED_BY(CacheBase::mutex);
 };
 
 using VectorSimilarityIndexCachePtr = std::shared_ptr<VectorSimilarityIndexCache>;
