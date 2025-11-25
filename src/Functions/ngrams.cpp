@@ -68,7 +68,7 @@ public:
         arguments[1].column->get(0, ngram_argument_value);
         auto ngram_value = ngram_argument_value.safeGet<UInt64>();
 
-        NgramTokenExtractor extractor(ngram_value);
+        NgramsTokenExtractor extractor(ngram_value);
 
         auto result_column_string = ColumnString::create();
 
@@ -119,12 +119,12 @@ private:
 REGISTER_FUNCTION(Ngrams)
 {
     FunctionDocumentation::Description description = R"(
-Splits a UTF-8 string into n-grams of `ngramsize` symbols.
+Splits a UTF-8 string into n-grams of length `N`.
 )";
-    FunctionDocumentation::Syntax syntax = "ngrams(s, ngram_size)";
+    FunctionDocumentation::Syntax syntax = "ngrams(s, N)";
     FunctionDocumentation::Arguments arguments = {
         {"s", "Input string.", {"String", "FixedString"}},
-        {"ngram_size", "The size of an n-gram.", {"const UInt8/16/32/64"}}
+        {"N", "The n-gram length.", {"const UInt8/16/32/64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with n-grams.", {"Array(String)"}};
     FunctionDocumentation::Examples examples = {

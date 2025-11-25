@@ -14,9 +14,9 @@
 #include <Formats/FormatFactory.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -163,7 +163,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
+    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client),

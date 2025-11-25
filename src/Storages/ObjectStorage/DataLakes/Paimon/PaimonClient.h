@@ -11,7 +11,7 @@
 #include <vector>
 #include <Core/TypeId.h>
 #include <Disks/IStoragePolicy.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/Decimal.h>
 #include <base/types.h>

@@ -1,18 +1,14 @@
 #pragma once
 
-#include <vector>
-
-#include <boost/range/adaptor/reversed.hpp>
-
-#include <base/sort.h>
-
-#include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/ArenaWithFreeLists.h>
-#include <Common/ArenaUtils.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/HashTable/HashMap.h>
-
 #include <IO/VarInt.h>
+#include <base/sort.h>
+#include <Common/AllocatorWithMemoryTracking.h>
+#include <Common/ArenaUtils.h>
+#include <Common/ArenaWithFreeLists.h>
+#include <Common/HashTable/ClearableHashMap.h>
+#include <Common/HashTable/Hash.h>
+
+#include <vector>
 
 
 /*
@@ -24,6 +20,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+extern const int TOO_LARGE_ARRAY_SIZE;
+}
 
 /*
  * Arena interface to allow specialized storage of keys.
@@ -74,11 +76,15 @@ class SpaceSaving
 private:
     // Suggested constants in the paper "Finding top-k elements in data streams", chap 6. equation (24)
     // Round to nearest power of 2 for cheaper binning without modulo
-    constexpr uint64_t nextAlphaSize(uint64_t x)
+    constexpr UInt64 nextAlphaSize(UInt64 x)
     {
-        constexpr uint64_t alpha_map_elements_per_counter = 6;
-        return 1ULL << (sizeof(uint64_t) * 8 - std::countl_zero(x * alpha_map_elements_per_counter));
+        constexpr UInt64 alpha_map_elements_per_counter = 6;
+        return 1ULL << (sizeof(UInt64) * 8 - std::countl_zero(x * alpha_map_elements_per_counter));
     }
+
+    /// Limit the max alpha value to avoid overflow with merges or topKWeighted with huge weights
+    /// Better to have a less precise value than an overflow (which will lead to incorrect results)
+    static constexpr UInt64 MAX_ALPHA_VALUE = UInt64{UINT32_MAX};
 
 public:
     using Self = SpaceSaving;
@@ -88,7 +94,12 @@ public:
         Counter() = default;
 
         explicit Counter(const TKey & k, UInt64 c = 0, UInt64 e = 0, size_t h = 0)
-          : key(k), slot(0), hash(h), count(c), error(e) {}
+            : key(k)
+            , hash(h)
+            , count(c)
+            , error(e)
+        {
+        }
 
         void write(WriteBuffer & wb) const
         {
@@ -100,42 +111,48 @@ public:
             writeVarUInt(error, wb);
         }
 
-        void read(ReadBuffer & rb)
+        void read(ReadBuffer & rb, SpaceSavingArena<TKey> & space_arena)
         {
             if constexpr (std::is_same_v<TKey, StringRef>)
-                readBinary(key, rb);
+            {
+                String skey;
+                readBinary(skey, rb);
+                key = space_arena.emplace(skey);
+            }
             else
                 readBinaryLittleEndian(key, rb);
             readVarUInt(count, rb);
             readVarUInt(error, rb);
         }
 
-        // greater() taking slot error into account
+        // greater() taking error into account
         bool operator> (const Counter & b) const
         {
-            return (count > b.count) || (count == b.count && error < b.error);
+            return ((count - error) > (b.count - b.error)) || ((count - error) == (b.count - b.error) && count > b.count);
         }
 
         TKey key;
-        size_t slot;
         size_t hash;
         UInt64 count;
         UInt64 error;
     };
 
-    explicit SpaceSaving(size_t c = 10) : alpha_map(nextAlphaSize(c)), m_capacity(c) {}
+    explicit SpaceSaving(size_t c = 0)
+    {
+        if (c != 0)
+            resize(c);
+    }
 
     ~SpaceSaving() { destroyElements(); }
+
+    bool empty() const { return counter_list.empty(); }
 
     size_t size() const
     {
         return counter_list.size();
     }
 
-    size_t capacity() const
-    {
-        return m_capacity;
-    }
+    size_t capacity() const { return requested_capacity; }
 
     void clear()
     {
@@ -144,9 +161,15 @@ public:
 
     void resize(size_t new_capacity)
     {
-        counter_list.reserve(new_capacity);
-        alpha_map.resize(nextAlphaSize(new_capacity));
-        m_capacity = new_capacity;
+        if (requested_capacity != new_capacity)
+        {
+            chassert(empty());
+            alpha_map.resize(nextAlphaSize(new_capacity), 0);
+            requested_capacity = new_capacity;
+            /// If the requested capacity is really small we would end up sorting and truncating too often
+            target_capacity = std::max(size_t{64}, requested_capacity * 2);
+            counter_list.reserve(target_capacity);
+        }
     }
 
     void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
@@ -154,46 +177,23 @@ public:
         // Increase weight of a key that already exists
         auto hash = counter_map.hash(key);
 
-        if (auto * counter = findCounter(key, hash); counter)
+        if (auto * counter = findCounter(key, hash))
         {
             counter->count += increment;
             counter->error += error;
-            percolate(counter);
             return;
         }
 
         // Key doesn't exist, but can fit in the top K
-        if (unlikely(size() < capacity()))
+        if (unlikely(counter_list.size() < capacity()))
         {
-            push(std::make_unique<Counter>(arena.emplace(key), increment, error, hash));
+            push(Counter{arena.emplace(key), increment, error, hash});
             return;
         }
 
-        auto & min = counter_list.back();
-        // The key doesn't exist and cannot fit in the current top K, but
-        // the new key has a bigger weight and is virtually more present
-        // compared to the element who is less present on the set. This part
-        // of the code is useful for the function topKWeighted
-        if (increment > min->count)
-        {
-            destroyLastElement();
-            push(std::make_unique<Counter>(arena.emplace(key), increment, error, hash));
-            return;
-        }
-
-        const size_t alpha_mask = alpha_map.size() - 1;
+        const UInt64 alpha_mask = alpha_map.size() - 1;
         auto & alpha = alpha_map[hash & alpha_mask];
-        if (alpha + increment < min->count)
-        {
-            alpha += increment;
-            return;
-        }
-
-        // Erase the current minimum element
-        alpha_map[min->hash & alpha_mask] = min->count;
-        destroyLastElement();
-
-        push(std::make_unique<Counter>(arena.emplace(key), alpha + increment, alpha + error, hash));
+        push(Counter{arena.emplace(key), alpha + increment, alpha + error, hash});
     }
 
     /*
@@ -202,20 +202,26 @@ public:
      */
     void merge(const Self & rhs)
     {
-        if (!rhs.size())
+        if (rhs.empty())
             return;
+
+        if (empty())
+        {
+            *this = rhs;
+            return;
+        }
 
         UInt64 m1 = 0;
         UInt64 m2 = 0;
 
-        if (size() == capacity())
+        if (size() >= capacity())
         {
-            m1 = counter_list.back()->count;
+            m1 = *std::ranges::max_element(alpha_map);
         }
 
-        if (rhs.size() == rhs.capacity())
+        if (rhs.counter_list.size() >= rhs.capacity())
         {
-            m2 = rhs.counter_list.back()->count;
+            m2 = *std::ranges::max_element(rhs.alpha_map);
         }
 
         /*
@@ -228,117 +234,172 @@ public:
         {
             for (auto & counter : counter_list)
             {
-                counter->count += m2;
-                counter->error += m2;
+                counter.count += m2;
+                counter.error += m2;
             }
         }
 
-        // The list is sorted in descending order, we have to scan in reverse
-        for (auto & counter : boost::adaptors::reverse(rhs.counter_list))
+        for (const auto & counter : rhs.counter_list)
         {
-            size_t hash = counter_map.hash(counter->key);
-            if (auto * current = findCounter(counter->key, hash))
+            size_t hash = counter.hash;
+            if (auto * current = findCounter(counter.key, hash))
             {
                 // Subtract m2 previously added, guaranteed not negative
-                current->count += (counter->count - m2);
-                current->error += (counter->error - m2);
+                current->count += (counter.count - m2);
+                current->error += (counter.error - m2);
             }
             else
             {
                 // Counters not monitored in S1
-                counter_list.push_back(std::make_unique<Counter>(arena.emplace(counter->key), counter->count + m1, counter->error + m1, hash));
+                counter_list.push_back(Counter{arena.emplace(counter.key), counter.count + m1, counter.error + m1, hash});
             }
         }
 
-        ::sort(counter_list.begin(), counter_list.end(), [](const auto & l, const auto & r) { return *l > *r; });
-
-        if (counter_list.size() > m_capacity)
+        if (alpha_map.size() == rhs.alpha_map.size())
         {
-            for (size_t i = m_capacity; i < counter_list.size(); ++i)
-                arena.free(counter_list[i]->key);
-            counter_list.resize(m_capacity);
+            for (size_t i = 0; i < alpha_map.size(); i++)
+                alpha_map[i] = std::min(alpha_map[i] + rhs.alpha_map[i], MAX_ALPHA_VALUE);
         }
 
-        for (size_t i = 0; i < counter_list.size(); ++i)
-            counter_list[i]->slot = i;
-        rebuildCounterMap();
+        truncateIfNeeded(true);
     }
 
     std::vector<Counter> topK(size_t k) const
     {
-        std::vector<Counter> res;
+        std::vector<Counter> new_list;
+        new_list.reserve(counter_list.size());
         for (auto & counter : counter_list)
-        {
-            res.push_back(*counter);
-            if (res.size() == k)
-                break;
-        }
-        return res;
+            new_list.push_back(counter);
+
+        size_t return_size = std::min(new_list.size(), k);
+        ::partial_sort(
+            new_list.begin(), new_list.begin() + return_size, new_list.end(), [](const auto & l, const auto & r) { return l > r; });
+
+        new_list.resize(return_size);
+
+        return new_list;
     }
 
     void write(WriteBuffer & wb) const
     {
-        writeVarUInt(size(), wb);
+        std::vector<Counter> new_list;
+        new_list.reserve(counter_list.size());
         for (auto & counter : counter_list)
-            counter->write(wb);
+            new_list.push_back(counter);
+
+        size_t return_size = std::min(new_list.size(), capacity());
+        ::partial_sort(
+            new_list.begin(), new_list.begin() + return_size, new_list.end(), [](const auto & l, const auto & r) { return l > r; });
+
+        writeVarUInt(return_size, wb);
+        for (size_t i = 0; i < return_size; i++)
+            new_list[i].write(wb);
 
         writeVarUInt(alpha_map.size(), wb);
         for (auto alpha : alpha_map)
             writeVarUInt(alpha, wb);
     }
 
-    void read(ReadBuffer & rb)
+    void read(ReadBuffer & rb, size_t capacity)
     {
-        destroyElements();
         size_t count = 0;
         readVarUInt(count, rb);
+        if (count > capacity)
+            throw DB::Exception(
+                DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Found too large when reading counters (Passed: {}. Maximum: {})", count, capacity);
 
+        if (!count)
+        {
+            /// It is possible that the state was written before the set was initialized, which would add 0 Counters and the alpha map
+            /// The size of the alpha map depends on the version and what was the default but we can just ignore it (no Counters mean there
+            /// should be no errors in the alpha map)
+            skipAlphaMap(rb);
+            return;
+        }
+
+        resize(capacity);
         for (size_t i = 0; i < count; ++i)
         {
-            auto counter = std::make_unique<Counter>();
-            counter->read(rb);
-            counter->hash = counter_map.hash(counter->key);
-            push(std::move(counter));
+            counter_list.emplace_back();
+            auto & counter = counter_list.back();
+            counter.read(rb, arena);
+            counter.hash = counter_map.hash(counter.key);
         }
 
         readAlphaMap(rb);
+        truncateIfNeeded(true);
     }
 
     void readAlphaMap(ReadBuffer & rb)
     {
         size_t alpha_size = 0;
         readVarUInt(alpha_size, rb);
+
+        size_t expected_capacity = alpha_map.size();
+        if (alpha_size != expected_capacity)
+            throw DB::Exception(
+                DB::ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
+                "Found incorrect alpha vector size (Passed: {}. Expected: {})",
+                alpha_size,
+                expected_capacity);
+
         for (size_t i = 0; i < alpha_size; ++i)
         {
             UInt64 alpha = 0;
             readVarUInt(alpha, rb);
-            alpha_map.push_back(alpha);
+            alpha_map[i] = alpha;
+        }
+    }
+
+    void skipAlphaMap(ReadBuffer & rb)
+    {
+        size_t alpha_size = 0;
+        readVarUInt(alpha_size, rb);
+
+        for (size_t i = 0; i < alpha_size; ++i)
+        {
+            UInt64 alpha = 0;
+            readVarUInt(alpha, rb);
         }
     }
 
 protected:
-    void push(std::unique_ptr<Counter> counter)
+    NO_INLINE void push(Counter && counter)
     {
-        counter->slot = counter_list.size();
-        auto * ptr = counter.get();
+        size_t pos = counter_list.size();
+        counter_map.insertIfNotPresent(counter.key, counter.hash, pos);
         counter_list.push_back(std::move(counter));
-        counter_map[ptr->key] = ptr;
-        percolate(ptr);
+        truncateIfNeeded(false);
     }
 
-    // This is equivalent to one step of bubble sort
-    void percolate(Counter * counter)
+    ALWAYS_INLINE void truncateIfNeeded(bool force_counter_map_rebuild)
     {
-        while (counter->slot > 0)
+        if (unlikely(counter_list.size() >= target_capacity))
         {
-            auto & next = counter_list[counter->slot - 1];
-            if (*counter > *next)
+            ::nth_element(
+                counter_list.begin(),
+                counter_list.begin() + capacity(),
+                counter_list.end(),
+                [](const auto & l, const auto & r) { return l > r; });
+
+            const UInt64 alpha_mask = alpha_map.size() - 1;
+            for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
-                std::swap(next->slot, counter->slot);
-                std::swap(counter_list[next->slot], counter_list[counter->slot]);
+                size_t pos = counter_list[i].hash & alpha_mask;
+                alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
+                arena.free(counter_list[i].key);
             }
-            else
-                break;
+
+            counter_list.resize(requested_capacity);
+            force_counter_map_rebuild = true;
+        }
+
+        if (force_counter_map_rebuild)
+        {
+            /// Rebuild the counter map
+            counter_map.clear();
+            for (size_t i = 0; i < counter_list.size(); ++i)
+                counter_map.insertIfNotPresent(counter_list[i].key, counter_list[i].hash, i);
         }
     }
 
@@ -346,50 +407,57 @@ private:
     void destroyElements()
     {
         for (auto & counter : counter_list)
-            arena.free(counter->key);
+            arena.free(counter.key);
 
         counter_map.clear();
         counter_list.clear();
         alpha_map.clear();
+        requested_capacity = 0;
     }
 
-    void destroyLastElement()
-    {
-        auto & last_element = counter_list.back();
-        counter_map.erase(last_element->key);
-        arena.free(last_element->key);
-        counter_list.pop_back();
-
-        ++removed_keys;
-        if (removed_keys * 2 > counter_map.size())
-            rebuildCounterMap();
-    }
-
-    Counter * findCounter(const TKey & key, size_t hash)
+    ALWAYS_INLINE Counter * findCounter(const TKey & key, size_t hash)
     {
         auto it = counter_map.find(key, hash);
         if (!it)
             return nullptr;
 
-        return it->getMapped();
+        return &counter_list[it->getMapped()];
     }
 
-    void rebuildCounterMap()
+    SpaceSaving & operator=(const SpaceSaving & rhs)
     {
-        removed_keys = 0;
-        counter_map.clear();
-        for (auto & counter : counter_list)
-            counter_map[counter->key] = counter.get();
+        if (&rhs == this)
+            return *this;
+
+        if (!empty())
+            destroyElements();
+        resize(rhs.capacity());
+
+        counter_list = rhs.counter_list;
+        alpha_map = rhs.alpha_map;
+
+        if constexpr (std::is_same_v<TKey, StringRef>)
+        {
+            /// Need to copy the keys into our own arena
+            for (auto & counter : counter_list)
+                counter.key = arena.emplace(counter.key);
+        }
+        truncateIfNeeded(true);
+
+        return *this;
     }
 
-    using CounterMap = HashMapWithStackMemory<TKey, Counter *, Hash, 4>;
 
-    CounterMap counter_map;
-    std::vector<std::unique_ptr<Counter>, AllocatorWithMemoryTracking<std::unique_ptr<Counter>>> counter_list;
-    std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map;
-    SpaceSavingArena<TKey> arena;
-    size_t m_capacity;
-    size_t removed_keys = 0;
+    using CounterMap = ClearableHashMapWithStackMemoryAndSavedHash<TKey, size_t, Hash, 4>;
+
+    CounterMap counter_map{};
+    std::vector<Counter, AllocatorWithMemoryTracking<Counter>> counter_list{};
+    std::vector<UInt64, AllocatorWithMemoryTracking<UInt64>> alpha_map{};
+    SpaceSavingArena<TKey> arena{};
+    /// Capacity requested by the user. We will never return more than this many elements in topK().
+    size_t requested_capacity = 0;
+    /// Internal target capacity to avoid frequent truncations.
+    size_t target_capacity = 0;
 };
 
 }

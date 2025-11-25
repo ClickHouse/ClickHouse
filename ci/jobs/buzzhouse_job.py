@@ -153,9 +153,6 @@ def main():
         "compare_success_results": False,  # This can give false positives, so disable it
         "allow_infinite_tables": False,  # Creating too many issues
         "allow_hardcoded_inserts": random.choice([True, False]),
-        # These are the error codes that I disallow at the moment
-        "disallowed_error_codes": "9,11,13,15,99,100,101,102,108,127,162,165,166,167,168,172,230,231,234,235,246,256,257,261,272,273,274,275,305,307,521,635,637,638,639,640,641,642,645,647,718,1003",
-        "oracle_ignore_error_codes": "1,36,43,47,48,53,59,210,262,321,386,403,467",
         "client_file_path": "/var/lib/clickhouse/user_files",
         "server_file_path": "/var/lib/clickhouse/user_files",
         "log_path": "/workspace/fuzzerout.sql",
@@ -202,6 +199,7 @@ def main():
             "union_default_mode",
             "except_default_mode",
             "input_format_skip_unknown_fields",
+            "unknown_packet_in_send_data",
         ],
         # MergeTree settings to set more often
         "hot_table_settings": [

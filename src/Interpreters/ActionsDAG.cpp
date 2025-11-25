@@ -253,6 +253,15 @@ ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
     auto & res = nodes.emplace_back(std::move(node));
 
+    // This should only be a temporary fix to avoid regression in 25.10
+    // https://github.com/ClickHouse/ClickHouse/issues/90363#issue-3642139014
+    if (res.type != ActionType::PLACEHOLDER)
+    {
+        const auto valid_column = !res.column || (res.column->isConst() || typeid_cast<const ColumnSet *>(res.column.get()) != nullptr);
+        if (!valid_column)
+            res.column = nullptr;
+    }
+
     if (res.type == ActionType::INPUT)
         inputs.emplace_back(&res);
 

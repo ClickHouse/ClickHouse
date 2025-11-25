@@ -300,10 +300,11 @@ MergeSelectorChoices chooseMergesFrom(
 
         for (size_t i = 0; i < choices.size(); ++i)
         {
+            const auto & merge_type = choices[i].merge_type;
             const auto & range = choices[i].range;
             const auto & range_patches = choices[i].range_patches;
             ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, range.size());
-            LOG_TRACE(log, "Merge #{} with {} parts from {} to {} with {} patches", i, range.size(), range.front().name, range.back().name, range_patches.size());
+            LOG_TRACE(log, "Merge #{} type {} with {} parts from {} to {} with {} patches", i, merge_type, range.size(), range.front().name, range.back().name, range_patches.size());
         }
     }
 

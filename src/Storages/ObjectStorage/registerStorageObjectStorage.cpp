@@ -70,6 +70,10 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
 
+    ASTPtr order_by;
+    if (args.storage_def->order_by)
+        order_by = args.storage_def->order_by->clone();
+
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
     Settings settings_copy = args.getLocalContext()->getSettingsCopy();
     context_copy->setSettings(settings_copy);
@@ -89,7 +93,8 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,
-        partition_by);
+        partition_by,
+        order_by);
 }
 
 #endif

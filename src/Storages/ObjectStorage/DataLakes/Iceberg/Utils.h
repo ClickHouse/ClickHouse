@@ -1,13 +1,14 @@
 #pragma once
 
-#include "config.h"
-
 #include <string>
 #include <string_view>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Columns/IColumn.h>
+#include <Storages/KeyDescription.h>
+#include <Core/SortDescription.h>
 
 #if USE_AVRO
 
@@ -16,7 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/CompressionMethod.h>
 
@@ -80,6 +81,8 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     String path_location,
     const ColumnsDescription & columns,
     ASTPtr partition_by,
+    ASTPtr order_by,
+    ContextPtr context,
     UInt64 format_version = 2);
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
@@ -88,6 +91,20 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr cache_ptr,
     const ContextPtr & local_context,
     Poco::Logger * log);
+
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
+
+/// Parse transform and argument from input parameter
+/// "x" -> {"identity", "x"}
+/// "identity(x)" -> {"identity", "x"}
+/// "bucket(16, x)" -> {"bucket[16]", "x"}
+std::pair<String, String> parseTransformAndColumn(ASTPtr object, size_t i);
+DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
+
+KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr metadata_object, const NamesAndTypesList & ch_schema, ContextPtr local_context);
+void sortBlockByKeyDescription(Block & block, const KeyDescription & sort_description, ContextPtr context);
+
 }
 
 #endif

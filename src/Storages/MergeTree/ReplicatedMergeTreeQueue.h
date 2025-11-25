@@ -132,6 +132,7 @@ private:
         MutationStatus(const ReplicatedMergeTreeMutationEntryPtr & entry_, MergeTreeDataFormatVersion format_version_)
             : entry(entry_)
             , parts_to_do(format_version_)
+            , parts_in_progress(format_version_)
         {
         }
 
@@ -145,6 +146,9 @@ private:
         /// We use ActiveDataPartSet structure to be able to manage covering and
         /// covered parts.
         ActiveDataPartSet parts_to_do;
+
+        /// Current parts that are currently being mutated.
+        ActiveDataPartSet parts_in_progress;
 
         /// Note that is_done is not equivalent to parts_to_do.size() == 0
         /// (even if parts_to_do.size() == 0 some relevant parts can still commit in the future).
@@ -264,6 +268,16 @@ private:
     /// or block_number == part.getDataVersion()
     ///    ^ (this may happen if we downloaded mutated part from other replica)
     void removeCoveredPartsFromMutations(const String & part_name, bool remove_part, bool remove_covered_parts);
+
+    /// Add part to mutations (parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
+    /// and block_number <= new_part_info.getMutationVersion()
+    void addPartInProgressToMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
+
+    /// Remove part from mutations(parts_in_progress), which satisfy conditions:
+    /// block_number > part_info.getDataVersion()
+    /// and block_number <= new_part_info.getMutationVersion()
+    void removePartInProgressFromMutations(const String & part_name, const MergeTreePartInfo & part_info, const MergeTreePartInfo & new_part_info);
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,

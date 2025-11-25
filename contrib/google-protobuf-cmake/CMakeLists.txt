@@ -440,20 +440,45 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     endif()
 else ()
     # Build 'protoc' for host arch
-    set (PROTOC_BUILD_DIR "${protobuf_binary_dir}/build")
+    set (PROTOC_BUILD_DIR "${protobuf_binary_dir}/protoc_build")
+    set (ABSL_BUILD_DIR "${protobuf_binary_dir}/absl_build")
+    set (INSTALL_DIR "${protobuf_binary_dir}/install")
 
     if (NOT EXISTS "${PROTOC_BUILD_DIR}/protoc")
 
-        # This is quite ugly but I cannot make dependencies work propery.
-
+        # We need to build abseil for the native processor to then use it as dependency for protoc build
+        # This is required because google-protobuf cmake does not support passing a different abseil source path
+        # In any case it's not a big deal because it was going to be built for the host platform anyway
         set(abseil_source_dir "${ClickHouse_SOURCE_DIR}/contrib/abseil-cpp")
-
         execute_process(
-            COMMAND mkdir -p ${PROTOC_BUILD_DIR}
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
+                COMMAND mkdir -p ${PROTOC_BUILD_DIR} ${ABSL_BUILD_DIR}
+                COMMAND_ECHO STDOUT
+                COMMAND_ERROR_IS_FATAL ANY
+        )
+        execute_process(
+                COMMAND ${CMAKE_COMMAND}
+                "-G${CMAKE_GENERATOR}"
+                "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+                "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
+                "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+                "-DCMAKE_C_COMPILER_LAUNCHER=${CMAKE_C_COMPILER_LAUNCHER}"
+                "-DCMAKE_CXX_COMPILER_LAUNCHER=${CMAKE_CXX_COMPILER_LAUNCHER}"
+                "-S ${abseil_source_dir}"
+                "-B ${ABSL_BUILD_DIR}"
+                "-DABSL_ENABLE_INSTALL=ON"
+                "-DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}"
+                WORKING_DIRECTORY ${ABSL_BUILD_DIR}
+                COMMAND_ECHO STDOUT
+                COMMAND_ERROR_IS_FATAL ANY
         )
 
+        execute_process(
+                COMMAND ${CMAKE_COMMAND} --build ${ABSL_BUILD_DIR} --target install
+                COMMAND_ECHO STDOUT
+                COMMAND_ERROR_IS_FATAL ANY
+        )
+
+        # Now we build the native protoc executable
         execute_process(
             COMMAND ${CMAKE_COMMAND}
                 "-G${CMAKE_GENERATOR}"
@@ -466,8 +491,10 @@ else ()
                 "-Dprotobuf_BUILD_CONFORMANCE=0"
                 "-Dprotobuf_BUILD_EXAMPLES=0"
                 "-Dprotobuf_BUILD_PROTOC_BINARIES=1"
-                "-DABSL_ROOT_DIR=${abseil_source_dir}"
-                "-DABSL_ENABLE_INSTALL=0"
+                "-Dprotobuf_LOCAL_DEPENDENCIES_ONLY=1"
+                "-DCMAKE_MODULE_PATH=${INSTALL_DIR}"
+                "-DCMAKE_PREFIX_PATH=${INSTALL_DIR}"
+                "-DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
             COMMAND_ECHO STDOUT
@@ -475,7 +502,7 @@ else ()
         )
 
         execute_process(
-            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
+            COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}" --target protoc
             COMMAND_ECHO STDOUT
             COMMAND_ERROR_IS_FATAL ANY
         )

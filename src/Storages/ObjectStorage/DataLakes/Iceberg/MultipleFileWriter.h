@@ -24,6 +24,7 @@ public:
         SharedHeader sample_block_);
 
     void consume(const Chunk & chunk);
+    void startNewFile();
     void finalize();
     void release();
     void cancel();

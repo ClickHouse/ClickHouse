@@ -3,7 +3,7 @@
 #include <Disks/DiskFactory.h>
 #include <Disks/registerDisks.h>
 #include <Disks/IDiskTransaction.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>

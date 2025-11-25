@@ -6,7 +6,7 @@
 #include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
-#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>

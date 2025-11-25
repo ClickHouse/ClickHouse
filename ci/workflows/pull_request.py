@@ -38,7 +38,6 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.pr_body.set_dependency([JobNames.STYLE_CHECK]),
         JobConfigs.docs_job,
         JobConfigs.fast_test,
         *JobConfigs.tidy_build_arm_jobs,
@@ -56,6 +55,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.special_build_jobs
         ],
         # TODO: stabilize new jobs and remove set_allow_merge_on_failure
+        JobConfigs.lightweight_functional_tests_job,
         JobConfigs.stateless_tests_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_merge_on_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,

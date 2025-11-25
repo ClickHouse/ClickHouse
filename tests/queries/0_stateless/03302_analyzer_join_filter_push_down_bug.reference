@@ -23,7 +23,7 @@ Positions: 0
         Actions: INPUT :: 0 -> __table2.value DateTime : 0
                  INPUT :: 1 -> __table3.value DateTime : 1
         Positions: 0 1
-          Join
+          Join (JOIN FillRightFirst)
           Type: CROSS
           Strictness: ALL
           Algorithm: HashJoin

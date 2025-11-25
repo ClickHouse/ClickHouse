@@ -7,20 +7,20 @@ Test select text + hasAnyTokens:	Alick a01
 Test hasToken and hasToken:	0
 Test hasAnyTokens or hasToken:	2
 Test NOT hasAllTokens:	1
-Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_e7a7ab2df53846f18ae5a86c4ce452e9], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f], Removed: [text]
-Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8]
-Added: [__text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f]
-Added: [__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8, __text_index_idx_hasToken_c59a18d8fad9a55578502d88319e8999], Removed: [text]
-Added: [__text_index_idx_hasAnyTokens_d6702e45d9f4e5e38c13ef8e3a93dd13, __text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8], Removed: [text]
-Added: [__text_index_idx_hasAllTokens_c9d410e7a461849da4abf4ffd733029b], Removed: [text]
+Added: [__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_4ee2bec532c6178dac3d1abb4b4de13a], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f], Removed: [text]
+Added: [__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526]
+Added: [__text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f]
+Added: [__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526, __text_index_idx_hasToken_03ba1ee9f8f5547fa3472607e74b54ab], Removed: [text]
+Added: [__text_index_idx_hasAnyTokens_6ba31a5fd94cf84b5980ef5b2f57c99c, __text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526], Removed: [text]
+Added: [__text_index_idx_hasAllTokens_0cf595e5be4a417195d691692e9a6bbb], Removed: [text]
 - Test direct read optimization with EXPLAIN
-Filter column: __text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8 (removed)
-Filter column: __text_index_idx_hasAllTokens_e7a7ab2df53846f18ae5a86c4ce452e9 (removed)
-Filter column: __text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f (removed)
-Filter column: or(hasToken(text, \'Alick\'), greater(length(text), 1)) (removed)
-Prewhere filter column: __text_index_idx_hasAnyTokens_5bdd7eadb42d107c51b224fc6e4f764f (removed)
-Prewhere filter column: and(__text_index_idx_hasToken_964e5077dcf15a3ce9e4959da4ba5fb8, __text_index_idx_hasToken_c59a18d8fad9a55578502d88319e8999) (removed)
-Filter column: or(hasAnyTokens(text, [\'Blick\']), hasToken(text, \'Alick\')) (removed)
-Filter column: not(hasAllTokens(text, [\'Blick\'])) (removed)
+Filter column: __text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526 (removed)
+Filter column: __text_index_idx_hasAllTokens_4ee2bec532c6178dac3d1abb4b4de13a (removed)
+Filter column: __text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f (removed)
+Filter column: or(__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526, greater(length(text), 1)) (removed)
+Prewhere filter column: __text_index_idx_hasAnyTokens_80088ac930a68b662cb3f3d47743878f (removed)
+Prewhere filter column: and(__text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526, __text_index_idx_hasToken_03ba1ee9f8f5547fa3472607e74b54ab) (removed)
+Filter column: or(__text_index_idx_hasAnyTokens_6ba31a5fd94cf84b5980ef5b2f57c99c, __text_index_idx_hasToken_55f6a26b032e423b9e4a3c2172b24526) (removed)
+Filter column: not(__text_index_idx_hasAllTokens_0cf595e5be4a417195d691692e9a6bbb) (removed)

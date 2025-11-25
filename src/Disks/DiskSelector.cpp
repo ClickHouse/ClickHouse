@@ -1,6 +1,6 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>

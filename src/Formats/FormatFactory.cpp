@@ -669,6 +669,13 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     return format;
 }
 
+OutputFormatPtr FormatFactory::getDefaultJSONEachRowOutputFormat(WriteBuffer & buf, const Block & sample) const
+{
+    const auto & output_getter = getCreators("JSONEachRow").output_creator;
+    chassert(output_getter);
+    return output_getter(buf, sample, {}, {});
+}
+
 String FormatFactory::getContentType(const String & name, const std::optional<FormatSettings> & settings) const
 {
     return getCreators(name).content_type(settings);

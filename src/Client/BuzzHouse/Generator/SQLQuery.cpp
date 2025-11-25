@@ -2299,7 +2299,7 @@ void StatementGenerator::generateTopSelect(
             fc.truncate_output ? OutFormat::OUT_Null
                                : (static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
         sif->set_path(qfile.generic_string());
-        if (rg.nextSmallNumber() < 10)
+        if (fc.truncate_output || rg.nextSmallNumber() < 10)
         {
             sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
         }
