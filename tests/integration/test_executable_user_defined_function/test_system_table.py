@@ -135,7 +135,7 @@ def test_system_user_defined_functions_loaded_status(started_cluster):
     print(result)
 
     assert "name: test_working_udf" in result
-    assert "status: LOADED" in result
+    assert "status: SUCCESS" in result
     assert "type: executable" in result
     assert "command: working_script.sh" in result
     assert "format: TabSeparated" in result
@@ -184,7 +184,7 @@ def test_system_user_defined_functions_failed_status(started_cluster):
             status,
             error_message,
             error_count,
-            loading_time
+            last_loading_time
         FROM system.user_defined_functions
         WHERE name = 'test_failed_udf_invalid_type'
         FORMAT Vertical
@@ -227,9 +227,9 @@ def test_system_user_defined_functions_list_all_statuses(started_cluster):
     print("UDFs by status:")
     print(result)
 
-    # Should have both LOADED and FAILED
-    assert "status: LOADED" in result or "status: 1" in result
-    assert "status: FAILED" in result or "status: 2" in result
+    # Should have both SUCCESS and FAILED
+    assert "status: SUCCESS" in result or "status: 0" in result
+    assert "status: FAILED" in result or "status: 1" in result
 
     # List all failed UDFs with their errors
     result = node.query(
@@ -263,7 +263,7 @@ def test_system_user_defined_functions_columns(started_cluster):
     assert "name\t" in result
     assert "status\t" in result
     assert "error_message\t" in result
-    assert "loading_time\t" in result
+    assert "last_loading_time\t" in result
 
     # Configuration columns
     assert "type\t" in result

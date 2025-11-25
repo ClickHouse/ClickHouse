@@ -29,19 +29,18 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(),
             "Function name (UDF identifier)."},
-        {"status", std::make_shared<DataTypeEnum8>(getExternalLoaderStatusEnumAllPossibleValues()),
+        {"status", std::make_shared<DataTypeEnum8>(
+            DataTypeEnum8::Values{
+                {"SUCCESS", 0},
+                {"FAILED", 1}
+            }),
             "Loading status. Possible values: "
-            "NOT_LOADED — Not tried to load, "
-            "LOADED — Successfully loaded, "
-            "FAILED — Failed to load, "
-            "LOADING — Loading now (first time), "
-            "LOADED_AND_RELOADING — Loaded, being reloaded, "
-            "FAILED_AND_RELOADING — Failed before, reloading now, "
-            "NOT_EXIST — Not found in configuration."},
+            "SUCCESS — UDF loaded and ready to use, "
+            "FAILED — UDF failed to load (see error_message for details)."},
         {"error_message", std::make_shared<DataTypeString>(),
             "Detailed error message when loading fails. Empty if loaded successfully."},
-        {"loading_time", std::make_shared<DataTypeDateTime>(),
-            "Timestamp when loading started."},
+        {"last_loading_time", std::make_shared<DataTypeDateTime>(),
+            "Timestamp when the last loading attempt started."},
         {"type", std::make_shared<DataTypeString>(),
             "UDF type: 'executable' (single process) or 'executable_pool' (process pool)."},
         {"command", std::make_shared<DataTypeString>(),
@@ -93,7 +92,13 @@ void StorageSystemUserDefinedFunctions::fillData(
         size_t i = 0;
 
         res_columns[i++]->insert(load_result.name);
-        res_columns[i++]->insert(static_cast<Int8>(load_result.status));
+
+        // Map ExternalLoaderStatus to simplified SUCCESS/FAILED enum
+        // SUCCESS (0): LOADED, LOADED_AND_RELOADING
+        // FAILED (1): All other states (NOT_LOADED, FAILED, LOADING, FAILED_AND_RELOADING, NOT_EXIST)
+        Int8 simplified_status = (load_result.status == ExternalLoaderStatus::LOADED ||
+                                  load_result.status == ExternalLoaderStatus::LOADED_AND_RELOADING) ? 0 : 1;
+        res_columns[i++]->insert(simplified_status);
 
         if (load_result.exception)
             res_columns[i++]->insert(getExceptionMessage(load_result.exception, false));
