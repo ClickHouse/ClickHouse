@@ -328,6 +328,7 @@ void EvictionCandidates::afterEvictState(const CacheStateGuard::Lock & lock)
     {
         auto iterator = queue_entries_to_invalidate.back();
         iterator->invalidate();
+        iterator->check(lock);
         queue_entries_to_invalidate.pop_back();
     }
 

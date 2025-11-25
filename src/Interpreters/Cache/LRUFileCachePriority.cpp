@@ -676,14 +676,23 @@ void LRUFileCachePriority::holdImpl(
 
     state->add(size, elements, lock);
 
-    LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
+    total_hold_size += size;
+    total_hold_elements += elements;
+
+    // LOG_TEST(log, "Hold {} by size and {} by elements", size, elements);
 }
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
     state->sub(size, elements);
 
-    LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
+    state->current_size -= size;
+    state->current_elements_num -= elements;
+
+    total_hold_size -= size;
+    total_hold_elements -= elements;
+
+    // LOG_TEST(log, "Released {} by size and {} by elements", size, elements);
 }
 
 LRUFileCachePriority::LRUQueue::iterator LRUFileCachePriority::getEvictionPos(const CachePriorityGuard::ReadLock &) const

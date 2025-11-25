@@ -197,7 +197,7 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_merge_on_failure(self, value):
+        def set_allow_merge_on_failure(self, value=True):
             res = copy.deepcopy(self)
             res.allow_merge_on_failure = value
             return res

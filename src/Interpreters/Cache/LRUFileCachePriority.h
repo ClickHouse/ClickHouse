@@ -132,6 +132,18 @@ public:
         return std::distance(queue.begin(), eviction_pos);
     }
 
+protected:
+    void holdImpl(
+        size_t size,
+        size_t elements,
+        const CacheStateGuard::Lock & lock) override;
+
+    void releaseImpl(size_t size, size_t elements) override;
+
+    size_t getHoldSize() override { return total_hold_size; }
+
+    size_t getHoldElements() override { return total_hold_elements; }
+
 private:
     class LRUIterator;
     using LRUQueue = std::list<EntryPtr>;
@@ -147,6 +159,11 @@ private:
     /// Used to find its eviction info in collected eviction info map
     /// (which contains eviction info for several priority queues).
     const size_t queue_id;
+
+    /// Total "hold" size by "IFileCachePriority::HoldSpace"
+    /// (updated in holdImpl, releaseImpl).
+    std::atomic<size_t> total_hold_size = 0;
+    std::atomic<size_t> total_hold_elements = 0;
 
     bool canFit(
         size_t size,
@@ -183,12 +200,6 @@ private:
         const CachePriorityGuard::WriteLock &,
         const CacheStateGuard::Lock &);
 
-    void holdImpl(
-        size_t size,
-        size_t elements,
-        const CacheStateGuard::Lock & lock) override;
-
-    void releaseImpl(size_t size, size_t elements) override;
     std::string getApproxStateInfoForLog() const;
 
     LRUQueue::iterator getEvictionPos(const CachePriorityGuard::ReadLock &) const;

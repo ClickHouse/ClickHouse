@@ -24,7 +24,7 @@ namespace ErrorCodes
       "With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeepeer." \
       "With ordered mode, only the max name of the successfully consumed file stored.", \
       0) \
-    DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete or keep file in after successful processing", 0) \
+    DECLARE(ObjectStorageQueueAction, after_processing, ObjectStorageQueueAction::KEEP, "Delete, keep, move or tag file after successful processing", 0) \
     DECLARE(String, keeper_path, "", "Zookeeper node path", 0) \
     DECLARE(UInt64, loading_retries, 10, "Retry loading up to specified number of times", 0) \
     DECLARE(UInt64, processing_threads_num, 1, "Number of processing threads (default number of available CPUs or 16)", 0) \
@@ -49,6 +49,15 @@ namespace ErrorCodes
     DECLARE(UInt64, max_processed_rows_before_commit, 0, "Number of rows which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processed_bytes_before_commit, 0, "Number of bytes which can be processed before being committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
     DECLARE(UInt64, max_processing_time_sec_before_commit, 0, "Timeout in seconds after which to commit files committed to keeper (in case of parallel_inserts=true, works on a per-thread basis)", 0) \
+    DECLARE(UInt32, after_processing_retries, 10, "Number of retries for the after_processing action before giving up", 0) \
+    DECLARE(String, after_processing_move_uri, "", "S3 bucket URL to move processed files to", 0) \
+    DECLARE(String, after_processing_move_prefix, "", "Path prefix to move processed files to", 0) \
+    DECLARE(String, after_processing_tag_key, "", "Tag key to tag processed files in the storage", 0) \
+    DECLARE(String, after_processing_tag_value, "", "Tag value to tag processed files in the storage", 0) \
+    DECLARE(String, after_processing_move_access_key_id, "", "S3 Access Key ID accompanying after_processing_move_uri", 0) \
+    DECLARE(String, after_processing_move_secret_access_key, "", "S3 Secret Access Key accompanying after_processing_move_uri", 0) \
+    DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to", 0) \
+    DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
     OBJECT_STORAGE_QUEUE_RELATED_SETTINGS(M, ALIAS) \

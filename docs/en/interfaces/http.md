@@ -49,6 +49,8 @@ http://localhost:8123/play
 The web UI supports displaying progress during query runtime, query cancellation, and result streaming.
 It has a secret feature for displaying charts and graphs for query pipelines.
 
+After executing a query successfully, a download button appears that allows you to download the query results in various formats including CSV, TSV, JSON, JSONLines, Parquet, Markdown, or any custom format supported by ClickHouse. The download feature uses the query cache to efficiently retrieve results without re-executing the query. It will download the full result set even if the UI displayed only a single page out of many.
+
 The web UI is designed for professionals like you.
 
 <Image img={PlayUI} size="md" alt="ClickHouse Web UI screenshot" />

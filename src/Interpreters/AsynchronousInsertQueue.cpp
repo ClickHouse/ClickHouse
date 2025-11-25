@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -368,9 +369,10 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
     auto & insert_query = query->as<ASTInsertQuery &>();
     insert_query.async_insert_flush = true;
 
+    auto insert_context = Context::createCopy(query_context);
     InterpreterInsertQuery interpreter(
         query,
-        query_context,
+        insert_context,
         query_context->getSettingsRef()[Setting::insert_allow_materialized_columns],
         /* no_squash */ false,
         /* no_destination */ false,
@@ -888,7 +890,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
+        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length, true);
 }
 
 }
@@ -908,7 +910,7 @@ try
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
-    bool internal = false; // To enable logging this query
+    bool internal = true;
     bool async_insert = true;
 
     /// Disabled query spans. Could be activated by initializing this to a SpanHolder
@@ -957,7 +959,8 @@ try
         normalized_query_hash,
         key.query.get(),
         insert_context,
-        start_watch.getStart());
+        start_watch.getStart(),
+        internal);
 
     auto query_status = process_list_entry->getQueryStatus();
     insert_context->setProcessListElement(std::move(query_status));
@@ -1059,7 +1062,7 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
 
         if (async_insert_log)
         {
@@ -1166,15 +1169,12 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
-    const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
-    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_query.table_id)
+    if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())
     {
-        StoragePtr storage = DatabaseCatalog::instance().getTable(insert_query.table_id, insert_context);
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-        const auto & columns = metadata_snapshot->getColumns();
+        const auto & columns = insert_context->getInsertionTableColumnsDescription().value();
         if (columns.hasDefaults())
             adding_defaults_transform = std::make_shared<AddingDefaultsTransform>(std::make_shared<const Block>(header), columns, *format, insert_context);
     }

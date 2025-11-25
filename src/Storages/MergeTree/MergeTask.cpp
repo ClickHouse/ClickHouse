@@ -278,7 +278,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             key_columns.insert(name);
         /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
         else
-            key_columns.insert(Nested::splitName(name).first);
+            key_columns.insert(String(Nested::getColumnFromSubcolumn(name, storage_columns)));
     }
 
     /// Force sign column for Collapsing mode
@@ -323,8 +323,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
             const auto & column_name = index_columns.front();
             if (storage_columns.contains(column_name))
                 global_ctx->skip_indexes_by_column[column_name].push_back(index);
+            /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
             else
-                global_ctx->skip_indexes_by_column[Nested::splitName(column_name).first].push_back(index);
+                global_ctx->skip_indexes_by_column[String(Nested::getColumnFromSubcolumn(column_name, storage_columns))].push_back(index);
         }
         else
         {
@@ -334,7 +335,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
                     key_columns.insert(index_column);
                 /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
                 else
-                    key_columns.insert(Nested::splitName(index_column).first);
+                    key_columns.insert(String(Nested::getColumnFromSubcolumn(index_column, storage_columns)));
             }
 
             global_ctx->merging_skip_indexes.push_back(index);
@@ -1534,7 +1535,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->cached_marks.emplace(name, std::move(marks));
 
     global_ctx->new_data_part->getDataPartStorage().precommitTransaction();
-    global_ctx->promise.set_value(global_ctx->new_data_part);
+    global_ctx->promise.set_value(std::exchange(global_ctx->new_data_part, nullptr));
 
     return false;
 }
@@ -1697,6 +1698,9 @@ void MergeTask::cancel() noexcept
 
     if (global_ctx->to)
         global_ctx->to->cancel();
+
+    if (global_ctx->new_data_part)
+        global_ctx->new_data_part->removeIfNeeded();
 }
 
 

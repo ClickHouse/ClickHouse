@@ -153,6 +153,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
+    , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))
     , metadata(settings[FileCacheSetting::path],
                settings[FileCacheSetting::background_download_queue_size_limit],
@@ -1362,6 +1363,11 @@ void FileCache::iterate(IterateFunc && func, const UserID & user_id)
         for (const auto & file_segment_metadata : locked_key)
             func(FileSegment::getInfo(file_segment_metadata.second->file_segment));
     }, user_id);
+}
+
+FileCache::CacheIteratorPtr FileCache::getCacheIterator(const UserID & user_id)
+{
+    return metadata.getIterator(user_id);
 }
 
 void FileCache::removeKey(const Key & key, const UserID & user_id)

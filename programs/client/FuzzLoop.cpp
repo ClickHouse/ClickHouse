@@ -736,7 +736,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query3.resize(0);
-                    qo.maybeUpdateOracleSelectQuery(rg, sq2, sq4);
+                    qo.maybeUpdateOracleSelectQuery(rg, gen, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query3, sq4);
                     fuzz_config->outf << full_query3 << std::endl;
                     server_up &= processBuzzHouseQuery(full_query3);

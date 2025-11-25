@@ -7,6 +7,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/SharedMutex.h>
+#include <Common/filesystemHelpers.h>
+#include <Common/escapeForFileName.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Logger.h>
@@ -126,7 +128,8 @@ struct GetDatabasesOptions
     bool with_datalake_catalogs{false};
 };
 
-/// For some reason Context is required to get Storage from Database object
+/// For some reason Context is required to get Storage from Database object.
+/// This must not hold the Database mutex.
 class DatabaseCatalog : boost::noncopyable, WithMutableContext
 {
 public:
@@ -139,6 +142,17 @@ public:
 
     /// Returns true if a passed name is one of the predefined databases' names.
     static bool isPredefinedDatabase(std::string_view database_name);
+
+    static fs::path getMetadataDirPath() { return fs::path("metadata"); }
+    static fs::path getMetadataDirPath(const String & database_name) { return getMetadataDirPath() / escapeForFileName(database_name); }
+    static fs::path getMetadataFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql"); }
+    static fs::path getMetadataTmpFilePath(const String & database_name) { return getMetadataDirPath() / (escapeForFileName(database_name) + ".sql.tmp"); }
+
+    static fs::path getDataDirPath() { return fs::path("data"); }
+    static fs::path getDataDirPath(const String & database_name) { return getDataDirPath() / escapeForFileName(database_name); }
+
+    static fs::path getStoreDirPath() { return fs::path("store"); }
+    static fs::path getStoreDirPath(const UUID & uuid) { return getStoreDirPath() / getPathForUUID(uuid); }
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -282,7 +296,7 @@ public:
     void startReplicatedDDLQueries();
     bool canPerformReplicatedDDLQueries() const;
 
-    void updateMetadataFile(const DatabasePtr & database);
+    void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
     bool hasDatalakeCatalogs() const;
     bool isDatalakeCatalog(const String & database_name) const;
 
