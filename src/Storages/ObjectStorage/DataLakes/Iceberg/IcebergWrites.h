@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBuffer.h>
 #include <Poco/Dynamic/Var.h>

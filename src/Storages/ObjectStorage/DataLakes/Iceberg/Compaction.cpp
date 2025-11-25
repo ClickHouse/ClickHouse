@@ -2,7 +2,7 @@
 #include <Columns/IColumn.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Cache/FileSegment.h>

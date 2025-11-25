@@ -3877,7 +3877,7 @@ Possible values:
 You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
 :::
 )", 0) \
-    DECLARE(Bool, check_query_single_value_result, false, R"(
+    DECLARE(Bool, check_query_single_value_result, true, R"(
 Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
 
 Possible values:

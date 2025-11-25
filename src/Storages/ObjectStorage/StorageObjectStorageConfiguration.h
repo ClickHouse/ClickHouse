@@ -5,7 +5,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
