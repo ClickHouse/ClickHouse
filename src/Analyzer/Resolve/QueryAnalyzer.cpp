@@ -1010,30 +1010,6 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
   * 6. Save aliased expression result type for typo correction.
   * 7. If identifier is compound and identifier lookup is in expression context, use `tryResolveIdentifierFromCompoundExpression`.
   */
-
-/** Check if a node or any of its children contain a QUERY or UNION node.
-  * This is used to determine if an alias should be cached, since expressions
-  * containing subqueries may be transformed differently depending on context.
-  */
-static bool nodeContainsQueryOrUnion(const QueryTreeNodePtr & node)
-{
-    if (!node)
-        return false;
-
-    auto node_type = node->getNodeType();
-    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
-        return true;
-
-    // Recursively check all children
-    for (const auto & child : node->getChildren())
-    {
-        if (nodeContainsQueryOrUnion(child))
-            return true;
-    }
-
-    return false;
-}
-
 IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const IdentifierLookup & identifier_lookup,
     IdentifierResolveScope & scope,
     IdentifierResolveContext identifier_resolve_context)
@@ -1050,17 +1026,21 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         scope_to_resolve_alias_expression = identifier_resolve_context.scope_to_resolve_alias_expression;
     }
 
-    QueryTreeNodePtr original_alias_node = *it;
+    QueryTreeNodePtr alias_node = *it;
 
-    if (!original_alias_node)
+    if (!alias_node)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Node with alias {} is not valid. In scope {}",
             identifier_bind_part,
             scope.scope_node->formatASTForErrorMessage());
 
-    QueryTreeNodePtr alias_node = original_alias_node;
 
     auto node_type = alias_node->getNodeType();
+    if (!identifier_lookup.isTableExpressionLookup())
+    {
+        alias_node = alias_node->clone();
+        scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+    }
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
      * 1. SELECT dummy + 1 AS dummy
@@ -1075,12 +1055,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
          * function lookup. The second lookup must fail here to break the alias cycle.
          */
         return {};
-    }
-
-    if (!identifier_lookup.isTableExpressionLookup())
-    {
-        alias_node = original_alias_node->clone();
-        scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
     }
 
     /// Resolve expression if necessary
@@ -1303,6 +1277,13 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 {
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
+    /// Can not use cache if:
+    /// 1. Identifier is resolved in non-initial context.
+    /// 2. There is an expression that is in resolve process with the same alias.
+    /// Example: SELECT (id + 2) as id, id as b FROM test_table;
+    ///                  ^^
+    /// Here, we cannot cache result of `id` identifier lookup because it is part of expression with alias `id`.
+    /// If we add such entry to the cache it will lead to incorrect resolution of `b` into `test_table.id` instead of `test_table.id` + 2.
     const bool can_use_cache = identifier_resolve_context.isInitialContext() && !scope.expressions_in_resolve_process_stack.hasExpressionWithAlias(identifier_lookup.identifier.getFullName());
 
     bool already_in_resolve_process = false;
