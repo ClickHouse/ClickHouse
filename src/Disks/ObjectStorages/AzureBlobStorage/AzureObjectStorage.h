@@ -77,6 +77,8 @@ public:
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
@@ -100,9 +102,7 @@ public:
 
     String getObjectsNamespace() const override { return object_namespace ; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override { return true; }
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return true; }
 

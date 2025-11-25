@@ -196,7 +196,6 @@ public:
         RangesInDataParts parts_with_ranges,
         StorageMetadataPtr metadata_snapshot,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
-        const SelectQueryInfo & query_info,
         const ContextPtr & context,
         const KeyCondition & key_condition,
         const std::optional<KeyCondition> & part_offset_condition,
@@ -209,8 +208,7 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges,
         bool is_final_query,
-        bool is_parallel_reading_from_replicas,
-        ReadFromMergeTree::AnalysisResult & result);
+        bool is_parallel_reading_from_replicas);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
@@ -240,16 +238,6 @@ public:
         const MergeTreeData & data,
         const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
-
-    struct RowLimits
-    {
-        SizeLimits limits;
-        SizeLimits leaf_limits;
-    };
-
-    /// Calculate row limits for reading based on settings and query info.
-    /// Returns limits and leaf_limits that should be applied during part processing.
-    static RowLimits getRowLimits(const Settings & settings, const SelectQueryInfo & query_info);
 };
 
 }

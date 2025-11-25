@@ -141,7 +141,6 @@ public:
         UInt64 total_marks_pk = 0;
         UInt64 selected_rows = 0;
         bool has_exact_ranges = false;
-        bool exceeded_row_limits = false;
 
         AnalysisResult() = default;
 
@@ -149,7 +148,7 @@ public:
         AnalysisResult(AnalysisResult &&) noexcept = default;
 
         bool readFromProjection() const { return !parts_with_ranges.empty() && parts_with_ranges.front().data_part->isProjectionPart(); }
-        bool isUsable() const { return !exceeded_row_limits; }
+        void checkLimits(const Settings & settings, const SelectQueryInfo & query_info_) const;
     };
 
     using AnalysisResultPtr = std::shared_ptr<AnalysisResult>;
