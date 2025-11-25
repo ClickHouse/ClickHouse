@@ -10,4 +10,6 @@ $CLICKHOUSE_CLIENT -q "
     DROP USER IF EXISTS $test_user;
     CREATE USER $test_user;
     GRANT SELECT ON * to $test_user;
+    DROP USER IF EXISTS $test_user;
 "
+
