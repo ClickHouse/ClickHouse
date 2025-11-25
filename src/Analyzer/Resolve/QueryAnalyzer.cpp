@@ -1313,9 +1313,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     {
         if (identifier_resolve_context.isInitialContext())
         {
-            auto jt = scope.identifier_to_resolved_expression_cache.find(identifier_lookup);
-            if (jt != scope.identifier_to_resolved_expression_cache.end())
-                return jt->second;
+            const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(identifier_lookup);
+            if (cached_result)
+                return *cached_result;
         }
 
         auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
@@ -1431,7 +1431,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         scope.identifier_in_lookup_process.erase(it);
         if (identifier_resolve_context.isInitialContext() && resolve_result.resolved_identifier)
         {
-            scope.identifier_to_resolved_expression_cache.emplace(identifier_lookup, resolve_result);
+            scope.identifier_to_resolved_expression_cache.insert(identifier_lookup, resolve_result);
         }
     }
 
@@ -4870,10 +4870,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
         scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
+    scope.identifier_to_resolved_expression_cache.disable();
+
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
+    if (!scope.group_by_use_nulls)
+        scope.identifier_to_resolved_expression_cache.enable();
 
     /// Resolve query node sections.
 
