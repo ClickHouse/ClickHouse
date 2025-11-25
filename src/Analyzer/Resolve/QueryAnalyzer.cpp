@@ -1303,6 +1303,8 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 {
     auto it = scope.identifier_in_lookup_process.find(identifier_lookup);
 
+    const bool can_use_cache = identifier_resolve_context.isInitialContext() && !scope.expressions_in_resolve_process_stack.hasExpressionWithAlias(identifier_lookup.identifier.getFullName());
+
     bool already_in_resolve_process = false;
     if (it != scope.identifier_in_lookup_process.end())
     {
@@ -1311,7 +1313,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     }
     else
     {
-        if (identifier_resolve_context.isInitialContext())
+        if (can_use_cache)
         {
             const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(identifier_lookup);
             if (cached_result)
@@ -1429,7 +1431,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
     if (it->second.count == 0)
     {
         scope.identifier_in_lookup_process.erase(it);
-        if (identifier_resolve_context.isInitialContext() && resolve_result.resolved_identifier)
+        if (can_use_cache && resolve_result.resolved_identifier)
         {
             scope.identifier_to_resolved_expression_cache.insert(identifier_lookup, resolve_result);
         }
