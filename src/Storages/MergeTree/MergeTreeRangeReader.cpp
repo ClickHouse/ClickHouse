@@ -47,36 +47,45 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void replaceSharedSubcolumns(const ColumnPtr & target_column, Columns & columns)
+static void replaceSharedSubcolumns(const ColumnPtr & filter_column, Columns & columns)
 {
-    ColumnPtr replacement_column = nullptr;
+    std::unordered_set<const IColumn*> seen_columns;
 
-    std::function<void(ColumnPtr &)> replace_in_column = [&](ColumnPtr & column)
+    std::function<void(ColumnPtr &, bool)> replace_in_column = [&](ColumnPtr & column, bool is_top_level)
     {
         if (!column)
             return;
 
-        if (column == target_column)
+        const IColumn * raw_ptr = column.get();
+
+        if (filter_column == column)
         {
-            if (!replacement_column)
-                replacement_column = target_column->cloneResized(target_column->size());
-            column = replacement_column;
+            column = column->cloneResized(column->size());
             return;
         }
 
+        if (seen_columns.contains(raw_ptr))
+        {
+            if (!is_top_level)
+                column = column->cloneResized(column->size());
+            return;
+        }
+
+        seen_columns.insert(raw_ptr);
+
         column->assumeMutable()->forEachMutableSubcolumn([&](ColumnPtr & subcolumn)
         {
-            replace_in_column(subcolumn);
+            replace_in_column(subcolumn, false);
         });
     };
 
     for (auto & column : columns)
     {
-        replace_in_column(column);
+        replace_in_column(column, true);
     }
 }
 
-static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache * cache)
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     replaceSharedSubcolumns(filter.getColumn(), columns);
 
@@ -84,31 +93,19 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
 
     for (auto & column : columns)
     {
-        const IColumn * column_ptr = column.get();
-        if (cache && cache->contains(column_ptr))
-        {
-            continue;
-        }
-
-        if (column && column->size() != filter.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
-                column->size(), filter.size());
-    }
-
-    for (auto & column : columns)
-    {
         if (column)
         {
             const IColumn * column_ptr = column.get();
-            if (cache)
+            auto iter = cache.find(column_ptr);
+            if (iter != cache.end())
             {
-                auto iter = cache->find(column_ptr);
-                if (iter != cache->end())
-                {
-                    column = iter->second;
-                    continue;
-                }
+                column = iter->second;
+                continue;
             }
+
+            if (column->size() != filter.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
+                    column->size(), filter.size());
 
             column->assumeMutable()->filter(filter_data);
 
@@ -118,13 +115,12 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 return;
             }
 
-            if (cache)
-                cache->emplace(column_ptr, column);
+            cache.emplace(column_ptr, column);
         }
     }
 }
 
-void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache * cache)
+void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     if (filter.alwaysTrue())
         return;
@@ -144,7 +140,7 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
 void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
     auto columns = block.getColumns();
-    filterColumns(columns, filter, &cache);
+    filterColumns(columns, filter, cache);
 
     if (!columns.empty())
         block.setColumns(columns);
@@ -561,7 +557,7 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
 
     /// Prevents repeated in-place filter execution on the same column
     ColumnFilterCache cache;
-    filterColumns(columns, filter, &cache);
+    filterColumns(columns, filter, cache);
     filterBlock(additional_columns, filter, cache);
     filterBlock(columns_for_patches, filter, cache);
     filterBlock(patch_versions_block, filter, cache);

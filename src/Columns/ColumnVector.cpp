@@ -783,9 +783,6 @@ void ColumnVector<T>::filter(const IColumn::Filter & filt)
     const auto size = data.size();
     const auto filter_size = filt.size();
 
-    if (size < filter_size)
-        return;
-
     if (size != filter_size)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filter_size, size);
 

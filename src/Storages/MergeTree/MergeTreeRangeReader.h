@@ -432,7 +432,7 @@ public:
     IMergeTreeReader * getReader() const { return merge_tree_reader; }
     const PrewhereExprStep * getPrewhereInfo() const { return prewhere_info; }
 
-    static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache * cache = nullptr);
+    static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache);
     static void filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache);
 
 private:
