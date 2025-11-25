@@ -107,6 +107,7 @@ StorageObjectStorage::StorageObjectStorage(
     bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
+    ASTPtr order_by_,
     bool is_table_function,
     bool lazy_init)
     : IStorage(table_id_)
@@ -133,7 +134,7 @@ StorageObjectStorage::StorageObjectStorage(
     {
         LOG_DEBUG(log, "Creating new storage with specified columns");
         configuration->create(
-            object_storage, context, columns_in_table_or_function_definition, partition_by_, if_not_exists_, catalog, storage_id);
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;
@@ -246,7 +247,13 @@ StorageObjectStorage::StorageObjectStorage(
         metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        metadata.columns,
+        context,
+        format_settings,
+        configuration->partition_strategy_type,
+        sample_path));
+
     setInMemoryMetadata(metadata);
 
     /// This will update metadata for table function which contains specific information about table
@@ -375,7 +382,8 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams { file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 

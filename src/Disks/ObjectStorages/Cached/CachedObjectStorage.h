@@ -83,14 +83,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
-
-    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isPlain() const override { return object_storage->isPlain(); }
 
@@ -135,6 +128,13 @@ public:
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override
     {
         return object_storage->tryGetS3StorageClient();
+    }
+#endif
+
+#if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    {
+        object_storage->tagObjects(objects, tag_key, tag_value);
     }
 #endif
 

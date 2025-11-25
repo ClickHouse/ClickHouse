@@ -52,11 +52,19 @@ class FuzzerTestGenerator:
         # The server.log may normalize whitespace or format queries differently, making it difficult
         # to locate the corresponding query and its dependencies in fuzzer.log.
         failure_output = Shell.get_output(
-            f"grep -A10 -a 'Logical error:' {self.server_log}", verbose=True
+            f"rg --text -A10 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' {self.server_log}",
+            verbose=True,
         )
+        if not failure_output:
+            return None
+        if "Inconsistent AST formatting: the query:" in failure_output:
+            query_command = failure_output.splitlines()[1]
+            return query_command
+
         assert failure_output, "No failure found in server log"
         failure_first_line = failure_output.splitlines()[0]
         assert failure_first_line, "No failure first line found in server log"
+        print(failure_first_line)
         query_id = failure_first_line.split(" ] {")[1].split("}")[0]
         assert query_id, "No query id found in server log"
         query_command = Shell.get_output(
@@ -89,25 +97,38 @@ class FuzzerTestGenerator:
         # get all tables from the command
         # Match table names after FROM and various JOIN types (LEFT JOIN, RIGHT JOIN, INNER JOIN, etc.)
         tables = set()
-        from_pattern = r"\bFROM\s+([a-zA-Z0-9_.]+)"
-        join_pattern = r"\bJOIN\s+([a-zA-Z0-9_.]+)"
+        table_files = set()
+        # Match table names/functions after FROM and JOIN keywords
+        # Captures complete function calls like file(...) or table names
+        from_pattern = r"\bFROM\s+([a-zA-Z0-9_.]+(?:\([^()]*(?:\([^()]*\))*[^()]*\))?)"
+        join_pattern = r"\bJOIN\s+([a-zA-Z0-9_.]+(?:\([^()]*(?:\([^()]*\))*[^()]*\))?)"
         from_matches = re.findall(from_pattern, query_command, re.IGNORECASE)
         join_matches = re.findall(join_pattern, query_command, re.IGNORECASE)
-        tables.update(from_matches)
-        tables.update(join_matches)
-        assert tables, "No tables found in query command"
+
+        table_finctions = set()
+        for match in from_matches + join_matches:
+            if match.startswith("file("):
+                # Extract filename from file(...) function, handling nested functions
+                # Search for any quoted string within the file() call
+                file_match = re.search(r"['\"]([^'\"]+)['\"]", match)
+                if file_match:
+                    table_files.add(file_match.group(1))
+            if match.startswith("numbers(") or match.startswith("file("):
+                table_finctions.add(match)
+            else:
+                tables.add(match)
+        assert (
+            tables or table_files or table_finctions
+        ), "No tables found in query command"
 
         # get all write commands for found tables
         commands_to_reproduce = []
-        for table in tables:
+        for table in list(tables) + list(table_files):
             for command in all_fuzzer_commands:
-                if (
-                    any(
-                        command.startswith(write_command)
-                        for write_command in self.WRITE_SQL_COMMANDS
-                    )
-                    and f" {table} " in command
-                ):
+                if any(
+                    command.startswith(write_command)
+                    for write_command in self.WRITE_SQL_COMMANDS
+                ) and (f" {table} " in command or f"'{table}'" in command):
                     commands_to_reproduce.append(command)
         commands_to_reproduce.append(query_command)
 
@@ -157,8 +178,8 @@ class FuzzerTestGenerator:
 
 
 if __name__ == "__main__":
-    fuzzer_log = "fuzzer.log"
-    server_log = "server.log"
+    fuzzer_log = "fuzzer_10.log"
+    server_log = "server_10.log"
     FTG = FuzzerTestGenerator(server_log, fuzzer_log)
     failed_query = FTG.get_failed_query()
     print("Failed query:")

@@ -239,6 +239,7 @@ namespace FailPoints
     extern const char zero_copy_unlock_zk_fail_before_op[];
     extern const char zero_copy_unlock_zk_fail_after_op[];
     extern const char rmt_lightweight_update_sleep_after_block_allocation[];
+    extern const char rmt_merge_selecting_task_pause_when_scheduled[];
 }
 
 namespace ErrorCodes
@@ -2737,36 +2738,23 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// And, if you do not, the parts will come to life after the server is restarted.
     /// Therefore, we use all data parts.
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
     PartsToRemoveFromZooKeeper parts_to_remove;
     {
         auto data_parts_lock = lockParts();
-        parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range_info, data_parts_lock);
+        bool clone_to_detached = entry.detach;
+
+        if (clone_to_detached)
+            LOG_DEBUG(log, "Detaching parts.");
+        else
+            LOG_DEBUG(log, "Removing parts.");
+
+        parts_to_remove = removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(NO_TRANSACTION_RAW, drop_range_info, data_parts_lock, /*create_empty_part=*/ true, clone_to_detached);
+
         if (parts_to_remove.empty())
         {
             if (!drop_range_info.isFakeDropRangePart())
                 LOG_INFO(log, "Log entry {} tried to drop single part {}, but part does not exist", entry.znode_name, entry.new_part_name);
             return;
-        }
-    }
-
-    if (entry.detach)
-        LOG_DEBUG(log, "Detaching parts.");
-    else
-        LOG_DEBUG(log, "Removing parts.");
-
-    if (entry.detach)
-    {
-        /// If DETACH clone parts to detached/ directory
-        for (const auto & part : parts_to_remove)
-        {
-            if (auto part_to_detach = part.getPartIfItWasActive())
-            {
-                String part_dir = part_to_detach->getDataPartStorage().getPartDirectory();
-                LOG_INFO(log, "Detaching {}", part_dir);
-                auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
-                part_to_detach->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
-            }
         }
     }
 
@@ -4091,6 +4079,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
         return;
+
+    FailPointInjection::pauseFailPoint(FailPoints::rmt_merge_selecting_task_pause_when_scheduled);
 
     const auto storage_settings_ptr = getSettings();
     const bool deduplicate = false; /// TODO: read deduplicate option from table config
@@ -11126,7 +11116,7 @@ void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, Data
 }
 
 
-void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const
+void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const
 {
     try
     {

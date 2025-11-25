@@ -1200,19 +1200,25 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         {
             for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
             {
-                auto [column_name, subcolumn_name] = Nested::splitName(*it);
-
-                if (column_name == pair.name)
+                bool found = false;
+                for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(*it))
                 {
-                    if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
+                    if (column_name == pair.name)
                     {
-                        source_columns.emplace_back(*it, subcolumn_type);
-                        it = unknown_required_source_columns.erase(it);
-                        continue;
+                        if (auto subcolumn_type = pair.type->tryGetSubcolumnType(subcolumn_name))
+                        {
+                            source_columns.emplace_back(*it, subcolumn_type);
+                            it = unknown_required_source_columns.erase(it);
+                            found = true;
+                            break;
+                        }
                     }
                 }
 
-                ++it;
+                if (found)
+                    continue;
+                else
+                    ++it;
             }
         }
     }
