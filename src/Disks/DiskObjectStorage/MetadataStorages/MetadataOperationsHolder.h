@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Disks/DiskCommitTransactionOptions.h>
-#include <Disks/ObjectStorages/IMetadataOperation.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 
 #include <vector>
 

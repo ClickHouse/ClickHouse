@@ -16,7 +16,7 @@
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>

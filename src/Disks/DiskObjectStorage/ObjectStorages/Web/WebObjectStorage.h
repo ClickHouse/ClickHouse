@@ -3,7 +3,7 @@
 #include "config.h"
 
 #include <Common/SharedMutex.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 #include <filesystem>
 

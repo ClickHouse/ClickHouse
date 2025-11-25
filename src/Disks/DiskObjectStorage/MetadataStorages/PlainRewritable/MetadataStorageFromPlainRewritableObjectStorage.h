@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
-#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
-#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 
 #include <memory>
 

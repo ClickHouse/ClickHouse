@@ -1,10 +1,10 @@
-#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
-#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
-#include <Disks/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
 
 #include <cstddef>
 #include <optional>

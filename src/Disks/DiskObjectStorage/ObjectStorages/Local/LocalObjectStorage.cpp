@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <filesystem>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>

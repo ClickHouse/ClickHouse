@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <memory>
 
 namespace DB

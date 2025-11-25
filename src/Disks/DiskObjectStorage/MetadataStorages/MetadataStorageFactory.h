@@ -1,6 +1,6 @@
 #pragma once
 #include <boost/noncopyable.hpp>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 
 namespace DB
 {

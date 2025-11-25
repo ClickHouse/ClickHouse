@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/InMemoryDirectoryTree.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>

@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Common/Exception.h>
 
 namespace DB

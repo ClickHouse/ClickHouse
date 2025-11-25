@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
 #if USE_AWS_S3
 
@@ -22,7 +22,7 @@
 #include <IO/S3/Credentials.h>
 
 #include <IO/S3Settings.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/DiskLocal.h>
 
 namespace DB

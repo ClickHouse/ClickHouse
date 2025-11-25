@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/Web/WebObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
 #include <Common/logger_useful.h>
 #include <Common/escapeForFileName.h>

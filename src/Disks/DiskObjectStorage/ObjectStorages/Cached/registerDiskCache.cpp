@@ -7,7 +7,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Disks/DiskFactory.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 
 namespace DB

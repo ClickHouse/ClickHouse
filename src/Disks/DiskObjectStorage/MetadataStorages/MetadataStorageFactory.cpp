@@ -1,13 +1,13 @@
 #include <Common/assert_cast.h>
 #include <Common/Macros.h>
-#include <Disks/ObjectStorages/MetadataStorageFactory.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
 #if CLICKHOUSE_CLOUD
-    #include <Disks/ObjectStorages/MetadataStorageFromKeeper.h>
+    #include <Disks/DiskObjectStorage/MetadataStorages/Keeper/MetadataStorageFromKeeper.h>
 #endif
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 

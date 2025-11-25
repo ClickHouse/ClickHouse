@@ -1,6 +1,6 @@
-#include <Disks/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/escapeForFileName.h>

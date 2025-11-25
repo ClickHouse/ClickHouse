@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 namespace DB
 {

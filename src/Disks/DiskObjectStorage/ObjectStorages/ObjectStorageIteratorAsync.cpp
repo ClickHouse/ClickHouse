@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 
 #include <Common/logger_useful.h>
 

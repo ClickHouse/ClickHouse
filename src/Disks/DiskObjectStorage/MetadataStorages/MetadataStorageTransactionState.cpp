@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 #include <base/defines.h>
 
 namespace DB

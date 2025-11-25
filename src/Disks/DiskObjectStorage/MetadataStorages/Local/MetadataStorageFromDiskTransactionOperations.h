@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IMetadataOperation.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <unordered_set>
 

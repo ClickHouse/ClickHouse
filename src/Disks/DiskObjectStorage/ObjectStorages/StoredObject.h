@@ -3,7 +3,7 @@
 #include <base/types.h>
 
 #include <Core/Types.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 
 #include <functional>
 #include <limits>

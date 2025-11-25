@@ -1,5 +1,5 @@
 #include <optional>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -16,8 +16,8 @@
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 #include <Interpreters/Context.h>
 
 

@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
 

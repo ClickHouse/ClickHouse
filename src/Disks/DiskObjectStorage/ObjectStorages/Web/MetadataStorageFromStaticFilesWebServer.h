@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
-#include <Disks/ObjectStorages/Web/WebObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
 
 
 namespace DB

@@ -24,7 +24,7 @@
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
 #include <Processors/ISimpleTransform.h>

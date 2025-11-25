@@ -1,11 +1,11 @@
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/setThreadName.h>
 #include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
 
 #include <IO/S3Common.h>
-#include <Disks/ObjectStorages/ObjectStorageIteratorAsync.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIteratorAsync.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
@@ -25,7 +25,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
 
-#include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/IDisk.h>
 
 #include <Core/Types.h>

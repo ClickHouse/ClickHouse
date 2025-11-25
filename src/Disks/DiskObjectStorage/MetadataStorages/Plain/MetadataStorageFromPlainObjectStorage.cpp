@@ -1,8 +1,8 @@
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/StaticDirectoryIterator.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/ObjectStorageKeyGenerator.h>

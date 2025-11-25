@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 
 namespace ProfileEvents
 {

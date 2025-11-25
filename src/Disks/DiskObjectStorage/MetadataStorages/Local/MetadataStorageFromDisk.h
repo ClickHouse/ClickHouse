@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
-#include <Disks/ObjectStorages/MetadataOperationsHolder.h>
-#include <Disks/ObjectStorages/MetadataStorageFromDiskTransactionOperations.h>
-#include <Disks/ObjectStorages/MetadataStorageTransactionState.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDiskTransactionOperations.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/IDisk.h>
 
 #include <Common/ObjectStorageKeyGenerator.h>

@@ -1,8 +1,8 @@
 #include <Disks/DiskFactory.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFactory.h>
-#include <Disks/ObjectStorages/ObjectStorageFactory.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageFactory.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/ReadOnlyDiskWrapper.h>
 #include <Common/logger_useful.h>
 

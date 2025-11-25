@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/HDFS/HDFSObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 
 #include <IO/copyData.h>
 #include <Storages/ObjectStorage/HDFS/WriteBufferFromHDFS.h>

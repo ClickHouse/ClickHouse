@@ -1,8 +1,8 @@
-#include <Disks/ObjectStorages/S3/DiskS3Utils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/DiskS3Utils.h>
 
 #if USE_AWS_S3
 #include <Common/Macros.h>
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 #include <Interpreters/Context.h>
 #include <IO/S3/URI.h>
 

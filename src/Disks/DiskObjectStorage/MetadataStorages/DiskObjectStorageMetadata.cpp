@@ -1,4 +1,4 @@
-#include <Disks/ObjectStorages/DiskObjectStorageMetadata.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/DiskObjectStorageMetadata.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>

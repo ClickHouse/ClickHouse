@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
 
 namespace Poco
