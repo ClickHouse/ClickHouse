@@ -18,6 +18,11 @@ node_query_log = cluster.add_instance(
     tmpfs=["/test_stop_insert_when_disk1:size=7M"],
 )
 
+node_jbod = cluster.add_instance(
+    "node_jbod",
+    main_configs=["configs/config.d/storage_configuration.xml"],
+    tmpfs=["/jbod_disk1:size=5M", "/jbod_disk2:size=10M"],
+)
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -146,3 +151,64 @@ def test_system_query_log(start_cluster):
         )
         == 1
     )
+
+def test_jbod_disk_failover(start_cluster):
+    """
+    Test that with JBOD volumes, if the first disk doesn't meet the free space threshold,
+    the insert will succeed by using the second disk that has enough space.
+    """
+    node_jbod.query("DROP TABLE IF EXISTS test_jbod SYNC")
+
+    # Set threshold to 3 MiB - this will block jbod_disk1 (5M) but allow jbod_disk2 (10M)
+    min_free_bytes = 3 * 1024 * 1024
+
+    node_jbod.query(
+        f"""
+        CREATE TABLE test_jbod (
+            id UInt32,
+            data String
+        ) ENGINE = MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy = 'jbod_policy', min_free_disk_bytes_to_perform_insert = {min_free_bytes}
+    """
+    )
+
+    node_jbod.query("SYSTEM STOP MERGES test_jbod")
+
+    try:
+        for _ in range(100000):
+            node_jbod.query(
+                "INSERT INTO test_jbod SELECT number, repeat('a', 10000) FROM numbers(1)"
+            )
+    except QueryRuntimeException:
+        # Expected at some point jbod_disk1 will be full
+        pass
+
+    # Check that jbod_disk1 has less free space than threshold
+    jbod_disk1_free = int(
+        node_jbod.query("SELECT free_space FROM system.disks WHERE name = 'jbod_disk1'").strip()
+    )
+
+    # Now insert a larger part - it should fail on jbod_disk1 but succeed on jbod_disk2
+    node_jbod.query(
+        "INSERT INTO test_jbod SELECT number, repeat('b', 100000) FROM numbers(10)"
+    )
+
+    rows = int(node_jbod.query("SELECT count() FROM test_jbod WHERE data LIKE 'b%'").strip())
+    assert rows == 10, f"Expected 10 rows with 'b' data, got {rows}"
+
+    # Verify the new data went to jbod_disk2 (not jbod_disk1)
+    # Check which disk has the latest part
+    parts_info = node_jbod.query(
+        "SELECT disk_name, rows FROM system.parts WHERE table = 'test_jbod' AND active ORDER BY modification_time DESC LIMIT 1"
+    ).strip()
+
+    assert "jbod_disk2" in parts_info, f"Expected latest part on jbod_disk2, got: {parts_info}"
+
+    jbod_disk1_free_after = int(
+        node_jbod.query("SELECT free_space FROM system.disks WHERE name = 'jbod_disk1'").strip()
+    )
+    assert jbod_disk1_free_after < min_free_bytes, \
+        f"jbod_disk1 should still be below threshold ({jbod_disk1_free_after} < {min_free_bytes})"
+
+    node_jbod.query("DROP TABLE test_jbod SYNC")
