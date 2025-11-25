@@ -1,5 +1,6 @@
 #include <optional>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
 
@@ -136,10 +137,9 @@ AzureObjectStorage::AzureObjectStorage(
 {
 }
 
-ObjectStorageKey
-AzureObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
 {
-    return ObjectStorageKey::createAsRelative(getRandomASCIIString(32));
+    return createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
 }
 
 bool AzureObjectStorage::exists(const StoredObject & object) const

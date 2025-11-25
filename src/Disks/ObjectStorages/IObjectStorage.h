@@ -17,13 +17,13 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/ObjectStorageKey.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/ThreadPool.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Disks/DirectoryIterator.h>
 #include <Disks/DiskType.h>
-#include <Disks/ObjectStorages/MetadataStorageMetrics.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
@@ -158,9 +158,6 @@ using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 
-class IObjectStorageKeysGenerator;
-using ObjectStorageKeysGeneratorPtr = std::shared_ptr<IObjectStorageKeysGenerator>;
-
 /// Base class for all object storages which implement some subset of ordinary filesystem operations.
 ///
 /// Examples of object storages are S3, Azure Blob Storage, HDFS.
@@ -180,8 +177,6 @@ public:
     virtual std::string getCommonKeyPrefix() const = 0;
 
     virtual std::string getDescription() const = 0;
-
-    virtual const MetadataStorageMetrics & getMetadataStorageMetrics() const;
 
     /// Object exists or not
     virtual bool exists(const StoredObject & object) const = 0;
@@ -286,21 +281,6 @@ public:
     /// buckets in S3. If object storage doesn't have any namepaces return empty string.
     virtual String getObjectsNamespace() const = 0;
 
-    /// Generate blob name for passed absolute local path.
-    /// Path can be generated either independently or based on `path`.
-    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const = 0;
-
-    /// Object key prefix for local paths in the directory 'path'.
-    virtual ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
-    }
-
-    /// Returns whether this object storage generates a random blob name for each object.
-    /// This function returns false if this object storage just adds some constant string to a passed path to generate a blob name.
-    virtual bool areObjectKeysRandom() const = 0;
-
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
@@ -310,8 +290,6 @@ public:
     virtual bool supportsCache() const { return false; }
 
     virtual bool isReadOnly() const { return false; }
-    virtual bool isWriteOnce() const { return false; }
-    virtual bool isPlain() const { return false; }
 
     virtual bool supportParallelWrite() const { return false; }
 
@@ -319,7 +297,7 @@ public:
 
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
-    virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
+    virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
 
 #if USE_AZURE_BLOB_STORAGE
     virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const

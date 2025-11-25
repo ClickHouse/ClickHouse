@@ -83,16 +83,7 @@ public:
 
     const std::string & getCacheName() const override { return cache_config_name; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    ObjectStorageKey
-    generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override;
-
-    void setKeysGenerator(ObjectStorageKeysGeneratorPtr gen) override { object_storage->setKeysGenerator(gen); }
-
-    bool isPlain() const override { return object_storage->isPlain(); }
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return object_storage->isRemote(); }
 
@@ -103,8 +94,6 @@ public:
     std::string getUniqueId(const std::string & path) const override { return object_storage->getUniqueId(path); }
 
     bool isReadOnly() const override { return object_storage->isReadOnly(); }
-
-    bool isWriteOnce() const override { return object_storage->isWriteOnce(); }
 
     const std::string & getCacheConfigName() const { return cache_config_name; }
 
