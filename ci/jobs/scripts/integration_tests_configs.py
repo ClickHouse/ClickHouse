@@ -54,17 +54,17 @@ TEST_CONFIGS = [
     # TC("test_limited_replicated_fetches/", True, "no idea why i'm sequential"),
     # TC("test_parts_delete_zookeeper/", True, "no idea why i'm sequential"),
 
-    TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
-    TC(
-        "test_insert_into_distributed_through_materialized_view/",
-        True,
-        "no idea why i'm sequential",
-    ),
-    TC(
-        "test_postgresql_replica_database_engine/",
-        True,
-        "no idea why i'm sequential",
-    ),
+    # TC("test_insert_into_distributed/", True, "no idea why i'm sequential"),
+    # TC(
+    #     "test_insert_into_distributed_through_materialized_view/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
+    # TC(
+    #     "test_postgresql_replica_database_engine/",
+    #     True,
+    #     "no idea why i'm sequential",
+    # ),
 
     # 3 not a problem
     # TC("test_quorum_inserts_parallel/", True, "no idea why i'm sequential"),
@@ -109,7 +109,7 @@ TEST_CONFIGS = [
     TC("test_keeper_ipv4_fallback/test.py", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_no_spark/", True, "no idea why i'm sequential"),
     TC("test_storage_iceberg_with_spark/", True, "no idea why i'm sequential"),
-    TC("test_storage_iceberg_with_spark_xx/", True, "no idea why i'm sequential"),
+    TC("test_storage_iceberg_with_spark_cache/", True, "no idea why i'm sequential"),
     TC(
         "test_storage_iceberg_schema_evolution/",
         True,
