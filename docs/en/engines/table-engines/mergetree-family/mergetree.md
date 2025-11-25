@@ -480,7 +480,7 @@ tokenbf_v1(size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 
 #### Sparse grams bloom filter {#sparse-grams-bloom-filter}
 
-The sparse grams bloom filter is the same as `ngrambf_v1`, but sparse grams tokens instead of ngrams.
+The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams tokens](/sql-reference/functions/string-functions.md/#sparseGrams) instead of ngrams.
 
 ```text title="Syntax"
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)

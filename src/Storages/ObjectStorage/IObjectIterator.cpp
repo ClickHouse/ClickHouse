@@ -66,7 +66,10 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 path = path.substr(1);
             path = std::filesystem::path(object_namespace) / path;
 
-            VirtualColumnUtils::filterByPathOrFile(keys, std::vector<std::string>{path}, filter_actions, virtual_columns, hive_partition_columns, getContext());
+            VirtualColumnUtils::filterByPathOrFile(
+                keys, std::vector<std::string>{path}, filter_actions,
+                virtual_columns, hive_partition_columns, getContext());
+
             if (keys.empty())
                 continue;
         }

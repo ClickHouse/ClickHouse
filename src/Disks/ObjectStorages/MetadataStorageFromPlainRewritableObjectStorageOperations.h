@@ -214,7 +214,6 @@ private:
 
     InMemoryDirectoryTree & fs_tree;
     ObjectStoragePtr object_storage;
-    ObjectMetadataCachePtr object_metadata_cache;
     const std::string metadata_key_prefix;
     const LoggerPtr log;
 
@@ -228,7 +227,6 @@ public:
         std::filesystem::path && path_,
         InMemoryDirectoryTree & fs_tree_,
         ObjectStoragePtr object_storage_,
-        ObjectMetadataCachePtr object_metadata_cache_,
         const std::string & metadata_key_prefix_);
 
     void execute() override;

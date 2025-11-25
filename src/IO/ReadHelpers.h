@@ -1157,9 +1157,7 @@ inline ReturnType readDateTimeTextImpl(
         }
         else
         {
-            auto ok = readDateTimeTextImpl<ReturnType, true>(
-                whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
-            if (!ok && (buf.eof() || *buf.position() != '.'))
+            if (!readDateTimeTextImpl<ReturnType, true>(whole, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow))
                 return ReturnType(false);
         }
     }
