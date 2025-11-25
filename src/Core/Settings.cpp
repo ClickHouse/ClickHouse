@@ -3877,7 +3877,7 @@ Possible values:
 You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
 :::
 )", 0) \
-    DECLARE(Bool, check_query_single_value_result, false, R"(
+    DECLARE(Bool, check_query_single_value_result, true, R"(
 Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
 
 Possible values:
@@ -6633,6 +6633,12 @@ Enables Test level logs of DeltaLake expression visitor. These logs can be too v
 )", 0) \
     DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
 Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_start_version, -1, R"(
+Start version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
+)", 0) \
+    DECLARE(Int64, delta_lake_snapshot_end_version, -1, R"(
+End version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
 )", 0) \
     DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
 Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.

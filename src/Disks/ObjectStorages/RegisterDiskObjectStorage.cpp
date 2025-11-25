@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/MetadataStorageFactory.h>
 #include <Disks/ObjectStorages/ObjectStorageFactory.h>
 #include <Disks/ReadOnlyDiskWrapper.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -30,17 +31,19 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
         std::string compatibility_metadata_type_hint;
         if (!config.has(config_prefix + ".metadata_type"))
         {
-            if (config.getString(config_prefix + ".type", "") == "s3_with_keeper")
+            auto type = config.getString(config_prefix + ".type", "");
+
+            if (type.contains("with_keeper"))
                 compatibility_metadata_type_hint = "keeper";
-            else if (object_storage->isPlain())
-                if (object_storage->isWriteOnce())
-                    compatibility_metadata_type_hint = "plain";
-                else
-                    compatibility_metadata_type_hint = "plain_rewritable";
+            else if (type.contains("plain") && type.contains("rewritable"))
+                compatibility_metadata_type_hint = "plain_rewritable";
+            else if (type.contains("plain"))
+                compatibility_metadata_type_hint = "plain";
             else
                 compatibility_metadata_type_hint = MetadataStorageFactory::getCompatibilityMetadataTypeHint(object_storage->getType());
         }
 
+        LOG_DEBUG(getLogger("registerDiskObjectStorage"), "Metadata type hint: {}", compatibility_metadata_type_hint);
         auto metadata_storage = MetadataStorageFactory::instance().create(
             name, config, config_prefix, object_storage, compatibility_metadata_type_hint);
 

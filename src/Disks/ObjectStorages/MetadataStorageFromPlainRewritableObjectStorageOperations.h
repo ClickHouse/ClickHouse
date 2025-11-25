@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/IMetadataOperation.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorage.h>
+#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
 
 #include <filesystem>
 #include <memory>
@@ -20,6 +21,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::string object_key_prefix;
     bool created_directory = false;
@@ -31,7 +33,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -46,6 +49,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::unordered_map<std::string, std::optional<DirectoryRemoteInfo>> from_tree_info;
     std::unordered_set<std::string> changed_paths;
@@ -61,7 +65,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -75,6 +80,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     DirectoryRemoteInfo info;
     bool remove_attempted = false;
@@ -85,7 +91,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -100,6 +107,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     bool written = false;
 
@@ -110,7 +118,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -124,6 +133,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::filesystem::path remote_path;
     std::optional<FileRemoteInfo> file_remote_info;
@@ -135,7 +145,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -151,6 +162,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
@@ -163,7 +175,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -184,6 +197,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
@@ -204,7 +218,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
     /**
      * @brief Move a file from remote_path_from to remote_path_to
      *  1. Copy remote_path_to (if exists) to tmp_remote_path_from, which is used to restore the target file in case of failure.
@@ -238,6 +253,7 @@ private:
     const std::shared_ptr<InMemoryDirectoryTree> fs_tree;
     const std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
     const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
     const LoggerPtr log;
 
     std::filesystem::path tmp_path;
@@ -250,7 +266,8 @@ public:
         std::string metadata_key_prefix_,
         std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
         std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-        std::shared_ptr<IObjectStorage> object_storage_);
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;

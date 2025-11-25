@@ -1484,11 +1484,7 @@ class ResultTranslator:
                                     Result.StatusExtended.ERROR,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
-                                    if (
-                                        when == "call"
-                                        or test_results[node_id].ext.get("when")
-                                        != "call"
-                                    ):
+                                    if when == "call":
                                         test_results[node_id].status = status
                                         test_results[node_id].duration = duration
 
