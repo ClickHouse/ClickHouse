@@ -41,7 +41,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                 continue;
             }
 
-            /// Try to add enfrocer to satisfy the required properties
+            /// Try to add enforcer to satisfy the required properties
             for (const auto & enforcer : optimizer_context.getEnforcerRules())
             {
                 /// TODO: how to handle a combination of enforcers, e.g. modify both sorting and distribution?

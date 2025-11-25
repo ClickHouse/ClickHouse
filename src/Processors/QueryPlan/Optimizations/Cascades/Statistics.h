@@ -14,7 +14,7 @@ class WriteBuffer;
 
 struct ExpressionStatistics
 {
-    /// Number of row that we estimated using probabilities, histograms, heurisitcs, etc.
+    /// Number of row that we estimated using probabilities, histograms, heuristics, etc.
     Float64 estimated_row_count;
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
@@ -32,7 +32,7 @@ class IOptimizerStatistics
 {
 public:
     virtual ~IOptimizerStatistics() = default;
-    virtual std::optional<UInt64> getCardinaity(const String & table_name) const = 0;
+    virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
     virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
 };
 

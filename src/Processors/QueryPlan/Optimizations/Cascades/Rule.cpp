@@ -309,12 +309,12 @@ std::vector<GroupExpressionPtr> LocalAggregationImplementation::applyImpl(GroupE
 
     new_aggregating_step->setStepDescription(fmt::format("Local IMPL: {}", aggregating_step->getStepDescription()), 200);
 
-    GroupExpressionPtr aggreagation_expression = std::make_shared<GroupExpression>(*expression);
-    aggreagation_expression->plan_step = std::move(new_aggregating_step);
-    chassert(aggreagation_expression->inputs.size() == 1);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(aggreagation_expression);
-    aggreagation_expression->setApplied(*this, required_properties);
-    return {aggreagation_expression};
+    GroupExpressionPtr aggregation_expression = std::make_shared<GroupExpression>(*expression);
+    aggregation_expression->plan_step = std::move(new_aggregating_step);
+    chassert(aggregation_expression->inputs.size() == 1);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(aggregation_expression);
+    aggregation_expression->setApplied(*this, required_properties);
+    return {aggregation_expression};
 }
 
 
@@ -336,12 +336,12 @@ std::vector<GroupExpressionPtr> ShuffleAggregationImplementation::applyImpl(Grou
 
     new_aggregating_step->setStepDescription(fmt::format("Shuffle IMPL: {}", aggregating_step->getStepDescription()), 200);
 
-    GroupExpressionPtr aggreagation_expression = std::make_shared<GroupExpression>(*expression);
-    aggreagation_expression->plan_step = std::move(new_aggregating_step);
-    chassert(aggreagation_expression->inputs.size() == 1);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(aggreagation_expression);
-    aggreagation_expression->setApplied(*this, required_properties);
-    return {aggreagation_expression};
+    GroupExpressionPtr aggregation_expression = std::make_shared<GroupExpression>(*expression);
+    aggregation_expression->plan_step = std::move(new_aggregating_step);
+    chassert(aggregation_expression->inputs.size() == 1);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(aggregation_expression);
+    aggregation_expression->setApplied(*this, required_properties);
+    return {aggregation_expression};
 }
 
 
@@ -360,12 +360,12 @@ std::vector<GroupExpressionPtr> PartialDistributedAggregationImplementation::app
 
     new_aggregating_step->setStepDescription(fmt::format("PartialDistributed IMPL: {}", aggregating_step->getStepDescription()), 200);
 
-    GroupExpressionPtr aggreagation_expression = std::make_shared<GroupExpression>(*expression);
-    aggreagation_expression->plan_step = std::move(new_aggregating_step);
-    chassert(aggreagation_expression->inputs.size() == 1);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(aggreagation_expression);
-    aggreagation_expression->setApplied(*this, required_properties);
-    return {aggreagation_expression};
+    GroupExpressionPtr aggregation_expression = std::make_shared<GroupExpression>(*expression);
+    aggregation_expression->plan_step = std::move(new_aggregating_step);
+    chassert(aggregation_expression->inputs.size() == 1);
+    memo.getGroup(expression->group_id)->addPhysicalExpression(aggregation_expression);
+    aggregation_expression->setApplied(*this, required_properties);
+    return {aggregation_expression};
 }
 
 

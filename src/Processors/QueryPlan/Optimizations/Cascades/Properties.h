@@ -17,7 +17,7 @@ struct ExpressionProperties
     bool isSatisfiedBy(const ExpressionProperties & existing_properties) const;
 
     static bool isSortingSatisfiedBy(const SortDescription & required, const SortDescription & existing);
-    static bool isDistibutionSatisfiedBy(const DistributionColumns & required, const DistributionColumns & existing);
+    static bool isDistributionSatisfiedBy(const DistributionColumns & required, const DistributionColumns & existing);
 
     void dump(WriteBuffer & out) const;
     String dump() const;

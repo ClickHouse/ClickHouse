@@ -48,7 +48,7 @@ public:
     {
     }
 
-    std::optional<UInt64> getCardinaity(const String & table_name) const override
+    std::optional<UInt64> getCardinality(const String & table_name) const override
     {
         std::lock_guard g(table_statistics_lock);
         fillParsedStatisticsIfNeeded(table_name);
@@ -92,7 +92,7 @@ OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_j
 class EmptyStatistics : public IOptimizerStatistics
 {
 public:
-    std::optional<UInt64> getCardinaity(const String & /*table_name*/) const override { return std::nullopt; }
+    std::optional<UInt64> getCardinality(const String & /*table_name*/) const override { return std::nullopt; }
 
     std::optional<UInt64> getNumberOfDistinctValues(const String & /*table_name*/, const String & /*column_name*/) const override { return std::nullopt; }
 };
