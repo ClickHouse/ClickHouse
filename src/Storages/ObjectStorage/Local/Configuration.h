@@ -40,7 +40,7 @@ struct LocalStorageParsableArguments : private StorageParsableArguments
 
     using Paths = StorageObjectStorageConfiguration::Paths;
     using Path = StorageObjectStorageConfiguration::Path;
-    Path path;
+    String path;
     String path_suffix;
     void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr);
     void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);

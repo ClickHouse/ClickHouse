@@ -878,6 +878,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
+        return;
     }
     addStructureAndFormatToArgsIfNeededImpl(args, structure_, format_, context, with_structure);
 }
@@ -920,5 +921,5 @@ void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, 
 }
 
 
-#endif
 }
+#endif

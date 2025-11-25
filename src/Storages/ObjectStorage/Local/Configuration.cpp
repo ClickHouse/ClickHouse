@@ -106,9 +106,10 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, 
     parsable_arguemnts.fromDiskImpl(disk, args, context, with_structure);
     fs::path root = disk->getPath();
     fs::path suffix = parsable_arguemnts.path_suffix;
-    setPathForRead(String(root / suffix));
-    setPaths({String(root / suffix)});
     initializeFromParsableArguments(parsable_arguemnts);
+    path = String(root / suffix);
+    setPathForRead(path);
+    setPaths({path});
 }
 
 void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
