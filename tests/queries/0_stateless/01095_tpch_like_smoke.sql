@@ -8,7 +8,6 @@ DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
 SET cross_to_inner_join_rewrite = 1;
-SET allow_experimental_correlated_subqueries = 0;
 
 CREATE TABLE part
 (
@@ -181,7 +180,55 @@ order by
     n_name,
     s_name,
     p_partkey
-limit 100; -- { serverError UNSUPPORTED_METHOD, 47 }
+limit 100
+SETTINGS enable_analyzer = 0; -- { serverError UNSUPPORTED_METHOD, 47 }
+
+select 2, 'correlated subquery (NEW ANALYZER)';
+select
+    s_acctbal,
+    s_name,
+    n_name,
+    p_partkey,
+    p_mfgr,
+    s_address,
+    s_phone,
+    s_comment
+from
+    part,
+    supplier,
+    partsupp,
+    nation,
+    region
+where
+    p_partkey = ps_partkey
+    and s_suppkey = ps_suppkey
+    and p_size = 15
+    and p_type like '%BRASS'
+    and s_nationkey = n_nationkey
+    and n_regionkey = r_regionkey
+    and r_name = 'EUROPE'
+    and ps_supplycost = (
+        select
+            min(ps_supplycost)
+        from
+            partsupp,
+            supplier,
+            nation,
+            region
+        where
+            p_partkey = ps_partkey
+            and s_suppkey = ps_suppkey
+            and s_nationkey = n_nationkey
+            and n_regionkey = r_regionkey
+            and r_name = 'EUROPE'
+    )
+order by
+    s_acctbal desc,
+    n_name,
+    s_name,
+    p_partkey
+limit 100
+SETTINGS enable_analyzer = 1;
 
 select 3;
 select
@@ -208,28 +255,29 @@ order by
     o_orderdate
 limit 10;
 
-select 4, 'fail: exists'; -- TODO
--- select
---     o_orderpriority,
---     count(*) as order_count
--- from
---     orders
--- where
---     o_orderdate >= date '1993-07-01'
---     and o_orderdate < date '1993-07-01' + interval '3' month
---     and exists (
---         select
---             *
---         from
---             lineitem
---         where
---             l_orderkey = o_orderkey
---             and l_commitdate < l_receiptdate
---     )
--- group by
---     o_orderpriority
--- order by
---     o_orderpriority;
+select 4, 'exists (NEW ANALYZER)';
+select
+    o_orderpriority,
+    count(*) as order_count
+from
+    orders
+where
+    o_orderdate >= date '1993-07-01'
+    and o_orderdate < date '1993-07-01' + interval '3' month
+    and exists (
+        select
+            *
+        from
+            lineitem
+        where
+            l_orderkey = o_orderkey
+            and l_commitdate < l_receiptdate
+    )
+group by
+    o_orderpriority
+order by
+    o_orderpriority
+SETTINGS enable_analyzer = 1;
 
 select 5;
 select
@@ -599,7 +647,28 @@ where
             lineitem
         where
             l_partkey = p_partkey
-    ); -- { serverError UNSUPPORTED_METHOD, 47 }
+    )
+SETTINGS enable_analyzer = 0; -- { serverError UNSUPPORTED_METHOD, 47 }
+
+select 17, 'correlated subquery (NEW ANALYZER)'; -- TODO: Missing columns: 'p_partkey'
+select
+    sum(l_extendedprice) / 7.0 as avg_yearly
+from
+    lineitem,
+    part
+where
+    p_partkey = l_partkey
+    and p_brand = 'Brand#23'
+    and p_container = 'MED BOX'
+    and l_quantity < (
+        select
+            0.2 * avg(l_quantity)
+        from
+            lineitem
+        where
+            l_partkey = p_partkey
+    )
+SETTINGS enable_analyzer = 1;
 
 select 18;
 select
@@ -710,7 +779,48 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'CANADA'
 order by
-    s_name; -- { serverError UNSUPPORTED_METHOD, 47 }
+    s_name
+SETTINGS enable_analyzer = 0; -- { serverError UNSUPPORTED_METHOD, 47 }
+
+select 20, 'correlated subquery (NEW ANALYZER)'; -- TODO: Missing columns: 'ps_suppkey' 'ps_partkey'
+select
+    s_name,
+    s_address
+from
+    supplier,
+    nation
+where
+    s_suppkey in (
+        select
+            ps_suppkey
+        from
+            partsupp
+        where
+            ps_partkey in (
+                select
+                    p_partkey
+                from
+                    part
+                where
+                    p_name like 'forest%'
+            )
+            and ps_availqty > (
+                select
+                    0.5 * sum(l_quantity)
+                from
+                    lineitem
+                where
+                    l_partkey = ps_partkey
+                    and l_suppkey = ps_suppkey
+                    and l_shipdate >= date '1994-01-01'
+                    and l_shipdate < date '1994-01-01' + interval '1' year
+            )
+    )
+    and s_nationkey = n_nationkey
+    and n_name = 'CANADA'
+order by
+    s_name
+SETTINGS enable_analyzer = 1;
 
 select 21, 'fail: exists, not exists'; -- TODO
 -- select
@@ -754,6 +864,49 @@ select 21, 'fail: exists, not exists'; -- TODO
 --     s_name
 -- limit 100;
 
+select 21, 'exists, not exists (NEW ANALYZER)'; -- TODO
+select
+    s_name,
+    count(*) as numwait
+from
+    supplier,
+    lineitem l1,
+    orders,
+    nation
+where
+    s_suppkey = l1.l_suppkey
+    and o_orderkey = l1.l_orderkey
+    and o_orderstatus = 'F'
+    and l1.l_receiptdate > l1.l_commitdate
+    and exists (
+        select
+            *
+        from
+            lineitem l2
+        where
+            l2.l_orderkey = l1.l_orderkey
+            and l2.l_suppkey <> l1.l_suppkey
+    )
+    and not exists (
+        select
+            *
+        from
+            lineitem l3
+        where
+            l3.l_orderkey = l1.l_orderkey
+            and l3.l_suppkey <> l1.l_suppkey
+            and l3.l_receiptdate > l3.l_commitdate
+    )
+    and s_nationkey = n_nationkey
+    and n_name = 'SAUDI ARABIA'
+group by
+    s_name
+order by
+    numwait desc,
+    s_name
+limit 100
+SETTINGS enable_analyzer = 1;
+
 select 22, 'fail: not exists'; -- TODO
 -- select
 --     cntrycode,
@@ -792,6 +945,46 @@ select 22, 'fail: not exists'; -- TODO
 --     cntrycode
 -- order by
 --     cntrycode;
+
+select 22, 'not exists (NEW ANALYZER)'; -- TODO
+select
+    cntrycode,
+    count(*) as numcust,
+    sum(c_acctbal) as totacctbal
+from
+    (
+        select
+            substring(c_phone from 1 for 2) as cntrycode,
+            c_acctbal
+        from
+            customer
+        where
+            substring(c_phone from 1 for 2) in
+                ('13', '31', '23', '29', '30', '18', '17')
+            and c_acctbal > (
+                select
+                    avg(c_acctbal)
+                from
+                    customer
+                where
+                    c_acctbal > 0.00
+                    and substring(c_phone from 1 for 2) in
+                        ('13', '31', '23', '29', '30', '18', '17')
+            )
+            and not exists (
+                select
+                    *
+                from
+                    orders
+                where
+                    o_custkey = c_custkey
+            )
+    ) as custsale
+group by
+    cntrycode
+order by
+    cntrycode
+SETTINGS enable_analyzer = 1;
 
 DROP TABLE part;
 DROP TABLE supplier;
