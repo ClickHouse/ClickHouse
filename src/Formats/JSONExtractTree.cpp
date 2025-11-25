@@ -683,7 +683,7 @@ public:
         time_t value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            if (!tryParse(value, element.getString(), format_settings))
             {
                 error = fmt::format("cannot parse DateTime value here: {}", element.getString());
                 return false;
@@ -703,13 +703,13 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(time_t & value, std::string_view data, const FormatSettings & format_settings) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
-        switch (date_time_input_format)
+        switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTimeText(value, buf, time_zone) && buf.eof())
+                if (tryReadDateTimeText(value, buf, time_zone, /*allowed_date_delimiters*/ nullptr, /*allowed_time_delimiters*/ nullptr, format_settings.date_time_saturate_on_overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
@@ -879,7 +879,7 @@ public:
         DateTime64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
+            if (!tryParse(value, element.getString(), format_settings))
             {
                 error = fmt::format("cannot parse DateTime64 value here: {}", element.getString());
                 return false;
@@ -911,13 +911,13 @@ public:
         return true;
     }
 
-    bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
+    bool tryParse(DateTime64 & value, std::string_view data, const FormatSettings & format_settings) const
     {
         ReadBufferFromMemory buf(data.data(), data.size());
-        switch (date_time_input_format)
+        switch (format_settings.date_time_input_format)
         {
             case FormatSettings::DateTimeInputFormat::Basic:
-                if (tryReadDateTime64Text(value, scale, buf, time_zone) && buf.eof())
+                if (tryReadDateTime64Text(value, scale, buf, time_zone, /*allowed_date_delimiters*/ nullptr, /*allowed_time_delimiters*/ nullptr, format_settings.date_time_saturate_on_overflow) && buf.eof())
                     return true;
                 break;
             case FormatSettings::DateTimeInputFormat::BestEffort:
