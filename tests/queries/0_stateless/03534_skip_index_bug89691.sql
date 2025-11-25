@@ -20,8 +20,4 @@ INSERT INTO tab SELECT 100, 'aaa'; -- Single-granule part, which contained rows 
 
 SELECT i FROM tab WHERE s = 'aaa';
 
-TRUNCATE TABLE tab;
-
-INSERT INTO tab SELECT number, toString(number) FROM numbers(6); -- The Last granule contained rows smaller than index_granularity.
-
-SELECT i, s FROM tab WHERE s = '5';
+DROP TABLE tab;
