@@ -203,7 +203,7 @@ SET TBLPROPERTIES ('delta.minReaderVersion'='1', 'delta.minWriterVersion'='2', d
     )
     # Data with CDF enabled starts from snapshot version 2.
     # Snapshot version 1 is just a metadata change. 
-    # Reading from snapshot version 1 can sometimes fail with "cdf not enabled", because metadata is propogated asynchronously.
+    # Reading from snapshot version 1 can sometimes fail with "cdf not enabled", because metadata is propagated asynchronously.
     assert (
         "ba\t44\tinsert\t2\n"
         "bb\t55\tinsert\t2\n"
