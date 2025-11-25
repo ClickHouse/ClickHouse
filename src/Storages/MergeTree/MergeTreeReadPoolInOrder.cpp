@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
+#include "Processors/QueryPlan/ReadFromMergeTree.h"
 
 namespace DB
 {
@@ -14,7 +15,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
     RangesInDataParts parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
+    MergeTreeIndexBuildContextPtr index_build_context_,
     const StorageSnapshotPtr & storage_snapshot_,
     const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -28,7 +29,7 @@ MergeTreeReadPoolInOrder::MergeTreeReadPoolInOrder(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
-        index_read_tasks_,
+        std::move(index_build_context_),
         storage_snapshot_,
         row_level_filter_,
         prewhere_info_,

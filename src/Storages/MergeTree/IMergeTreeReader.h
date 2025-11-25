@@ -68,6 +68,7 @@ public:
     size_t numColumnsInResult() const { return getColumns().size(); }
 
     size_t getFirstMarkToRead() const { return all_mark_ranges.front().begin; }
+    MarkRanges getAllMarkRanges() const { return all_mark_ranges; }
 
     MergeTreeDataPartInfoForReaderPtr data_part_info_for_read;
 

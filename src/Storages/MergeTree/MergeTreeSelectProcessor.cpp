@@ -93,32 +93,36 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
     RangesByIndex read_ranges_,
     ProjectionRangesByIndex projection_read_ranges_,
     MergeTreeIndexReadResultPoolPtr index_reader_pool_,
-    PartRemainingMarks part_remaining_marks_)
+    PartRemainingMarks part_remaining_marks_,
+    IndexReadTasks index_read_tasks_)
     : read_ranges(std::move(read_ranges_))
     , projection_read_ranges(std::move(projection_read_ranges_))
     , index_reader_pool(std::move(index_reader_pool_))
     , part_remaining_marks(std::move(part_remaining_marks_))
+    , index_read_tasks(std::move(index_read_tasks_))
 {
-    chassert(index_reader_pool);
 }
 
-MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
+MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTaskInfo & task_info, const MarkRanges & ranges) const
 {
-    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
-    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
+    if (!index_reader_pool)
+        return nullptr;
+
+    const auto & part_ranges = read_ranges.at(task_info.part_index_in_query);
+    auto it = projection_read_ranges.find(task_info.part_index_in_query);
     static RangesInDataParts empty_parts_ranges;
     const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
-    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
+    auto & remaining_marks = part_remaining_marks.at(task_info.part_index_in_query).value;
     auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
     /// cleanup of any per-part cached resources (e.g., skip index read result or projection index bitmaps).
-    size_t task_marks = task.getNumMarksToRead();
+    size_t task_marks = ranges.getNumberOfMarks();
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
     if (part_last_task)
-        index_reader_pool->clear(task.getInfo().data_part);
+        index_reader_pool->clear(task_info.data_part);
 
     return index_read_result;
 }
@@ -131,8 +135,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const LazilyReadInfoPtr & lazily_read_info_,
     const IndexReadTasks & index_read_tasks_,
     const ExpressionActionsSettings & actions_settings_,
-    const MergeTreeReaderSettings & reader_settings_,
-    MergeTreeIndexBuildContextPtr merge_tree_index_build_context_)
+    const MergeTreeReaderSettings & reader_settings_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -148,7 +151,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), lazily_read_info, row_level_filter, prewhere_info))
-    , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
@@ -232,8 +234,11 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
 ChunkAndProgress
 MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const
 {
+    if (current_task.isEmpty())
+        return {Chunk(), 0, 0, false};
+
     if (!current_task.getReadersChain().isInitialized())
-        current_task.initializeReadersChain(prewhere_actions, merge_tree_index_build_context, read_steps_performance_counters);
+        current_task.initializeReadersChain(prewhere_actions, read_steps_performance_counters);
 
     auto res = task_algorithm.readFromTask(current_task);
 
@@ -285,38 +290,8 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                /// Update the query condition cache for filters in PREWHERE stage
-                if (reader_settings.use_query_condition_cache && task && prewhere_info)
-                {
-                    for (const auto * output : prewhere_info->prewhere_actions.getOutputs())
-                    {
-                        if (output->result_name == prewhere_info->prewhere_column_name)
-                        {
-                            if (!VirtualColumnUtils::isDeterministic(output))
-                                continue;
-
-                            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            auto data_part = task->getInfo().data_part;
-
-                            String part_name = data_part->isProjectionPart()
-                                ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
-                                : data_part->name;
-                            query_condition_cache->write(
-                                data_part->storage.getStorageID().uuid,
-                                part_name,
-                                output->getHash(),
-                                reader_settings.query_condition_cache_store_conditions_as_plaintext
-                                    ? prewhere_info->prewhere_actions.getNames()[0]
-                                    : "",
-                                task->getPrewhereUnmatchedMarks(),
-                                data_part->index_granularity->getMarksCount(),
-                                data_part->index_granularity->hasFinalMark());
-
-                            break;
-                        }
-                    }
-                }
-
+                /// Update the query condition cache for filters in PREWHERE stage.
+                updateQueryConditionCache();
                 task = algorithm->getNewTask(*pool, task.get());
             }
 
@@ -336,13 +311,41 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
     return {Chunk(), 0, 0, true};
 }
 
+void MergeTreeSelectProcessor::updateQueryConditionCache() const
+{
+    if (!reader_settings.use_query_condition_cache || !task || !prewhere_info)
+        return;
+
+    const auto * output = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+    if (!output || !VirtualColumnUtils::isDeterministic(output))
+        return;
+
+    auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+    auto data_part = task->getInfo().data_part;
+
+    String part_name = data_part->isProjectionPart()
+        ? fmt::format("{}:{}", data_part->getParentPartName(), data_part->name)
+        : data_part->name;
+
+    String condition_str = reader_settings.query_condition_cache_store_conditions_as_plaintext
+        ? prewhere_info->prewhere_actions.getNames()[0]
+        : "";
+
+    query_condition_cache->write(
+        data_part->storage.getStorageID().uuid,
+        part_name,
+        output->getHash(),
+        condition_str,
+        task->getPrewhereUnmatchedMarks(),
+        data_part->index_granularity->getMarksCount(),
+        data_part->index_granularity->hasFinalMark());
+}
+
 /// Cancels all internal operations for this select processor, including cancelling any ongoing index reads.
 void MergeTreeSelectProcessor::cancel() noexcept
 {
     is_cancelled = true;
-
-    if (merge_tree_index_build_context)
-        merge_tree_index_build_context->index_reader_pool->cancel();
+    pool->cancel();
 }
 
 void MergeTreeSelectProcessor::injectLazilyReadColumns(

@@ -146,6 +146,8 @@ using MergeTreeProjectionIndexReaderPtr = std::shared_ptr<MergeTreeProjectionInd
 
 struct MergeTreeIndexReadResult
 {
+    bool alwaysFalseOnRanges(const MergeTreeIndexGranularity & index_granularity, const MarkRanges & ranges) const;
+
     SkipIndexReadResultPtr skip_index_read_result;
     ProjectionIndexBitmapPtr projection_index_read_result;
 };

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
+#include "Processors/QueryPlan/ReadFromMergeTree.h"
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
 #include <queue>
@@ -21,7 +22,7 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
-        const IndexReadTasks & index_read_tasks_,
+        MergeTreeIndexBuildContextPtr index_build_context_,
         const StorageSnapshotPtr & storage_snapshot_,
         const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -57,16 +58,22 @@ private:
     {
     public:
         PrefetchedReaders(
-            ThreadPool & pool, MergeTreeReadTask::Readers readers_, Priority priority_, MergeTreePrefetchedReadPool & read_prefetch);
+            ThreadPool & pool,
+            MergeTreeReadTask::Readers readers_,
+            MergeTreeReadTaskInfoPtr task_info,
+            MergeTreeIndexBuildContextPtr index_build_context,
+            Priority priority,
+            MergeTreePrefetchedReadPool & read_prefetch);
 
         void wait();
-        MergeTreeReadTask::Readers get();
+        std::pair<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr> get();
         bool valid() const { return is_valid; }
 
     private:
         bool is_valid = false;
         MergeTreeReadTask::Readers readers;
-
+        MergeTreeIndexReadResultPtr index_read_result;
+        ThreadPoolCallbackRunnerLocal<void> read_index_runner;
         ThreadPoolCallbackRunnerLocal<void> prefetch_runner;
     };
 
@@ -91,6 +98,7 @@ private:
         MarkRanges ranges;
         std::vector<MarkRanges> patches_ranges;
         Priority priority;
+        MergeTreeIndexReadResultPtr index_read_result;
         std::unique_ptr<PrefetchedReaders> readers_future;
     };
 

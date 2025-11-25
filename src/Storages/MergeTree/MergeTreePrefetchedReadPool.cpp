@@ -17,7 +17,9 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-
+#include "Storages/MergeTree/IMergeTreeDataPart.h"
+#include "Storages/MergeTree/MergeTreeReadTask.h"
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
 namespace ProfileEvents
 {
@@ -67,19 +69,32 @@ MergeTreePrefetchedReadPool::ThreadTask::ThreadTask(InfoPtr read_info_, MarkRang
 MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     ThreadPool & pool,
     MergeTreeReadTask::Readers readers_,
-    Priority priority_,
+    MergeTreeReadTaskInfoPtr task_info,
+    MergeTreeIndexBuildContextPtr index_build_context,
+    Priority priority,
     MergeTreePrefetchedReadPool & read_prefetch)
     : is_valid(true)
     , readers(std::move(readers_))
+    , read_index_runner(pool, ThreadName::PREFETCH_READER)
     , prefetch_runner(pool, ThreadName::PREFETCH_READER)
 {
-    prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority_));
+    read_index_runner([this, index_build_context, task_info, priority, &read_prefetch]()
+    {
+        auto ranges = readers.main->getAllMarkRanges();
+        index_read_result = index_build_context->getPreparedIndexReadResult(*task_info, ranges);
+        bool always_false_on_ranges = index_read_result && index_read_result->alwaysFalseOnRanges(*task_info->data_part->index_granularity, ranges);
 
-    for (const auto & reader : readers.prewhere)
-        prefetch_runner(read_prefetch.createPrefetchedTask(reader.get(), priority_));
+        if (!always_false_on_ranges)
+        {
+            prefetch_runner(read_prefetch.createPrefetchedTask(readers.main.get(), priority));
 
-    for (const auto & patch_reader : readers.patches)
-        prefetch_runner(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority_));
+            for (const auto & reader : readers.prewhere)
+                prefetch_runner(read_prefetch.createPrefetchedTask(reader.get(), priority));
+
+            for (const auto & patch_reader : readers.patches)
+                prefetch_runner(read_prefetch.createPrefetchedTask(patch_reader->getReader(), priority));
+        }
+    });
 
     fiu_do_on(FailPoints::prefetched_reader_pool_failpoint,
     {
@@ -92,26 +107,28 @@ void MergeTreePrefetchedReadPool::PrefetchedReaders::wait()
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::wait");
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
+    read_index_runner.waitForAllToFinish();
     prefetch_runner.waitForAllToFinish();
 }
 
-MergeTreeReadTask::Readers MergeTreePrefetchedReadPool::PrefetchedReaders::get()
+std::pair<MergeTreeReadTask::Readers, MergeTreeIndexReadResultPtr> MergeTreePrefetchedReadPool::PrefetchedReaders::get()
 {
     OpenTelemetry::SpanHolder span("MergeTreePrefetchedReadPool::PrefetchedReaders::get");
 
     SCOPE_EXIT({ is_valid = false; });
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::WaitPrefetchTaskMicroseconds);
 
+    read_index_runner.waitForAllToFinishAndRethrowFirstError();
     prefetch_runner.waitForAllToFinishAndRethrowFirstError();
 
-    return std::move(readers);
+    return std::make_pair(std::move(readers), std::move(index_read_result));
 }
 
 MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
+    MergeTreeIndexBuildContextPtr index_build_context_,
     const StorageSnapshotPtr & storage_snapshot_,
     const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -125,7 +142,7 @@ MergeTreePrefetchedReadPool::MergeTreePrefetchedReadPool(
         std::move(parts_),
         std::move(mutations_snapshot_),
         std::move(shared_virtual_fields_),
-        index_read_tasks_,
+        index_build_context_,
         storage_snapshot_,
         row_level_filter_,
         prewhere_info_,
@@ -171,7 +188,7 @@ void MergeTreePrefetchedReadPool::createPrefetchedReadersForTask(ThreadTask & ta
 
     auto extras = getExtras();
     auto readers = MergeTreeReadTask::createReaders(task.read_info, extras, task.ranges, task.patches_ranges);
-    task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.priority, *this);
+    task.readers_future = std::make_unique<PrefetchedReaders>(prefetch_threadpool, std::move(readers), task.read_info, index_build_context, task.priority, *this);
 }
 
 void MergeTreePrefetchedReadPool::startPrefetches()
@@ -331,7 +348,10 @@ MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::stealTask(size_t thread, Merge
 MergeTreeReadTaskPtr MergeTreePrefetchedReadPool::createTask(ThreadTask & task, MergeTreeReadTask * previous_task)
 {
     if (task.isValidReadersFuture())
-        return MergeTreeReadPoolBase::createTask(task.read_info, task.readers_future->get(), task.ranges, task.patches_ranges);
+    {
+        auto [readers, index_read_result] = task.readers_future->get();
+        return MergeTreeReadPoolBase::createTask(task.read_info, std::move(readers), std::move(index_read_result), task.ranges, task.patches_ranges);
+    }
 
     return MergeTreeReadPoolBase::createTask(task.read_info, task.ranges, task.patches_ranges, previous_task);
 }

@@ -64,6 +64,7 @@
 
 #include <fmt/ranges.h>
 
+#include "Storages/MergeTree/MergeTreeIndexBuildContext.h"
 #include "config.h"
 
 using namespace DB;
@@ -440,7 +441,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         std::move(parts_with_range),
         mutations_snapshot,
         shared_virtual_fields,
-        index_read_tasks,
+        index_build_context,
         storage_snapshot,
         query_info.row_level_filter,
         query_info.prewhere_info,
@@ -463,10 +464,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             query_info.row_level_filter,
             query_info.prewhere_info,
             lazily_read_info,
-            index_read_tasks,
+            index_build_context->index_read_tasks,
             actions_settings,
-            reader_settings,
-            index_build_context);
+            reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -529,7 +529,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
-            index_read_tasks,
+            index_build_context,
             storage_snapshot,
             query_info.row_level_filter,
             query_info.prewhere_info,
@@ -546,7 +546,7 @@ Pipe ReadFromMergeTree::readFromPool(
             std::move(parts_with_range),
             mutations_snapshot,
             shared_virtual_fields,
-            index_read_tasks,
+            index_build_context,
             storage_snapshot,
             query_info.row_level_filter,
             query_info.prewhere_info,
@@ -571,10 +571,9 @@ Pipe ReadFromMergeTree::readFromPool(
             query_info.row_level_filter,
             query_info.prewhere_info,
             lazily_read_info,
-            index_read_tasks,
+            index_build_context->index_read_tasks,
             actions_settings,
-            reader_settings,
-            index_build_context);
+            reader_settings);
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -622,7 +621,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
-            index_read_tasks,
+            index_build_context,
             has_limit_below_one_block,
             storage_snapshot,
             query_info.row_level_filter,
@@ -642,7 +641,7 @@ Pipe ReadFromMergeTree::readInOrder(
             parts_with_ranges,
             mutations_snapshot,
             shared_virtual_fields,
-            index_read_tasks,
+            index_build_context,
             storage_snapshot,
             query_info.row_level_filter,
             query_info.prewhere_info,
@@ -688,10 +687,9 @@ Pipe ReadFromMergeTree::readInOrder(
             query_info.row_level_filter,
             query_info.prewhere_info,
             lazily_read_info,
-            index_read_tasks,
+            index_build_context->index_read_tasks,
             actions_settings,
-            reader_settings,
-            index_build_context);
+            reader_settings);
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -2765,6 +2763,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     MergeTreeIndexBuildContextPtr index_build_context;
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
+
     if (supportsSkipIndexesOnDataRead())
     {
         UsefulSkipIndexes applicable_skip_indexes = indexes->skip_indexes;
@@ -2830,26 +2829,27 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
     }
 
+    RangesByIndex read_ranges;
+    PartRemainingMarks part_remaining_marks;
+    MergeTreeIndexReadResultPoolPtr index_read_result_pool;
+
     if (skip_index_reader || projection_index_reader)
     {
-        MergeTreeIndexReadResultPoolPtr index_read_result_pool
-            = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader), std::move(projection_index_reader));
-
-        RangesByIndex read_ranges;
-        PartRemainingMarks part_remaining_marks;
+        index_read_result_pool = std::make_shared<MergeTreeIndexReadResultPool>(std::move(skip_index_reader), std::move(projection_index_reader));
 
         for (const auto & ranges : result.parts_with_ranges)
         {
             read_ranges.emplace(ranges.part_index_in_query, ranges);
             part_remaining_marks.emplace(ranges.part_index_in_query, ranges.getMarksCount());
         }
-
-        index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
-            std::move(read_ranges),
-            std::move(projection_index_read_desc.read_ranges),
-            std::move(index_read_result_pool),
-            std::move(part_remaining_marks));
     }
+
+    index_build_context = std::make_shared<MergeTreeIndexBuildContext>(
+        std::move(read_ranges),
+        std::move(projection_index_read_desc.read_ranges),
+        std::move(index_read_result_pool),
+        std::move(part_remaining_marks),
+        index_read_tasks);
 
     Pipe pipe = output_each_partition_through_separate_port
         ? groupStreamsByPartition(result, index_build_context, result_projection)

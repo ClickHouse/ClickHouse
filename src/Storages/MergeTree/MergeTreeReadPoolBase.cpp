@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
+#include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
-    const IndexReadTasks & index_read_tasks_,
+    MergeTreeIndexBuildContextPtr index_build_context_,
     const StorageSnapshotPtr & storage_snapshot_,
     const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -43,7 +44,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , parts_ranges(std::move(parts_))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , shared_virtual_fields(std::move(shared_virtual_fields_))
-    , index_read_tasks(index_read_tasks_)
+    , index_build_context(std::move(index_build_context_))
     , storage_snapshot(storage_snapshot_)
     , row_level_filter(row_level_filter_)
     , prewhere_info(prewhere_info_)
@@ -74,6 +75,7 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     const ContextPtr & context_)
     : WithContext(context_)
     , mutations_snapshot(std::move(mutations_snapshot_))
+    , index_build_context(std::make_shared<MergeTreeIndexBuildContext>())
     , storage_snapshot(storage_snapshot_)
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
@@ -88,6 +90,12 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
     , profile_callback([this](ReadBufferFromFileBase::ProfileInfo info_) { profileFeedback(info_); })
 {
+}
+
+void MergeTreeReadPoolBase::cancel()
+{
+    if (index_build_context->index_reader_pool)
+        index_build_context->index_reader_pool->cancel();
 }
 
 static size_t getSizeOfColumns(const IMergeTreeDataPart & part, const Names & columns_to_read)
@@ -229,7 +237,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
         row_level_filter,
         prewhere_info,
         read_task_info.mutation_steps,
-        index_read_tasks,
+        index_build_context->index_read_tasks,
         actions_settings,
         reader_settings,
         /*with_subcolumns=*/ true);
@@ -249,7 +257,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
             has_lightweight_delete);
     }
 
-    read_task_info.index_read_tasks = index_read_tasks;
+    read_task_info.index_read_tasks = index_build_context->index_read_tasks;
     read_task_info.const_virtual_fields = shared_virtual_fields;
     read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
     read_task_info.const_virtual_fields.emplace("_part_starting_offset", read_task_info.part_starting_offset_in_query);
@@ -319,6 +327,7 @@ std::vector<size_t> MergeTreeReadPoolBase::getPerPartSumMarks() const
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
     MergeTreeReadTaskInfoPtr read_info,
     MergeTreeReadTask::Readers task_readers,
+    MergeTreeIndexReadResultPtr index_read_result,
     MarkRanges ranges,
     std::vector<MarkRanges> patches_ranges) const
 {
@@ -331,6 +340,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         std::move(task_readers),
         std::move(ranges),
         std::move(patches_ranges),
+        std::move(index_read_result),
         block_size_params,
         std::move(task_size_predictor));
 }
@@ -380,7 +390,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(
         task_readers.updateAllMarkRanges(ranges);
     }
 
-    return createTask(read_info, std::move(task_readers), std::move(ranges), std::move(patches_ranges));
+    auto index_read_result = index_build_context->getPreparedIndexReadResult(*read_info, ranges);
+    return createTask(read_info, std::move(task_readers), std::move(index_read_result), std::move(ranges), std::move(patches_ranges));
 }
 
 MergeTreeReadTaskPtr MergeTreeReadPoolBase::createTask(

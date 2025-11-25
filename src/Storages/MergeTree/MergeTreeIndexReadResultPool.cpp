@@ -431,6 +431,53 @@ void MergeTreeProjectionIndexReader::cancel() noexcept
         reader.cancel();
 }
 
+static bool alwaysFalseOnRangesImpl(const SkipIndexReadResult & skip_index_read_result, const MarkRanges & ranges)
+{
+    for (const auto & range : ranges)
+    {
+        chassert(range.begin <= range.end);
+        chassert(range.end <= skip_index_read_result.size());
+
+        bool can_be_true_on_range = std::ranges::any_of(
+            skip_index_read_result.begin() + range.begin,
+            skip_index_read_result.begin() + range.end,
+            [](bool value) { return value; });
+
+        if (can_be_true_on_range)
+            return false;
+    }
+
+    return true;
+}
+
+static bool alwaysFalseOnRangesImpl(const ProjectionIndexBitmap & projection_bitmap, const MarkRanges & ranges, const MergeTreeIndexGranularity & index_granularity)
+{
+    for (const auto & range : ranges)
+    {
+        chassert(range.begin <= range.end);
+        chassert(range.end <= index_granularity.getMarksCount());
+
+        size_t row_begin = index_granularity.getMarkStartingRow(range.begin);
+        size_t row_end = index_granularity.getMarkStartingRow(range.end);
+
+        if (!projection_bitmap.rangeAllZero(row_begin, row_end))
+            return false;
+    }
+
+    return true;
+}
+
+bool MergeTreeIndexReadResult::alwaysFalseOnRanges(const MergeTreeIndexGranularity & index_granularity, const MarkRanges & ranges) const
+{
+    if (skip_index_read_result && alwaysFalseOnRangesImpl(*skip_index_read_result, ranges))
+        return true;
+
+    if (projection_index_read_result && alwaysFalseOnRangesImpl(*projection_index_read_result, ranges, index_granularity))
+        return true;
+
+    return false;
+}
+
 MergeTreeIndexReadResultPool::MergeTreeIndexReadResultPool(
     MergeTreeSkipIndexReaderPtr skip_index_reader_, MergeTreeProjectionIndexReaderPtr projection_index_reader_)
     : skip_index_reader(std::move(skip_index_reader_))

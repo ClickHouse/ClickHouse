@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexBuildContext.h>
 
 namespace DB
 {
@@ -35,7 +36,7 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
-        const IndexReadTasks & index_read_tasks_,
+        MergeTreeIndexBuildContextPtr index_build_context_,
         const StorageSnapshotPtr & storage_snapshot_,
         const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
@@ -58,6 +59,7 @@ public:
         const MergeTreeReadTask::BlockSizeParams & block_size_params_,
         const ContextPtr & context_);
 
+    void cancel() override;
     Block getHeader() const override { return header; }
 
 protected:
@@ -65,7 +67,7 @@ protected:
     const RangesInDataParts parts_ranges;
     const MutationsSnapshotPtr mutations_snapshot;
     const VirtualFields shared_virtual_fields;
-    const IndexReadTasks index_read_tasks;
+    const MergeTreeIndexBuildContextPtr index_build_context;
     const StorageSnapshotPtr storage_snapshot;
     const FilterDAGInfoPtr row_level_filter;
     const PrewhereInfoPtr prewhere_info;
@@ -87,6 +89,7 @@ protected:
     MergeTreeReadTaskPtr createTask(
         MergeTreeReadTaskInfoPtr read_info,
         MergeTreeReadTask::Readers task_readers,
+        MergeTreeIndexReadResultPtr index_read_result,
         MarkRanges ranges,
         std::vector<MarkRanges> patches_ranges) const;
 

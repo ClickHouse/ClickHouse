@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeIndexBuildContext.h>
 
 namespace DB
 {
@@ -34,9 +35,6 @@ using MergedPartOffsetsPtr = std::shared_ptr<MergedPartOffsets>;
 struct MergeTreeIndexReadResult;
 using MergeTreeIndexReadResultPtr = std::shared_ptr<MergeTreeIndexReadResult>;
 
-struct MergeTreeIndexBuildContext;
-using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
-
 enum class MergeTreeReadType : uint8_t
 {
     /// By default, read will use MergeTreeReadPool and return pipe with num_streams outputs.
@@ -55,17 +53,6 @@ enum class MergeTreeReadType : uint8_t
     /// and who spreads marks and parts across them.
     ParallelReplicas,
 };
-
-/// Read task for index.
-/// Some indexes (e.g. inverted text index) may read special virtual columns.
-struct IndexReadTask
-{
-    NamesAndTypesList columns;
-    MergeTreeIndexWithCondition index;
-};
-
-using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
-using IndexReadColumns = std::unordered_map<String, NamesAndTypesList>;
 
 struct MergeTreeReadTaskColumns
 {
@@ -167,18 +154,17 @@ public:
         Readers readers_,
         MarkRanges mark_ranges_,
         std::vector<MarkRanges> patches_mark_ranges_,
+        MergeTreeIndexReadResultPtr index_read_result_,
         const BlockSizeParams & block_size_params_,
         MergeTreeBlockSizePredictorPtr size_predictor_);
 
     void initializeReadersChain(
         const PrewhereExprInfo & prewhere_actions,
-        MergeTreeIndexBuildContextPtr index_build_context,
         const ReadStepsPerformanceCounters & read_steps_performance_counters);
 
-    void initializeIndexReader(const MergeTreeIndexBuildContext & index_build_context);
-
     BlockAndProgress read();
-    bool isFinished() const { return mark_ranges.empty() && readers_chain.isCurrentRangeFinished(); }
+    bool isEmpty() const { return is_empty; }
+    bool isFinished() const { return is_empty || (mark_ranges.empty() && readers_chain.isCurrentRangeFinished()); }
 
     const MergeTreeReadTaskInfo & getInfo() const { return *info; }
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
@@ -224,10 +210,16 @@ private:
     /// Tracks which mark ranges are not matched by PREWHERE (needed for query condition cache)
     MarkRanges prewhere_unmatched_marks;
 
+    /// Result of analysis of skip indexes and projection indexes for the part from this task.
+    MergeTreeIndexReadResultPtr index_read_result;
+
     BlockSizeParams block_size_params;
 
     /// Used to satistfy preferred_block_size_bytes limitation
     MergeTreeBlockSizePredictorPtr size_predictor;
+
+    /// If true, the task won't return data and can be skipped.
+    bool is_empty = false;
 };
 
 using MergeTreeReadTaskPtr = std::unique_ptr<MergeTreeReadTask>;
