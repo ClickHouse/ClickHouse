@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 namespace DB
 {
 
-class ReadFromLocalParallelReplicaStep : public SourceStepWithFilterBase
+class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
     explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_);
@@ -16,8 +16,6 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     QueryPlanPtr extractQueryPlan();
-
-    void addFilter(ActionsDAG filter_dag, std::string column_name) override;
 
 private:
     QueryPlanPtr query_plan;
