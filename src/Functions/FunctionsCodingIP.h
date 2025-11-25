@@ -180,7 +180,7 @@ namespace detail
                 if constexpr (exception_mode == IPStringToNumExceptionMode::Throw)
                     throw Exception(ErrorCodes::CANNOT_PARSE_IPV6, "Invalid IPv6 value");
                 else if constexpr (exception_mode == IPStringToNumExceptionMode::Default)
-                    vec_res[i] = 0;
+                    std::fill_n(&vec_res[out_offset], offset_inc, 0);
                 else if constexpr (exception_mode == IPStringToNumExceptionMode::Null)
                     (*vec_null_map_to)[i] = true;
             }

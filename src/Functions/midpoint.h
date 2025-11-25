@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 class FunctionMidpoint : public IFunction
@@ -150,6 +151,10 @@ private:
                     calculateForType<ColumnVector<FieldType>>(res_data, converted_columns, input_rows_count);
                     return true;
                 });
+        }
+        else
+        {
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported types of arguments to function midpoint");
         }
 
         return col_res;

@@ -64,6 +64,8 @@ public:
             ReadBufferFromString in_buffer(std::string_view(str.data, str.size));
 
             auto object = parseWKBFormat(in_buffer);
+            if (!std::holds_alternative<Geometry>(object))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect geometry type");
             auto boost_object = std::get<Geometry>(object);
             serializer.add(boost_object);
         }

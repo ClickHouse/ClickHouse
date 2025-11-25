@@ -37,7 +37,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_ENOUGH_SPACE;
     extern const int NOT_IMPLEMENTED;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
@@ -990,7 +989,7 @@ namespace
             {
                 if (cur > end || cur + len > end) [[unlikely]]
                     RETURN_ERROR(
-                        ErrorCodes::NOT_ENOUGH_SPACE,
+                        ErrorCodes::CANNOT_PARSE_DATETIME,
                         "Unable to parse fragment {} from {} because {}",
                         fragment,
                         std::string_view(cur, end - cur),

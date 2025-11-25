@@ -21,7 +21,8 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -187,7 +188,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Tuple doesn't have element with index '{}'", index);
             return std::nullopt;
         }
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(index_column.get()))
@@ -199,7 +200,7 @@ private:
 
             if (argument_size == 2)
                 throw Exception(
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
+                    ErrorCodes::BAD_ARGUMENTS, "Tuple doesn't have element with name '{}'", name_col->getValue<String>());
             return std::nullopt;
         }
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument to {} must be a constant UInt or String", getName());
@@ -216,7 +217,7 @@ private:
                 return {index - 1};
 
             if (argument_size == 2)
-                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "QBit doesn't have an element with index '{}'", index);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "QBit doesn't have an element with index '{}'", index);
 
             return std::nullopt;
         }

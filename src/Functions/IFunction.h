@@ -19,6 +19,7 @@ namespace llvm
     class IRBuilderBase;
 }
 
+struct FunctionsStressTestThread;
 
 namespace DB
 {
@@ -49,6 +50,7 @@ public:
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
 protected:
+    friend struct ::FunctionsStressTestThread;
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
 
@@ -58,9 +60,11 @@ protected:
     }
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
-      *  if some of arguments are NULL constants then return NULL constant,
+      *  if some of arguments are NULL constants then return NULL constant (the underlying function
+      *   may or may not be executed in this case),
       *  if some of arguments are Nullable, then execute function as usual for columns,
-      *   where Nullable columns are substituted with nested columns (they have arbitrary values in rows corresponding to NULL value)
+      *   where Nullable columns are substituted with nested columns (rows corresponding to NULL
+      *    values are either omitted or contain arbitrary values),
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
@@ -312,6 +316,10 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 
 
 /** Creates IFunctionBase from argument types list (chooses one function overload).
+  * Warning: One instance of IFunctionOverloadResolver can only be used to resolve one overload.
+  *          To resolve a different overload, get a new IFunctionOverloadResolver from the factory.
+  *          Calling `build` again with different arguments will subtly break things in some cases.
+  *          asdqwe
   */
 class IFunctionOverloadResolver : public std::enable_shared_from_this<IFunctionOverloadResolver>
 {
