@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int PROTOBUF_ONEOF_HAS_SEVERAL_VALUES;
 }
 
 namespace
@@ -2020,6 +2021,8 @@ namespace
         {
             if (presence_column)
             {
+                if (row_num < presence_column->size())
+                    throw Exception(ErrorCodes::PROTOBUF_ONEOF_HAS_SEVERAL_VALUES, "Invalid protobuf data: oneof has more than one value");
                 presence_column->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
