@@ -122,6 +122,8 @@ def test_persistent_watch(started_cluster):
     time.sleep(1)
     assert len(events) == 2
 
+    client.delete(NODE_PATH)
+    client.delete(FAKE_PATH)
 
 def test_persistent_recursive_watch(started_cluster):
     keeper_utils.wait_until_connected(cluster, node1)
@@ -172,3 +174,6 @@ def test_persistent_recursive_watch(started_cluster):
     time.sleep(1)
 
     assert len(events) == 2
+    client.delete(NODE_PATH)
+    client.delete(FAKE_PATH)
+    client.delete(CHILD_NODE)

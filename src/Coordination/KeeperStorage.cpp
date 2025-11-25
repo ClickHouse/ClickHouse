@@ -244,7 +244,7 @@ KeeperResponsesForSessions processWatchesImplBase(
                 if (should_delete)
                 {
                     [[maybe_unused]] auto erased = sessions_and_watchers[watcher_session].erase(
-                        KeeperStorageBase::WatchInfo{.path = path_to_check, .is_list_watch = true, .is_persistent = should_delete, .trigger_on_exists = false});
+                        KeeperStorageBase::WatchInfo{.path = path_to_check, .is_list_watch = true, .is_persistent = !should_delete, .trigger_on_exists = false});
                     chassert(erased);
                 }
                 result.push_back(KeeperResponseForSession{watcher_session, watch_list_response});
