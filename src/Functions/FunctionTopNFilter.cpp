@@ -28,6 +28,7 @@ public:
     {
         if (!threshold_tracker_)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "FunctionTopNFilter got NULL threshold_tracker");
+
         String comparator = "less";
 
         if (threshold_tracker->getDirection() == -1) /// DESC
