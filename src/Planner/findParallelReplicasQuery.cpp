@@ -41,6 +41,9 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 {
     const auto & storage = table_node.getStorage();
 
+    if (const auto * mv = typeid_cast<const StorageMaterializedView *>(storage.get()))
+        return mv->getTargetTable()->isMergeTree();
+
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
 
