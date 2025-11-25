@@ -29,6 +29,7 @@ def test_session_refused_on_stale_keeper(started_cluster):
     node.query("DROP DATABASE IF EXISTS t2 SYNC")
 
     def last_zxid_seen_metric():
+        node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
         return int(
             node.query("SELECT value FROM system.asynchronous_metrics WHERE name = 'ZooKeeperClientLastZXIDSeen'").strip()
         )
@@ -71,7 +72,6 @@ def test_session_refused_on_stale_keeper(started_cluster):
         "All connection tries failed while connecting to ZooKeeper" in error
     )
 
-    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
     assert connection_loss_started_timestamp_metric() > 0
     assert 1 <= last_zxid_seen_metric() <= 1000
 
@@ -81,11 +81,11 @@ def test_session_refused_on_stale_keeper(started_cluster):
     # (b) introduce complexity
     node.restart_clickhouse()
 
+    node.query("CREATE DATABASE t2 ENGINE = Replicated('/clickhouse/databases/t2', 's1', 'r1')")
+
     assert connection_loss_started_timestamp_metric() == 0
     assert 1 <= last_zxid_seen_metric() <= 1000
     assert 1 <= last_zxid_seen_column() <= 1000
-
-    node.query("CREATE DATABASE t2 ENGINE = Replicated('/clickhouse/databases/t2', 's1', 'r1')")
 
     node.query("DROP DATABASE t SYNC")
     node.query("DROP DATABASE t2 SYNC")
