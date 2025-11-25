@@ -19,9 +19,9 @@ bool ExpressionProperties::isSortingSatisfiedBy(const SortDescription & required
     return true;
 }
 
-bool ExpressionProperties::isDistibutionSatisfiedBy(const DistributionColumns & required, const DistributionColumns & existing)
+bool ExpressionProperties::isDistributionSatisfiedBy(const DistributionColumns & required, const DistributionColumns & existing)
 {
-    /// Required distribution is satistied if existing has all the columns from required
+    /// Required distribution is satisfied if existing has all the columns from required
     if (required.size() > existing.size())
         return false;
     for (const auto & required_column : required)
@@ -49,7 +49,7 @@ bool ExpressionProperties::isDistibutionSatisfiedBy(const DistributionColumns & 
 bool ExpressionProperties::isSatisfiedBy(const ExpressionProperties & existing_properties) const
 {
     return isSortingSatisfiedBy(sorting, existing_properties.sorting) &&
-        isDistibutionSatisfiedBy(distribution_columns, existing_properties.distribution_columns);
+        isDistributionSatisfiedBy(distribution_columns, existing_properties.distribution_columns);
 }
 
 void  ExpressionProperties::dump(WriteBuffer & out) const

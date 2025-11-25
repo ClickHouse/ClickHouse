@@ -324,7 +324,7 @@ ExpressionStatistics CostEstimator::fillReadStatistics(const ReadFromMergeTree &
             statistics.column_statistics[column_name].num_distinct_values = column_ndv.value();
     }
 
-    auto cardinality_hint = statistics_lookup.getCardinaity(table_name);
+    auto cardinality_hint = statistics_lookup.getCardinality(table_name);
     if (cardinality_hint)
         statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, *cardinality_hint);
 
@@ -377,7 +377,7 @@ ExpressionStatistics CostEstimator::fillAggregatingStatistics(const AggregatingS
     aggregation_statistics.min_row_count = 0;
     /// Estimate cardinality of aggregation as max NDV across individual aggregation keys
     aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
-    /// Maximum number of rows is the product of all aggreagation key NDVs
+    /// Maximum number of rows is the product of all aggregation key NDVs
     aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
     return aggregation_statistics;
 }
