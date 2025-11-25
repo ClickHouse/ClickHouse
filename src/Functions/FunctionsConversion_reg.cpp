@@ -1525,11 +1525,11 @@ Supports multiple MAC address formats: colon-separated (00:1A:2B:3C:4D:5E), hyph
     {
         "Usage example",
         R"(
-SELECT toMacAddress('00:1A:2B:3C:4D:5E');
+SELECT toMacAddress('00:1a:2b:3c:4d:5e');
         )",
         R"(
-┌─toMacAddress('00:1A:2B:3C:4D:5E')─┐
-│ 00:1A:2B:3C:4D:5E                 │
+┌─toMacAddress('00:1a:2b:3c:4d:5e')─┐
+│ 00:1a:2b:3c:4d:5e                 │
 └───────────────────────────────────┘
         )"
     },
@@ -1540,7 +1540,7 @@ SELECT toMacAddress(112589990684126);
         )",
         R"(
 ┌─toMacAddress(112589990684126)─┐
-│ 00:66:77:88:99:5E             │
+│ 00:66:77:88:99:5e             │
 └───────────────────────────────┘
         )"
     }
@@ -2837,7 +2837,7 @@ SELECT
         )",
         R"(
 ┌─valid_mac─────────┬─invalid_mac───────┐
-│ 00:1A:2B:3C:4D:5E │ 00:00:00:00:00:00 │
+│ 00:1a:2b:3c:4d:5e │ 00:00:00:00:00:00 │
 └───────────────────┴───────────────────┘
         )"
     }
@@ -4120,7 +4120,7 @@ SELECT
         )",
         R"(
 ┌─valid_mac─────────┬─invalid_mac─┐
-│ 00:1A:2B:3C:4D:5E │        ᴺᵁᴸᴸ │
+│ 00:1a:2b:3c:4d:5e │        ᴺᵁᴸᴸ │
 └───────────────────┴─────────────┘
         )"
     }
