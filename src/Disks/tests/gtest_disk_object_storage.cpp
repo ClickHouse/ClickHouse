@@ -71,7 +71,6 @@ void setUpConfig(const std::string & file_name)
                 <object_storage_type>local_blob_storage</object_storage_type>
                 <path>local_blob_storage_dir/</path>
                 <metadata_type>local</metadata_type>
-                <use_fake_transaction>false</use_fake_transaction>
             </local_object_storage_disk>
         </disks>
     </storage_configuration>
