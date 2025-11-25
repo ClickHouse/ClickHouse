@@ -23,6 +23,7 @@ SET remote_filesystem_read_prefetch = 1;
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0;
 SET optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
+SET use_uncompressed_cache = 0;
 
 SYSTEM DROP MARK CACHE;
 SELECT * FROM t_projection_on_data_read_s3 WHERE v = 55555 SETTINGS allow_prefetched_read_pool_for_remote_filesystem = 1;
