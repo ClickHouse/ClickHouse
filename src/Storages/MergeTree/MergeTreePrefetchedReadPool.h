@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ThreadPool_fwd.h>
-#include "Processors/QueryPlan/ReadFromMergeTree.h"
 #include <IO/AsyncReadCounters.h>
 #include <boost/heap/priority_queue.hpp>
 #include <queue>

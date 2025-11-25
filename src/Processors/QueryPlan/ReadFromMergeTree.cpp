@@ -46,6 +46,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
+#include <Storages/MergeTree/MergeTreeIndexBuildContext.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -64,7 +65,6 @@
 
 #include <fmt/ranges.h>
 
-#include "Storages/MergeTree/MergeTreeIndexBuildContext.h"
 #include "config.h"
 
 using namespace DB;

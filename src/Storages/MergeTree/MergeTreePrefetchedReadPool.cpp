@@ -17,8 +17,6 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
-#include "Storages/MergeTree/MergeTreeReadTask.h"
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 
 namespace ProfileEvents

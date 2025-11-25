@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
-#include "Processors/QueryPlan/ReadFromMergeTree.h"
 
 namespace DB
 {
