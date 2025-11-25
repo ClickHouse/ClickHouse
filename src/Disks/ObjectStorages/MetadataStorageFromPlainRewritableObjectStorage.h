@@ -3,6 +3,8 @@
 #include <Disks/ObjectStorages/IMetadataStorage.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
+#include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
 
 #include <memory>
 
@@ -46,6 +48,9 @@ public:
     bool supportsChmod() const override { return false; }
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
+    bool areBlobPathsRandom() const override { return false; }
+    bool isPlain() const override { return true; }
+    bool isWriteOnce() const override { return false; }
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -70,13 +75,15 @@ public:
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
 
 private:
-    const ObjectStoragePtr object_storage;
+    const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
     const std::string metadata_key_prefix;
 
     std::mutex metadata_mutex;
     std::shared_ptr<InMemoryDirectoryTree> fs_tree;
+    std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator;
 
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
@@ -86,12 +93,10 @@ class MetadataStorageFromPlainRewritableObjectStorageTransaction : public IMetad
 {
 protected:
     MetadataStorageFromPlainRewritableObjectStorage & metadata_storage;
-    ObjectStoragePtr object_storage;
-
     MetadataOperationsHolder operations;
 
 public:
-    MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_, ObjectStoragePtr object_storage_);
+    explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
 
     bool supportsChmod() const override { return false; }
     void setLastModified(const String &, const Poco::Timestamp &) override { /* Noop */ }
@@ -115,6 +120,8 @@ public:
 
     const IMetadataStorage & getStorageForNonTransactionalReads() const override;
     std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string & path) const override;
+
+    ObjectStorageKey generateObjectKeyForPath(const std::string &path) const override;
 };
 
 }

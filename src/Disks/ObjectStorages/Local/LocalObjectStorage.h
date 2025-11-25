@@ -80,9 +80,7 @@ public:
 
     String getObjectsNamespace() const override { return ""; }
 
-    ObjectStorageKey generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const override;
-
-    bool areObjectKeysRandom() const override { return true; }
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
 
     bool isRemote() const override { return false; }
 
