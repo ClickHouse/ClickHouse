@@ -313,6 +313,16 @@ public:
         return false;
     }
 
+    virtual bool isPlain() const
+    {
+        return false;
+    }
+
+    virtual bool isWriteOnce() const
+    {
+        return false;
+    }
+
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.
     virtual void updateCache(const std::vector<std::string> & /* paths */, bool /* recursive */, bool /* enforce_fresh */,

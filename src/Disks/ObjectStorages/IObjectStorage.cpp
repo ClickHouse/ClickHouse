@@ -19,11 +19,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-const MetadataStorageMetrics & IObjectStorage::getMetadataStorageMetrics() const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getMetadataStorageMetrics' is not implemented");
-}
-
 bool IObjectStorage::existsOrHasAnyChild(const std::string & path) const
 {
     RelativePathsWithMetadata files;

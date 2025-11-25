@@ -62,16 +62,19 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : recursive(recursive_)
     , path(std::move(path_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
 {
     chassert(path.empty() || path.string().ends_with('/'));
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
@@ -110,8 +113,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     });
     buf->finalize();
 
-    auto event = object_storage->getMetadataStorageMetrics().directory_created;
-    ProfileEvents::increment(event);
+    ProfileEvents::increment(metrics->directory_created);
     auto metadata = object_storage->getObjectMetadata(metadata_object.remote_path, /*with_tags=*/ false);
     fs_tree->recordDirectoryPath(path, DirectoryRemoteInfo{object_key_prefix, metadata.etag, metadata.last_modified.epochTime(), {}});
     created_directory = true;
@@ -134,17 +136,20 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
 {
     chassert(path_from.empty() || path_from.string().ends_with('/'));
     chassert(path_to.empty() || path_to.string().ends_with('/'));
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
@@ -264,15 +269,18 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
 {
     chassert(path.empty() || path.string().ends_with('/'));
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
@@ -296,7 +304,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
     object_storage->removeObjectIfExists(metadata_object);
 
     fs_tree->unlinkTree(path);
-    ProfileEvents::increment(object_storage->getMetadataStorageMetrics().directory_removed);
+    ProfileEvents::increment(metrics->directory_removed);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
@@ -328,15 +336,18 @@ MetadataStorageFromPlainObjectStorageWriteFileOperation::MetadataStorageFromPlai
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , object(std::move(object_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
 {
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageWriteFileOperation::execute()
@@ -363,14 +374,17 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(fs_tree_)
     , key_generator(std::move(key_generator_))
     , object_storage(object_storage_)
+    , metrics(std::move(metrics_))
 {
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
@@ -406,15 +420,18 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
 {
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
@@ -461,7 +478,8 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : replaceable(replaceable_)
     , path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
@@ -469,8 +487,10 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
 {
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
@@ -616,17 +636,20 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::string metadata_key_prefix_,
     std::shared_ptr<InMemoryDirectoryTree> fs_tree_,
     std::shared_ptr<FlatDirectoryStructureKeyGenerator> key_generator_,
-    std::shared_ptr<IObjectStorage> object_storage_)
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
     : path(std::move(path_))
     , metadata_key_prefix(std::move(metadata_key_prefix_))
     , fs_tree(std::move(fs_tree_))
     , key_generator(std::move(key_generator_))
     , object_storage(std::move(object_storage_))
+    , metrics(std::move(metrics_))
     , log(getLogger("MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation"))
 {
     chassert(!metadata_key_prefix.empty());
+    chassert(metrics);
     tmp_path = "remove_recursive." + getRandomASCIIString(16);
-    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", metadata_key_prefix, fs_tree, key_generator_, object_storage);
+    move_to_tmp_op = std::make_unique<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation>(path / "", tmp_path / "", metadata_key_prefix, fs_tree, key_generator_, object_storage, metrics);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
