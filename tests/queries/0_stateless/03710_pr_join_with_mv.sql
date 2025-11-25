@@ -14,7 +14,7 @@ CREATE MATERIALIZED VIEW mv TO n1_n2_join
 AS SELECT n1.key as k, n1.value as v1, n2.value as v2 from n1 JOIN n2 ON n1.key = n2.key ORDER BY n1.key;
 
 INSERT INTO n2 SELECT number, -number FROM numbers(10);
-INSERT INTO n1 SELECT number as key, toString(key) FROM numbers(10) settings enable_parallel_replicas=0;
+INSERT INTO n1 SELECT number as key, toString(key) FROM numbers(10);
 
 CREATE TABLE n3 (key UInt64, value String) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity=1;
 INSERT INTO n3 SELECT number, toString(number + 100) FROM numbers(10);
@@ -24,6 +24,6 @@ SET enable_parallel_replicas=1, max_parallel_replicas=3, cluster_for_parallel_re
 EXCEPT
 (SELECT * FROM mv JOIN n3 ON mv.k = n3.key ORDER BY mv.k, n3.key settings enable_parallel_replicas=0);
 
--- DROP TABLE n3;
--- DROP TABLE n2;
--- DROP TABLE n1;
+DROP TABLE n3;
+DROP TABLE n2;
+DROP TABLE n1;
