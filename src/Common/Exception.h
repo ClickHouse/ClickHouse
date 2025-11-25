@@ -313,10 +313,16 @@ void tryLogCurrentException(const AtomicLogger & logger, const std::string & sta
   *  only this stack trace will be printed.
   * with_extra_info - add information about the filesystem in case of "No space left on device" and similar.
   */
-std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded_stacktrace = false,
-                                       bool with_extra_info = true);
-PreformattedMessage getCurrentExceptionMessageAndPattern(bool with_stacktrace, bool check_embedded_stacktrace = false,
-                                       bool with_extra_info = true);
+std::string getCurrentExceptionMessage(
+    bool with_stacktrace,
+    bool check_embedded_stacktrace = false,
+    bool with_extra_info = true,
+    bool with_version = true);
+PreformattedMessage getCurrentExceptionMessageAndPattern(
+    bool with_stacktrace,
+    bool check_embedded_stacktrace = false,
+    bool with_extra_info = true,
+    bool with_version = true);
 
 /// Returns error code from ErrorCodes
 int getCurrentExceptionCode();
@@ -336,7 +342,7 @@ struct ExecutionStatus
     explicit ExecutionStatus(int return_code, const std::string & exception_message = "")
     : code(return_code), message(exception_message) {}
 
-    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "", bool with_stacktrace = false);
+    static ExecutionStatus fromCurrentException(const std::string & start_of_message = "", bool with_stacktrace = false, bool with_version = true);
 
     static ExecutionStatus fromText(const std::string & data);
 
