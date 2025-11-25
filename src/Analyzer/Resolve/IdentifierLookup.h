@@ -212,6 +212,11 @@ struct IdentifierResolveContext
     /// Should be used to resolve aliased expressions.
     IdentifierResolveScope * scope_to_resolve_alias_expression = nullptr;
 
+    bool isInitialContext() const
+    {
+        return scope_to_resolve_alias_expression == nullptr;
+    }
+
     IdentifierResolveContext & resolveAliasesAt(IdentifierResolveScope * scope_to_resolve_alias_expression_)
     {
         if (!scope_to_resolve_alias_expression)
