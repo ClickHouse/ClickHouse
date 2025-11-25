@@ -21,7 +21,7 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void LocalStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr)
+void LocalStorageParsedArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr)
 {
     path = collection.get<String>("path");
     format = collection.getOrDefault<String>("format", "auto");
@@ -29,7 +29,7 @@ void LocalStorageParsableArguments::fromNamedCollectionImpl(const NamedCollectio
     structure = collection.getOrDefault<String>("structure", "auto");
 }
 
-void LocalStorageParsableArguments::fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
+void LocalStorageParsedArguments::fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
 
@@ -42,14 +42,14 @@ void LocalStorageParsableArguments::fromDiskImpl(DiskPtr disk, ASTs & args, Cont
     path_suffix = parsing_result.path_suffix;
 }
 
-void LocalStorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
+void LocalStorageParsedArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
 {
-    if (args.empty() || args.size() > LocalStorageParsableArguments::getMaxNumberOfArguments(with_structure))
+    if (args.empty() || args.size() > LocalStorageParsedArguments::getMaxNumberOfArguments(with_structure))
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage Local requires 1 to {} arguments. All supported signatures:\n{}",
-            LocalStorageParsableArguments::getMaxNumberOfArguments(with_structure),
-            LocalStorageParsableArguments::getSignatures(with_structure));
+            LocalStorageParsedArguments::getMaxNumberOfArguments(with_structure),
+            LocalStorageParsedArguments::getSignatures(with_structure));
 
     for (auto & arg : args)
         arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
@@ -94,19 +94,19 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
 
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    LocalStorageParsableArguments parsable_arguemnts;
-    parsable_arguemnts.fromASTImpl(args, context, with_structure);
+    LocalStorageParsedArguments parsabled_arguments;
+    parsabled_arguments.fromASTImpl(args, context, with_structure);
+    initializeFromParsedArguments(parsabled_arguments);
     paths = {path};
-    initializeFromParsableArguments(parsable_arguemnts);
 }
 void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    LocalStorageParsableArguments parsable_arguemnts;
+    LocalStorageParsedArguments parsabled_arguments;
     auto disk = context->getDisk(disk_name);
-    parsable_arguemnts.fromDiskImpl(disk, args, context, with_structure);
+    parsabled_arguments.fromDiskImpl(disk, args, context, with_structure);
     fs::path root = disk->getPath();
-    fs::path suffix = parsable_arguemnts.path_suffix;
-    initializeFromParsableArguments(parsable_arguemnts);
+    fs::path suffix = parsabled_arguments.path_suffix;
+    initializeFromParsedArguments(parsabled_arguments);
     path = String(root / suffix);
     setPathForRead(path);
     setPaths({path});
@@ -114,9 +114,9 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, 
 
 void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    LocalStorageParsableArguments parsable_arguemnts;
-    parsable_arguemnts.fromNamedCollectionImpl(collection, context);
+    LocalStorageParsedArguments parsabled_arguments;
+    parsabled_arguments.fromNamedCollectionImpl(collection, context);
+    initializeFromParsedArguments(parsabled_arguments);
     paths = {path};
-    initializeFromParsableArguments(parsable_arguemnts);
 }
 }

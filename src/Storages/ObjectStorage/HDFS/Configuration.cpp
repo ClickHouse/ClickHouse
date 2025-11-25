@@ -74,7 +74,7 @@ StorageObjectStorageQuerySettings StorageHDFSConfiguration::getQuerySettings(con
     };
 }
 
-void HDFSStorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
+void HDFSStorageParsedArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
 {
     if (args.empty() || args.size() > getMaxNumberOfArguments(with_structure))
         throw Exception(
@@ -110,7 +110,7 @@ void HDFSStorageParsableArguments::fromASTImpl(ASTs & args, ContextPtr context, 
     }
 }
 
-void HDFSStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr /*context*/)
+void HDFSStorageParsedArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr /*context*/)
 {
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
@@ -167,11 +167,11 @@ static void addStructureAndFormatToArgsIfNeededImpl(
     else
     {
         size_t count = args.size();
-        if (count == 0 || count > HDFSStorageParsableArguments::getMaxNumberOfArguments())
+        if (count == 0 || count > HDFSStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected 1 to {} arguments in table function hdfs, got {}",
-                HDFSStorageParsableArguments::getMaxNumberOfArguments(),
+                HDFSStorageParsedArguments::getMaxNumberOfArguments(),
                 count);
 
         auto format_literal = std::make_shared<ASTLiteral>(format_);
@@ -211,17 +211,17 @@ static void addStructureAndFormatToArgsIfNeededImpl(
 
 void StorageHDFSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    HDFSStorageParsableArguments parsable_arguments;
+    HDFSStorageParsedArguments parsable_arguments;
     parsable_arguments.fromASTImpl(args, context, with_structure);
-    initializeFromParsableArguments(parsable_arguments);
+    initializeFromParsedArguments(parsable_arguments);
     setURL(parsable_arguments.url_str);
 }
 
 void StorageHDFSConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    HDFSStorageParsableArguments parsable_arguments;
+    HDFSStorageParsedArguments parsable_arguments;
     parsable_arguments.fromNamedCollectionImpl(collection, context);
-    initializeFromParsableArguments(parsable_arguments);
+    initializeFromParsedArguments(parsable_arguments);
     setURL(parsable_arguments.url_str);
 }
 

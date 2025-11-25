@@ -14,7 +14,7 @@ namespace DB
 {
 class BackupFactory;
 
-struct AzureStorageParsableArguments : private StorageParsableArguments
+struct AzureStorageParsedArguments : private StorageParsedArguments
 {
     using Path = StorageObjectStorageConfiguration::Path;
     friend class StorageAzureConfiguration;
@@ -132,7 +132,7 @@ private:
     String onelake_client_secret;
     String onelake_tenant_id;
 
-    void initializeFromParsableArguments(const AzureStorageParsableArguments & parsable_arguments)
+    void initializeFromParsedArguments(const AzureStorageParsedArguments & parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
         blob_path = parsable_arguments.blob_path;

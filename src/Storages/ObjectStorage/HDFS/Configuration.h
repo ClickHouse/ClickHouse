@@ -9,7 +9,7 @@
 
 namespace DB
 {
-struct HDFSStorageParsableArguments : private StorageParsableArguments
+struct HDFSStorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageHDFSConfiguration;
     static constexpr auto max_number_of_arguments_with_structure = 4;
@@ -80,7 +80,7 @@ public:
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
-    void initializeFromParsableArguments(const HDFSStorageParsableArguments & parsable_arguments)
+    void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
     }

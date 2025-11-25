@@ -26,7 +26,7 @@ struct IObjectIterator;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 using ObjectIterator = std::shared_ptr<IObjectIterator>;
 
-struct StorageParsableArguments;
+struct StorageParsedArguments;
 
 namespace ErrorCodes
 {
@@ -270,7 +270,7 @@ public:
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
 protected:
-    void initializeFromParsableArguments(const StorageParsableArguments & parsable_arguments);
+    void initializeFromParsableArguments(const StorageParsedArguments & parsable_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
     virtual void fromDisk(const String & /*disk_name*/, ASTs & /*args*/, ContextPtr /*context*/, bool /*with_structure*/)

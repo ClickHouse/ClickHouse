@@ -236,7 +236,7 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
 {
 }
 
-void StorageObjectStorageConfiguration::initializeFromParsableArguments(const StorageParsableArguments & parsable_arguments)
+void StorageObjectStorageConfiguration::initializeFromParsableArguments(const StorageParsedArguments & parsable_arguments)
 {
     format = parsable_arguments.format;
     compression_method = parsable_arguments.compression_method;

@@ -154,7 +154,7 @@ static AzureBlobStorage::ConnectionParams getConnectionParams(
     return connection_params;
 }
 
-void AzureStorageParsableArguments::fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix)
+void AzureStorageParsedArguments::fillBlobsFromURLCommon(String & connection_url, const String & suffix, const String & full_suffix)
 {
     String container_name;
 
@@ -202,7 +202,7 @@ void AzureStorageParsableArguments::fillBlobsFromURLCommon(String & connection_u
 }
 
 
-void AzureStorageParsableArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context)
+void AzureStorageParsedArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context)
 {
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
@@ -271,7 +271,8 @@ static ASTPtr extractExtraCredentials(ASTs & args)
     return nullptr;
 }
 
-bool AzureStorageParsableArguments::collectCredentials(ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
+bool AzureStorageParsedArguments::collectCredentials(
+    ASTPtr maybe_credentials, std::optional<String> & client_id, std::optional<String> & tenant_id, ContextPtr local_context)
 {
     if (!maybe_credentials)
         return false;
@@ -321,7 +322,7 @@ bool AzureStorageParsableArguments::collectCredentials(ASTPtr maybe_credentials,
     return true;
 }
 
-void AzureStorageParsableArguments::fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
+void AzureStorageParsedArguments::fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     const auto & azure_object_storage = assert_cast<const AzureObjectStorage &>(*disk->getObjectStorage());
 
@@ -338,7 +339,7 @@ void AzureStorageParsableArguments::fromDiskImpl(DiskPtr disk, ASTs & args, Cont
         structure = *parsing_result.structure;
 }
 
-void AzureStorageParsableArguments::initializeForOneLake(ASTs & args, ContextPtr context)
+void AzureStorageParsedArguments::initializeForOneLake(ASTs & args, ContextPtr context)
 {
     if (args.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Only one argument should be provided in OneLake catalog");
@@ -352,17 +353,17 @@ void AzureStorageParsableArguments::initializeForOneLake(ASTs & args, ContextPtr
     connection_params.client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
 }
 
-void AzureStorageParsableArguments::fromASTImpl(ASTs & engine_args, ContextPtr context, bool with_structure)
+void AzureStorageParsedArguments::fromASTImpl(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
     auto extra_credentials = extractExtraCredentials(engine_args);
 
-    if (engine_args.empty() || engine_args.size() > AzureStorageParsableArguments::getMaxNumberOfArguments(with_structure))
+    if (engine_args.empty() || engine_args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure))
     {
         throw Exception(
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
             "Storage AzureBlobStorage requires 1 to {} arguments. All supported signatures:\n{}",
-            AzureStorageParsableArguments::getMaxNumberOfArguments(with_structure),
-            AzureStorageParsableArguments::getSignatures(with_structure));
+            AzureStorageParsedArguments::getMaxNumberOfArguments(with_structure),
+            AzureStorageParsedArguments::getSignatures(with_structure));
     }
 
     for (auto & engine_arg : engine_args)
@@ -715,11 +716,11 @@ void addStructureAndFormatToArgsIfNeededImpl(
     }
     else
     {
-        if (args.size() < 3 || args.size() > AzureStorageParsableArguments::getMaxNumberOfArguments())
+        if (args.size() < 3 || args.size() > AzureStorageParsedArguments::getMaxNumberOfArguments())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected 3 to {} arguments in table function azureBlobStorage, got {}",
-                AzureStorageParsableArguments::getMaxNumberOfArguments(),
+                AzureStorageParsedArguments::getMaxNumberOfArguments(),
                 args.size());
 
         for (auto & arg : args)
@@ -885,15 +886,15 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    AzureStorageParsableArguments parsable_arguments;
+    AzureStorageParsedArguments parsable_arguments;
     parsable_arguments.fromNamedCollectionImpl(collection, context);
-    initializeFromParsableArguments(parsable_arguments);
+    initializeFromParsedArguments(parsable_arguments);
     setPaths({parsable_arguments.blob_path});
 }
 
 void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, bool with_structure)
 {
-    AzureStorageParsableArguments parsable_arguments;
+    AzureStorageParsedArguments parsable_arguments;
     if (!onelake_client_id.empty())
     {
         parsable_arguments.initializeForOneLake(engine_args, context);
@@ -906,16 +907,16 @@ void StorageAzureConfiguration::fromAST(ASTs & engine_args, ContextPtr context, 
         parsable_arguments.fromASTImpl(engine_args, context, with_structure);
 
     }
-    initializeFromParsableArguments(parsable_arguments);
+    initializeFromParsedArguments(parsable_arguments);
     setPaths({parsable_arguments.blob_path});
 }
 
 void StorageAzureConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    AzureStorageParsableArguments parsable_arguments;
+    AzureStorageParsedArguments parsable_arguments;
     disk = context->getDisk(disk_name);
     parsable_arguments.fromDiskImpl(disk, args, context, with_structure);
-    initializeFromParsableArguments(parsable_arguments);
+    initializeFromParsedArguments(parsable_arguments);
     setPathForRead(parsable_arguments.blob_path.path + "/");
     setPaths({parsable_arguments.blob_path.path + "/"});
 }

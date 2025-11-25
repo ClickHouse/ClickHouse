@@ -12,7 +12,7 @@
 namespace DB
 {
 
-struct LocalStorageParsableArguments : private StorageParsableArguments
+struct LocalStorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageLocalConfiguration;
     static constexpr auto max_number_of_arguments_with_structure = 4;
@@ -90,7 +90,7 @@ public:
     Paths paths;
 
 private:
-    void initializeFromParsableArguments(const LocalStorageParsableArguments & parsable_arguments)
+    void initializeFromParsedArguments(const LocalStorageParsedArguments & parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
         path = parsable_arguments.path;

@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 
 namespace DB {
-struct StorageParsableArguments
+struct StorageParsedArguments
 {
     String format = "auto";
     String compression_method = "auto";

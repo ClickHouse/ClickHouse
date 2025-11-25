@@ -13,7 +13,7 @@
 namespace DB
 {
 
-struct S3StorageParsableArguments : private StorageParsableArguments
+struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
     static constexpr auto max_number_of_arguments_with_structure = 10;
@@ -83,7 +83,7 @@ public:
     void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
     void fromDiskImpl(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
-    S3StorageParsableArguments() = default;
+    S3StorageParsedArguments() = default;
 };
 
 
@@ -152,7 +152,7 @@ protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
-    void initializeFromParsableArguments(S3StorageParsableArguments && parsable_arguments)
+    void initializeFromParsedArguments(S3StorageParsedArguments && parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
         url = std::move(parsable_arguments.url);
