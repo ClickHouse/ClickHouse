@@ -3023,7 +3023,7 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
 
-            if (!is_filter_column_const && predicate->column && predicate->column->isConst())
+            if (!is_filter_column_const)
             {
                 const auto & const_node = addNode(std::move(node));
                 const auto & materialized_node = materializeNodeWithoutRename(const_node, false);
