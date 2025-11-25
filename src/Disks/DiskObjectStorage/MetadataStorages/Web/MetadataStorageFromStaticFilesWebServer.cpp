@@ -1,4 +1,4 @@
-#include <Disks/DiskObjectStorage/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StaticDirectoryIterator.h>
 #include <IO/WriteHelpers.h>

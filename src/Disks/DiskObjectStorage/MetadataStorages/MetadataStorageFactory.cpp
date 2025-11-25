@@ -7,7 +7,7 @@
 #endif
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskLocal.h>
 #include <Interpreters/Context.h>
 
