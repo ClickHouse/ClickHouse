@@ -357,7 +357,6 @@ private:
 
     void initFeatureFlags();
 
-
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log;

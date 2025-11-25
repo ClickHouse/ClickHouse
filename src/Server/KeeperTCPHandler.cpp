@@ -374,7 +374,7 @@ void KeeperTCPHandler::runImpl()
 
     if (in->eof())
     {
-        LOG_WARNING(log, "Client has not sent any data.");
+        LOG_WARNING(log, "Client has not sent any data. peer address = {}  address = {}", socket().peerAddress().toString(), socket().address().toString());
         return;
     }
 
@@ -616,7 +616,8 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
     try
     {
         String res = command_ptr->run();
-        out->write(res.data(), res.size());
+        LOG_DEBUG(log, "Run four letter command res {}  size = {}", res, res.size());
+        Coordination::write(res, *out);
         out->next();
     }
     catch (...)
