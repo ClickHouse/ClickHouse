@@ -20,7 +20,7 @@ class ITTLMergeSelector : public IMergeSelector
     friend class MergeRangesConstructor;
 
 public:
-    ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+    ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_);
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
@@ -49,7 +49,7 @@ private:
     PartsIterator findRightRangeBorder(const CenterPosition & center_position, size_t & usable_memory, DisjointPartsRangesSet & disjoint_set) const;
 
     const time_t current_time;
-    const PartitionIdToTTLs & merge_due_times;
+    const PartitionIdToTTLs * merge_due_times;
 };
 
 /// Select parts that must be fully deleted because of ttl for part.

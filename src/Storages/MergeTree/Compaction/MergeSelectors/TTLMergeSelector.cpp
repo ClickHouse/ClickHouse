@@ -79,8 +79,9 @@ private:
 
 bool ITTLMergeSelector::needToPostponePartition(const std::string & partition_id) const
 {
-    if (auto it = merge_due_times.find(partition_id); it != merge_due_times.end())
-        return it->second > current_time;
+    if (merge_due_times)
+        if (auto it = merge_due_times->find(partition_id); it != merge_due_times->end())
+            return it->second > current_time;
 
     return false;
 }
@@ -161,7 +162,7 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(const CenterPosition & cen
     return right;
 }
 
-ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
+ITTLMergeSelector::ITTLMergeSelector(const PartitionIdToTTLs * merge_due_times_, time_t current_time_)
     : current_time(current_time_)
     , merge_due_times(merge_due_times_)
 {
@@ -187,7 +188,7 @@ PartsRanges ITTLMergeSelector::select(
 }
 
 TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_)
-    : ITTLMergeSelector(/*merge_due_times_=*/{}, current_time_)
+    : ITTLMergeSelector(/*merge_due_times_=*/nullptr, current_time_)
 {
 }
 
@@ -202,7 +203,7 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(merge_due_times_, current_time_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_)
 {
 }
 
@@ -223,7 +224,7 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
 }
 
 TTLRecompressMergeSelector::TTLRecompressMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(merge_due_times_, current_time_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_)
 {
 }
 
