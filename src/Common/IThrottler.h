@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Poco/Net/Throttler.h>
 #include <Common/ProfileEvents.h>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
@@ -10,15 +11,9 @@ namespace DB
 
 /// Interface for throttling operations, allowing to limit the speed of operations in tokens per second.
 /// Tokens are usually refer to bytes, but can be any unit of work.
-class IThrottler : public boost::noncopyable
+class IThrottler : public Poco::Net::Throttler, public boost::noncopyable
 {
 public:
-    virtual ~IThrottler() = default;
-
-    /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
-    /// Returns duration of sleep in nanoseconds (to distinguish sleeping on different kinds of throttlers for metrics)
-    virtual UInt64 add(size_t amount) = 0;
-
     /// Is throttler already accumulated some sleep time and throttling.
     virtual bool isThrottling() const = 0;
 

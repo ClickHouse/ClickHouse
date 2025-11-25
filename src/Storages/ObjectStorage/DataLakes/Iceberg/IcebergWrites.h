@@ -4,8 +4,16 @@
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBuffer.h>
+#include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
+#include <Storages/KeyDescription.h>
+#include <Core/Range.h>
+#include <Columns/IColumn.h>
+#include <IO/CompressionMethod.h>
+#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO
 
@@ -13,6 +21,11 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/PartitionedSink.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ChunkPartitioner.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/DataFileStatistics.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
+
 #include <Common/randomSeed.h>
 
 #include <Poco/JSON/Array.h>
@@ -25,99 +38,38 @@
 #include <Stream.hh>
 #include <ValidSchema.hh>
 
+
 namespace DB
 {
 
 String removeEscapedSlashes(const String & json_str);
 
-class FileNamesGenerator
-{
-public:
-    explicit FileNamesGenerator(const String & table_dir);
-
-    String generateDataFileName();
-    String generateManifestEntryName();
-    String generateManifestListName(Int64 snapshot_id, Int32 format_version);
-    String generateMetadataName();
-
-    void setVersion(Int32 initial_version_) { initial_version = initial_version_; }
-
-private:
-    Poco::UUIDGenerator uuid_generator;
-    String data_dir;
-    String metadata_dir;
-    Int32 initial_version;
-};
-
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const String & data_file_name,
+    const std::vector<DataTypePtr> & partition_types,
+    const std::vector<String> & data_file_names,
+    const std::optional<DataFileStatistics> & data_file_statistics,
+    SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
     const String & format,
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
-    WriteBuffer & buf);
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type);
 
 void generateManifestList(
+    const FileNamesGenerator & filename_generator,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
     ContextPtr context,
     const Strings & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
     Int32 manifest_length,
-    WriteBuffer & buf);
-
-class MetadataGenerator
-{
-public:
-    explicit MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_);
-
-    std::pair<Poco::JSON::Object::Ptr, String> generateNextMetadata(
-        FileNamesGenerator & generator,
-        const String & metadata_filename,
-        Int64 parent_snapshot_id,
-        Int32 added_files,
-        Int32 added_records,
-        Int32 added_files_size,
-        Int32 num_partitions);
-
-private:
-    Poco::JSON::Object::Ptr metadata_object;
-
-    pcg64_fast gen;
-    std::uniform_int_distribution<Int32> dis;
-
-    Int64 getMaxSequenceNumber();
-    Poco::JSON::Object::Ptr getParentSnapshot(Int64 parent_snapshot_id);
-};
-
-class ChunkPartitioner
-{
-public:
-    explicit ChunkPartitioner(
-        Poco::JSON::Array::Ptr partition_specification, Poco::JSON::Object::Ptr schema, ContextPtr context, SharedHeader sample_block_);
-
-    using PartitionKey = Row;
-    struct PartitionKeyHasher
-    {
-        size_t operator()(const PartitionKey & key) const;
-
-        mutable std::hash<String> hasher;
-    };
-
-    std::vector<std::pair<PartitionKey, Chunk>> partitionChunk(const Chunk & chunk);
-
-    const std::vector<String> & getColumns() const { return columns_to_apply; }
-
-private:
-    SharedHeader sample_block;
-
-    std::vector<FunctionOverloadResolverPtr> functions;
-    std::vector<std::optional<size_t>> function_params;
-    std::vector<String> columns_to_apply;
-};
+    WriteBuffer & buf,
+    Iceberg::FileContentType content_type,
+    bool use_previous_snapshots = true);
 
 class IcebergStorageSink : public SinkToStorage
 {
@@ -127,7 +79,9 @@ public:
         StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::shared_ptr<DataLake::ICatalog> catalog_,
+        const StorageID & table_id_);
 
     ~IcebergStorageSink() override = default;
 
@@ -138,15 +92,19 @@ public:
     void onFinish() override;
 
 private:
+    LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
-    std::unordered_map<ChunkPartitioner::PartitionKey, std::unique_ptr<WriteBuffer>, ChunkPartitioner::PartitionKeyHasher> write_buffers;
-    std::unordered_map<ChunkPartitioner::PartitionKey, OutputFormatPtr, ChunkPartitioner::PartitionKeyHasher> writers;
-    std::unordered_map<ChunkPartitioner::PartitionKey, String, ChunkPartitioner::PartitionKeyHasher> data_filenames;
+    std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
+    std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
+    Int64 current_schema_id;
+    Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
+    KeyDescription sort_description;
     Int32 total_rows = 0;
     Int32 total_chunks_size = 0;
 
@@ -159,6 +117,10 @@ private:
     std::optional<ChunkPartitioner> partitioner;
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
+
+    std::shared_ptr<DataLake::ICatalog> catalog;
+    StorageID table_id;
+    CompressionMethod metadata_compression_method;
 };
 
 }

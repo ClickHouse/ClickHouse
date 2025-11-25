@@ -166,7 +166,13 @@ Chunk RabbitMQSource::generateImpl()
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, FormatParserGroup::singleThreaded(context->getSettingsRef()));
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
@@ -282,25 +288,27 @@ Chunk RabbitMQSource::generateImpl()
                 auto storage_id = storage.getStorageID();
 
                 auto dead_letter_queue = context->getDeadLetterQueue();
-                dead_letter_queue->add(
-                    DeadLetterQueueElement{
-                        .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
-                        .event_time = timeInSeconds(time_now),
-                        .event_time_microseconds = timeInMicroseconds(time_now),
-                        .database = storage_id.database_name,
-                        .table = storage_id.table_name,
-                        .raw_message = message.message,
-                        .error = exception_message.value(),
-                        .details = DeadLetterQueueElement::RabbitMQDetails{
-                            .exchange_name = exchange_name,
-                            .message_id = message.message_id,
-                            .timestamp = message.timestamp,
-                            .redelivered = message.redelivered,
-                            .delivery_tag = message.delivery_tag,
-                            .channel_id = message.channel_id
-                        }
-
-                    });
+                if (!dead_letter_queue)
+                    LOG_WARNING(log, "Table system.dead_letter_queue is not configured, skipping message");
+                else
+                    dead_letter_queue->add(
+                        DeadLetterQueueElement{
+                            .table_engine = DeadLetterQueueElement::StreamType::RabbitMQ,
+                            .event_time = timeInSeconds(time_now),
+                            .event_time_microseconds = timeInMicroseconds(time_now),
+                            .database = storage_id.database_name,
+                            .table = storage_id.table_name,
+                            .raw_message = message.message,
+                            .error = exception_message.value(),
+                            .details = DeadLetterQueueElement::RabbitMQDetails{
+                                .exchange_name = exchange_name,
+                                .message_id = message.message_id,
+                                .timestamp = message.timestamp,
+                                .redelivered = message.redelivered,
+                                .delivery_tag = message.delivery_tag,
+                                .channel_id = message.channel_id
+                            }
+                        });
             }
 
             total_rows += new_rows;

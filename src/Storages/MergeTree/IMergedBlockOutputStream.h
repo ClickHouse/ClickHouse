@@ -63,7 +63,8 @@ protected:
     MergeTreeDataPartWriterPtr writer;
 
     bool reset_columns = false;
-    SerializationInfoByName new_serialization_infos;
+    SerializationInfo::Settings info_settings;
+    SerializationInfoByName new_serialization_infos{{}};
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

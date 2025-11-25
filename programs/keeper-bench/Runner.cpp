@@ -576,7 +576,8 @@ struct ZooKeeperRequestFromLogReader
             context,
             context->getSettingsRef()[DB::Setting::max_block_size],
             format_settings,
-            DB::FormatParserGroup::singleThreaded(context->getSettingsRef()),
+            DB::FormatParserSharedResources::singleThreaded(context->getSettingsRef()),
+            nullptr,
             /*is_remote_fs*/ false,
             DB::CompressionMethod::None,
             false);
@@ -1263,7 +1264,7 @@ std::shared_ptr<Coordination::ZooKeeper> Runner::getConnection(const ConnectionI
     args.operation_timeout_ms = connection_info.operation_timeout_ms;
     args.use_compression = connection_info.use_compression;
     args.use_xid_64 = connection_info.use_xid_64;
-    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr);
+    return std::make_shared<Coordination::ZooKeeper>(nodes, args, nullptr, nullptr);
 }
 
 std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::refreshConnections()
@@ -1317,7 +1318,7 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         children = response.names;
         promise->set_value();
     };
-    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, nullptr);
+    zookeeper.list(path, Coordination::ListRequestType::ALL, list_callback, {});
     future.get();
 
     std::span children_span(children);

@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/System/StorageSystemObjectStorageQueueSettings.h>
@@ -89,12 +90,12 @@ private:
     using CommitSettings = ObjectStorageQueueSource::CommitSettings;
     using ProcessingProgress = ObjectStorageQueueSource::ProcessingProgress;
     using ProcessingProgressPtr = ObjectStorageQueueSource::ProcessingProgressPtr;
+    using AfterProcessingSettings = ObjectStorageQueuePostProcessor::AfterProcessingSettings;
 
     ObjectStorageType type;
     const std::string engine_name;
     const fs::path zk_path;
     const bool enable_logging_to_queue_log;
-
     mutable std::mutex mutex;
     UInt64 polling_min_timeout_ms TSA_GUARDED_BY(mutex);
     UInt64 polling_max_timeout_ms TSA_GUARDED_BY(mutex);
@@ -102,6 +103,13 @@ private:
     UInt64 list_objects_batch_size TSA_GUARDED_BY(mutex);
     bool enable_hash_ring_filtering TSA_GUARDED_BY(mutex);
     CommitSettings commit_settings TSA_GUARDED_BY(mutex);
+    /// The after_processing action itself is handled the old way for compatibility:
+    /// it needs to be available in Keeper metadata for older server versions.
+    /// Therefore it is not in AfterProcessingSettings.
+    AfterProcessingSettings after_processing_settings TSA_GUARDED_BY(mutex);
+
+    size_t min_insert_block_size_rows_for_materialized_views TSA_GUARDED_BY(mutex);
+    size_t min_insert_block_size_bytes_for_materialized_views TSA_GUARDED_BY(mutex);
 
     std::unique_ptr<ObjectStorageQueueMetadata> temp_metadata;
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata;
@@ -137,7 +145,7 @@ private:
     std::shared_ptr<ObjectStorageQueueSource> createSource(
         size_t processor_id,
         const ReadFromFormatInfo & info,
-        FormatParserGroupPtr parser_group,
+        FormatParserSharedResourcesPtr parser_shared_resources,
         ProcessingProgressPtr progress_,
         std::shared_ptr<StorageObjectStorageQueue::FileIterator> file_iterator,
         size_t max_block_size,
@@ -152,6 +160,8 @@ private:
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index);
+    /// Apply after_processing action to successfully processed files.
+    void postProcess(const StoredObjects & successful_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
     void commit(
         bool insert_succeeded,

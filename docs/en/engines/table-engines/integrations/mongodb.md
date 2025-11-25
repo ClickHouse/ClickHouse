@@ -4,10 +4,11 @@ description: 'MongoDB engine is read-only table engine which allows to read data
 sidebar_label: 'MongoDB'
 sidebar_position: 135
 slug: /engines/table-engines/integrations/mongodb
-title: 'MongoDB'
+title: 'MongoDB table engine'
+doc_type: 'reference'
 ---
 
-# MongoDB
+# MongoDB table engine
 
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
@@ -151,9 +152,7 @@ This applied for `Date`, `Date32`, `DateTime`, `Bool`, `UUID`.
 
 :::
 
-
 ## Usage example {#usage-example}
-
 
 Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix) dataset loaded
 

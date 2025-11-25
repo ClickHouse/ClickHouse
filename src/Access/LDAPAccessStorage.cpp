@@ -84,7 +84,7 @@ void LDAPAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration
     role_search_params.swap(role_search_params_cfg);
     common_role_names.swap(common_roles_cfg);
 
-    external_role_hashes.clear();
+    users_external_roles.clear();
     users_per_roles.clear();
     roles_per_users.clear();
     granted_role_names.clear();
@@ -198,13 +198,6 @@ void LDAPAccessStorage::applyRoleChangeNoLock(bool grant, const UUID & role_id, 
 
 void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles) const
 {
-    const auto external_roles_hash = boost::hash<LDAPClient::SearchResultsList>{}(external_roles);
-    assignRolesNoLock(user, external_roles, external_roles_hash);
-}
-
-
-void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchResultsList & external_roles, std::size_t external_roles_hash) const
-{
     const auto & user_name = user.getName();
     auto & granted_roles = user.granted_roles;
     auto local_role_names = mapExternalRolesNoLock(external_roles);
@@ -232,7 +225,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         }
     };
 
-    external_role_hashes.erase(user_name);
+    users_external_roles.erase(user_name);
     granted_roles = {};
     const auto old_role_names = std::move(roles_per_users[user_name]);
 
@@ -280,32 +273,29 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         granted_role_ids.erase(iit);
     }
 
-    // Actualize roles_per_users mapping and external_role_hashes cache.
+    // Actualize roles_per_users mapping and users_external_roles cache.
     if (local_role_names.empty())
         roles_per_users.erase(user_name);
     else
         roles_per_users[user_name] = std::move(local_role_names);
 
-    external_role_hashes[user_name] = external_roles_hash;
+    users_external_roles[user_name] = external_roles;
 }
 
 
 void LDAPAccessStorage::updateAssignedRolesNoLock(const UUID & id, const String & user_name, const LDAPClient::SearchResultsList & external_roles) const
 {
-    // No need to include common_role_names in this hash each time, since they don't change.
-    const auto external_roles_hash = boost::hash<LDAPClient::SearchResultsList>{}(external_roles);
-
     // Map and grant the roles from scratch only if the list of external role has changed.
-    const auto it = external_role_hashes.find(user_name);
-    if (it != external_role_hashes.end() && it->second == external_roles_hash)
+    const auto it = users_external_roles.find(user_name);
+    if (it != users_external_roles.end() && it->second == external_roles)
         return;
 
-    auto update_func = [this, &external_roles, external_roles_hash] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
+    auto update_func = [this, &external_roles] (const AccessEntityPtr & entity_, const UUID &) -> AccessEntityPtr
     {
         if (auto user = typeid_cast<std::shared_ptr<const User>>(entity_))
         {
             auto changed_user = typeid_cast<std::shared_ptr<User>>(user->clone());
-            assignRolesNoLock(*changed_user, external_roles, external_roles_hash);
+            assignRolesNoLock(*changed_user, external_roles);
             return changed_user;
         }
         return entity_;

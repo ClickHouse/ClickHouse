@@ -1,4 +1,5 @@
 set allow_experimental_dynamic_type = 1;
+set input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
 
 select 'JSON';
 select d, dynamicType(d) from format(JSONEachRow, 'd Dynamic', $$

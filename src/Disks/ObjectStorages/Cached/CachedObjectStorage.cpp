@@ -39,23 +39,6 @@ FileCache::Key CachedObjectStorage::getCacheKey(const std::string & path) const
     return FileCacheKey::fromPath(path);
 }
 
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyForPath(const std::string & path, const std::optional<std::string> & key_prefix) const
-{
-    return object_storage->generateObjectKeyForPath(path, key_prefix);
-}
-
-ObjectStorageKey
-CachedObjectStorage::generateObjectKeyPrefixForDirectoryPath(const std::string & path, const std::optional<std::string> & key_prefix) const
-{
-    return object_storage->generateObjectKeyPrefixForDirectoryPath(path, key_prefix);
-}
-
-bool CachedObjectStorage::areObjectKeysRandom() const
-{
-    return object_storage->areObjectKeysRandom();
-}
-
 ReadSettings CachedObjectStorage::patchSettings(const ReadSettings & read_settings) const
 {
     return object_storage->patchSettings(read_settings);
@@ -74,8 +57,7 @@ bool CachedObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    std::optional<size_t> file_size) const
+    std::optional<size_t> read_hint) const
 {
     if (read_settings.enable_filesystem_cache)
     {
@@ -87,7 +69,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
 
             auto read_buffer_creator = [=, this]()
             {
-                return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+                return object_storage->readObject(object, patchSettings(read_settings), read_hint);
             };
 
             return std::make_unique<CachedOnDiskReadBufferFromFile>(
@@ -110,7 +92,7 @@ std::unique_ptr<ReadBufferFromFileBase> CachedObjectStorage::readObject( /// NOL
         }
     }
 
-    return object_storage->readObject(object, patchSettings(read_settings), read_hint, file_size);
+    return object_storage->readObject(object, patchSettings(read_settings), read_hint);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// NOLINT
@@ -198,9 +180,14 @@ void CachedObjectStorage::listObjects(const std::string & path, RelativePathsWit
     object_storage->listObjects(path, children, max_keys);
 }
 
-ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata CachedObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const
 {
-    return object_storage->getObjectMetadata(path);
+    return object_storage->getObjectMetadata(path, with_tags);
+}
+
+std::optional<ObjectMetadata> CachedObjectStorage::tryGetObjectMetadata(const std::string & path, bool with_tags) const
+{
+    return object_storage->tryGetObjectMetadata(path, with_tags);
 }
 
 void CachedObjectStorage::shutdown()
@@ -218,6 +205,11 @@ void CachedObjectStorage::applyNewSettings(
 String CachedObjectStorage::getObjectsNamespace() const
 {
     return object_storage->getObjectsNamespace();
+}
+
+ObjectStorageKeyGeneratorPtr CachedObjectStorage::createKeyGenerator() const
+{
+    return object_storage->createKeyGenerator();
 }
 
 }

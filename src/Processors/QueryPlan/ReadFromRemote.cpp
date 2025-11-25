@@ -35,7 +35,6 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
-#include <Common/checkStackSize.h>
 #include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
@@ -53,6 +52,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -82,14 +82,14 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
-static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
+static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
         return;
 
     auto match_mode = use_positions_to_match ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
 
-    auto get_converting_dag = [mode = match_mode](const Block & block_, const Block & header_)
+    auto get_converting_dag = [mode = match_mode, context](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -98,6 +98,7 @@ static void addConvertingActions(Pipe & pipe, const Block & header, bool use_pos
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
             mode,
+            context,
             true);
     };
 
@@ -518,6 +519,7 @@ void ReadFromRemote::addLazyPipe(
         // In case reading from parallel replicas is allowed, lazy case is not triggered,
         // so in this case it's required to get only one connection from the pool
         std::vector<ConnectionPoolWithFailover::TryResult> try_results;
+        std::exception_ptr exception_ptr;
         try
         {
             if (my_table_func_ptr)
@@ -529,6 +531,7 @@ void ReadFromRemote::addLazyPipe(
         }
         catch (const Exception & ex)
         {
+            exception_ptr = std::current_exception();
             if (ex.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "Connections to remote replicas of local shard {} failed, will use stale local replica", my_shard.shard_info.shard_num);
@@ -571,11 +574,17 @@ void ReadFromRemote::addLazyPipe(
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
                 auto plan = createLocalPlan(
-                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }
         }
+
+        /// We assumed when we caught an exception during obtaining connections, that it was possible to fallback to local replica,
+        /// but it turns out to be false (likely due to manual triggering of use_delayed_remote_source failpoint),
+        /// so we need to rethrow exception here, to avoid creating connections with zero replicas
+        if (exception_ptr)
+            std::rethrow_exception(exception_ptr);
 
         std::vector<IConnectionPool::Entry> connections;
         connections.reserve(try_results.size());
@@ -604,7 +613,7 @@ void ReadFromRemote::addLazyPipe(
     };
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
-    addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+    addConvertingActions(pipes.back(), *out_header, context);
 }
 
 void ReadFromRemote::addPipe(
@@ -691,7 +700,7 @@ void ReadFromRemote::addPipe(
 
             pipes.emplace_back(
                 createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-            addConvertingActions(pipes.back(), *output_header, shard.has_missing_objects);
+            addConvertingActions(pipes.back(), *output_header, context);
         }
     }
     else
@@ -726,7 +735,7 @@ void ReadFromRemote::addPipe(
 
         pipes.emplace_back(
             createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads));
-        addConvertingActions(pipes.back(), *out_header, shard.has_missing_objects);
+        addConvertingActions(pipes.back(), *out_header, context);
     }
 }
 
@@ -873,7 +882,7 @@ ReadFromParallelRemoteReplicasStep::ReadFromParallelRemoteReplicasStep(
     }
 
     auto description = fmt::format("Query: {} Replicas: {}", formattedAST(query_ast), fmt::join(replicas, ", "));
-    setStepDescription(std::move(description));
+    setStepDescription(std::move(description), context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
 }
 
 void ReadFromParallelRemoteReplicasStep::enableMemoryBoundMerging()
@@ -997,7 +1006,7 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
 
     Pipe pipe
         = createRemoteSourcePipe(std::move(remote_query_executor), add_agg_info, add_totals, add_extremes, async_read, async_query_sending, parallel_marshalling_threads);
-    addConvertingActions(pipe, *out_header);
+    addConvertingActions(pipe, *out_header, context);
     return pipe;
 }
 

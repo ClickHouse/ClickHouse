@@ -6,35 +6,35 @@
 #include <base/types.h>
 
 
-/** Очень простой класс для чтения JSON (или его кусочков).
-  * Представляет собой ссылку на кусок памяти, в котором содержится JSON (или его кусочек).
-  * Не создаёт никаких структур данных в оперативке. Не выделяет память (кроме std::string).
-  * Не парсит JSON до конца (парсит только часть, необходимую для выполнения вызванного метода).
-  * Парсинг необходимой части запускается каждый раз при вызове методов.
-  * Может работать с обрезанным JSON-ом.
-  * При этом, (в отличие от SAX-подобных парсеров), предоставляет удобные методы для работы.
+/** A very simple class for reading JSON (or its fragments).
+  * Represents a reference to a piece of memory that contains JSON (or its fragment).
+  * Does not create any data structures in memory. Does not allocate memory (except for std::string).
+  * Does not parse JSON to the end (parses only the part needed to execute the called method).
+  * Parsing of the necessary part is started each time methods are called.
+  * Can work with truncated JSON.
+  * At the same time, (unlike SAX-like parsers), provides convenient methods for working.
   *
-  * Эта структура данных более оптимальна, если нужно доставать несколько элементов из большого количества маленьких JSON-ов.
-  * То есть, подходит для обработки "параметров визитов" и "параметров интернет магазинов" в Яндекс.Метрике.
-  * Если нужно много работать с одним большим JSON-ом, то этот класс может быть менее оптимальным.
+  * This data structure is more optimal if you need to extract several elements from a large number of small JSONs.
+  * That is, it is suitable for processing "visit parameters" and "online store parameters" in Yandex.Metrica.
+  * If you need to do a lot of work with one large JSON, then this class may be less optimal.
   *
-  * Имеются следующие соглашения:
-  * 1. Предполагается, что в JSON-е нет пробельных символов.
-  * 2. Предполагается, что строки в JSON в кодировке UTF-8; также могут использоваться \u-последовательности.
-  *    Строки возвращаются в кодировке UTF-8, \u-последовательности переводятся в UTF-8.
-  * 3. Но суррогатная пара из двух \uXXXX\uYYYY переводится не в UTF-8, а в CESU-8.
-  * 4. Корректный JSON парсится корректно.
-  *    При работе с некорректным JSON-ом, кидается исключение или возвращаются неверные результаты.
-  *    (пример: считается, что если встретился символ 'n', то после него идёт 'ull' (null);
-  *     если после него идёт ',1,', то исключение не кидается, и, таким образом, возвращается неверный результат)
-  * 5. Глубина вложенности JSON ограничена (см. MAX_JSON_DEPTH в cpp файле).
-  *    При необходимости спуститься на большую глубину, кидается исключение.
-  * 6. В отличие от JSON, пользоволяет парсить значения вида 64-битное число, со знаком, или без.
-  *    При этом, если число дробное - то дробная часть тихо отбрасывается.
-  * 7. Числа с плавающей запятой парсятся не с максимальной точностью.
+  * The following conventions are available:
+  * 1. It is assumed that there are no whitespace characters in JSON.
+  * 2. It is assumed that strings in JSON are in UTF-8 encoding; \u-sequences can also be used.
+  *    Strings are returned in UTF-8 encoding, \u-sequences are converted to UTF-8.
+  * 3. But a surrogate pair of two \uXXXX\uYYYY is converted not to UTF-8, but to CESU-8.
+  * 4. Correct JSON is parsed correctly.
+  *    When working with incorrect JSON, an exception is thrown or incorrect results are returned.
+  *    (example: it is considered that if the symbol 'n' is encountered, then 'ull' (null) follows it;
+  *     if ',1,' follows it, then no exception is thrown, and thus an incorrect result is returned)
+  * 5. The nesting depth of JSON is limited (see MAX_JSON_DEPTH in cpp file).
+  *    When it is necessary to go to a greater depth, an exception is thrown.
+  * 6. Unlike JSON, allows parsing values like 64-bit number, signed or unsigned.
+  *    At the same time, if the number is fractional - then the fractional part is silently discarded.
+  * 7. Floating point numbers are parsed with not maximum precision.
   *
-  * Подходит только для чтения JSON, модификация не предусмотрена.
-  * Все методы immutable, кроме operator++.
+  * Suitable only for reading JSON, modification is not provided.
+  * All methods are immutable, except operator++.
   */
 
 
@@ -96,52 +96,52 @@ public:
     bool isNull() const          { return getType() == TYPE_NULL; }
     bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; }
 
-    /// Количество элементов в массиве или объекте; если элемент - не массив или объект, то исключение.
+    /// Number of elements in array or object; if element is not array or object, then exception.
     size_t size() const;
 
-    /// Является ли массив или объект пустыми; если элемент - не массив или объект, то исключение.
+    /// Whether array or object is empty; if element is not array or object, then exception.
     bool empty() const;
 
-    /// Получить элемент массива по индексу; если элемент - не массив, то исключение.
+    /// Get array element by index; if element is not array, then exception.
     JSON operator[] (size_t n) const;
 
-    /// Получить элемент объекта по имени; если элемент - не объект, то исключение.
+    /// Get object element by name; if element is not object, then exception.
     JSON operator[] (const std::string & name) const;
 
-    /// Есть ли в объекте элемент с заданным именем; если элемент - не объект, то исключение.
+    /// Whether object has element with given name; if element is not object, then exception.
     bool has(const std::string & name) const { return has(name.data(), name.size()); }
     bool has(const char * data, size_t size) const;
 
-    /// Получить значение элемента; исключение, если элемент имеет неправильный тип.
+    /// Get element value; exception if element has wrong type.
     template <class T>
     T get() const;
 
-    /// если значения нет, или тип неверный, то возвращает дефолтное значение
+    /// if value is missing or type is wrong, then returns default value
     template <class T>
     T getWithDefault(const std::string & key, const T & default_ = T()) const;
 
     double      getDouble() const;
-    Int64       getInt() const;    /// Отбросить дробную часть.
-    UInt64      getUInt() const;    /// Отбросить дробную часть. Если число отрицательное - исключение.
+    Int64       getInt() const;    /// Discard fractional part.
+    UInt64      getUInt() const;    /// Discard fractional part. If number is negative - exception.
     std::string getString() const;
     bool        getBool() const;
-    std::string getName() const;    /// Получить имя name-value пары.
-    JSON        getValue() const;    /// Получить значение name-value пары.
+    std::string getName() const;    /// Get name of name-value pair.
+    JSON        getValue() const;    /// Get value of name-value pair.
 
     std::string_view getRawString() const;
     std::string_view getRawName() const;
 
-    /// Получить значение элемента; если элемент - строка, то распарсить значение из строки; если не строка или число - то исключение.
+    /// Get element value; if element is string, then parse value from string; if not string or number - then exception.
     double      toDouble() const;
     Int64       toInt() const;
     UInt64      toUInt() const;
 
-    /** Преобразовать любой элемент в строку.
-      * Для строки возвращается её значение, для всех остальных элементов - сериализованное представление.
+    /** Convert any element to string.
+      * For string returns its value, for all other elements - serialized representation.
       */
     std::string toString() const;
 
-    /// Класс JSON одновременно является итератором по самому себе.
+    /// JSON class is simultaneously an iterator over itself.
     using iterator = JSON;
     using const_iterator = JSON;
 
@@ -150,32 +150,32 @@ public:
     bool operator== (const JSON & rhs) const { return ptr_begin == rhs.ptr_begin; }
     bool operator!= (const JSON & rhs) const { return ptr_begin != rhs.ptr_begin; }
 
-    /** Если элемент - массив или объект, то begin() возвращает iterator,
-      * который указывает на первый элемент массива или первую name-value пару объекта.
+    /** If element is array or object, then begin() returns iterator,
+      * which points to the first element of array or first name-value pair of object.
       */
     iterator begin() const;
 
-    /** end() - значение, которое нельзя использовать; сигнализирует о том, что элементы закончились.
+    /** end() - value that cannot be used; signals that elements are finished.
       */
     iterator end() const;
 
-    /// Перейти к следующему элементу массива или следующей name-value паре объекта.
+    /// Move to next array element or next name-value pair of object.
     iterator & operator++();
     iterator operator++(int); // NOLINT(cert-dcl21-cpp)
 
-    /// Есть ли в строке escape-последовательности
+    /// Whether string has escape sequences
     bool hasEscapes() const;
 
-    /// Есть ли в строке спец-символы из набора \, ', \0, \b, \f, \r, \n, \t, возможно, заэскейпленные.
+    /// Whether string has special characters from the set \, ', \0, \b, \f, \r, \n, \t, possibly escaped.
     bool hasSpecialChars() const;
 
 private:
-    /// Проверить глубину рекурсии, а также корректность диапазона памяти.
+    /// Check recursion depth and memory range correctness.
     void checkInit() const;
-    /// Проверить, что pos лежит внутри диапазона памяти.
+    /// Check that pos lies within memory range.
     void checkPos(Pos pos) const;
 
-    /// Вернуть позицию после заданного элемента.
+    /// Return position after given element.
     Pos skipString() const;
     Pos skipNumber() const;
     Pos skipBool() const;
@@ -186,7 +186,7 @@ private:
 
     Pos skipElement() const;
 
-    /// Найти name-value пару с заданным именем в объекте.
+    /// Find name-value pair with given name in object.
     Pos searchField(const std::string & name) const { return searchField(name.data(), name.size()); }
     Pos searchField(const char * data, size_t size) const;
 

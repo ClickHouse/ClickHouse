@@ -18,6 +18,7 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <base/scope_guard.h>
 
@@ -66,7 +67,12 @@ public:
         : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
     {}
 
-    void loadEntities() override {}
+    std::string_view getName() const override { return "test"; }
+
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override
+    {
+        WorkloadEntityStorageBase::loadEntities(config);
+    }
 
     void executeQuery(const String & query)
     {
@@ -377,9 +383,9 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
     t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
     t.query("CREATE WORKLOAD intermediate IN all");
 
-    std::barrier sync_before_enqueue(2);
-    std::barrier sync_before_drop(3);
-    std::barrier sync_after_drop(2);
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(3);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
     t.async("intermediate", "res1", [&] (ResourceLink link)
     {
         TestGuard g(t, link, 1);
@@ -413,9 +419,9 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     t.query("CREATE WORKLOAD intermediate IN all");
 
     static constexpr int queue_size = 100;
-    std::barrier sync_before_enqueue(2);
-    std::barrier sync_before_drop(2 + queue_size);
-    std::barrier sync_after_drop(2);
+    std::barrier<std::__empty_completion> sync_before_enqueue(2);
+    std::barrier<std::__empty_completion> sync_before_drop(2 + queue_size);
+    std::barrier<std::__empty_completion> sync_after_drop(2);
     t.async("intermediate", "res1", [&] (ResourceLink link)
     {
         TestGuard g(t, link, 1);
@@ -922,7 +928,7 @@ struct TestQuery {
             cpu_lease->startConsumption();
         metrics.start(thread_num);
 
-        setThreadName(fmt::format("name.{}", name, thread_num).c_str());
+        DB::setThreadName(DB::ThreadName::TEST_SCHEDULER);
         while (true)
         {
             if (!controlConcurrency(cpu_lease))
@@ -942,7 +948,6 @@ struct TestQuery {
 
     SlotAllocationPtr allocateCPUSlots(AllocationType type, ResourceLink master_link, ResourceLink worker_link, const String & workload)
     {
-        std::scoped_lock lock{slots_mutex};
         CPULeaseSettings settings;
         settings.workload = workload;
         settings.preemption_timeout = std::chrono::milliseconds(12); // We use smaller timeout to make tests faster
@@ -978,8 +983,11 @@ struct TestQuery {
         master_thread = t.async(workload, t.storage.getMasterThreadResourceName(), t.storage.getWorkerThreadResourceName(),
             [&, type, workload] (ResourceLink master_link, ResourceLink worker_link)
             {
-                setThreadName(workload.c_str());
-                slots = allocateCPUSlots(type, master_link, worker_link, workload);
+                setThreadName(ThreadName::TEST_SCHEDULER);
+                {
+                    std::unique_lock in_thread_lock{slots_mutex};
+                    slots = allocateCPUSlots(type, master_link, worker_link, workload);
+                }
                 threadFunc(slots->acquire());
 
                 // TODO(serxa): this is not needed any longer. we do pool->wait(). Remove and check tests.
@@ -1197,7 +1205,7 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingPriorities)
 
 TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
 {
-    std::barrier sync_start(2);
+    std::barrier<std::__empty_completion> sync_start(2);
 
     ResourceTest t;
 
@@ -1264,6 +1272,23 @@ TEST(SchedulerWorkloadResourceManager, CPUSchedulingIndependentPools)
     }
 
     t.wait();
+}
+
+TEST(SchedulerWorkloadResourceManager, MaxCPUsDerivedFromShare)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)");
+    // Only max_cpu_share is set, max_cpus is unset
+    t.query("CREATE WORKLOAD all SETTINGS max_cpu_share = 0.5");
+    ClassifierPtr c = t.manager->acquire("all");
+
+    // The expected hard cap is max_cpu_share * getNumberOfCPUCoresToUse()
+    WorkloadSettings settings = c->getWorkloadSettings("cpu");
+    double expected_cap = 0.5 * getNumberOfCPUCoresToUse();
+    double actual_cap = settings.max_cpus;
+
+    EXPECT_DOUBLE_EQ(actual_cap, expected_cap);
 }
 
 auto getAcquired()

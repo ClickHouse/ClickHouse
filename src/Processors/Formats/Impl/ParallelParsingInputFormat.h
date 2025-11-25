@@ -99,14 +99,12 @@ public:
         , max_block_size(params.max_block_size)
         , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
-        , runner(getFormatParsingThreadPool().get(), "ChunkParser")
+        , runner(getFormatParsingThreadPool().get(), ThreadName::PARALLEL_FORMATER_PARSER)
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
         // bump into reader thread on wraparound.
         processing_units.resize(params.max_threads + 2);
-
-        LOG_TRACE(getLogger("ParallelParsingInputFormat"), "Parallel parsing is used");
     }
 
     ~ParallelParsingInputFormat() override
@@ -136,6 +134,14 @@ public:
 private:
 
     Chunk read() final;
+
+    void onFinish() final
+    {
+        /// We have to wait for all threads to finish before calling IInputFormat::onFinish()
+        /// because segmentator thread still uses owned buffers.
+        finishAndWait();
+        IInputFormat::onFinish();
+    }
 
     void onCancel() noexcept final
     {
@@ -207,7 +213,7 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
-    SerializationInfoByName serialization_hints;
+    SerializationInfoByName serialization_hints{{}};
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;

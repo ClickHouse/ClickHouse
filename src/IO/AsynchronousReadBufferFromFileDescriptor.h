@@ -28,6 +28,7 @@ protected:
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
     size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
+    bool direct_io;
     ThrottlerPtr throttler;
 
     bool nextImpl() override;
@@ -43,6 +44,7 @@ public:
         Priority priority_,
         int fd_,
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        int flags = -1,
         char * existing_memory = nullptr,
         size_t alignment = 0,
         std::optional<size_t> file_size_ = std::nullopt,

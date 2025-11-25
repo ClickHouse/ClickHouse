@@ -226,6 +226,8 @@ static void * getCallerAddress(const ucontext_t & context)
     return reinterpret_cast<void *>(context.uc_mcontext.psw.addr);
 #elif defined(__loongarch64)
     return reinterpret_cast<void *>(context.uc_mcontext.__pc);
+#elif defined(__e2k__)
+    return reinterpret_cast<void *>(context.uc_mcontext.cr0_hi);
 #else
     return nullptr;
 #endif
@@ -380,6 +382,12 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
         }
     }
 }
+
+StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offset_)
+    : size(size_)
+    , offset(offset_)
+    , frame_pointers(std::move(frame_pointers_))
+{}
 
 void StackTrace::tryCapture()
 {

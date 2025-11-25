@@ -3,17 +3,13 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 
 #include <algorithm>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int ILLEGAL_STATISTICS;
-}
 
 StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
@@ -23,16 +19,31 @@ StatisticsMinMax::StatisticsMinMax(const SingleStatisticsDescription & descripti
 
 void StatisticsMinMax::build(const ColumnPtr & column)
 {
-    for (size_t row = 0; row < column->size(); ++row)
-    {
-        if (column->isNullAt(row))
-            continue;
+    Field min_field;
+    Field max_field;
 
-        auto value = column->getFloat64(row);
-        min = std::min(value, min);
-        max = std::max(value, max);
+    column->getExtremes(min_field, max_field);
+
+    if (!min_field.isNull())
+    {
+        Float64 current_min = applyVisitor(FieldVisitorConvertToNumber<Float64>(), min_field);
+        min = std::min(min, current_min);
     }
+
+    if (!max_field.isNull())
+    {
+        Float64 current_max = applyVisitor(FieldVisitorConvertToNumber<Float64>(), max_field);
+        max = std::max(max, current_max);
+    }
+
     row_count += column->size();
+}
+
+void StatisticsMinMax::merge(const StatisticsPtr & other_stats)
+{
+    const StatisticsMinMax * other = typeid_cast<const StatisticsMinMax *>(other_stats.get());
+    min = std::min(min, other->min);
+    max = std::max(max, other->max);
 }
 
 void StatisticsMinMax::serialize(WriteBuffer & buf)
@@ -70,12 +81,11 @@ Float64 StatisticsMinMax::estimateLess(const Field & val) const
     return ((*val_as_float - min) / (max - min)) * row_count;
 }
 
-void minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool minMaxStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
 {
     auto inner_data_type = removeNullable(data_type);
     inner_data_type = removeLowCardinalityAndNullable(inner_data_type);
-    if (!inner_data_type->isValueRepresentedByNumber())
-        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "Statistics of type 'minmax' do not support type {}", data_type->getName());
+    return inner_data_type->isValueRepresentedByNumber();
 }
 
 StatisticsPtr minMaxStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

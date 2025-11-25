@@ -380,7 +380,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     for (const auto & replace_child : children)
     {
         auto & replacement = replace_child->as<Replacement &>();
-        if (replace_map.find(replacement.name) != replace_map.end())
+        if (replace_map.contains(replacement.name))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
         replace_map.emplace(replacement.name, replacement.children[0]);

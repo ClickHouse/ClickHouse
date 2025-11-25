@@ -4,12 +4,12 @@ sidebar_label: 'Boolean'
 sidebar_position: 33
 slug: /sql-reference/data-types/boolean
 title: 'Bool'
+doc_type: 'reference'
 ---
 
 # Bool
 
 Type `bool` is internally stored as UInt8. Possible values are `true` (1), `false` (0).
-
 
 ```sql
 SELECT true AS col, toTypeName(col);

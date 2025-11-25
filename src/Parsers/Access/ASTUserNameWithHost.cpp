@@ -16,11 +16,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const
+void ASTUserNameWithHost::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    ostr << backQuoteIfNeed(getBaseName());
-    if (auto pattern = getHostPattern(); !pattern.empty())
-        ostr << "@" << backQuoteIfNeed(pattern);
+    username->format(ostr, settings);
+    if (host_pattern)
+    {
+        ostr << "@";
+        host_pattern->format(ostr, settings);
+    }
 }
 
 String ASTUserNameWithHost::toString() const
@@ -65,11 +68,9 @@ ASTUserNameWithHost::ASTUserNameWithHost(ASTPtr && name_, String && host_pattern
 
 String ASTUserNameWithHost::getBaseName() const
 {
-    if (children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTUserNameWithHost is empty");
-
-    chassert(username);
-
+    chassert(!children.empty());
+    if (!username)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Username is not set");
     return getStringFromAST(username);
 }
 

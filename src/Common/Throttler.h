@@ -50,8 +50,8 @@ public:
               const ThrottlerPtr & parent_ = nullptr);
 
     /// Use `amount` tokens, sleeps if required or throws exception on limit overflow.
-    /// Returns duration of sleep in nanoseconds (to distinguish sleeping on different kinds of throttlers for metrics)
-    UInt64 add(size_t amount) override;
+    /// Returns true if blocking was applied, false if no blocking was needed.
+    bool throttle(size_t amount, size_t max_block_ns) override;
 
     /// Not thread safe
     void setParent(const ThrottlerPtr & parent_)
@@ -72,8 +72,8 @@ public:
     void setMaxSpeed(size_t max_speed_);
 
 private:
-    void addImpl(size_t amount, size_t & count_value, double & tokens_value);
-    void addImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);
+    void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);
+    void throttleImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);
 
     size_t count{0};
     size_t max_speed TSA_GUARDED_BY(mutex){0}; /// in tokens per second.
@@ -81,9 +81,9 @@ private:
     const UInt64 limit{0}; /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     mutable std::mutex mutex;
-    std::atomic<UInt64> accumulated_sleep{0}; // Accumulated sleep time over all waiting threads
-    double tokens{0}; /// Amount of tokens available in token bucket. Updated in `add` method.
-    UInt64 prev_ns{0}; /// Previous `add` call time (in nanoseconds).
+    std::atomic<UInt64> block_count{0}; // Number of threads currently under throttling
+    double tokens{0}; /// Amount of tokens available in token bucket. Updated in `throttle` method.
+    UInt64 prev_ns{0}; /// Previous `throttle` call time (in nanoseconds).
 
     /// Used to implement a hierarchy of throttlers
     ThrottlerPtr parent;

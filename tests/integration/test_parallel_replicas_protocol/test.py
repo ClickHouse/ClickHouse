@@ -78,3 +78,43 @@ def test_mark_segment_size_communicated_correctly(
     nodes[0].query("SYSTEM FLUSH LOGS")
     log_line = nodes[0].grep_in_log(f"{query_id}.*Reading state is fully initialized")
     assert re.search(r"mark_segment_size: (\d+)", log_line).group(1) == "16384"
+
+
+def test_final_on_parallel_replicas(start_cluster):
+    nodes[0].query(
+        "DROP TABLE IF EXISTS t0"
+    )
+    nodes[0].query(
+        "CREATE TABLE t0 (c0 Int) ENGINE = SummingMergeTree() ORDER BY tuple()"
+    )
+    nodes[0].query("INSERT INTO t0 VALUES (1)")
+    nodes[0].query("OPTIMIZE TABLE t0 FINAL")
+    resp = nodes[0].query(
+        "SELECT 1 FROM t0 RIGHT JOIN (SELECT c0 FROM t0) tx ON TRUE GROUP BY c0",
+        settings={
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "cluster_for_parallel_replicas": "parallel_replicas",
+        },
+    )
+    assert resp == "1\n"
+    nodes[0].query("DROP TABLE t0")
+
+
+def test_insert_cluster_parallel_replicas(start_cluster):
+    nodes[0].query(
+        "DROP TABLE IF EXISTS t0 ON CLUSTER 'test_cluster_two_shards'"
+    )
+    nodes[0].query(
+        "CREATE TABLE t0 ON CLUSTER 'test_cluster_two_shards' (c0 Int) ENGINE = Log()"
+    )
+    nodes[0].query(
+        "INSERT INTO TABLE FUNCTION cluster('test_cluster_two_shards', 'default', 't0') (c0) SELECT c0 FROM generateRandom('c0 Int', 1) LIMIT 3",
+        settings={
+            "insert_distributed_one_random_shard": 1,
+            "allow_experimental_parallel_reading_from_replicas": 2,
+            "min_insert_block_size_bytes": 1,
+            "optimize_trivial_insert_select": 1,
+            "max_insert_threads": 3,
+        },
+    )
+    nodes[0].query("DROP TABLE t0 ON CLUSTER 'test_cluster_two_shards'")

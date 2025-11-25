@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any, Iterable, List, Literal, Optional, Union
 
 from ci_utils import WithIter
-from integration_test_images import IMAGES
 
 
 class Labels:
@@ -13,7 +12,6 @@ class Labels:
     CAN_BE_TESTED = "can be tested"
     DO_NOT_TEST = "do not test"
     MUST_BACKPORT = "pr-must-backport"
-    MUST_BACKPORT_CLOUD = "pr-must-backport-cloud"
     MUST_BACKPORT_SYNCED = "pr-must-backport-synced"
     JEPSEN_TEST = "jepsen-test"
     SKIP_MERGEABLE_CHECK = "skip mergeable check"
@@ -468,7 +466,6 @@ class CommonJobConfigs:
                 "./tests/integration/",
             ],
             exclude_files=[".md"],
-            docker=IMAGES.copy(),
         ),
         run_command='integration_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,

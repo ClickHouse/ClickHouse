@@ -27,6 +27,7 @@
 #include "Poco/Net/Net.h"
 #include "Poco/Net/StreamSocket.h"
 #include "Poco/Timespan.h"
+#include "Poco/Net/Throttler.h"
 
 
 namespace Poco
@@ -83,6 +84,12 @@ namespace Net
         void
         setTimeout(const Poco::Timespan & connectionTimeout, const Poco::Timespan & sendTimeout, const Poco::Timespan & receiveTimeout);
         /// Sets different timeouts for the HTTP session.
+
+        void setReceiveThrottler(const ThrottlerPtr & throttler = {});
+        /// Sets the throttler that is used to limit the speed of data received through the socket.
+
+        void setSendThrottler(const ThrottlerPtr & throttler = {});
+        /// Sets the throttler that is used to limit the speed of data sent through the socket.
 
         Poco::Timespan getTimeout() const;
         /// Returns the timeout for the HTTP session.
@@ -237,6 +244,8 @@ namespace Net
         Poco::Timespan _connectionTimeout;
         Poco::Timespan _receiveTimeout;
         Poco::Timespan _sendTimeout;
+        ThrottlerPtr _receiveThrottler;
+        ThrottlerPtr _sendThrottler;
         Poco::Exception * _pException;
         Poco::Any _data;
 

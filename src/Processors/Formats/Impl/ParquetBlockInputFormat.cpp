@@ -1,11 +1,16 @@
+#include <atomic>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Common/Exception.h>
+#include <Formats/FormatSettings.h>
 
 #if USE_PARQUET
 
-#include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
+#include <Common/setThreadName.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -33,6 +38,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -61,10 +67,37 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+String removeListElement(const String & value)
+{
+    const String pattern = ".list.element";
+    String result = value;
+    size_t pos;
+    while ((pos = result.find(pattern)) != std::string::npos)
+        result.erase(pos, pattern.size());
+    return result;
+}
+
+
+void traverseAllFields(const parquet::schema::NodePtr & node, std::unordered_map<Int64, String> & fields_mapping, const String & current_path = "")
+{
+    if (node->is_group())
+    {
+        auto group = std::static_pointer_cast<parquet::schema::GroupNode>(node);
+        for (int i = 0; i < group->field_count(); ++i)
+            traverseAllFields(group->field(i), fields_mapping, Nested::concatenateName(current_path, group->name()));
+    }
+    int field_id = node->field_id();
+    fields_mapping[field_id] = removeListElement(Nested::concatenateName(current_path, node->name()));
+}
+
 }
 
 #define THROW_ARROW_NOT_OK(status)                                     \
@@ -73,7 +106,7 @@ namespace ErrorCodes
         if (::arrow::Status _s = (status); !_s.ok())                   \
         {                                                              \
             throw Exception::createDeprecated(_s.ToString(),           \
-                _s.IsOutOfMemory() ? ErrorCodes::CANNOT_ALLOCATE_MEMORY : ErrorCodes::INCORRECT_DATA); \
+                _s.IsOutOfMemory() ? ErrorCodes::MEMORY_LIMIT_EXCEEDED : ErrorCodes::INCORRECT_DATA); \
         }                                                              \
     } while (false)
 
@@ -473,7 +506,7 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
 
         if (always_null)
         {
-            /// Single-point range containing either the default value of one of the infinities.
+            /// Single-point range containing either the default value or one of the infinities.
             if (null_as_default)
                 hyperrectangle[idx].right = hyperrectangle[idx].left = default_value;
             else
@@ -571,33 +604,76 @@ const parquet::ColumnDescriptor * getColumnDescriptorIfBloomFilterIsPresent(
     return parquet_column_descriptor;
 }
 
+void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
+{
+    writeVarUInt(row_group_ids.size(), buffer);
+    for (auto chunk : row_group_ids)
+        writeVarUInt(chunk, buffer);
+}
+
+void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
+{
+    size_t size_chunks;
+    readVarUInt(size_chunks, buffer);
+    row_group_ids = std::vector<size_t>{};
+    row_group_ids.resize(size_chunks);
+    size_t bucket;
+    for (size_t i = 0; i < size_chunks; ++i)
+    {
+        readVarUInt(bucket, buffer);
+        row_group_ids[i] = bucket;
+    }
+}
+
+String ParquetFileBucketInfo::getIdentifier() const
+{
+    String result;
+    for (auto chunk : row_group_ids)
+        result += "_" + std::to_string(chunk);
+    return result;
+}
+
+ParquetFileBucketInfo::ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_)
+    : row_group_ids(row_group_ids_)
+{
+}
+
+void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
+{
+    instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
+}
+
 ParquetBlockInputFormat::ParquetBlockInputFormat(
     ReadBuffer & buf,
     SharedHeader header_,
     const FormatSettings & format_settings_,
-    FormatParserGroupPtr parser_group_,
+    FormatParserSharedResourcesPtr parser_shared_resources_,
+    FormatFilterInfoPtr format_filter_info_,
     size_t min_bytes_for_seek_)
     : IInputFormat(header_, &buf)
     , format_settings(format_settings_)
     , skip_row_groups(format_settings.parquet.skip_row_groups)
-    , parser_group(std::move(parser_group_))
+    , parser_shared_resources(std::move(parser_shared_resources_))
+    , format_filter_info(std::move(format_filter_info_))
     , min_bytes_for_seek(min_bytes_for_seek_)
-    , pending_chunks(PendingChunk::Compare { .row_group_first = format_settings_.parquet.preserve_order })
+    , pending_chunks(PendingChunk::Compare{.row_group_first = format_settings_.parquet.preserve_order})
     , previous_block_missing_values(getPort().getHeader().columns())
 {
-    if (parser_group->max_parsing_threads > 1)
+    if (parser_shared_resources->max_parsing_threads > 1)
         pool = std::make_unique<ThreadPool>(
             CurrentMetrics::FormatParsingThreads,
             CurrentMetrics::FormatParsingThreadsActive,
             CurrentMetrics::FormatParsingThreadsScheduled,
-            parser_group->max_parsing_threads);
+            parser_shared_resources->max_parsing_threads);
 
-    bool row_group_prefetch = !pool && parser_group->max_io_threads > 0 && format_settings.parquet.enable_row_group_prefetch
+    bool row_group_prefetch = !pool && parser_shared_resources->max_io_threads > 0 && format_settings.parquet.enable_row_group_prefetch
         && !format_settings.parquet.use_native_reader;
     if (row_group_prefetch)
         io_pool = std::make_shared<ThreadPool>(
-            CurrentMetrics::IOThreads, CurrentMetrics::IOThreadsActive, CurrentMetrics::IOThreadsScheduled,
-            parser_group->getIOThreadsPerReader());
+            CurrentMetrics::IOThreads,
+            CurrentMetrics::IOThreadsActive,
+            CurrentMetrics::IOThreadsScheduled,
+            parser_shared_resources->getIOThreadsPerReader());
 }
 
 ParquetBlockInputFormat::~ParquetBlockInputFormat()
@@ -614,10 +690,10 @@ void ParquetBlockInputFormat::initializeIfNeeded()
     if (std::exchange(is_initialized, true))
         return;
 
-    parser_group->initOnce([&]
-        {
-            parser_group->initKeyCondition(getPort().getHeader());
-        });
+    if (format_filter_info)
+    {
+        format_filter_info->initOnce([&] { format_filter_info->initKeyCondition(getPort().getHeader()); });
+    }
 
     // Create arrow file adapter.
     arrow_file = asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, io_pool);
@@ -626,6 +702,16 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return;
 
     metadata = parquet::ReadMetaData(arrow_file);
+    if (buckets_to_read)
+    {
+        std::unordered_set<size_t> set_to_read(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
+        for (int i = 0; i < metadata->num_row_groups(); ++i)
+        {
+            if (!set_to_read.contains(i))
+                skip_row_groups.insert(i);
+        }
+    }
+
     const bool prefetch_group = io_pool != nullptr;
 
     std::shared_ptr<arrow::Schema> schema;
@@ -635,22 +721,20 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         format_settings.parquet.case_insensitive_column_matching,
         format_settings.parquet.allow_missing_columns);
 
-    std::optional<std::unordered_map<String, String>> clickhouse_to_parquet_names;
-    if (parser_group && parser_group->column_mapper)
+    if (format_filter_info && format_filter_info->column_mapper)
     {
-        auto header = getPort().getHeader();
         const auto & group_node = metadata->schema()->group_node();
 
         std::unordered_map<Int64, String> parquet_field_ids;
         parquet_names_to_clickhouse = std::unordered_map<String, String>{};
         for (int i = 0; i < group_node->field_count(); ++i)
-            parquet_field_ids[group_node->field(i)->field_id()] = group_node->field(i)->name();
+            traverseAllFields(group_node->field(i), parquet_field_ids);
 
-        auto result = parser_group->column_mapper->makeMapping(header, parquet_field_ids);
-        clickhouse_to_parquet_names = std::move(result.first);
+        auto result = format_filter_info->column_mapper->makeMapping(parquet_field_ids);
+        clickhouse_names_to_parquet = std::move(result.first);
         parquet_names_to_clickhouse = std::move(result.second);
     }
-    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_to_parquet_names);
+    auto index_mapping = field_util.findRequiredIndices(getPort().getHeader(), *schema, *metadata, clickhouse_names_to_parquet);
 
     for (const auto & [clickhouse_header_index, parquet_indexes] : index_mapping)
     {
@@ -693,9 +777,9 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
     std::unique_ptr<KeyCondition> key_condition_with_bloom_filter_data;
 
-    if (parser_group->key_condition)
+    if (format_filter_info && format_filter_info->key_condition)
     {
-        key_condition_with_bloom_filter_data = std::make_unique<KeyCondition>(*parser_group->key_condition);
+        key_condition_with_bloom_filter_data = std::make_unique<KeyCondition>(*format_filter_info->key_condition);
 
         if (format_settings.parquet.bloom_filter_push_down)
         {
@@ -724,14 +808,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
                     return std::nullopt;
                 }
 
-                auto nested_column = column;
-
-                if (const auto & nullable_column = checkAndGetColumn<ColumnNullable>(column.get()))
-                {
-                    nested_column = nullable_column->getNestedColumnPtr();
-                }
-
-                return parquetTryHashColumn(nested_column.get(), parquet_column_descriptor);
+                return parquetTryHashColumn(column.get(), parquet_column_descriptor);
             };
 
             key_condition_with_bloom_filter_data->prepareBloomFilterData(hash_one, hash_many);
@@ -749,13 +826,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
         KeyCondition::ColumnIndexToBloomFilter column_index_to_bloom_filter;
 
-        const auto & header = getPort().getHeader();
-
-        std::vector<Range> hyperrectangle(header.columns(), Range::createWholeUniverse());
+        std::vector<Range> hyperrectangle(getPort().getHeader().columns(), Range::createWholeUniverse());
 
         if (format_settings.parquet.filter_push_down)
         {
-            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, header, format_settings);
+            hyperrectangle = getHyperrectangleForRowGroup(*metadata, row_group, getPort().getHeader(), format_settings);
         }
 
         if (format_settings.parquet.bloom_filter_push_down)
@@ -768,20 +843,29 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         return !maybe_exists;
     };
 
+    // The first one stores the skipped rows for all the skipped row groups before the first row group batch.
+    row_group_batches_skipped_rows.push_back(0);
     for (int row_group = 0; row_group < num_row_groups; ++row_group)
     {
         if (skip_row_groups.contains(row_group))
+        {
+            row_group_batches_skipped_rows.back() += metadata->RowGroup(row_group)->num_rows();
             continue;
+        }
 
         if (key_condition_with_bloom_filter_data && skip_row_group_based_on_filters(row_group))
         {
             ProfileEvents::increment(ProfileEvents::ParquetPrunedRowGroups);
+            row_group_batches_skipped_rows.back() += metadata->RowGroup(row_group)->num_rows();
             continue;
         }
 
         // When single-threaded parsing, can prefetch row groups, so need to put all row groups in the same row_group_batch
         if (row_group_batches.empty() || (!prefetch_group && row_group_batches.back().total_bytes_compressed >= min_bytes_for_seek))
+        {
             row_group_batches.emplace_back();
+            row_group_batches_skipped_rows.push_back(0);
+        }
 
         ProfileEvents::increment(ProfileEvents::ParquetReadRowGroups);
         row_group_batches.back().row_groups_idxs.push_back(row_group);
@@ -796,13 +880,14 @@ void ParquetBlockInputFormat::initializeIfNeeded()
 
 void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_batch_idx)
 {
-    const bool row_group_prefetch = io_pool != nullptr;
+    bool row_group_prefetch = io_pool != nullptr;
     auto & row_group_batch = row_group_batches[row_group_batch_idx];
 
     parquet::ArrowReaderProperties arrow_properties;
-    parquet::ReaderProperties reader_properties(ArrowMemoryPool::instance());
+    parquet::ReaderProperties reader_properties(arrow::default_memory_pool());
     arrow_properties.set_use_threads(false);
     arrow_properties.set_batch_size(row_group_batch.adaptive_chunk_size);
+    reader_properties.set_page_checksum_verification(format_settings.parquet.verify_checksums);
 
     // When reading a row group, arrow will:
     //  1. Look at `metadata` to get all byte ranges it'll need to read from the file (typically one
@@ -848,7 +933,10 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
     // other, failing an assert. So we disable pre-buffering in this case.
     // That version is >10 years old, so this is not very important.
     if (metadata->writer_version().VersionLt(parquet::ApplicationVersion::PARQUET_816_FIXED_VERSION()))
+    {
         arrow_properties.set_pre_buffer(false);
+        row_group_prefetch = false;
+    }
 
     if (format_settings.parquet.use_native_reader)
     {
@@ -874,7 +962,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
         parquet::arrow::FileReaderBuilder builder;
         THROW_ARROW_NOT_OK(builder.Open(arrow_file, reader_properties, metadata));
         builder.properties(arrow_properties);
-        builder.memory_pool(ArrowMemoryPool::instance());
+        builder.memory_pool(arrow::default_memory_pool());
         // should get raw reader before build, raw_reader will set null after build
         auto * parquet_file_reader = builder.raw_reader();
         THROW_ARROW_NOT_OK(builder.Build(&row_group_batch.file_reader));
@@ -895,6 +983,7 @@ void ParquetBlockInputFormat::initializeRowGroupBatchReader(size_t row_group_bat
             "Parquet",
             format_settings,
             parquet_names_to_clickhouse,
+            clickhouse_names_to_parquet,
             format_settings.parquet.allow_missing_columns,
             format_settings.null_as_default,
             format_settings.date_time_overflow_behavior,
@@ -919,7 +1008,7 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, "ParquetDecoder");
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_DECODER);
                 threadFunction(row_group_batch_idx);
             }
             catch (...)
@@ -950,6 +1039,8 @@ void ParquetBlockInputFormat::threadFunction(size_t row_group_batch_idx)
 
         if (row_group_batch.status == RowGroupBatchState::Status::Done)
             return;
+
+        CurrentThread::updatePerformanceCountersIfNeeded();
     }
 }
 std::shared_ptr<arrow::RecordBatchReader> ParquetBlockInputFormat::RowGroupPrefetchIterator::nextRowGroupReader()
@@ -972,9 +1063,9 @@ void ParquetBlockInputFormat::RowGroupPrefetchIterator::prefetchNextRowGroups()
     if (next_row_group_idx < row_group_batch.row_groups_idxs.size())
     {
         size_t total_bytes_compressed = 0;
-        // Merge small row groups
+        // Merge small row groups, but always prefetch at least one row group
         while (next_row_group_idx < row_group_batch.row_groups_idxs.size() &&
-               total_bytes_compressed < min_bytes_for_seek)
+               (total_bytes_compressed < min_bytes_for_seek || prefetched_row_groups.empty()))
         {
             total_bytes_compressed += row_group_batch.row_group_sizes[next_row_group_idx];
             prefetched_row_groups.emplace_back(row_group_batch.row_groups_idxs[next_row_group_idx]);
@@ -1045,6 +1136,19 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
             return batch;
         };
 
+        // If record_batch_reader is null, try to get the next row group reader from prefetch iterator
+        if (!row_group_batch.record_batch_reader && row_group_batch.prefetch_iterator)
+        {
+            row_group_batch.record_batch_reader = row_group_batch.prefetch_iterator->nextRowGroupReader();
+        }
+
+        // If we still don't have a reader, we're done with this row group
+        if (!row_group_batch.record_batch_reader)
+        {
+            end_of_row_group();
+            return;
+        }
+
         auto batch = fetchBatch();
         if (!*batch && row_group_batch.prefetch_iterator)
         {
@@ -1072,6 +1176,7 @@ void ParquetBlockInputFormat::decodeOneChunk(size_t row_group_batch_idx, std::un
 
     lock.lock();
 
+    row_group_batch.chunk_sizes.push_back(res.chunk.getNumRows());
     ++row_group_batch.next_chunk_idx;
     ++row_group_batch.num_pending_chunks;
     pending_chunks.push(std::move(res));
@@ -1090,11 +1195,10 @@ void ParquetBlockInputFormat::scheduleMoreWorkIfNeeded(std::optional<size_t> row
 
     if (pool)
     {
-        size_t max_decoding_threads = parser_group->getParsingThreadsPerReader();
+        size_t max_decoding_threads = parser_shared_resources->getParsingThreadsPerReader();
         while (row_group_batches_started - row_group_batches_completed < max_decoding_threads &&
-               row_group_batches_started < row_group_batches.size())
+                row_group_batches_started < row_group_batches.size())
             scheduleRowGroup(row_group_batches_started++);
-
         if (row_group_batch_touched)
         {
             auto & row_group = row_group_batches[*row_group_batch_touched];
@@ -1113,7 +1217,21 @@ Chunk ParquetBlockInputFormat::read()
         return {};
 
     if (need_only_count)
-        return getChunkForCount(row_group_batches[row_group_batches_completed++].total_rows);
+    {
+        auto chunk = getChunkForCount(row_group_batches[row_group_batches_completed].total_rows);
+        size_t total_rows_before = std::accumulate(
+                                       row_group_batches_skipped_rows.begin(),
+                                       row_group_batches_skipped_rows.begin() + row_group_batches_completed + 1,
+                                       0ull)
+            + std::accumulate(row_group_batches.begin(),
+                              row_group_batches.begin() + row_group_batches_completed,
+                              0ull,
+                              [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; });
+
+        row_group_batches_completed++;
+        chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
+        return chunk;
+    }
 
     std::unique_lock lock(mutex);
 
@@ -1122,7 +1240,9 @@ Chunk ParquetBlockInputFormat::read()
         if (background_exception)
         {
             is_stopped = true;
-            std::rethrow_exception(background_exception);
+            /// This exception can be mutated (addMessage()) in IInputFormat::generate(),
+            /// so we need to copy it (copyMutableException()) to avoid sharing mutable exception between multiple threads
+            std::rethrow_exception(copyMutableException(background_exception));
         }
         if (is_stopped)
             return {};
@@ -1145,6 +1265,22 @@ Chunk ParquetBlockInputFormat::read()
 
             previous_block_missing_values = std::move(chunk.block_missing_values);
             previous_approx_bytes_read_for_chunk = chunk.approx_original_chunk_size;
+
+
+            size_t total_rows_before = std::accumulate(
+                                           row_group_batches_skipped_rows.begin(),
+                                           row_group_batches_skipped_rows.begin() + chunk.row_group_batch_idx + 1,
+                                           0ull)
+                + std::accumulate(row_group_batches.begin(),
+                                  row_group_batches.begin() + chunk.row_group_batch_idx,
+                                  0ull,
+                                  [](size_t sum, const RowGroupBatchState & batch) { return sum + batch.total_rows; })
+
+                + std::accumulate(row_group.chunk_sizes.begin(), row_group.chunk_sizes.begin() + chunk.chunk_idx, 0ull);
+
+
+            chunk.chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(total_rows_before));
+
             return std::move(chunk.chunk);
         }
 
@@ -1158,6 +1294,11 @@ Chunk ParquetBlockInputFormat::read()
     }
 }
 
+void ParquetBlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
+{
+    buckets_to_read = std::static_pointer_cast<ParquetFileBucketInfo>(buckets_to_read_);
+}
+
 void ParquetBlockInputFormat::resetParser()
 {
     is_stopped = true;
@@ -1168,6 +1309,7 @@ void ParquetBlockInputFormat::resetParser()
     metadata.reset();
     column_indices.clear();
     row_group_batches.clear();
+    row_group_batches_skipped_rows.clear();
     while (!pending_chunks.empty())
         pending_chunks.pop();
     row_group_batches_completed = 0;
@@ -1186,12 +1328,12 @@ const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
     return &previous_block_missing_values;
 }
 
-ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+ArrowParquetSchemaReader::ArrowParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
     : ISchemaReader(in_), format_settings(format_settings_)
 {
 }
 
-void ParquetSchemaReader::initializeIfNeeded()
+void ArrowParquetSchemaReader::initializeIfNeeded()
 {
     if (arrow_file)
         return;
@@ -1201,7 +1343,7 @@ void ParquetSchemaReader::initializeIfNeeded()
     metadata = parquet::ReadMetaData(arrow_file);
 }
 
-NamesAndTypesList ParquetSchemaReader::readSchema()
+NamesAndTypesList ArrowParquetSchemaReader::readSchema()
 {
     initializeIfNeeded();
 
@@ -1247,42 +1389,113 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> ParquetSchemaReader::readNumberOrRows()
+std::optional<size_t> ArrowParquetSchemaReader::readNumberOrRows()
 {
     initializeIfNeeded();
     return metadata->num_rows();
 }
 
+std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_)
+{
+    std::atomic<int> is_stopped = false;
+    auto arrow_file = asArrowFile(buf, format_settings_, is_stopped, "Parquet", PARQUET_MAGIC_BYTES, /* avoid_buffering */ true, nullptr);
+    auto metadata = parquet::ReadMetaData(arrow_file);
+    std::vector<size_t> bucket_sizes;
+    for (int i = 0; i < metadata->num_row_groups(); ++i)
+        bucket_sizes.push_back(metadata->RowGroup(i)->total_byte_size());
+
+    std::vector<std::vector<size_t>> buckets;
+    size_t current_weight = 0;
+    for (size_t i = 0; i < bucket_sizes.size(); ++i)
+    {
+        if (current_weight + bucket_sizes[i] <= bucket_size)
+        {
+            if (buckets.empty())
+                buckets.emplace_back();
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+        else
+        {
+            current_weight = 0;
+            buckets.push_back({});
+            buckets.back().push_back(i);
+            current_weight += bucket_sizes[i];
+        }
+    }
+
+    std::vector<FileBucketInfoPtr> result;
+    for (const auto & bucket : buckets)
+    {
+        result.push_back(std::make_shared<ParquetFileBucketInfo>(bucket));
+    }
+    return result;
+}
+
 void registerInputFormatParquet(FormatFactory & factory)
 {
+    factory.registerFileBucketInfo(
+        "Parquet",
+        []
+        {
+            return std::make_shared<ParquetFileBucketInfo>();
+        }
+    );
+
     factory.registerRandomAccessInputFormat(
-            "Parquet",
-            [](ReadBuffer & buf,
-               const Block & sample,
-               const FormatSettings & settings,
-               const ReadSettings & read_settings,
-               bool is_remote_fs,
-               FormatParserGroupPtr parser_group) -> InputFormatPtr
+        "Parquet",
+        [](ReadBuffer & buf,
+           const Block & sample,
+           const FormatSettings & settings,
+           const ReadSettings & read_settings,
+           bool is_remote_fs,
+           FormatParserSharedResourcesPtr parser_shared_resources,
+           FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
+        {
+            size_t min_bytes_for_seek
+                = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            if (settings.parquet.use_native_reader_v3)
             {
-                size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
-                auto ptr = std::make_shared<ParquetBlockInputFormat>(
+                return std::make_shared<ParquetV3BlockInputFormat>(
                     buf,
                     std::make_shared<const Block>(sample),
                     settings,
-                    std::move(parser_group),
+                    std::move(parser_shared_resources),
+                    std::move(format_filter_info),
                     min_bytes_for_seek);
-                return ptr;
-            });
+            }
+            else
+            {
+                return std::make_shared<ParquetBlockInputFormat>(
+                    buf,
+                    std::make_shared<const Block>(sample),
+                    settings,
+                    std::move(parser_shared_resources),
+                    std::move(format_filter_info),
+                    min_bytes_for_seek);
+            }
+        });
     factory.markFormatSupportsSubsetOfColumns("Parquet");
+    factory.registerPrewhereSupportChecker("Parquet", [](const FormatSettings & settings)
+    {
+        return settings.parquet.use_native_reader_v3;
+    });
 }
 
 void registerParquetSchemaReader(FormatFactory & factory)
 {
+    factory.registerSplitter("Parquet", []
+        {
+            return std::make_shared<ParquetBucketSplitter>();
+        });
     factory.registerSchemaReader(
         "Parquet",
-        [](ReadBuffer & buf, const FormatSettings & settings)
+        [](ReadBuffer & buf, const FormatSettings & settings) -> SchemaReaderPtr
         {
-            return std::make_shared<ParquetSchemaReader>(buf, settings);
+            if (settings.parquet.use_native_reader_v3)
+                return std::make_shared<NativeParquetSchemaReader>(buf, settings);
+            else
+                return std::make_shared<ArrowParquetSchemaReader>(buf, settings);
         }
         );
 
@@ -1291,9 +1504,10 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={}",
+                "schema_inference_make_columns_nullable={};enable_json_parsing={};use_native_reader_v3={}",
                 settings.schema_inference_make_columns_nullable,
-                settings.parquet.enable_json_parsing);
+                settings.parquet.enable_json_parsing,
+                settings.parquet.use_native_reader_v3);
         });
 }
 

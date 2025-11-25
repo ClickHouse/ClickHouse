@@ -6,6 +6,7 @@
 
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Storages/ObjectStorage/HDFS/ReadBufferFromHDFS.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 
@@ -52,14 +53,12 @@ std::string HDFSObjectStorage::extractObjectKeyFromURL(const StoredObject & obje
     return path;
 }
 
-ObjectStorageKey
-HDFSObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKeyGeneratorPtr HDFSObjectStorage::createKeyGenerator() const
 {
     initializeHDFSFS();
     /// what ever data_source_description.description value is, consider that key as relative key
     chassert(data_directory.starts_with("/"));
-    return ObjectStorageKey::createAsRelative(
-        fs::path(url_without_path) / data_directory.substr(1), getRandomASCIIString(32));
+    return createObjectStorageKeyGeneratorByPrefix(fs::path(url_without_path) / data_directory.substr(1));
 }
 
 bool HDFSObjectStorage::exists(const StoredObject & object) const
@@ -75,7 +74,6 @@ bool HDFSObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
     std::optional<size_t>) const
 {
     initializeHDFSFS();
@@ -151,13 +149,27 @@ void HDFSObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
         removeObjectIfExists(object);
 }
 
-ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path) const
+ObjectMetadata HDFSObjectStorage::getObjectMetadata(const std::string & path, bool) const
+{
+    auto metadata = tryGetObjectMetadata(path, /*with_tags=*/ false);
+    if (!metadata.has_value())
+        throw Exception(ErrorCodes::HDFS_ERROR,
+                        "{} does not exist. Error: {}", path, hdfsGetLastError());
+    return metadata.value();
+}
+
+std::optional<ObjectMetadata> HDFSObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
 {
     initializeHDFSFS();
     auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, hdfs_fs.get(), path.data());
     if (!file_info)
+    {
+        if (errno == ENOENT)
+            return {};
+
         throw Exception(ErrorCodes::HDFS_ERROR,
                         "Cannot get file info for: {}. Error: {}", path, hdfsGetLastError());
+    }
 
     ObjectMetadata metadata;
     metadata.size_bytes = static_cast<size_t>(file_info->mSize);
@@ -209,6 +221,7 @@ void HDFSObjectStorage::listObjects(const std::string & path, RelativePathsWithM
                     static_cast<uint64_t>(ls.file_info[i].mSize),
                     Poco::Timestamp::fromEpochTime(ls.file_info[i].mLastMod),
                     "",
+                    {},
                     {}}));
         }
 

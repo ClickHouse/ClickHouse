@@ -120,9 +120,6 @@ void ISource::work()
         else
             finished = true;
 
-        if (isCancelled())
-            finished = true;
-
         if (finished)
             onFinish();
     }
@@ -152,4 +149,3 @@ std::optional<Chunk> ISource::tryGenerate()
 }
 
 }
-

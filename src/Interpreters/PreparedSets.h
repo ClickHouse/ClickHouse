@@ -56,6 +56,8 @@ public:
     virtual DataTypes getTypes() const = 0;
     /// If possible, return set with stored elements useful for PK analysis.
     virtual SetPtr buildOrderedSetInplace(const ContextPtr & context) = 0;
+    /// When the data in the Set comes from a subquery or the table is considered non-deterministic.
+    virtual bool isDeterministic() const { return true; }
 
     using Hash = CityHash_v1_0_2::uint128;
     virtual Hash getHash() const = 0;
@@ -75,6 +77,7 @@ public:
     SetPtr get() const override;
     DataTypes getTypes() const override;
     SetPtr buildOrderedSetInplace(const ContextPtr &) override;
+    bool isDeterministic() const override { return false; }
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
 
@@ -151,6 +154,7 @@ public:
     Hash getHash() const override;
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
+    bool isDeterministic() const override { return false; }
 
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,

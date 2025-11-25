@@ -1,6 +1,5 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
-#include <Common/Config/ConfigHelper.h>
 
 #include <boost/core/noncopyable.hpp>
 #include <chrono>
@@ -14,6 +13,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int SUPPORT_IS_DISABLED;
 };
 
 #if USE_LIBFIU
@@ -46,6 +46,8 @@ static struct InitFiu
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
     ONCE(smt_commit_write_zk_fail_before_op) \
+    PAUSEABLE_ONCE(smt_commit_tweaks_gate_open) \
+    PAUSEABLE_ONCE(smt_commit_tweaks_gate_close) \
     ONCE(smt_commit_merge_change_version_before_op) \
     ONCE(smt_merge_mutate_intention_freeze_in_destructor) \
     ONCE(smt_add_part_sleep_after_add_before_commit) \
@@ -60,8 +62,15 @@ static struct InitFiu
     ONCE(smt_merge_task_sleep_in_prepare) \
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
+    ONCE(s3_read_buffer_throw_expired_token) \
+    ONCE(distributed_cache_fail_request_in_the_middle_of_request) \
+    ONCE(object_storage_queue_fail_commit_once) \
+    REGULAR(distributed_cache_fail_connect_non_retriable) \
+    REGULAR(distributed_cache_fail_connect_retriable) \
     REGULAR(object_storage_queue_fail_commit) \
+    REGULAR(object_storage_queue_fail_startup) \
     REGULAR(smt_dont_merge_first_part) \
+    REGULAR(smt_mutate_only_second_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
@@ -74,14 +83,15 @@ static struct InitFiu
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
     PAUSEABLE_ONCE(finish_clean_quorum_failed_parts) \
+    PAUSEABLE_ONCE(smt_wait_next_mutation) \
     PAUSEABLE(dummy_pausable_failpoint) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(receive_timeout_on_table_status_response) \
+    ONCE(delta_kernel_fail_literal_visitor) \
     REGULAR(keepermap_fail_drop_data) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
-    REGULAR(slowdown_index_analysis) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
     REGULAR(zero_copy_lock_zk_fail_before_op) \
     REGULAR(zero_copy_lock_zk_fail_after_op) \
@@ -97,9 +107,22 @@ static struct InitFiu
     REGULAR(plain_object_storage_copy_fail_on_file_move) \
     REGULAR(database_replicated_delay_recovery) \
     REGULAR(database_replicated_delay_entry_execution) \
+    REGULAR(remove_merge_tree_part_delay) \
     REGULAR(plain_object_storage_copy_temp_source_file_fail_on_file_move) \
     REGULAR(plain_object_storage_copy_temp_target_file_fail_on_file_move) \
     REGULAR(output_format_sleep_on_progress) \
+    REGULAR(slowdown_parallel_replicas_local_plan_read) \
+    ONCE(iceberg_writes_cleanup) \
+    ONCE(backup_add_empty_memory_table) \
+    REGULAR(refresh_task_stop_racing_for_running_refresh) \
+    REGULAR(sleep_in_logs_flush) \
+    ONCE(smt_commit_exception_before_op) \
+    ONCE(disk_object_storage_fail_commit_metadata_transaction) \
+    ONCE(database_replicated_drop_before_removing_keeper_failed) \
+    ONCE(database_replicated_drop_after_removing_keeper_failed) \
+    PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(rmt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(rmt_merge_selecting_task_pause_when_scheduled)
 
 
 namespace FailPoints
@@ -108,6 +131,8 @@ namespace FailPoints
 APPLY_FOR_FAILPOINTS(M, M, M, M)
 #undef M
 }
+
+#if USE_LIBFIU
 
 std::unordered_map<String, std::shared_ptr<FailPointChannel>> FailPointInjection::fail_point_wait_channels;
 std::mutex FailPointInjection::mu;
@@ -175,7 +200,6 @@ void FailPointInjection::pauseFailPoint(const String & fail_point_name)
 
 void FailPointInjection::enableFailPoint(const String & fail_point_name)
 {
-#if USE_LIBFIU
 #define SUB_M(NAME, flags, pause)                                                                               \
     if (fail_point_name == FailPoints::NAME)                                                                    \
     {                                                                                                           \
@@ -199,7 +223,6 @@ void FailPointInjection::enableFailPoint(const String & fail_point_name)
 #undef PAUSEABLE_ONCE
 #undef PAUSEABLE
 
-#endif
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
 }
 
@@ -228,6 +251,28 @@ void FailPointInjection::wait(const String & fail_point_name)
     ptr->wait();
 }
 
+#else // USE_LIBFIU
+
+void FailPointInjection::pauseFailPoint(const String &)
+{
+}
+
+void FailPointInjection::enableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::enablePauseFailPoint(const String &, UInt64)
+{
+}
+
+void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::wait(const String &)
+{
+}
+
 void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfiguration & config)
 {
     String root_key = "fail_points_active";
@@ -235,12 +280,10 @@ void FailPointInjection::enableFromGlobalConfig(const Poco::Util::AbstractConfig
     Poco::Util::AbstractConfiguration::Keys fail_point_names;
     config.keys(root_key, fail_point_names);
 
-    for (const auto & fail_point_name : fail_point_names)
-    {
-        if (ConfigHelper::getBool(config, root_key + "." + fail_point_name))
-            FailPointInjection::enableFailPoint(fail_point_name);
-    }
+    if (!fail_point_names.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "FIU is not enabled");
 }
 
+#endif // USE_LIBFIU
 
 }

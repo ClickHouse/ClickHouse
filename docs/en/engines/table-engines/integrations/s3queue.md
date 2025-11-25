@@ -5,7 +5,8 @@ description: 'This engine provides integration with the Amazon S3 ecosystem and 
 sidebar_label: 'S3Queue'
 sidebar_position: 181
 slug: /engines/table-engines/integrations/s3queue
-title: 'S3Queue Table Engine'
+title: 'S3Queue table engine'
+doc_type: 'reference'
 ---
 
 import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
@@ -99,13 +100,109 @@ Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no
 
 ### `after_processing` {#after_processing}
 
-Delete or keep file after successful processing.
+How to handle file after successful processing.
+
 Possible values:
 
 - keep.
 - delete.
+- move.
+- tag.
 
 Default value: `keep`.
+
+Move requires additional settings. In case of a move within the same bucket, a new path prefix must be provided as `after_processing_move_prefix`.
+
+Move to another S3 bucket requires the target bucket URI as `after_processing_move_uri`, S3 credentials as `after_processing_move_access_key_id` and `after_processing_move_secret_access_key`.
+
+Example:
+
+```sql
+CREATE TABLE s3queue_engine_table (name String, value UInt32)
+ENGINE=S3Queue('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/*', 'CSV', 'gzip')
+SETTINGS
+    mode = 'unordered',
+    after_processing = 'move',
+    after_processing_retries = 20,
+    after_processing_move_prefix = 'dst_prefix',
+    after_processing_move_uri = 'https://clickhouse-public-datasets.s3.amazonaws.com/dst-bucket',
+    after_processing_move_access_key_id = 'test',
+    after_processing_move_secret_access_key = 'test';
+```
+
+Move from an Azure container to another Azure container requires the Blob Storage connection string as `after_processing_move_connection_string` and the container name as `after_processing_move_container`. See [the AzureQueue settings](../../../engines/table-engines/integrations/azure-queue.md#settings).
+
+Tagging requires tag key and value provided as `after_processing_tag_key` and `after_processing_tag_value`.
+
+### `after_processing_retries` {#after_processing_retries}
+
+Number of retries for the requested after-processing action, before giving up.
+
+Possible values:
+
+- Non-negative integer.
+
+Default value: `10`.
+
+### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
+
+Access Key ID for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_prefix` {#after_processing_move_prefix}
+
+Path prefix to move successfully processed files to. It is applicable in both cases, move within the same and to another bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
+
+Secret Access Key for S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_move_uri` {#after_processing_move_uri}
+
+URI of S3 bucket to move successfully processed files to, if the destination is another S3 bucket.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_tag_key` {#after_processing_tag_key}
+
+Tag key to put tagging on successfully processed files, if `after_processing='tag'`.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
+
+### `after_processing_tag_value` {#after_processing_tag_value}
+
+Tag value to put tagging on successfully processed files, if `after_processing='tag'`.
+
+Possible values:
+
+- String.
+
+Default value: empty string.
 
 ### `keeper_path` {#keeper_path}
 
@@ -216,6 +313,16 @@ Default value: `30000`.
 
 For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Queue table, each working with the same metadata directory in keeper, the value of `s3queue_buckets` needs to be equal to at least the number of replicas. If `s3queue_processing_threads` setting is used as well, it makes sense to increase the value of `s3queue_buckets` setting even further, as it defines the actual parallelism of `S3Queue` processing.
 
+### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
+
+By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session.
+
+### `persistent_processing_nodes_ttl_seconds` {#persistent_processing_nodes_ttl_seconds}
+
+In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up.
+
+Default value: `3600` (1 hour).
+
 ## S3-related settings {#s3-settings}
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
@@ -225,7 +332,7 @@ Engine supports all s3 related settings. For more information about S3 settings 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/data-sources/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -235,10 +342,10 @@ CREATE TABLE s3_table
     value UInt64
 )
 ENGINE = S3Queue(
-                'https://<your_bucket>/*.csv', 
+                'https://<your_bucket>/*.csv',
                 extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/<your_role>')
                 ,'CSV')
-SETTINGS 
+SETTINGS
     ...
 ```
 
@@ -287,7 +394,6 @@ Example:
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-
 ## Wildcards in path {#wildcards-in-path}
 
 `path` argument can specify multiple files using bash-like wildcards. For being processed file should exist and match to the whole path pattern. Listing of files is determined during `SELECT` (not at `CREATE` moment).
@@ -306,12 +412,11 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 - an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
-- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server;
+- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is not true since version 25.8 if `use_persistent_processing_nodes = 1`.
 
 - abnormal server termination.
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
-
 
 ## Introspection {#introspection}
 

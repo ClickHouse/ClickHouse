@@ -4,6 +4,7 @@ description: 'Computes quantile of a numeric data sequence using linear interpol
 sidebar_position: 176
 slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
 title: 'quantileExactWeightedInterpolated'
+doc_type: 'reference'
 ---
 
 # quantileExactWeightedInterpolated
@@ -22,8 +23,6 @@ SELECT
     quantile(0.99)(number),
     quantileInterpolatedWeighted(0.99)(number, 1)
 FROM numbers(9)
-
-
 ┌─quantileExactWeightedInterpolated(0.99)(number, 1)─┬─quantile(0.99)(number)─┬─quantileInterpolatedWeighted(0.99)(number, 1)─┐
 │                                               7.92 │                   7.92 │                                             8 │
 └────────────────────────────────────────────────────┴────────────────────────┴───────────────────────────────────────────────┘

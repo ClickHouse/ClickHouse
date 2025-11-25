@@ -4,7 +4,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Disks/TemporaryFileOnDisk.h>
 
 
 namespace ProfileEvents
@@ -40,7 +39,7 @@ void updateProfileEvents(TemporaryDataBuffer::Stat stat)
 
 TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & block)
 {
-    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data.get());
+    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(block.cloneEmpty()), tmp_data);
     stream_holder->write(block);
 
     auto stat = stream_holder.finishWriting();
@@ -52,7 +51,7 @@ TemporaryBlockStreamHolder flushBlockToFile(const TemporaryDataOnDiskScopePtr & 
 
 TemporaryBlockStreamHolder flushToFile(const TemporaryDataOnDiskScopePtr & tmp_data, const Block & header, QueryPipelineBuilder pipeline)
 {
-    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(header), tmp_data.get());
+    TemporaryBlockStreamHolder stream_holder(std::make_shared<const Block>(header), tmp_data);
 
     auto exec_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
     PullingPipelineExecutor executor(exec_pipeline);
@@ -176,6 +175,7 @@ TemporaryBlockStreamHolder SortedBlocksWriter::flush(const BlocksList & blocks) 
             sort_description,
             rows_in_block,
             /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns=*/std::nullopt,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
@@ -268,6 +268,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
                             sort_description,
                             rows_in_block,
                             /*max_block_size_bytes=*/0,
+                            /*max_dynamic_subcolumns=*/std::nullopt,
                             SortingQueueStrategy::Default);
 
                         pipeline.addTransform(std::move(transform));
@@ -303,6 +304,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
             sort_description,
             rows_in_block,
             /*max_block_size_bytes=*/0,
+            /*max_dynamic_subcolumns=*/std::nullopt,
             SortingQueueStrategy::Default);
 
         pipeline.addTransform(std::move(transform));
@@ -375,6 +377,7 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
                 sort_description,
                 num_rows,
                 /*max_block_size_bytes=*/0,
+                /*max_dynamic_subcolumns=*/std::nullopt,
                 SortingQueueStrategy::Default);
 
             builder.addTransform(std::move(transform));

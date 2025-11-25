@@ -1,8 +1,9 @@
-#include <gtest/gtest.h>
 #include "config.h"
 
 #if USE_DELTA_KERNEL_RS
 
+#include <base/scope_guard.h>
+#include <gtest/gtest.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Common/logger_useful.h>
@@ -43,17 +44,19 @@ public:
 
 TEST_F(DeltaKernelTest, ExpressionVisitor)
 {
-    auto * expression = ffi::get_testing_kernel_expression();
+    auto * predicate = ffi::get_testing_kernel_predicate();
+    SCOPE_EXIT(ffi::free_kernel_predicate(predicate));
     try
     {
         auto dag = DeltaLake::visitExpression(
-            expression,
+            predicate,
+            DB::NamesAndTypesList({DB::NameAndTypePair("col", std::make_shared<DB::DataTypeString>())}),
             DB::NamesAndTypesList({DB::NameAndTypePair("col", std::make_shared<DB::DataTypeString>())}));
     }
     catch (DB::Exception & e)
     {
         const std::string & message = e.message();
-        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method DIVIDE not implemented")
+        if (e.code() == DB::ErrorCodes::NOT_IMPLEMENTED && message == "Method IN not implemented")
         {
             /// Implementation is not full at this moment, but
             /// there is a lot of staff before we get to IN method,

@@ -1,9 +1,10 @@
 #include <DataTypes/EnumValues.h>
 #include <boost/algorithm/string.hpp>
 #include <base/sort.h>
-#include <Common/CurrentThread.h>
+#include <Common/HashTable/HashMap.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 
 
@@ -18,8 +19,12 @@ namespace ErrorCodes
 }
 
 template <typename T>
+class EnumValues<T>::NameToValueMap : public HashMap<StringRef, T, StringRefHash> {};
+
+template <typename T>
 EnumValues<T>::EnumValues(const Values & values_)
     : values(values_)
+    , name_to_value_map(std::make_unique<NameToValueMap>())
 {
     if (values.empty())
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "DataTypeEnum enumeration cannot be empty");
@@ -33,11 +38,14 @@ EnumValues<T>::EnumValues(const Values & values_)
 }
 
 template <typename T>
+EnumValues<T>::~EnumValues() = default;
+
+template <typename T>
 void EnumValues<T>::fillMaps()
 {
     for (const auto & name_and_value : values)
     {
-        const auto inserted_value = name_to_value_map.insert(
+        const auto inserted_value = name_to_value_map->insert(
             { StringRef{name_and_value.first}, name_and_value.second });
 
         if (!inserted_value.second)
@@ -54,10 +62,20 @@ void EnumValues<T>::fillMaps()
 }
 
 template <typename T>
+EnumValues<T>::ValueToNameMap::const_iterator EnumValues<T>::findByValue(const T & value) const
+{
+    auto it = value_to_name_map.find(value);
+    if (it == value_to_name_map.end())
+        throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+
+    return it;
+}
+
+template <typename T>
 T EnumValues<T>::getValue(StringRef field_name) const
 {
     T x;
-    if (auto it = name_to_value_map.find(field_name); it != name_to_value_map.end())
+    if (auto it = name_to_value_map->find(field_name); it != name_to_value_map->end())
     {
         return it->getMapped();
     }
@@ -75,7 +93,7 @@ T EnumValues<T>::getValue(StringRef field_name) const
 template <typename T>
 bool EnumValues<T>::tryGetValue(T & x, StringRef field_name) const
 {
-    if (auto it = name_to_value_map.find(field_name); it != name_to_value_map.end())
+    if (auto it = name_to_value_map->find(field_name); it != name_to_value_map->end())
     {
         x = it->getMapped();
         return true;
@@ -111,6 +129,29 @@ std::unordered_set<T> EnumValues<T>::getSetOfAllValues() const
         result.insert(value.second);
     return result;
 }
+
+template <typename T>
+template <typename TValues>
+bool EnumValues<T>::containsAll(const TValues & rhs_values) const
+{
+    auto check = [&](const auto & value)
+    {
+        auto it = name_to_value_map->find(value.first);
+        /// If we don't have this name, than we have to be sure,
+        /// that this value exists in enum
+        if (it == name_to_value_map->end())
+            return value_to_name_map.count(value.second) > 0;
+
+        /// If we have this name, than it should have the same value
+        return it->value.second == value.second;
+    };
+
+    return std::all_of(rhs_values.begin(), rhs_values.end(), check);
+}
+template bool EnumValues<Int8>::containsAll<EnumValues<Int8>::Values>(const EnumValues<Int8>::Values & rhs_values) const;
+template bool EnumValues<Int8>::containsAll<EnumValues<Int16>::Values>(const EnumValues<Int16>::Values & rhs_values) const;
+template bool EnumValues<Int16>::containsAll<EnumValues<Int8>::Values>(const EnumValues<Int8>::Values & rhs_values) const;
+template bool EnumValues<Int16>::containsAll<EnumValues<Int16>::Values>(const EnumValues<Int16>::Values & rhs_values) const;
 
 template class EnumValues<Int8>;
 template class EnumValues<Int16>;

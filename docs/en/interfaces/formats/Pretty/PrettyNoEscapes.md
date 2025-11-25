@@ -6,6 +6,7 @@ keywords: ['PrettyNoEscapes']
 output_format: true
 slug: /interfaces/formats/PrettyNoEscapes
 title: 'PrettyNoEscapes'
+doc_type: 'reference'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
