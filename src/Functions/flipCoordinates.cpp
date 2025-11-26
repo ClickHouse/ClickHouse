@@ -2,19 +2,18 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/geometry.h>
 #include <Functions/geometryConverters.h>
-
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
