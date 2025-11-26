@@ -4,14 +4,14 @@ description: 'A table engine storing time series, i.e. a set of values associate
 sidebar_label: 'TimeSeries'
 sidebar_position: 60
 slug: /engines/table-engines/special/time_series
-title: 'TimeSeries table engine'
+title: 'TimeSeries Engine'
 doc_type: 'reference'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# TimeSeries table engine
+# TimeSeries engine
 
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>

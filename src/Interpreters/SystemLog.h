@@ -37,7 +37,6 @@
     M(ZooKeeperConnectionLog, zookeeper_connection_log, "Contains history of ZooKeeper connections.") \
     M(AggregatedZooKeeperLog, aggregated_zookeeper_log, "Contains statistics (number of operations, latencies, errors) of ZooKeeper operations grouped by session_id, parent_path and operation. Periodically flushed to disk.") \
     M(IcebergMetadataLog,    iceberg_metadata_log, "Contains content of Iceberg metadata files.") \
-    M(DeltaMetadataLog,    delta_lake_metadata_log, "Contains content of Delta metadata files.") \
 
 #define LIST_OF_CLOUD_SYSTEM_LOGS(M) \
     M(DistributedCacheLog, distributed_cache_log, "Contains the history of all interactions with distributed cache.") \
@@ -92,7 +91,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(const std::vector<std::pair<String, String>> & names);
+    void flush(const Strings & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -109,7 +108,7 @@ public:
 private:
     std::vector<ISystemLog *> getAllLogs() const;
 
-    void flushImpl(const std::vector<std::pair<String, String>>  & names, bool should_prepare_tables_anyway, bool ignore_errors);
+    void flushImpl(const Strings & names, bool should_prepare_tables_anyway, bool ignore_errors);
 };
 
 struct SystemLogSettings

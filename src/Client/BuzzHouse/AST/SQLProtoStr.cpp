@@ -494,87 +494,39 @@ CONV_FN(SpecialVal, val)
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT32:
             ret += std::to_string(std::numeric_limits<int32_t>::min());
-            if (val.paren())
-            {
-                ret += "::Int32";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT32:
             ret += std::to_string(std::numeric_limits<int32_t>::max());
-            if (val.paren())
-            {
-                ret += "::Int32";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT64:
             ret += std::to_string(std::numeric_limits<int64_t>::min());
-            if (val.paren())
-            {
-                ret += "::Int64";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT64:
             ret += std::to_string(std::numeric_limits<int64_t>::max());
-            if (val.paren())
-            {
-                ret += "::Int64";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT128:
             ret += "-170141183460469231731687303715884105728";
-            if (val.paren())
-            {
-                ret += "::Int128";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT128:
             ret += "170141183460469231731687303715884105727";
-            if (val.paren())
-            {
-                ret += "::Int128";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_INT256:
             ret += "-57896044618658097711785492504343953926634992332820282019728792003956564819968";
-            if (val.paren())
-            {
-                ret += "::Int256";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_INT256:
             ret += "57896044618658097711785492504343953926634992332820282019728792003956564819967";
-            if (val.paren())
-            {
-                ret += "::Int256";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT32:
             ret += std::to_string(std::numeric_limits<uint32_t>::max());
-            if (val.paren())
-            {
-                ret += "::UInt32";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT64:
             ret += std::to_string(std::numeric_limits<uint64_t>::max());
-            if (val.paren())
-            {
-                ret += "::UInt64";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT128:
             ret += "340282366920938463463374607431768211455";
-            if (val.paren())
-            {
-                ret += "::UInt128";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_UINT256:
             ret += "115792089237316195423570985008687907853269984665640564039457584007913129639935";
-            if (val.paren())
-            {
-                ret += "::UInt256";
-            }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DATE:
             ret += "'1970-01-01'";
@@ -658,34 +610,6 @@ CONV_FN(SpecialVal, val)
             if (val.paren())
             {
                 ret += "::DateTime64";
-            }
-            break;
-        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MIN_DOUBLE:
-            ret += std::to_string(std::numeric_limits<double>::min());
-            if (val.paren())
-            {
-                ret += "::Float64";
-            }
-            break;
-        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_MAX_DOUBLE:
-            ret += std::to_string(std::numeric_limits<double>::max());
-            if (val.paren())
-            {
-                ret += "::Float64";
-            }
-            break;
-        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_DENORM_MIN_DOUBLE:
-            ret += std::to_string(std::numeric_limits<double>::denorm_min());
-            if (val.paren())
-            {
-                ret += "::Float64";
-            }
-            break;
-        case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_LOWEST_DOUBLE:
-            ret += std::to_string(std::numeric_limits<double>::lowest());
-            if (val.paren())
-            {
-                ret += "::Float64";
             }
             break;
         case SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL_CHAR:
@@ -976,33 +900,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             }
         }
         break;
-        case BottomTypeNameType::kQbit: {
-            const QBit & qq = btn.qbit();
-
-            ret += "QBit(";
-            ret += FloatingPoints_Name(qq.subtype());
-            ret += ", ";
-            ret += std::to_string(qq.dimension());
-            ret += ")";
-        }
-        break;
-        case BottomTypeNameType::kGeo:
-            ret += GeoTypes_Name(btn.geo());
-            break;
-        case BottomTypeNameType::kAggr: {
-            const AggregateFunction & af = btn.aggr();
-
-            ret += af.simple() ? "Simple" : "";
-            ret += "AggregateFunction(";
-            ret += SQLFunc_Name(af.aggr()).substr(4);
-            for (int i = 0; i < af.types_size(); i++)
-            {
-                ret += ", ";
-                TopTypeNameToString(ret, quote, af.types(i));
-            }
-            ret += ")";
-        }
-        break;
         default: {
             if (lcard)
             {
@@ -1205,6 +1102,9 @@ CONV_FN_QUOTE(TopTypeName, ttn)
         case TopTypeNameType::kVariant:
             ret += "Variant";
             TupleWithOutColumnNamesToString(ret, quote, ttn.variant());
+            break;
+        case TopTypeNameType::kGeo:
+            ret += GeoTypes_Name(ttn.geo());
             break;
         default:
             ret += "Int";
@@ -2423,7 +2323,7 @@ static void ValuesStatementToString(String & ret, const bool tudf, const ValuesS
 
 CONV_FN(ArrowFlightFunc, afunc)
 {
-    ret += "arrowFlight('";
+    ret += "arrowflight('";
     ret += afunc.address();
     ret += "', '";
     ret += afunc.dataset();
@@ -2706,17 +2606,10 @@ CONV_FN(LimitStatement, ls)
     {
         ret += " WITH TIES";
     }
-    if (ls.has_by_expr() || ls.lall())
+    if (ls.has_limit_by())
     {
         ret += " BY ";
-        if (ls.has_by_expr())
-        {
-            ExprToString(ret, ls.by_expr());
-        }
-        else
-        {
-            ret += "ALL";
-        }
+        ExprToString(ret, ls.limit_by());
     }
 }
 
@@ -2950,11 +2843,6 @@ CONV_FN(IndexParam, ip)
         case IndexParamType::kUnescapedSval:
             ret += ip.unescaped_sval();
             break;
-        case IndexParamType::kKval:
-            ret += ip.kval().key();
-            ret += " = ";
-            ExprToString(ret, ip.kval().value());
-            break;
         default:
             ret += "0";
     }
@@ -3000,9 +2888,6 @@ CONV_FN(DatabaseEngineParam, dep)
             DatabaseToString(ret, dep.disk().database());
             ret += "')";
             break;
-        case DatabaseEngineParamType::kExpr:
-            ExprToString(ret, dep.expr());
-            break;
         default:
             ret += "d0";
     }
@@ -3034,12 +2919,6 @@ CONV_FN(CreateDatabase, create_database)
         ret += "IF NOT EXISTS ";
     }
     DatabaseToString(ret, create_database.database());
-    if (create_database.has_uuid())
-    {
-        ret += " UUID '";
-        ret += create_database.uuid();
-        ret += "'";
-    }
     if (create_database.has_cluster())
     {
         ClusterToString(ret, true, create_database.cluster());
@@ -3499,7 +3378,7 @@ CONV_FN(CreateTable, create_table)
 {
     CreateOrReplaceToString(ret, create_table.create_opt());
     ret += " ";
-    if (create_table.is_temp())
+    if (create_table.create_opt() == CreateReplaceOption::Create && create_table.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -3509,12 +3388,6 @@ CONV_FN(CreateTable, create_table)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_table.est());
-    if (create_table.has_uuid())
-    {
-        ret += " UUID '";
-        ret += create_table.uuid();
-        ret += "'";
-    }
     if (create_table.has_cluster())
     {
         ClusterToString(ret, true, create_table.cluster());
@@ -3903,8 +3776,7 @@ CONV_FN(OptimizeTable, ot)
     }
     if (ot.final())
     {
-        ret += " ";
-        ret += ot.use_force() ? "FORCE" : "FINAL";
+        ret += " FINAL";
     }
     if (ot.has_dedup())
     {
@@ -3982,21 +3854,6 @@ CONV_FN(RefreshableView, rv)
     }
     ret += " RANDOMIZE FOR ";
     RefreshIntervalToString(ret, rv.randomize());
-    if (rv.has_depends())
-    {
-        ret += " DEPENDS ON ";
-        ExprSchemaTableToString(ret, rv.depends().est());
-        for (int i = 0; i < rv.depends().other_est_size(); i++)
-        {
-            ret += ", ";
-            ExprSchemaTableToString(ret, rv.depends().other_est(i));
-        }
-    }
-    if (rv.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, rv.setting_values());
-    }
     if (rv.append())
     {
         ret += " APPEND";
@@ -4011,7 +3868,7 @@ CONV_FN(CreateView, create_view)
 
     CreateOrReplaceToString(ret, create_view.create_opt());
     ret += " ";
-    if (create_view.is_temp())
+    if (create_view.create_opt() == CreateReplaceOption::Create && create_view.is_temp())
     {
         ret += "TEMPORARY ";
     }
@@ -4033,12 +3890,6 @@ CONV_FN(CreateView, create_view)
         ret += "IF NOT EXISTS ";
     }
     ExprSchemaTableToString(ret, create_view.est());
-    if (create_view.has_uuid())
-    {
-        ret += " UUID '";
-        ret += create_view.uuid();
-        ret += "'";
-    }
     if (create_view.has_cluster())
     {
         ClusterToString(ret, true, create_view.cluster());
@@ -4267,12 +4118,6 @@ CONV_FN(CreateDictionary, create_dictionary)
     {
         ClusterToString(ret, true, create_dictionary.cluster());
     }
-    if (create_dictionary.has_uuid())
-    {
-        ret += " UUID '";
-        ret += create_dictionary.uuid();
-        ret += "'";
-    }
     ret += " (";
     DictionaryColumnToString(ret, create_dictionary.col());
     for (int i = 0; i < create_dictionary.other_cols_size(); i++)
@@ -4462,14 +4307,7 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kMatStats:
             ret += "MATERIALIZE STATISTICS ";
-            if (alter.mat_stats().has_cols())
-            {
-                ColumnPathListToString(ret, 0, alter.mat_stats().cols());
-            }
-            else
-            {
-                ret += "ALL";
-            }
+            ColumnPathListToString(ret, 0, alter.mat_stats());
             break;
         case AlterType::kMaterializeIndex:
             ret += "MATERIALIZE INDEX ";
@@ -4639,14 +4477,6 @@ CONV_FN(AlterItem, alter)
             break;
         case AlterType::kRemoveTtl:
             ret += "REMOVE TTL";
-            break;
-        case AlterType::kRewriteParts:
-            ret += "REWRITE PARTS";
-            if (alter.rewrite_parts().has_single_partition())
-            {
-                ret += " IN ";
-                SinglePartitionExprToString(ret, alter.rewrite_parts().single_partition());
-            }
             break;
         case AlterType::kModifyQuery:
             ret += "MODIFY QUERY ";
@@ -4958,6 +4788,9 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kUnloadPk:
             SystemCommandOnCluster(ret, "UNLOAD PRIMARY KEY", cmd, cmd.unload_pk());
             break;
+        case CmdType::kRefreshViews:
+            ret += "REFRESH VIEWS";
+            break;
         case CmdType::kRefreshView:
             ret += "REFRESH VIEW ";
             ExprSchemaTableToString(ret, cmd.refresh_view());
@@ -5056,26 +4889,6 @@ CONV_FN(SystemCommand, cmd)
         case CmdType::kDisableFailpoint:
             ret += "DISABLE FAILPOINT ";
             ret += FailPoint_Name(cmd.disable_failpoint());
-            break;
-        case CmdType::kIcebergMetadataCache:
-            ret += "DROP ICEBERG METADATA CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kReconnectKeeper:
-            ret += "RECONNECT ZOOKEEPER";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropTextIndexDictionaryCache:
-            ret += "DROP TEXT INDEX DICTIONARY CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropTextIndexHeaderCache:
-            ret += "DROP TEXT INDEX HEADER CACHE";
-            can_set_cluster = true;
-            break;
-        case CmdType::kDropTextIndexPostingsCache:
-            ret += "DROP TEXT INDEX POSTINGS CACHE";
-            can_set_cluster = true;
             break;
         default:
             ret += "FLUSH LOGS";
@@ -5274,177 +5087,6 @@ CONV_FN(Kill, kil)
     }
 }
 
-CONV_FN(ShowObject, sh)
-{
-    if (sh.create())
-    {
-        ret += "CREATE ";
-    }
-    if ((sh.sobject() == SQLObject::TABLE || sh.sobject() == SQLObject::VIEW) && sh.is_temp())
-    {
-        ret += "TEMPORARY ";
-    }
-    ret += SQLObject_Name(sh.sobject());
-    ret += " ";
-    SQLObjectNameToString(ret, sh.object());
-}
-
-CONV_FN(ShowTables, sh)
-{
-    if (sh.full())
-    {
-        ret += "FULL ";
-    }
-    if (sh.is_temp())
-    {
-        ret += "TEMPORARY ";
-    }
-    ret += "TABLES";
-    if (sh.has_database())
-    {
-        ret += " FROM ";
-        DatabaseToString(ret, sh.database());
-    }
-}
-
-CONV_FN(ShowDictionaries, sh)
-{
-    ret += "DICTIONARIES";
-    if (sh.has_database())
-    {
-        ret += " FROM ";
-        DatabaseToString(ret, sh.database());
-    }
-}
-
-CONV_FN(ShowColumns, sh)
-{
-    if (sh.extended())
-    {
-        ret += "EXTENDED ";
-    }
-    if (sh.full())
-    {
-        ret += "FULL ";
-    }
-    ret += "COLUMNS FROM ";
-    TableToString(ret, true, sh.est().table());
-    if (sh.est().has_database())
-    {
-        ret += " FROM ";
-        DatabaseToString(ret, sh.est().database());
-    }
-}
-
-CONV_FN(ShowIndex, sh)
-{
-    if (sh.extended())
-    {
-        ret += "EXTENDED ";
-    }
-    ret += ShowIndex_IndexShow_Name(sh.key());
-    ret += " FROM ";
-    TableToString(ret, true, sh.est().table());
-    if (sh.est().has_database())
-    {
-        ret += " FROM ";
-        DatabaseToString(ret, sh.est().database());
-    }
-}
-
-CONV_FN(ShowStatement, sh)
-{
-    ret += "SHOW ";
-    using ShowType = ShowStatement::ShowOneofCase;
-    switch (sh.show_oneof_case())
-    {
-        case ShowType::kObject:
-            ShowObjectToString(ret, sh.object());
-            break;
-        case ShowType::kDatabases:
-            ret += "DATABASES";
-            break;
-        case ShowType::kTables:
-            ShowTablesToString(ret, sh.tables());
-            break;
-        case ShowType::kColumns:
-            ShowColumnsToString(ret, sh.columns());
-            break;
-        case ShowType::kDictionaries:
-            ShowDictionariesToString(ret, sh.dictionaries());
-            break;
-        case ShowType::kIndexes:
-            ShowIndexToString(ret, sh.indexes());
-            break;
-        case ShowType::kProcesslist:
-            ret += "PROCESSLIST";
-            break;
-        case ShowType::kGrants:
-            ret += "GRANTS WITH IMPLICIT";
-            ret += sh.grants() ? " FINAL" : "";
-            break;
-        case ShowType::kUsers:
-            ret += "USERS";
-            break;
-        case ShowType::kRoles:
-            ret += sh.users() ? "CURRENT" : "ENABLED";
-            ret += " ROLES";
-            break;
-        case ShowType::kProfiles:
-            ret += sh.profiles() ? "SETTINGS " : "";
-            ret += "PROFILES";
-            break;
-        case ShowType::kPolicies:
-            ret += "POLICIES ON ";
-            ExprSchemaTableToString(ret, sh.policies());
-            break;
-        case ShowType::kQuotas:
-            ret += "QUOTAS";
-            break;
-        case ShowType::kQuota:
-            ret += sh.quota() ? "CURRENT " : "";
-            ret += "QUOTA";
-            break;
-        case ShowType::kAccess:
-            ret += "ACCESS";
-            break;
-        case ShowType::kCluster:
-            ret += "CLUSTER ";
-            ClusterToString(ret, false, sh.cluster());
-            break;
-        case ShowType::kClusters:
-            ret += "CLUSTERS";
-            break;
-        case ShowType::kSettings:
-            ret += sh.settings() ? "CHANGED " : "";
-            ret += "SETTINGS";
-            break;
-        case ShowType::kSetting:
-            ret += "SETTING ";
-            ret += sh.setting();
-            break;
-        case ShowType::kFilesystemCaches:
-            ret += "FILESYSTEM CACHES";
-            break;
-        case ShowType::kEngines:
-            ret += "ENGINES";
-            break;
-        case ShowType::kFunctions:
-            ret += "FUNCTIONS";
-            break;
-        case ShowType::kMerges:
-            ret += "MERGES";
-            break;
-        default:
-            ret += "DATABASES";
-    }
-    if (sh.has_setting_values())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, sh.setting_values());
-    }
-}
-
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -5519,9 +5161,6 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kKill:
             KillToString(ret, query.kill());
-            break;
-        case QueryType::kShow:
-            ShowStatementToString(ret, query.show());
             break;
         default:
             ret += "SELECT 1";

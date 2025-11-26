@@ -1,9 +1,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -17,10 +15,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -64,11 +61,8 @@ struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 struct L1Label { static constexpr auto name = "1"; };
 struct L2Label { static constexpr auto name = "2"; };
 struct L2SquaredLabel { static constexpr auto name = "2Squared"; };
-struct L2TransposedLabel { static constexpr auto name = "2";};
 struct LinfLabel { static constexpr auto name = "inf"; };
 struct LpLabel { static constexpr auto name = "p"; };
-
-struct L2DistanceTransposedTraits;
 
 constexpr std::string makeFirstLetterUppercase(const std::string & str)
 {
@@ -1192,26 +1186,16 @@ class FunctionLDistance : public ITupleFunction
 {
 public:
     /// constexpr cannot be used due to std::string has not constexpr constructor in this compiler version
-    static inline auto name =  std::string("L") + FuncLabel::name + "Distance" + (std::is_same_v<FuncLabel, L2TransposedLabel> ? "Transposed" : "");
+    static inline auto name = std::string("L") + FuncLabel::name + "Distance";
 
     explicit FunctionLDistance(ContextPtr context_) : ITupleFunction(context_) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionLDistance>(context_); }
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override
-    {
-        if constexpr (std::is_same_v<FuncLabel, L2TransposedLabel>)
-            return true;
-
-        return false;
-    }
-
     size_t getNumberOfArguments() const override
     {
-        if constexpr (std::is_same_v<FuncLabel, L2TransposedLabel>)
-            return 0;
-        else if constexpr (FuncLabel::name[0] == 'p')
+        if constexpr (FuncLabel::name[0] == 'p')
             return 3;
         else
             return 2;
@@ -1264,7 +1248,6 @@ public:
 using FunctionL1Distance = FunctionLDistance<L1Label>;
 using FunctionL2Distance = FunctionLDistance<L2Label>;
 using FunctionL2SquaredDistance = FunctionLDistance<L2SquaredLabel>;
-using FunctionL2DistanceTransposed = FunctionLDistance<L2TransposedLabel>;
 using FunctionLinfDistance = FunctionLDistance<LinfLabel>;
 using FunctionLpDistance = FunctionLDistance<LpLabel>;
 
@@ -1422,8 +1405,6 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return tuple_function->isVariadic(); }
-
     size_t getNumberOfArguments() const override { return tuple_function->getNumberOfArguments(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1432,23 +1413,14 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        /// Since L2DistanceTransposed is a variadic function, we check the number of arguments, as we won't do it later like with others
-        if (std::is_same_v<Traits, L2DistanceTransposedTraits> && arguments.size() < 2)
-            throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION,
-                            "Function {} requires at least 2 arguments, got {}", getName(), arguments.size());
-
-        /// DataTypeFixedString is needed for the optimised L2DistanceTransposed(vec.1, ..., vec.p, qbit_size, ref_vec) calculation
-        bool is_array_or_qbit = checkDataTypes<DataTypeArray>(arguments[0].type.get())
-            || checkDataTypes<DataTypeQBit>(arguments[0].type.get()) || checkDataTypes<DataTypeFixedString>(arguments[0].type.get());
-
-        return (is_array_or_qbit ? array_function : tuple_function)->getReturnTypeImpl(arguments);
+        bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
+        return (is_array ? array_function : tuple_function)->getReturnTypeImpl(arguments);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        bool is_array_or_qbit = checkDataTypes<DataTypeArray>(arguments[0].type.get())
-            || checkDataTypes<DataTypeQBit>(arguments[0].type.get()) || checkDataTypes<DataTypeFixedString>(arguments[0].type.get());
-        return (is_array_or_qbit ? array_function : tuple_function)->executeImpl(arguments, result_type, input_rows_count);
+        bool is_array = checkDataTypes<DataTypeArray>(arguments[0].type.get());
+        return (is_array ? array_function : tuple_function)->executeImpl(arguments, result_type, input_rows_count);
     }
 
 private:
@@ -1467,7 +1439,6 @@ extern FunctionPtr createFunctionArrayLinfNorm(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL1Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2Distance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayL2SquaredDistance(ContextPtr context_);
-extern FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLpDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayLinfDistance(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
@@ -1544,14 +1515,6 @@ struct L2SquaredDistanceTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayL2SquaredDistance;
 };
 
-struct L2DistanceTransposedTraits
-{
-    static constexpr auto name = "L2DistanceTransposed";
-
-    static constexpr auto CreateTupleFunction = FunctionL2DistanceTransposed::create;
-    static constexpr auto CreateArrayFunction = createFunctionArrayL2DistanceTransposed;
-};
-
 struct LpDistanceTraits
 {
     static constexpr auto name = "LpDistance";
@@ -1587,7 +1550,6 @@ using TupleOrArrayFunctionLinfNorm = TupleOrArrayFunction<LinfNormTraits>;
 using TupleOrArrayFunctionL1Distance = TupleOrArrayFunction<L1DistanceTraits>;
 using TupleOrArrayFunctionL2Distance = TupleOrArrayFunction<L2DistanceTraits>;
 using TupleOrArrayFunctionL2SquaredDistance = TupleOrArrayFunction<L2SquaredDistanceTraits>;
-using TupleOrArrayFunctionL2DistanceTransposed = TupleOrArrayFunction<L2DistanceTransposedTraits>;
 using TupleOrArrayFunctionLpDistance = TupleOrArrayFunction<LpDistanceTraits>;
 using TupleOrArrayFunctionLinfDistance = TupleOrArrayFunction<LinfDistanceTraits>;
 using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTraits>;
@@ -2194,38 +2156,6 @@ SELECT L2Distance((1, 2), (2, 3))
 
     factory.registerFunction<TupleOrArrayFunctionL2Distance>(documentation_l2_distance);
 
-    /// L2DistanceTransposed documentation
-    FunctionDocumentation::Description description_l2_distance_transposed = R"(
-Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).    )";
-    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
-    FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
-    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance.", {"Float64"}};
-    FunctionDocumentation::Examples examples_l2_distance_transposed
-        = {{"Basic usage",
-            R"(
-CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
-INSERT INTO qbit VALUES (1, [0, 1]);
-SELECT L2DistanceTransposed(vec, array(1.0, 2.0), 16) FROM qbit;"
-)",
-            R"(
-┌─L2DistanceTransposed([0, 1], [1.0, 2.0], 16)─┐
-│                           1.4142135623730951 │
-└──────────────────────────────────────────────┘
-            )"}};
-    FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
-    FunctionDocumentation::Category category_l2_distance_transposed = FunctionDocumentation::Category::Distance;
-    FunctionDocumentation documentation_l2_distance_transposed
-        = {description_l2_distance_transposed,
-           syntax_l2_distance_transposed,
-           arguments_l2_distance_transposed,
-           returned_value_l2_distance_transposed,
-           examples_l2_distance_transposed,
-           introduced_in_l2_distance_transposed,
-           category_l2_distance_transposed};
-
-    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposed>(documentation_l2_distance_transposed);
-
     /// L2SquaredDistance documentation
     FunctionDocumentation::Description description_l2_squared_distance = R"(
 Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
@@ -2315,7 +2245,6 @@ SELECT LpDistance((1, 2), (2, 3), 3)
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Squared", FunctionL2SquaredDistance::name, FunctionFactory::Case::Insensitive);
-    factory.registerAlias("distanceL2Transposed", FunctionL2DistanceTransposed::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLinf", FunctionLinfDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceLp", FunctionLpDistance::name, FunctionFactory::Case::Insensitive);
 
@@ -2444,7 +2373,7 @@ Calculates the unit vector of a given vector (the elements of the tuple are the 
         FunctionDocumentation::ReturnedValue returned_value_lp_normalize = {"Returns the unit vector.", {"Tuple(Float64)"}};
         FunctionDocumentation::Examples examples_lp_normalize = {
             {
-                "Usage example",
+                "Basic usage",
                 R"(
 SELECT LpNormalize((3, 4), 5)
                 )",

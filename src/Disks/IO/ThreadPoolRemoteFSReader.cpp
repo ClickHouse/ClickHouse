@@ -11,7 +11,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/assert_cast.h>
-#include <Common/setThreadName.h>
 #include "config.h"
 
 #include <future>
@@ -112,7 +111,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
 
     ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderSubmit);
     return scheduleFromThreadPoolUnsafe<Result>(
-        [request, this]() -> Result { return execute(request, /*seek_performed=*/true); }, *pool, ThreadName::REMOTE_FS_READ_THREAD_POOL, request.priority);
+        [request, this]() -> Result { return execute(request, /*seek_performed=*/true); }, *pool, "VFSRead", request.priority);
 }
 
 IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)

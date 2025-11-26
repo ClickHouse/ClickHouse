@@ -217,10 +217,10 @@ buildJoinUsingCondition(const QueryTreeNodePtr & node, JoinOperatorBuildContext 
                 using_column_node.getColumnName(), node->dumpTree());
 
         const auto & result_type = using_column_node.getResultType();
-        auto cast_to_super = [&result_type, &changed_types, &builder_context](auto & dag, const auto & nodes)
+        auto cast_to_super = [&result_type, &changed_types](auto & dag, const auto & nodes)
         {
             auto arg = nodes.at(0);
-            const auto & casted = dag.addCast(*arg, result_type, {}, builder_context.planner_context->getQueryContext());
+            const auto & casted = dag.addCast(*arg, result_type, {});
             changed_types[arg->result_name] = &dag.addAlias(casted, arg->result_name);
             return arg;
         };
@@ -449,7 +449,7 @@ void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_express
     addConditionsToJoinOperator(builder_context, std::move(built_clauses.at(join_expression.get())));
 }
 
-String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
+static String getQueryDisplayLabel(const QueryTreeNodePtr & node, bool display_internal_aliases)
 {
     const auto & internal_alias = node->getAlias();
 
@@ -540,7 +540,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             auto nothing_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
             ColumnWithTypeAndName null_column(nothing_type->createColumnConstWithDefaultValue(1), nothing_type, "NULL");
             JoinActionRef null_action(&actions_dag->addColumn(null_column), build_context.expression_actions);
-            null_action.setSourceRelations(BitSet());
+            null_action.setSourceRelations(BitSet().set(0).set(1));
             build_context.join_operator.expression.push_back(null_action);
         }
     }

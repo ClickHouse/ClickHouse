@@ -9,6 +9,7 @@
 #include <azure/storage/blobs.hpp>
 #include <azure/core/http/curl_transport.hpp>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorageConnectionInfo.h>
 
 namespace Poco
 {
@@ -37,7 +38,7 @@ public:
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
     /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
+    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys) const override;
 
     std::string getName() const override { return "AzureObjectStorage"; }
 
@@ -59,12 +60,6 @@ public:
         const ReadSettings & read_settings,
         std::optional<size_t> read_hint = {}) const override;
 
-    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
-        const StoredObject & object,
-        const ReadSettings & read_settings,
-        size_t max_size_bytes,
-        std::optional<size_t> read_hint = {}) const override;
-
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
         const StoredObject & object,
@@ -77,9 +72,9 @@ public:
 
     void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectMetadata getObjectMetadata(const std::string & path) const override;
 
-    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+    ObjectStorageConnectionInfoPtr getConnectionInfo() const override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
