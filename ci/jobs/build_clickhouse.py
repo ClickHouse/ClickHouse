@@ -160,13 +160,8 @@ def main():
                 f"mkdir -p {build_dir} && git submodule sync && git submodule init"
             )
 
-            def get_command_to_use():
-                if should_use_sparse_checkout_of_submodules(build_type):
-                    return "contrib/update-submodules.sh --max-procs 10"
-                return "git config --file .gitmodules --null --get-regexp path | sed -z 's|.*\\n||' | xargs --max-procs=10 --null --no-run-if-empty --max-args=1 git submodule update --depth=1 --single-branch"
-
             res = res and Shell.check(
-                get_command_to_use(),
+                "contrib/update-submodules.sh --max-procs 10",
                 retries=3,
             )
             return res

@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
@@ -44,19 +45,14 @@ std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value,
     if (!data_type->isValueRepresentedByNumber())
         return {};
 
-    Field value_converted;
-    if (isInteger(data_type) && !isBool(data_type))
-        /// For case val_int32 < 10.5 or val_int32 < '10.5' we should convert 10.5 to Float64.
-        value_converted = convertFieldToType(value, DataTypeFloat64());
-    else
-        /// We should convert value to the real column data type and then translate it to Float64.
-        /// For example for expression col_date > '2024-08-07', if we directly convert '2024-08-07' to Float64, we will get null.
-        value_converted = convertFieldToType(value, *data_type);
+    auto column = data_type->createColumn();
+    column->insert(value);
+    ColumnsWithTypeAndName arguments({ColumnWithTypeAndName(std::move(column), data_type, "stats_const")});
 
-    if (value_converted.isNull())
-        return {};
-
-    return applyVisitor(FieldVisitorConvertToNumber<Float64>(), value_converted);
+    auto cast_resolver = FunctionFactory::instance().get("toFloat64", nullptr);
+    auto cast_function = cast_resolver->build(arguments);
+    ColumnPtr result = cast_function->execute(arguments, std::make_shared<DataTypeFloat64>(), 1, false);
+    return result->getFloat64(0);
 }
 
 IStatistics::IStatistics(const SingleStatisticsDescription & stat_)

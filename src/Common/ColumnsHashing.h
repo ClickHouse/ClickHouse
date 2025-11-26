@@ -372,7 +372,7 @@ struct HashMethodSerialized
     bool use_batch_serialize = false;
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
-    std::vector<StringRef> serialized_keys;
+    std::vector<std::string_view> serialized_keys;
 
     HashMethodSerialized(const ColumnRawPtrs & key_columns_, const Sizes & /*key_sizes*/, const HashMethodContextPtr & context)
         : key_columns(key_columns_), keys_size(key_columns_.size())
@@ -422,8 +422,7 @@ struct HashMethodSerialized
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {
                     memories[i] = memory;
-                    serialized_keys[i].data = memory;
-                    serialized_keys[i].size = row_sizes[i];
+                    serialized_keys[i] = std::string_view(memory, row_sizes[i]);
 
                     memory += row_sizes[i];
                 }
@@ -468,7 +467,7 @@ struct HashMethodSerialized
         {
             std::unique_ptr<char[]> holder = std::make_unique<char[]>(row_sizes[row]);
             char * memory = holder.get();
-            StringRef key(memory, row_sizes[row]);
+            std::string_view key(memory, row_sizes[row]);
             for (size_t j = 0; j < keys_size; ++j)
             {
                 if constexpr (nullable)
@@ -490,7 +489,7 @@ struct HashMethodSerialized
 
             size_t sum_size = 0;
             for (size_t j = 0; j < keys_size; ++j)
-                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j], &serialization_settings).size;
+                sum_size += key_columns[j]->serializeValueIntoArenaWithNull(row, pool, begin, null_maps[j], &serialization_settings).size();
 
             return SerializedKeyHolder{{begin, sum_size}, pool};
         }

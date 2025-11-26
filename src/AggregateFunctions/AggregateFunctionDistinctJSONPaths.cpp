@@ -52,7 +52,7 @@ struct AggregateFunctionDistinctJSONPathsData
         const size_t start = shared_data_offsets[static_cast<ssize_t>(row_num) - 1];
         const size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
         for (size_t i = start; i != end; ++i)
-            data.insert(shared_data_paths->getDataAt(i).toString());
+            data.insert(std::string{shared_data_paths->getDataAt(i)});
     }
 
     void addWholeColumn(const ColumnObject & column, const std::unordered_map<String, String> &)
@@ -70,7 +70,7 @@ struct AggregateFunctionDistinctJSONPathsData
         /// Iterate over all paths in shared data.
         const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_paths->size(); ++i)
-            data.insert(shared_data_paths->getDataAt(i).toString());
+            data.insert(std::string{shared_data_paths->getDataAt(i)});
     }
 
     void merge(const AggregateFunctionDistinctJSONPathsData & other)
@@ -141,9 +141,9 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         const size_t end = shared_data_offsets[static_cast<ssize_t>(row_num)];
         for (size_t i = start; i != end; ++i)
         {
-            auto path = shared_data_paths->getDataAt(i).toString();
+            std::string path{shared_data_paths->getDataAt(i)};
             auto value = shared_data_values->getDataAt(i);
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value.data(), value.size());
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
             chassert(!isNothing(type));
@@ -167,9 +167,9 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_paths->size(); ++i)
         {
-            auto path = shared_data_paths->getDataAt(i).toString();
+            std::string path{shared_data_paths->getDataAt(i)};
             auto value = shared_data_values->getDataAt(i);
-            ReadBufferFromMemory buf(value.data, value.size);
+            ReadBufferFromMemory buf(value.data(), value.size());
             auto type = decodeDataType(buf);
             /// We should not have Nulls here but let's check just in case.
             chassert(!isNothing(type));

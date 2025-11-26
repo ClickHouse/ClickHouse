@@ -142,10 +142,10 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                StringRef str_ref = str_column->getDataAt(i);
+                std::string_view str_ref = str_column->getDataAt(i);
                 Int64 count = count_column->getInt(i);
 
-                StringRef res_ref;
+                std::string_view res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
@@ -175,9 +175,9 @@ namespace
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                StringRef str_ref = str_column->getDataAt(i);
+                std::string_view str_ref = str_column->getDataAt(i);
 
-                StringRef res_ref;
+                std::string_view res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
@@ -205,12 +205,12 @@ namespace
             std::unique_ptr<PositionCaseSensitiveUTF8::SearcherInBigHaystack> searcher
                 = !is_utf8 || all_ascii ? nullptr : std::make_unique<PositionCaseSensitiveUTF8::SearcherInBigHaystack>(delim.data(), delim.size());
 
-            StringRef str_ref{str.data(), str.size()};
+            std::string_view str_ref{str.data(), str.size()};
             for (size_t i = 0; i < rows; ++i)
             {
                 Int64 count = count_column->getInt(i);
 
-                StringRef res_ref;
+                std::string_view res_ref;
                 if constexpr (!is_utf8)
                     res_ref = substringIndex(str_ref, delim[0], count);
                 else if (all_ascii)
@@ -223,28 +223,31 @@ namespace
         }
 
         template <bool padded>
-        static void appendToResultColumn(const StringRef & res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
+        static void appendToResultColumn(std::string_view res_ref, ColumnString::Chars & res_data, ColumnString::Offsets & res_offsets)
         {
             size_t res_offset = res_data.size();
-            res_data.resize(res_offset + res_ref.size);
+            if (!res_ref.empty())
+            {
+                res_data.resize(res_offset + res_ref.size());
+                if constexpr (padded)
+                    memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data(), res_ref.size());
+                else
+                    memcpy(&res_data[res_offset], res_ref.data(), res_ref.size());
 
-            if constexpr (padded)
-                memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], res_ref.data, res_ref.size);
-            else
-                memcpy(&res_data[res_offset], res_ref.data, res_ref.size);
+                res_offset += res_ref.size();
+            }
 
-            res_offset += res_ref.size;
             res_offsets.emplace_back(res_offset);
         }
 
-        static StringRef substringIndexUTF8(
-            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, const StringRef & str_ref, const String & delim, Int64 count)
+        static std::string_view substringIndexUTF8(
+            const PositionCaseSensitiveUTF8::SearcherInBigHaystack * searcher, std::string_view str_ref, const String & delim, Int64 count)
         {
             if (count == 0)
-                return {str_ref.data, 0};
+                return {};
 
-            const auto * begin = reinterpret_cast<const UInt8 *>(str_ref.data);
-            const auto * end = reinterpret_cast<const UInt8 *>(str_ref.data + str_ref.size);
+            const auto * begin = reinterpret_cast<const UInt8 *>(str_ref.data());
+            const auto * end = reinterpret_cast<const UInt8 *>(str_ref.data() + str_ref.size());
             const auto * pos = begin;
             if (count > 0)
             {
@@ -261,7 +264,7 @@ namespace
                     else
                         return str_ref;
                 }
-                return {begin, static_cast<size_t>(pos - begin - delim.size())};
+                return {reinterpret_cast<const char *>(begin), static_cast<size_t>(pos - begin - delim.size())};
             }
 
             Int64 total = 0;
@@ -282,16 +285,16 @@ namespace
                 pos += delim.size();
                 ++i;
             }
-            return {pos, static_cast<size_t>(end - pos)};
+            return {reinterpret_cast<const char *>(pos), static_cast<size_t>(end - pos)};
         }
 
-        static StringRef substringIndex(const StringRef & str_ref, char delim, Int64 count)
+        static std::string_view substringIndex(std::string_view str_ref, char delim, Int64 count)
         {
             if (count == 0)
-                return {str_ref.data, 0};
+                return {};
 
-            const auto * pos = count > 0 ? str_ref.data : str_ref.data + str_ref.size - 1;
-            const auto * end = count > 0 ? str_ref.data + str_ref.size : str_ref.data - 1;
+            const auto * pos = count > 0 ? str_ref.data() : str_ref.data() + str_ref.size() - 1;
+            const auto * end = count > 0 ? str_ref.data() + str_ref.size() : str_ref.data() - 1;
             int d = count > 0 ? 1 : -1;
 
             for (; count; pos += d)
@@ -303,7 +306,7 @@ namespace
             }
             pos -= d;
             return {
-                d > 0 ? str_ref.data : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data : str_ref.data + str_ref.size - pos - 1)};
+                d > 0 ? str_ref.data() : pos + 1, static_cast<size_t>(d > 0 ? pos - str_ref.data() : str_ref.data() + str_ref.size() - pos - 1)};
         }
     };
 }
