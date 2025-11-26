@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace DB
 {
 
-bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool NgramsTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -34,7 +34,7 @@ bool NgramTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return code_points == n;
 }
 
-bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool NgramsTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     token.clear();
 
@@ -82,7 +82,7 @@ bool NgramTokenExtractor::nextInStringLike(const char * data, size_t length, siz
     return false;
 }
 
-bool DefaultTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SplitByNonAlphaTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -107,7 +107,7 @@ bool DefaultTokenExtractor::nextInString(const char * data, size_t length, size_
     return *token_length > 0;
 }
 
-bool DefaultTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SplitByNonAlphaTokenExtractor::nextInStringPadded(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     *token_start = *pos;
     *token_length = 0;
@@ -198,7 +198,7 @@ bool DefaultTokenExtractor::nextInStringPadded(const char * data, size_t length,
     return *token_length > 0;
 }
 
-bool DefaultTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool SplitByNonAlphaTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     token.clear();
     bool bad_token = false; // % or _ before token
@@ -241,7 +241,7 @@ bool DefaultTokenExtractor::nextInStringLike(const char * data, size_t length, s
     return !bad_token && !token.empty();
 }
 
-void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+void SplitByNonAlphaTokenExtractor::substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -256,7 +256,7 @@ void DefaultTokenExtractor::substringToBloomFilter(const char * data, size_t len
     }
 }
 
-void DefaultTokenExtractor::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
+void SplitByNonAlphaTokenExtractor::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -292,7 +292,7 @@ bool startsWithSeparator(const char * data, size_t length, size_t pos, const std
 
 }
 
-bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
+bool SplitByStringTokenExtractor::nextInString(const char * data, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     size_t i = *pos;
     std::string matched_separators;
@@ -319,12 +319,12 @@ bool SplitTokenExtractor::nextInString(const char * data, size_t length, size_t 
     return true;
 }
 
-bool SplitTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
+bool SplitByStringTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "StringTokenExtractor::nextInStringLike is not implemented");
 }
 
-bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
+bool ArrayTokenExtractor::nextInString(const char * /*data*/, size_t length, size_t * pos, size_t * token_start, size_t * token_length) const
 {
     if (*pos == 0)
     {
@@ -336,18 +336,18 @@ bool NoOpTokenExtractor::nextInString(const char * /*data*/, size_t length, size
     return false;
 }
 
-bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
+bool ArrayTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t * /*token_start*/, String & /*token_length*/) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "NoOpTokenExtractor::nextInStringLike is not implemented");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenExtractor::nextInStringLike is not implemented");
 }
 
-SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
-    : ITokenExtractorHelper(Type::SparseGram)
+SparseGramsTokenExtractor::SparseGramsTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
+    : ITokenExtractorHelper(Type::SparseGrams)
     , sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
 {
 }
 
-bool SparseGramTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
+bool SparseGramsTokenExtractor::nextInString(const char * data, size_t length, size_t * __restrict pos, size_t * __restrict token_start, size_t * __restrict token_length) const
 {
     if (std::tie(data, length) != std::tie(previous_data, previous_len))
     {
@@ -371,7 +371,7 @@ bool SparseGramTokenExtractor::nextInString(const char * data, size_t length, si
     return true;
 }
 
-bool SparseGramTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
+bool SparseGramsTokenExtractor::nextInStringLike(const char * data, size_t length, size_t * pos, String & token) const
 {
     if (std::tie(data, length) != std::tie(previous_data, previous_len))
     {

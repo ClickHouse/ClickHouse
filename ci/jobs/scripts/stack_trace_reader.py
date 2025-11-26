@@ -20,7 +20,7 @@ class StackTraceReader(object):
         # Only process last max_lines lines
         last_lines = all_lines[-max_lines:] if len(all_lines) > max_lines else all_lines
 
-        for line in last_lines:
+        for line in reversed(last_lines):
             if "<Fatal> BaseDaemon: Stack trace:" in line:
                 break
             match = stack_trace_pattern.search(line)
@@ -30,13 +30,13 @@ class StackTraceReader(object):
                 # Remove everything before and including 'ClickHouse/' if present
                 if "ClickHouse/" in extracted:
                     extracted = extracted.split("ClickHouse/")[-1]
+                elif "/./" in extracted:
+                    extracted = extracted.split("/./")[-1]
                 # Only append if there's meaningful content after extraction
                 if extracted.strip():
                     lines.append(extracted)
-            else:
-                lines.append(line)
         lines = [line.strip().replace("\n", "") for line in lines]
-        return "\n".join(lines) if lines else None
+        return "\n".join(reversed(lines)) if lines else None
 
     @staticmethod
     def get_fatal_error(stderr=None):

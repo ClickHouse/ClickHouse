@@ -867,6 +867,7 @@ static void constructPhysicalStep(
     makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Join Actions"));
 
     node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+    node.step->setStepDescription("Filled JOIN");
 
     post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
     makeFilterNodeOnTopOf(
@@ -916,6 +917,7 @@ static void constructPhysicalStep(
         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
         false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
+    join_step->setStepDescription(fmt::format("JOIN {}", join_ptr->pipelineType()), optimization_settings.max_step_description_length);
     join_step->setOptimized();
     node.step = std::move(join_step);
 

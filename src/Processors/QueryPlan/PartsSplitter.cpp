@@ -846,7 +846,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
     }
 
-    return {std::move(result_layers), std::move(borders)};
+    return {std::move(result_layers), std::move(borders), in_reverse_order};
 }
 
 
@@ -1177,7 +1177,7 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
 
     auto split_ranges = splitIntersectingPartsRangesIntoLayers(
         intersecting_parts_ranges, max_layers, primary_key.column_names.size(), in_reverse_order, logger);
-    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, in_reverse_order, context);
+    result.merging_pipes = readByLayers(std::move(split_ranges), primary_key, create_merging_pipe, context);
     return result;
 }
 
@@ -1185,10 +1185,9 @@ Pipes readByLayers(
     SplitPartsByRanges split_ranges,
     const KeyDescription & primary_key,
     ReadingInOrderStepGetter && step_getter,
-    bool in_reverse_order,
     ContextPtr context)
 {
-    auto && [layers, borders] = std::move(split_ranges);
+    auto && [layers, borders, in_reverse_order] = std::move(split_ranges);
     auto filters = buildFilters(primary_key, borders, in_reverse_order);
     Pipes merging_pipes(layers.size());
 

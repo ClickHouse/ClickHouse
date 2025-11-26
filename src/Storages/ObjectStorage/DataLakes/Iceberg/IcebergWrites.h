@@ -1,12 +1,15 @@
 #pragma once
 
 #include <unordered_map>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBuffer.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
+#include <Storages/KeyDescription.h>
 #include <Core/Range.h>
 #include <Columns/IColumn.h>
 #include <IO/CompressionMethod.h>
@@ -92,6 +95,8 @@ private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
+    std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Int64 current_schema_id;
@@ -99,6 +104,7 @@ private:
     ContextPtr context;
     StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
+    KeyDescription sort_description;
     Int32 total_rows = 0;
     Int32 total_chunks_size = 0;
 

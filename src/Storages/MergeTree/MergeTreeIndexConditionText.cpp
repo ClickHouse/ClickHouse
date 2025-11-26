@@ -6,6 +6,7 @@
 #include <Interpreters/misc.h>
 #include <Functions/hasAnyAllTokens.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/Set.h>
@@ -23,16 +24,27 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool text_index_use_bloom_filter;
+    extern const SettingsBool query_plan_text_index_add_hint;
     extern const SettingsBool use_text_index_dictionary_cache;
     extern const SettingsBool use_text_index_header_cache;
     extern const SettingsBool use_text_index_postings_cache;
+}
+
+TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, std::vector<String> tokens_)
+    : function_name(std::move(function_name_))
+    , search_mode(search_mode_)
+    , direct_read_mode(direct_read_mode_)
+    , tokens(std::move(tokens_))
+{
+    std::sort(tokens.begin(), tokens.end());
 }
 
 SipHash TextSearchQuery::getHash() const
 {
     SipHash hash;
     hash.update(function_name);
-    hash.update(mode);
+    hash.update(search_mode);
+    hash.update(direct_read_mode);
     hash.update(tokens.size());
 
     for (const auto & token : tokens)
@@ -102,19 +114,15 @@ TextSearchMode MergeTreeIndexConditionText::getTextSearchMode(const RPNElement &
     return TextSearchMode::Any;
 }
 
-bool MergeTreeIndexConditionText::isSupportedFunctionForDirectRead(const String & function_name)
+bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
 {
     return function_name == "hasToken"
         || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens";
-}
-
-bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_name)
-{
-    return isSupportedFunctionForDirectRead(function_name)
+        || function_name == "hasAllTokens"
         || function_name == "equals"
         || function_name == "notEquals"
         || function_name == "mapContainsKey"
+        || function_name == "mapContainsValue"
         || function_name == "has"
         || function_name == "like"
         || function_name == "notLike"
@@ -122,6 +130,43 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "match";
+}
+
+TextIndexDirectReadMode MergeTreeIndexConditionText::getHintOrNoneMode() const
+{
+    const auto & settings = getContext()->getSettingsRef();
+    return settings[Setting::query_plan_text_index_add_hint] ? TextIndexDirectReadMode::Hint : TextIndexDirectReadMode::None;
+}
+
+TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const String & function_name) const
+{
+    if (function_name == "hasToken"
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens")
+    {
+        return TextIndexDirectReadMode::Exact;
+    }
+
+    if (function_name == "equals"
+        || function_name == "has"
+        || function_name == "mapContainsKey"
+        || function_name == "mapContainsValue")
+    {
+        /// These functions compare the searched token as a whole and therefore
+        /// exact direct read is only possible with array token extractor, that doesn't
+        /// split documents into tokens. Otherwise we can only use direct read as a hint.
+        bool is_array_extractor = typeid_cast<const ArrayTokenExtractor *>(token_extractor);
+        return is_array_extractor ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
+    }
+
+    if (function_name == "like"
+        || function_name == "startsWith"
+        || function_name == "endsWith")
+    {
+        return getHintOrNoneMode();
+    }
+
+    return TextIndexDirectReadMode::None;
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
@@ -311,6 +356,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto function_name = function.getFunctionName();
         size_t function_arguments_size = function.getArgumentsSize();
 
+        if (traverseMapElementKeyNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
@@ -354,42 +402,6 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-namespace
-{
-
-/**
-  * Since functions `mapKeys` and `mapValues` project data as Array(T) from Map, this function checks if an index column is defined for the Map.
-  * The expected data is either form of Array(String) or Array(FixedString).
-  */
-bool traverseArrayFunctionNode(const RPNBuilderTreeNode & index_column_node, const Block & header, Field & const_value)
-{
-    const auto function = index_column_node.toFunctionNode();
-    if (function.getFunctionName() == "arrayElement")
-    {
-        const auto column_name = function.getArgumentAt(0).getColumnName();
-        bool has_maps_keys_index_column_name = header.has(fmt::format("mapKeys({})", column_name));
-        bool has_map_values_index_column_name = header.has(fmt::format("mapValues({})", column_name));
-        if (has_maps_keys_index_column_name)
-        {
-            const auto & argument_const_key = function.getArgumentAt(1);
-            DataTypePtr key_const_type;
-            if (argument_const_key.tryGetConstant(const_value, key_const_type))
-            {
-                auto const_data_type = WhichDataType(key_const_type);
-                if (!const_data_type.isStringOrFixedString())
-                    return false;
-                return true;
-            }
-            return false;
-        }
-        return has_map_values_index_column_name;
-    }
-    return false;
-}
-
-}
-
-
 std::vector<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
 {
     std::vector<String> tokens;
@@ -414,7 +426,6 @@ std::vector<String> MergeTreeIndexConditionText::stringLikeToTokens(const Field 
     return tokens;
 }
 
-
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -422,34 +433,60 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const Field & value_field,
     RPNElement & out) const
 {
-    bool index_column_exists = header.has(index_column_node.getColumnName());
-    bool index_column_map_keys_exists = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
+    const String function_name = function_node.getFunctionName();
+    auto direct_read_mode = getDirectReadMode(function_name);
 
-    Field const_value = value_field;
-    if (index_column_node.isFunction())
-        index_column_exists = index_column_exists || traverseArrayFunctionNode(index_column_node, header, const_value);
+    bool has_index_column = header.has(index_column_node.getColumnName());
+    bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_node.getColumnName()));
+    bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_node.getColumnName()));
 
-    if (!index_column_exists && !index_column_map_keys_exists)
+    if (traverseMapElementValueNode(index_column_node, value_field))
+    {
+        has_index_column = true;
+
+        /// If we use index on `mapValues(m)` for `func(m['key'], 'value')`, we can use direct read only as a hint
+        /// because we have to match the specific key to the value and therefore execute a real filter.
+        direct_read_mode = getHintOrNoneMode();
+    }
+
+    if (!has_index_column && !has_map_keys_column && !has_map_values_column)
         return false;
 
     auto value_data_type = WhichDataType(value_type);
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
-    const String & function_name = function_node.getFunctionName();
+    if (has_map_keys_column || has_map_values_column)
+    {
+        if (!value_data_type.isStringOrFixedString())
+            return false;
 
+        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
+        /// mapContainsValue can be used only with an index defined as `mapValues(Map(String, ...))`
+        bool is_supported_key_function = has_map_keys_column && (function_name == "mapContainsKey" || function_name == "has");
+        bool is_supported_value_function = has_map_values_column && function_name == "mapContainsValue";
+
+        if (is_supported_key_function || is_supported_value_function)
+        {
+            auto tokens = stringToTokens(value_field);
+            out.function = RPNElement::FUNCTION_HAS;
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
+            return true;
+        }
+        return false;
+    }
     if (function_name == "notEquals")
     {
-        auto tokens = stringToTokens(const_value);
+        auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "equals")
     {
-        auto tokens = stringToTokens(const_value);
+        auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
@@ -459,11 +496,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         // hasAny/AllTokens funcs accept either string which will be tokenized or array of strings to be used as-is
         if (value_data_type.isString())
         {
-            search_tokens = stringToTokens(const_value);
+            search_tokens = stringToTokens(value_field);
         }
         else
         {
-            for (const auto & element : const_value.safeGet<Array>())
+            for (const auto & element : value_field.safeGet<Array>())
             {
                 if (element.getType() != Field::Types::String)
                     return false;
@@ -482,7 +519,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (function_name == "hasAnyTokens")
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, search_tokens));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, search_tokens));
 
             auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAnyTokensTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
@@ -491,7 +528,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         else
         {
             out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, search_tokens));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, search_tokens));
 
             auto & search_function = typeid_cast<FunctionHasAnyAllTokens<traits::HasAllTokensTraits> &>(*adaptor->getFunction());
             search_function.setTokenExtractor(token_extractor->clone());
@@ -502,49 +539,50 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        auto tokens = stringToTokens(const_value);
+        auto tokens = stringToTokens(value_field);
         if (tokens.empty())
             tokens.push_back("");
+
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "startsWith")
     {
-        auto tokens = substringToTokens(const_value, true, false);
+        auto tokens = substringToTokens(value_field, true, false);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "endsWith")
     {
-        auto tokens = substringToTokens(const_value, false, true);
+        auto tokens = substringToTokens(value_field, false, true);
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS_OR_EMPTY;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     /// Currently, not all token extractors support LIKE-style matching.
     if (function_name == "like" && token_extractor->supportsStringLike())
     {
-        std::vector<String> tokens = stringLikeToTokens(const_value);
+        std::vector<String> tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "notLike" && token_extractor->supportsStringLike())
     {
-        std::vector<String> tokens = stringLikeToTokens(const_value);
+        std::vector<String> tokens = stringLikeToTokens(value_field);
 
         out.function = RPNElement::FUNCTION_NOT_EQUALS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
     if (function_name == "match" && token_extractor->supportsStringLike())
     {
         out.function = RPNElement::FUNCTION_MATCH;
 
-        const auto & value = const_value.safeGet<String>();
+        const auto & value = value_field.safeGet<String>();
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(value);
 
         if (!result.alternatives.empty())
@@ -552,38 +590,128 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             for (const auto & alternative : result.alternatives)
             {
                 auto tokens = substringToTokens(alternative, false, false);
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             }
             return true;
         }
         if (!result.required_substring.empty())
         {
             auto tokens = substringToTokens(result.required_substring, false, false);
-            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+            out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
             return true;
         }
-
         return false;
-    }
-    if (function_name == "mapContainsKey")
-    {
-        /// mapContainsKey can be used only with an index defined as `mapKeys(Map(String, ...))`
-        if (!index_column_map_keys_exists || !value_data_type.isStringOrFixedString())
-            return false;
-        auto tokens = stringToTokens(const_value);
-        out.function = RPNElement::FUNCTION_HAS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
-        return true;
     }
     if (function_name == "has")
     {
-        auto tokens = stringToTokens(const_value);
+        auto tokens = stringToTokens(value_field);
         out.function = RPNElement::FUNCTION_HAS;
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         return true;
     }
 
     return false;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
+    /// It can be an arbitrary function that returns 0 for the default value of the map value type.
+    /// It is true because `arrayElement` return default value if key doesn't exist in the map,
+    /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
+
+    const auto * dag_node = function_node.getDAGNode();
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+        return false;
+
+    auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
+    auto required_columns = subdag.getRequiredColumns();
+    const auto & outputs = subdag.getOutputs();
+
+    if (required_columns.size() != 1 || outputs.size() != 1)
+        return false;
+
+    auto required_column = required_columns.front();
+    auto output_column_name = outputs.front()->result_name;
+
+    if (!isMap(required_column.type) || !header.has(fmt::format("mapKeys({})", required_column.name)))
+        return false;
+
+    std::optional<String> key_const_value;
+    std::vector<const ActionsDAG::Node *> stack;
+    stack.push_back(outputs.front());
+
+    /// Try to find the `arrayElement` function in the DAG and extract the constant string key.
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->children.size() == 2
+            && node->function_base
+            && node->function_base->getName() == "arrayElement")
+        {
+            if (key_const_value.has_value())
+                return false;
+
+            const auto & map_argument = node->children[0];
+            const auto & const_key_argument = node->children[1];
+
+            if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
+                return false;
+
+            if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                return false;
+
+            key_const_value = const_key_argument->column->getDataAt(0).toString();
+        }
+        else
+        {
+            for (const auto & child : node->children)
+                stack.push_back(child);
+        }
+    }
+
+    if (!key_const_value.has_value())
+        return false;
+
+    /// Evaluate function on the empty map. Empty map will return default value for any key.
+    Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
+    ExpressionActions actions(std::move(subdag));
+    actions.execute(block);
+    const auto & result_column = block.getByName(output_column_name).column;
+
+    /// If the function returns true for the empty map, we cannot use index.
+    if (result_column->getBool(0))
+        return false;
+
+    auto tokens = stringToTokens(*key_const_value);
+    out.function = RPNElement::FUNCTION_HAS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
+{
+    /// Here we check whether we can use index defined for `mapValues(m)`
+    /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
+    /// If index can be used, than we can analyze the index as for scalar string column
+    /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
+
+    if (!index_column_node.isFunction())
+        return false;
+
+    const auto function = index_column_node.toFunctionNode();
+    const auto column_name = function.getArgumentAt(0).getColumnName();
+
+    if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+        return false;
+
+    if (const_value.getType() != Field::Types::String || const_value.safeGet<String>().empty())
+        return false;
+
+    return header.has(fmt::format("mapValues({})", column_name));
 }
 
 bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
@@ -642,7 +770,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
         std::vector<String> tokens;
         token_extractor->stringToTokens(ref.data, ref.size, tokens);
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, std::move(tokens)));
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 
     return true;
