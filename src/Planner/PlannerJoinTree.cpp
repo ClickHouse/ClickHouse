@@ -1909,14 +1909,19 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
             auto & join_node_using_column_node = join_node_using_node->as<ColumnNode &>();
             auto & inner_columns_list = join_node_using_column_node.getExpressionOrThrow()->as<ListNode &>();
 
-            auto & left_inner_column_node = inner_columns_list.getNodes().at(0);
+            if (inner_columns_list.getNodes().size() < 2)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "JOIN USING clause expected at least two column identifiers, got: {}",
+                    join_node_using_column_node.formatASTForErrorMessage());
+
+            auto & left_inner_column_node = inner_columns_list.getNodes().front();
             auto * left_inner_column = left_inner_column_node->as<ColumnNode>();
             if (!left_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "JOIN USING clause expected column identifier. Actual {}",
                     left_inner_column_node->formatASTForErrorMessage());
 
-            auto & right_inner_column_node = inner_columns_list.getNodes().at(1);
+            auto & right_inner_column_node = inner_columns_list.getNodes().back();
             auto * right_inner_column = right_inner_column_node->as<ColumnNode>();
             if (!right_inner_column)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -2123,8 +2128,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNodeLegacy(
         {
             auto & join_using_column_node = join_using_node->as<ColumnNode &>();
             auto & using_join_columns_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
-            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().at(0);
-            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().at(1);
+            auto & using_join_left_join_column_node = using_join_columns_list.getNodes().front();
+            auto & using_join_right_join_column_node = using_join_columns_list.getNodes().back();
 
             const auto & left_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_left_join_column_node);
             const auto & right_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(using_join_right_join_column_node);
