@@ -29,9 +29,7 @@ struct Base58DecodeTraits
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
-        auto const string_length = src_column.getChars().size();
-        /// decoded size is at most length of encoded (every 8 bytes becomes at most 6 bytes)
-        return (string_length * 6 + 7) / 8;
+        return src_column.getChars().size() + 1;
     }
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
