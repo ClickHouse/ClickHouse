@@ -809,7 +809,7 @@ private:
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size;
+                c0_const_size = c0_const_string->getDataAt(0).size();
             }
             else if (c0_const_fixed_string)
             {
@@ -828,7 +828,7 @@ private:
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size;
+                c1_const_size = c1_const_string->getDataAt(0).size();
             }
             else if (c1_const_fixed_string)
             {
@@ -1231,6 +1231,7 @@ public:
 
             bool has_nullable = false;
             bool has_null = false;
+            bool has_nothing = false;
 
             const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
             size_t size = any_tuple->getElements().size();
@@ -1244,8 +1245,16 @@ public:
                     element_type = func->build(args)->getResultType();
                 }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
+
+                /// Nullable(Nothing)
                 has_null = has_null || element_type->onlyNull();
+
+                /// Nothing
+                has_nothing = has_nothing || isNothing(element_type);
             }
+
+            if (has_nothing)
+                return std::make_shared<DataTypeNothing>();
 
             // In null-safe cmp mode, return DataTypeUInt8
             if (is_null_safe_cmp_mode)
