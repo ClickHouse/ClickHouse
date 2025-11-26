@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
+#include <boost/algorithm/string.hpp>
 
 namespace CurrentMetrics
 {
@@ -218,7 +219,6 @@ void IDisk::checkAccess()
     if (server_uuid == DB::UUIDHelpers::Nil)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Server UUID is not initialized");
     const String path = fmt::format("clickhouse_access_check_{}", toString(server_uuid));
-
     checkAccessImpl(path);
 }
 
@@ -273,6 +273,13 @@ try
         }
     }
 
+    /// check case sensitivity
+    {
+        std::unique_lock lock(case_sensitivity_check_mutex);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        is_case_sensitivity_checked = true;
+    }
+
     /// remove
     removeFile(path);
 }
@@ -280,6 +287,32 @@ catch (Exception & e)
 {
     e.addMessage(fmt::format("While checking access for disk {}", name));
     throw;
+}
+
+bool IDisk::isCaseInsensitive()
+{
+    /// For readonly disk we cannot perform the case sensitivity check.
+    if (isReadOnly())
+        return false;
+
+    if (is_case_sensitivity_checked)
+        return is_case_insensitive;
+
+    std::unique_lock lock(case_sensitivity_check_mutex);
+    const String path = fmt::format("clickhouse_case_sensitivity_check_{}", toString(DB::UUIDHelpers::generateV4()));
+    try
+    {
+        createFile(path);
+        is_case_insensitive = existsFile(boost::to_upper_copy(path));
+        is_case_sensitivity_checked = true;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("While checking case sensitivity for disk {}", name));
+        throw;
+    }
+
+    return is_case_insensitive;
 }
 
 void IDisk::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr /*context*/, const String & config_prefix, const DisksMap & /*map*/)
