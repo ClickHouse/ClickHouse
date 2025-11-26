@@ -4,7 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Range.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
@@ -12,6 +12,9 @@
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Core/SortDescription.h>
+#include <Processors/Chunk.h>
+#include <Storages/KeyDescription.h>
 
 #if USE_AVRO
 
@@ -74,14 +77,13 @@ class IcebergStorageSink : public SinkToStorage
 public:
     IcebergStorageSink(
         ObjectStoragePtr object_storage_,
+        StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const DataLakeStorageSettings & data_lake_settings_,
-        const StorageID & table_id_,
-        const String & write_format_);
+        const StorageID & table_id_);
 
     ~IcebergStorageSink() override = default;
 
@@ -95,12 +97,15 @@ private:
     LoggerPtr log = getLogger("IcebergStorageSink");
     SharedHeader sample_block;
     std::unordered_map<ChunkPartitioner::PartitionKey, MultipleFileWriter, ChunkPartitioner::PartitionKeyHasher> writer_per_partition_key;
+    std::unordered_map<ChunkPartitioner::PartitionKey, std::vector<Field>, ChunkPartitioner::PartitionKeyHasher> last_fields_of_last_chunks;
+    std::unordered_map<String, size_t> column_name_to_column_index;
     ObjectStoragePtr object_storage;
     Poco::JSON::Object::Ptr metadata;
     Int64 current_schema_id;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
     std::optional<FormatSettings> format_settings;
+    KeyDescription sort_description;
     Int32 total_rows = 0;
     Int32 total_chunks_size = 0;
 
@@ -119,7 +124,10 @@ private:
     CompressionMethod metadata_compression_method;
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettings & data_lake_settings;
-    String write_format;
+    const String write_format;
+    const String blob_storage_type_name;
+    const String blob_storage_namespace_name;
+
 };
 
 }

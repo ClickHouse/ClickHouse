@@ -33,7 +33,7 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -48,7 +48,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -146,10 +146,10 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     StorageObjectStorageConfigurationPtr configuration, IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, cache_ptr, context_, log.get());
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, configuration, cache_ptr, context_, log, compression_method);
+        = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
     String table_uuid = metadata_object->getValue<String>(f_table_uuid);
@@ -166,7 +166,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage, persistent_components.read_path, persistent_components, data_lake_settings, context, log.get());
+        object_storage, persistent_components.read_path,  data_lake_settings, persistent_components.metadata_cache, context, log.get(), persistent_components.table_uuid);
     return getState(context, metadata_file_path, metadata_version);
 }
 
@@ -417,7 +417,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components, local_context, log, persistent_components.metadata_compression_method);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
 
     insertRowToLogTable(
         local_context,
@@ -463,6 +463,7 @@ std::shared_ptr<const ActionsDAG> IcebergMetadata::getSchemaTransformer(ContextP
 
 void IcebergMetadata::mutate(
     const MutationCommands & commands,
+    StorageObjectStorageConfigurationPtr configuration,
     ContextPtr context,
     const StorageID & storage_id,
     StorageMetadataPtr metadata_snapshot,
@@ -484,9 +485,13 @@ void IcebergMetadata::mutate(
         storage_id,
         object_storage,
         data_lake_settings,
-        persistent_components.read_path,
+        persistent_components,
+        write_format,
         format_settings,
-        catalog);
+        catalog,
+        configuration->getTypeName(),
+        configuration->getNamespace()
+    );
 }
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
@@ -520,6 +525,73 @@ void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
         params, context, object_storage, data_lake_settings, persistent_components, write_format, persistent_components.read_path);
 }
 
+
+
+void IcebergMetadata::createInitial(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context,
+    const std::optional<ColumnsDescription> & columns,
+    ASTPtr partition_by,
+    ASTPtr order_by,
+    bool if_not_exists,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageID & table_id_)
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
+
+    std::vector<String> metadata_files;
+    try
+    {
+        metadata_files = listFiles(*object_storage, configuration_ptr->getPathForRead().path, "metadata", ".metadata.json");
+    }
+    catch (const Exception & ex)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "NoSuchBucket: {}", ex.what());
+    }
+    if (!metadata_files.empty())
+    {
+        if (if_not_exists)
+            return;
+        else
+            throw Exception(
+                ErrorCodes::TABLE_ALREADY_EXISTS, "Iceberg table with path {} already exists", configuration_ptr->getPathForRead().path);
+    }
+
+    String location_path = configuration_ptr->getRawPath().path;
+    if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
+        location_path
+            = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+    auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
+        location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+    auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
+    auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
+
+    auto compression_suffix = compression_method_str;
+    if (!compression_suffix.empty())
+        compression_suffix = "." + compression_suffix;
+
+    auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+
+    writeMessageToFile(metadata_content, filename, object_storage, local_context, "*", "", compression_method);
+
+    if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
+    {
+        auto filename_version_hint = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+        writeMessageToFile(filename, filename_version_hint, object_storage, local_context, "*", "");
+    }
+
+    if (catalog)
+    {
+        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
+            + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+        catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
+    }
+}
+
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(
     Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const
 {
@@ -527,10 +599,11 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     auto metadata_object = getMetadataJSONObject(
         table_state_snapshot.metadata_file_path,
         object_storage,
-        persistent_components,
+        persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method);
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid);
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -540,13 +613,35 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
 }
 
 
+DataLakeMetadataPtr IcebergMetadata::create(
+    const ObjectStoragePtr & object_storage,
+    const StorageObjectStorageConfigurationWeakPtr & configuration,
+    const ContextPtr & local_context)
+{
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
+
+    auto log = getLogger("IcebergMetadata");
+
+    IcebergMetadataFilesCachePtr cache_ptr = nullptr;
+
+    if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
+        cache_ptr = local_context->getIcebergMetadataFilesCache();
+    else
+        LOG_TRACE(
+            log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
+
+    return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, cache_ptr);
+}
+
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage, persistent_components.read_path, persistent_components, data_lake_settings, local_context, log.get());
+        object_storage, persistent_components.read_path, data_lake_settings, persistent_components.metadata_cache, local_context, log.get(), persistent_components.table_uuid);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components, local_context, log, compression_method);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
@@ -919,14 +1014,14 @@ SinkToStoragePtr IcebergMetadata::write(
     SharedHeader sample_block,
     const StorageID & table_id,
     ObjectStoragePtr /*object_storage*/,
-    StorageObjectStorageConfigurationPtr,
+    StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
     std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (context->getSettingsRef()[Setting::allow_experimental_insert_into_iceberg])
     {
-        return std::make_shared<IcebergStorageSink>(object_storage, format_settings, sample_block, context, catalog, table_id);
+        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
     }
     else
     {
@@ -959,9 +1054,10 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
 }
 
+// (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occured during ).
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
-    if (Poco::toLower(getConfiguration()->format) != "parquet")
+    if (Poco::toLower(write_format) != "parquet")
         return nullptr;
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     // This is a temporary cludge for cluster functions because now the state on replicas is not synchronized with the primary state on the coordinator
@@ -978,57 +1074,17 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
     auto metadata_object = getMetadataJSONObject(
         actual_table_state_snapshot.metadata_file_path,
         object_storage,
-        persistent_components,
+        persistent_components.metadata_cache,
         local_context,
         log,
-        persistent_components.metadata_compression_method);
+        persistent_components.metadata_compression_method,
+        persistent_components.table_uuid);
 
-
-    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
-    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
-    std::unordered_map<Int64, String> source_id_to_column_name;
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-
-    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
-    for (const auto & [col_name, source_id] : mapper)
-    {
-        source_id_to_column_name[source_id] = col_name;
-    }
-
-    KeyDescription key_description;
-    auto ch_schema = persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id);
-    ColumnsDescription column_description;
-    for (size_t i = 0; i < ch_schema->size(); ++i)
-        column_description.add(ColumnDescription(ch_schema->getNames()[i], ch_schema->getTypes()[i]));
-
-    String order_by_str;
-
-    for (UInt32 i = 0; i < sort_orders->size(); ++i)
-    {
-        auto sort_order = sort_orders->getObject(i);
-        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
-            continue;
-        auto fields = sort_order->getArray(f_fields);
-        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
-        {
-            auto field = fields->getObject(field_index);
-            auto source_id = field->getValue<Int64>(f_source_id);
-            auto column_name = source_id_to_column_name[source_id];
-            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
-
-            if (direction == 1)
-                order_by_str += fmt::format("{} ASC,", column_name);
-            else
-                order_by_str += fmt::format("{} DESC,", column_name);
-        }
-        break;
-    }
-    if (order_by_str.empty())
-        return KeyDescription{};
-    order_by_str.pop_back();
-    auto key = KeyDescription::parse(order_by_str, column_description, local_context, true);
-    key.sort_order_id = sort_order_id;
-    return key;
+    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    result.sort_order_id = sort_order_id;
+    return result;
 }
 
 }

@@ -1,5 +1,6 @@
 #include <cstring>
 
+#include <Common/TargetSpecific.h>
 #include <Common/SipHash.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
@@ -396,9 +397,10 @@ void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 tail = 64)
     }
 }
 
-/// UInt64[N] transposed matrix -> UIntX[64]
-template <typename T, bool full = false>
-void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
+MULTITARGET_FUNCTION_AVX512BW_AVX2(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T, bool full>
+void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail)
 {
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
@@ -422,6 +424,28 @@ void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 
     clear(buf);
     for (UInt32 col = 0; col < tail; ++col)
         reverseTransposeBytes(matrix, col, buf[col]);
+})
+)
+
+/// UInt64[N] transposed matrix -> UIntX[64]
+template <typename T, bool full = false>
+ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
+{
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::AVX512BW))
+    {
+        reverseTransposeImplAVX512BW<T, full>(src, buf, num_bits, tail);
+        return;
+    }
+    if (isArchSupported(TargetArch::AVX2))
+    {
+        reverseTransposeImplAVX2<T, full>(src, buf, num_bits, tail);
+        return;
+    }
+#endif
+    {
+        reverseTransposeImpl<T, full>(src, buf, num_bits, tail);
+    }
 }
 
 template <typename T, typename MinMaxT = std::conditional_t<is_signed_v<T>, Int64, UInt64>>

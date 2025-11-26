@@ -1,6 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Formats/FormatFactory.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -174,11 +174,11 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
     return std::make_shared<StorageObjectStorageSink>(
         file_path,
         object_storage,
-        configuration,
         format_settings,
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
-        context
-    );
+        context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 }
