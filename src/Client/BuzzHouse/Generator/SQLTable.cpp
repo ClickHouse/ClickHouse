@@ -2312,20 +2312,16 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                 const bool add_sign_col = add_sign && nopt < (add_idx + add_proj + add_const + add_col + add_ttl + add_sign + 1);
                 const bool add_version_col
                     = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_ttl + add_sign + add_version + 1);
+                const auto sp = add_ttl_col
+                    ? ColumnSpecial::TTL_COL
+                    : (add_sign_col ? ColumnSpecial::SIGN : (add_version_col ? ColumnSpecial::VERSION : ColumnSpecial::IS_DELETED));
 
-                addTableColumn(
-                    rg,
-                    next,
-                    cname,
-                    false,
-                    false,
-                    add_pkey,
-                    add_ttl_col
-                        ? ColumnSpecial::TTL_COL
-                        : (add_sign_col ? ColumnSpecial::SIGN : (add_version_col ? ColumnSpecial::VERSION : ColumnSpecial::IS_DELETED)),
-                    ndef->mutable_col_def());
+                addTableColumn(rg, next, cname, false, false, add_pkey, sp, ndef->mutable_col_def());
                 added_pkey |= add_pkey;
-                te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(cname));
+                if (sp != ColumnSpecial::TTL_COL)
+                {
+                    te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(cname));
+                }
                 if (add_ttl_col)
                 {
                     added_ttl_expr++;
@@ -2386,7 +2382,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
-    if (rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 2)
     {
         ct->set_uuid(rg.nextUUID());
     }
@@ -2620,7 +2616,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
-    if (rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 2)
     {
         cd->set_uuid(rg.nextUUID());
     }
@@ -2742,7 +2738,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     SQLDatabase::setRandomDatabase(rg, next);
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (rg.nextBool())
+    if (rg.nextSmallNumber() < 2)
     {
         cd->set_uuid(rg.nextUUID());
     }

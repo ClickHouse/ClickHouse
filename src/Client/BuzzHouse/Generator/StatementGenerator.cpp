@@ -633,7 +633,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
             next.cols.insert(i);
         }
     }
-    if (rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 2)
     {
         cv->set_uuid(rg.nextUUID());
     }
@@ -2598,7 +2598,7 @@ void StatementGenerator::generateAttach(RandomGenerator & rg, Attach * att)
     {
         UNREACHABLE();
     }
-    if (rg.nextSmallNumber() < 4)
+    if (rg.nextSmallNumber() < 2)
     {
         att->set_uuid(rg.nextUUID());
     }
