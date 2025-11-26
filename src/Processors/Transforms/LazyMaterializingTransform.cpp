@@ -1,3 +1,4 @@
+#include <iostream>
 #include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
@@ -11,7 +12,7 @@ namespace DB
 
 Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
 {
-    auto pos = main_header.getPositionByName("__global_offset");
+    auto pos = main_header.getPositionByName("__global_row_index");
     ColumnsWithTypeAndName columns = main_header.getColumnsWithTypeAndName();
     columns.erase(columns.begin() + pos);
     const auto & lazy_columns = lazy_header.getColumnsWithTypeAndName();
@@ -30,14 +31,18 @@ LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header,
 LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
 {
     auto & output = outputs.front();
+    auto & main_input = inputs.front();
+    auto & lazy_input = inputs.back();
+
     if (output.isFinished())
+    {
+        main_input.close();
+        lazy_input.close();
         return Status::Finished;
+    }
 
     if (!output.canPush())
         return Status::PortFull;
-
-    auto & main_input = inputs.front();
-    auto & lazy_input = inputs.back();
 
     if (!main_input.isFinished())
     {
@@ -57,6 +62,7 @@ LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
     {
         if (chunks.empty())
         {
+            lazy_input.close();
             output.finish();
             return Status::Finished;
         }
@@ -97,6 +103,7 @@ void LazyMaterializingTransform::work()
 void LazyMaterializingTransform::prepareMainChunk()
 {
     result_chunk = Squashing::squash(std::move(chunks));
+    chunks.clear();
     auto rows = result_chunk->getNumRows();
     auto pos = getInputs().front().getHeader().getPositionByName("__global_row_index");
     auto columns = result_chunk->detachColumns();
@@ -144,12 +151,11 @@ void LazyMaterializingTransform::prepareMainChunk()
     auto & ranges_in_data_parts = lazy_materializing_rows->ranges_in_data_parts;
 
     rows_in_parts.clear();
-    rows_in_parts.reserve(ranges_in_data_parts.size());
 
     size_t next_index = 0;
     for (auto & part : ranges_in_data_parts)
     {
-        auto & rows_in_part = rows_in_parts.emplace_back();
+        PaddedPODArray<UInt64> rows_in_part;
         size_t offset = part.part_starting_offset_in_query;
         MarkRanges ranges;
 
@@ -173,6 +179,7 @@ void LazyMaterializingTransform::prepareMainChunk()
             auto & range = part.ranges.front();
 
             auto subrange_begin = range.begin;
+            [[maybe_unused]] auto subrange_row_begin = row_begin;
 
             while (range.begin < range.end)
             {
@@ -181,9 +188,11 @@ void LazyMaterializingTransform::prepareMainChunk()
                 if (sorted_indexes[next_index] < offset + row_begin)
                     break;
                 subrange_begin = range.begin;
+                subrange_row_begin = row_begin;
             }
 
             auto subrange_end = range.begin;
+            [[maybe_unused]] auto subrange_row_end = row_begin;
 
             rows_in_part.push_back(sorted_indexes[next_index] - offset);
             ++next_index;
@@ -209,21 +218,38 @@ void LazyMaterializingTransform::prepareMainChunk()
                     break;
 
                 subrange_end = range.begin;
+                subrange_row_end = row_begin;
             }
 
             ranges.push_back({subrange_begin, subrange_end});
+
+            // std::cerr << subrange_begin << " " << subrange_end << " || " << subrange_row_begin << " " << subrange_row_end <<  " || " << rows_in_part.size() << "\n";
 
             if (!(range.begin < range.end))
                 part.ranges.pop_front();
         }
 
+        // std::cerr << "LMT part index " << part.part_index_in_query << " ranges " << ranges.size() << " rows " << rows_in_part.size() << "\n";
+        // std::cerr << ranges.describe() << "\n";
+
         part.ranges = std::move(ranges);
+        if (!rows_in_part.empty())
+            rows_in_parts[part.part_index_in_query] = std::move(rows_in_part);
     }
+
+    std::erase_if(ranges_in_data_parts, [](const auto & part) { return part.ranges.empty(); });
+    // std::cerr << "Removed " << cnt << " empty ranges\n";
+    // std::cerr << rows_in_parts.size() << " parts with rows\n";
 }
 
 void LazyMaterializingTransform::prepareLazyChunk()
 {
+    // std::cerr << "LazyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
+    // for (auto & chunk : chunks)
+    //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
+
     auto chunk = Squashing::squash(std::move(chunks));
+    chunks.clear();
     if (chunk.getNumRows() != offsets.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "LazyMaterializingTransform: Number of rows in lazy chunk {} does not match number of offsets {}",

@@ -23,6 +23,8 @@ using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadRespon
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
+class LazyReadFromMergeTree;
+
 struct MergeTreeDataSelectSamplingData
 {
     bool use_sampling = false;
@@ -293,7 +295,7 @@ public:
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
-    std::unique_ptr<ReadFromMergeTree>  removeUnusedColumns(const NameSet & required_outputs);
+    std::unique_ptr<LazyReadFromMergeTree> removeUnusedColumns(const NameSet & required_outputs);
     int addStartingPartOffsetAndPartOffset();
 
 private:

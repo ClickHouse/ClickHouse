@@ -12,7 +12,8 @@ namespace DB
 struct LazyMaterializingRows
 {
     using PartOffsetInDataPart = PaddedPODArray<UInt64>;
-    using RowsInParts = std::vector<PartOffsetInDataPart>;
+    /// part_index_in_query -> row numbers
+    using RowsInParts = std::map<size_t, PartOffsetInDataPart>;
 
     RowsInParts rows_in_parts;
     RangesInDataParts ranges_in_data_parts;

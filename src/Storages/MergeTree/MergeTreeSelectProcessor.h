@@ -92,6 +92,9 @@ struct MergeTreeIndexBuildContext
 
 using MergeTreeIndexBuildContextPtr = std::shared_ptr<MergeTreeIndexBuildContext>;
 
+struct LazyMaterializingRows;
+using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
 /// Base class for MergeTreeThreadSelectAlgorithm and MergeTreeSelectAlgorithm
 class MergeTreeSelectProcessor : private boost::noncopyable
 {
@@ -105,7 +108,8 @@ public:
         const IndexReadTasks & index_read_tasks_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
-        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {});
+        MergeTreeIndexBuildContextPtr merge_tree_index_build_context_ = {},
+        LazyMaterializingRowsPtr lazy_materializing_rows_ = {});
 
     String getName() const;
 
@@ -171,6 +175,8 @@ private:
 
     /// Shared context used for building indexes during query execution.
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context;
+
+    LazyMaterializingRowsPtr lazy_materializing_rows;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

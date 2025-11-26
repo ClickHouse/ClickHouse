@@ -13,6 +13,9 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/LazyReadFromMergeTree.h>
+#include <Processors/QueryPlan/JoinLazyColumnsStep.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 
 namespace DB::ErrorCodes
 {
@@ -248,7 +251,7 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
     return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
 }
 
-std::unique_ptr<ReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
+std::unique_ptr<LazyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
 {
     const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
     chassert(cols.size() == required_output_positions.size());
@@ -272,7 +275,7 @@ std::unique_ptr<ReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMe
     // return new_reading;
 }
 
-ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step, const char * suffix)
+ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step)
 {
     int res = reading_step.addStartingPartOffsetAndPartOffset();
     ActionsDAG dag;
@@ -282,7 +285,7 @@ ActionsDAG calculateGlobalOffset(ReadFromMergeTree & reading_step, const char * 
 
     auto plus = FunctionFactory::instance().get("plus", nullptr);
     const auto * global_offset_node = &dag.addFunction(plus, dag.getInputs(), {});
-    global_offset_node = &dag.addAlias(*global_offset_node, std::string("__global_offset_") + suffix);
+    global_offset_node = &dag.addAlias(*global_offset_node, "__global_row_index");
 
     dag.getOutputs().push_back(global_offset_node);
     if (res & 1)
@@ -716,7 +719,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     QueryPlan main_plan;
     QueryPlan lazy_plan;
 
-    auto main_global_offset_dag = calculateGlobalOffset(*read_from_merge_tree, "l");
+    auto main_global_offset_dag = calculateGlobalOffset(*read_from_merge_tree);
 
     // std::cerr << "main step : " << node->step->getName() << std::endl;
 
@@ -746,48 +749,53 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     limit_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(root.step));
 
-    auto lazy_global_offset_dag = calculateGlobalOffset(*lazy_reading, "r");
+    auto lazy_materializing_rows = std::make_shared<LazyMaterializingRows>();
+    lazy_materializing_rows->ranges_in_data_parts = read_from_merge_tree->getParts();
+    lazy_reading->setLazyMaterializingRows(lazy_materializing_rows);
+    //auto lazy_global_offset_dag = calculateGlobalOffset(*lazy_reading, "r");
     lazy_plan.addStep(std::move(lazy_reading));
-    auto lazy_global_offset_step = std::make_unique<ExpressionStep>(lazy_plan.getCurrentHeader(), std::move(lazy_global_offset_dag));
-    lazy_plan.addStep(std::move(lazy_global_offset_step));
+    // auto lazy_global_offset_step = std::make_unique<ExpressionStep>(lazy_plan.getCurrentHeader(), std::move(lazy_global_offset_dag));
+    // lazy_plan.addStep(std::move(lazy_global_offset_step));
 
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
     const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
 
-    JoinExpressionActions join_expression_actions(
-        lhs_plan_header->getColumnsWithTypeAndName(),
-        rhs_plan_header->getColumnsWithTypeAndName());
+    // JoinExpressionActions join_expression_actions(
+    //     lhs_plan_header->getColumnsWithTypeAndName(),
+    //     rhs_plan_header->getColumnsWithTypeAndName());
 
-    std::vector<JoinActionRef> predicates;
-    {
-        std::vector<JoinActionRef> eq_arguments;
-        eq_arguments.push_back(join_expression_actions.findNode("__global_offset_l", /* is_input= */ true));
-        eq_arguments.push_back(join_expression_actions.findNode("__global_offset_r", /* is_input= */ true));
-        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
-        predicates.push_back(std::move(eq_node));
-    }
+    // std::vector<JoinActionRef> predicates;
+    // {
+    //     std::vector<JoinActionRef> eq_arguments;
+    //     eq_arguments.push_back(join_expression_actions.findNode("__global_offset_l", /* is_input= */ true));
+    //     eq_arguments.push_back(join_expression_actions.findNode("__global_offset_r", /* is_input= */ true));
+    //     auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+    //     predicates.push_back(std::move(eq_node));
+    // }
 
-    NameSet output_columns;
-    for (const auto & col : main_plan.getCurrentHeader()->getColumnsWithTypeAndName())
-        if (col.name != "__global_offset_l")
-            output_columns.insert(col.name);
+    // NameSet output_columns;
+    // for (const auto & col : main_plan.getCurrentHeader()->getColumnsWithTypeAndName())
+    //     if (col.name != "__global_offset_l")
+    //         output_columns.insert(col.name);
 
-    for (const auto & col : lazy_plan.getCurrentHeader()->getColumnsWithTypeAndName())
-        if (col.name != "__global_offset_r")
-            output_columns.insert(col.name);
+    // for (const auto & col : lazy_plan.getCurrentHeader()->getColumnsWithTypeAndName())
+    //     if (col.name != "__global_offset_r")
+    //         output_columns.insert(col.name);
 
     /// Add ANY OUTER JOIN
-    auto result_join = std::make_unique<JoinStepLogical>(
-        lhs_plan_header,
-        rhs_plan_header,
-        JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
-        std::move(join_expression_actions),
-        output_columns,
-        std::unordered_map<String, const ActionsDAG::Node *>{},
-        /*join_use_nulls=*/false,
-        JoinSettings(QueryPlanSerializationSettings()),
-        SortingStep::Settings(QueryPlanSerializationSettings()));
-    result_join->setStepDescription("JOIN to generate result stream");
+    // auto result_join = std::make_unique<JoinStepLogical>(
+    //     lhs_plan_header,
+    //     rhs_plan_header,
+    //     JoinOperator(JoinKind::Left, JoinStrictness::Any, JoinLocality::Unspecified, std::move(predicates)),
+    //     std::move(join_expression_actions),
+    //     output_columns,
+    //     std::unordered_map<String, const ActionsDAG::Node *>{},
+    //     /*join_use_nulls=*/false,
+    //     JoinSettings(QueryPlanSerializationSettings()),
+    //     SortingStep::Settings(QueryPlanSerializationSettings()));
+    // result_join->setStepDescription("JOIN to generate result stream");
+
+    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows);
 
     QueryPlan result_plan;
 
@@ -795,7 +803,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(main_plan)));
     plans.emplace_back(std::make_unique<QueryPlan>(std::move(lazy_plan)));
 
-    result_plan.unitePlans(std::move(result_join), {std::move(plans)});
+    result_plan.unitePlans(std::move(join_lazy_columns), {std::move(plans)});
 
     // {
     //     WriteBufferFromOwnString out;

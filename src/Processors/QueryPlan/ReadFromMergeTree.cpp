@@ -26,6 +26,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <Processors/QueryPlan/LazyReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -2675,7 +2676,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithRequiredColumns(c
         number_of_current_replica);
 }
 
-std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::removeUnusedColumns(const NameSet & required_outputs)
+std::unique_ptr<LazyReadFromMergeTree> ReadFromMergeTree::removeUnusedColumns(const NameSet & required_outputs)
 {
     if (output_header == nullptr)
         return {};
@@ -2699,19 +2700,34 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::removeUnusedColumns(const 
     }
 
     Names new_column_names;
-    NameSet columns_to_remove;
+    Names columns_to_remove;
     for (const auto & column_name : all_column_names)
     {
         if (columns_to_keep.contains(column_name))
             new_column_names.push_back(column_name);
         else
-            columns_to_remove.insert(column_name);
+            columns_to_remove.push_back(column_name);
     }
 
     if (columns_to_remove.empty())
         return {};
 
-    auto new_reading = cloneWithRequiredColumns(columns_to_remove);
+    auto lazy_reading_header = std::make_shared<const Block>(
+        MergeTreeSelectProcessor::transformHeader(
+            storage_snapshot->getSampleBlockForColumns(columns_to_remove),
+            nullptr,
+            nullptr, //query_info.row_level_filter,
+            nullptr) //query_info.prewhere_info)
+    );
+
+    auto new_reading = std::make_unique<LazyReadFromMergeTree>(
+        std::move(lazy_reading_header),
+        block_size.max_block_size_rows,
+        reader_settings,
+        mutations_snapshot,
+        storage_snapshot,
+        context,
+        data.getLogName());
 
     all_column_names = std::move(new_column_names);
 
