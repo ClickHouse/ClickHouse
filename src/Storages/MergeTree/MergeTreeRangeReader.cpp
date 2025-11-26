@@ -47,48 +47,32 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static void replaceSharedSubcolumns(const ColumnPtr & filter_column, Columns & columns)
+static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column, bool is_top_level = true)
 {
-    std::unordered_set<const IColumn*> seen_columns;
+    if (!column)
+        return true;
 
-    std::function<void(ColumnPtr &, bool)> replace_in_column = [&](ColumnPtr & column, bool is_top_level)
+    if (filter_column == column)
+        return false;
+
+    if (!is_top_level && column->use_count() > 1)
+        return false;
+
+    bool can_inplace = true;
+    column->forEachSubcolumn([&](const ColumnPtr & subcolumn)
     {
-        if (!column)
+        if (!can_inplace)
             return;
 
-        const IColumn * raw_ptr = column.get();
+        if (!canInplaceFilter(subcolumn, filter_column, false))
+            can_inplace = false;
+    });
 
-        if (filter_column == column)
-        {
-            column = column->cloneResized(column->size());
-            return;
-        }
-
-        if (seen_columns.contains(raw_ptr))
-        {
-            if (!is_top_level)
-                column = column->cloneResized(column->size());
-            return;
-        }
-
-        seen_columns.insert(raw_ptr);
-
-        column->assumeMutable()->forEachMutableSubcolumn([&](ColumnPtr & subcolumn)
-        {
-            replace_in_column(subcolumn, false);
-        });
-    };
-
-    for (auto & column : columns)
-    {
-        replace_in_column(column, true);
-    }
+    return can_inplace;
 }
 
 static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
 {
-    replaceSharedSubcolumns(filter.getColumn(), columns);
-
     const auto & filter_data = filter.getData();
 
     for (auto & column : columns)
@@ -107,7 +91,10 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
 
-            column->assumeMutable()->filter(filter_data);
+            if (canInplaceFilter(column, filter.getColumn()))
+                column->assumeMutable()->filter(filter_data);
+            else
+                column = column->filter(filter_data, filter.countBytesInFilter());
 
             if (column->empty())
             {
