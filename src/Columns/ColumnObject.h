@@ -282,8 +282,8 @@ public:
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, StringRef path, const ColumnPtr & shared_data_column, size_t start, size_t end);
 
-    /// Validate that all dynamic paths have correct sizes.
-    void validateDynamicPathsSizes() const;
+    /// Validate that all dynamic paths have correct sizes and that shared data doesn't contain any dynamic paths.
+    void validateDynamicPathsAndSharedData(size_t shared_data_offset = 0) const;
 
     /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
     class SortedPathsIterator
