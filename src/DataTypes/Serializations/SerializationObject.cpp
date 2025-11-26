@@ -789,7 +789,6 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     }
 
     const auto & column_object = assert_cast<const ColumnObject &>(column);
-    column_object.validateDynamicPathsSizes();
     const auto & typed_paths = column_object.getTypedPaths();
 
     if (object_state->serialization_version.value == SerializationVersion::FLATTENED)
@@ -1041,12 +1040,13 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
     }
 
+    size_t shared_data_previous_size = shared_data->size();
     settings.path.push_back(Substream::ObjectSharedData);
     object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(shared_data, rows_offset, limit, settings, object_state->shared_data_state, cache);
     settings.path.pop_back();
     settings.path.pop_back();
 
-    column_object.validateDynamicPathsSizes();
+    column_object.validateDynamicPathsAndSharedData(shared_data_previous_size);
 }
 
 void SerializationObject::serializeBinary(const Field & field, WriteBuffer & ostr, const DB::FormatSettings & settings) const
@@ -1319,8 +1319,6 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         if (column->size() == prev_size)
             column->insertDefault();
     }
-
-    column_object.validateDynamicPathsSizes();
 }
 
 SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB::SerializationPtr & prev, const DataTypePtr &) const

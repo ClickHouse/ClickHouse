@@ -14,9 +14,9 @@
 #include <Formats/FormatFactory.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
-#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/ObjectStorages/S3/diskSettings.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
