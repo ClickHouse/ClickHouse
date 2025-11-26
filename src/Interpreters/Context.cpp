@@ -3139,14 +3139,6 @@ bool Context::isCurrentQueryKilled() const
     return false;
 }
 
-void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::optional<ColumnsDescription> column_description)
-{
-    insertion_table_info = {
-        .table = std::move(db_and_table),
-        .column_names = std::move(column_names),
-        .columns_description = std::move(column_description),
-    };
-}
 
 String Context::getDefaultFormat() const
 {
