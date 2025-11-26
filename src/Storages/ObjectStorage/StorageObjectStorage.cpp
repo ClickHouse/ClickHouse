@@ -27,7 +27,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/parseGlobs.h>
@@ -516,8 +515,7 @@ void StorageObjectStorage::truncate(
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
 
-    bool local_distributed_processing = distributed_processing;
-    local_distributed_processing = false;
+    bool local_distributed_processing = false;
 
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
@@ -553,6 +551,10 @@ void StorageObjectStorage::truncate(
         object_storage->removeObjectsIfExist(paths);
     }
 
+    // When hive partitioning is not being used,
+    // StorageObjectStorageConfiguration::paths gets populated with inserted file paths.
+    // We need to clear it.
+    configuration->setPaths({});
 }
 
 void StorageObjectStorage::drop()
