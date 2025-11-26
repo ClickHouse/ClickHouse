@@ -89,7 +89,10 @@ void SerializationDateTime::serializeText(const IColumn & column, size_t row_num
     switch (settings.date_time_output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-            writeDateTimeText(value, ostr, time_zone);
+            if (settings.date_time_saturate_on_overflow && value == 0) [[unlikely]]
+                writeDateTimeText(value, ostr, utc_time_zone);
+            else
+                writeDateTimeText(value, ostr, time_zone);
             return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeIntText(value, ostr);

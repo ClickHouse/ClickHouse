@@ -73,6 +73,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"filesystem_cache_allow_background_download", true, true, "New setting to control background downloads in filesystem cache per query."},
             {"show_processlist_include_internal", false, true, "New setting."},
             {"use_paimon_partition_pruning", false, false, "New setting."},
+            {"date_time_saturate_on_overflow", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.10",
         {
