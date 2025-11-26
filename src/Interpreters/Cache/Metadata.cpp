@@ -420,7 +420,7 @@ public:
     bool next(Iterator::OnFileSegmentFunc func)
     {
         bool result = false;
-        for (; bucket_it != metadata_buckets.end(); ++bucket_it)
+        while (bucket_it != metadata_buckets.end())
         {
             auto bucket_lock = bucket_it->lock();
             for (const auto & [_, key_metadata] : *bucket_it)
@@ -431,6 +431,7 @@ public:
                 for (const auto & [_, file_segment_metadata] : *key_metadata)
                     func(FileSegment::getInfo(file_segment_metadata->file_segment));
             }
+            ++bucket_it;
             if (result)
                 break;
         }
