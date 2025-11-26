@@ -151,6 +151,8 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
 
 MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_idx*/, MergeTreeReadTask * previous_task)
 {
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
+
     std::lock_guard lock(mutex);
 
     if (no_more_tasks_available)
@@ -158,11 +160,20 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
 
     if (buffered_ranges.empty())
     {
-        std::optional<ParallelReadResponse> response = extension.sendReadRequest(
-            coordination_mode,
-            min_marks_per_task * pool_settings.threads,
-            /// For Default coordination mode we don't need to pass part names.
-            RangesInDataPartsDescription{});
+        std::optional<ParallelReadResponse> response;
+        try
+        {
+            response = extension.sendReadRequest(
+                coordination_mode,
+                min_marks_per_task * pool_settings.threads,
+                /// For Default coordination mode we don't need to pass part names.
+                RangesInDataPartsDescription{});
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Error while requesting more tasks from the coordinator");
+            throw;
+        }
 
         if (response)
         {

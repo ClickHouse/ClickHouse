@@ -11,6 +11,9 @@
 #include <Common/AsyncTaskExecutor.h>
 #include <Common/checkSSLReturnCode.h>
 
+#include <base/sleep.h>
+#include <Common/FailPoint.h>
+
 namespace ProfileEvents
 {
     extern const Event NetworkReceiveElapsedMicroseconds;
@@ -48,6 +51,12 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
     /// Add more details to exceptions.
     try
     {
+        static atomic_int attempt{0};
+        if (StackTrace().toString().contains("MergeTreeReadPoolParallelReplicas::getTask") && attempt++ == 0)
+        {
+            throw Poco::TimeoutException("Injected timeout for testing purposes");
+        }
+
         /// If async_callback is specified, set socket to non-blocking mode
         /// and try to read data from it, if socket is not ready for reading,
         /// run async_callback and try again later.
