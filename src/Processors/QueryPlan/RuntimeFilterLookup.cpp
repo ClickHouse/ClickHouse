@@ -122,7 +122,7 @@ ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) c
         {
             /// TODO: optimize: consider replacing hash calculation with vectorized version
             const auto & value = values.column->getDataAt(row);
-            dst_data[row] = bloom_filter->find(value.data, value.size);
+            dst_data[row] = bloom_filter->find(value.data(), value.size());
         }
 
         return dst;
@@ -140,7 +140,7 @@ void ApproximateRuntimeFilter::insertIntoBloomFilter(ColumnPtr values)
     {
         /// TODO: make this efficient: compute hashes in vectorized manner
         auto value = values->getDataAt(row);
-        bloom_filter->add(value.data, value.size);
+        bloom_filter->add(value.data(), value.size());
     }
 }
 

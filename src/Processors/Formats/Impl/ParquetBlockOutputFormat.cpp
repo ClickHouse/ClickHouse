@@ -1,4 +1,5 @@
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
+#include <Common/setThreadName.h>
 
 #if USE_PARQUET
 
@@ -307,13 +308,17 @@ void ParquetBlockOutputFormat::writeRowGroup(std::vector<Chunk> chunks)
     else
     {
         Chunk concatenated;
-        while (!chunks.empty())
+        for (auto & chunk : chunks)
         {
             if (concatenated.empty())
-                concatenated.swap(chunks.back());
+            {
+                concatenated.swap(chunk);
+            }
             else
-                concatenated.append(chunks.back());
-            chunks.pop_back();
+            {
+                concatenated.append(chunk);
+                chunk.clear(); // free chunk's buffers so memory is release earlier
+            }
         }
         writeRowGroupInOneThread(std::move(concatenated));
     }
@@ -350,6 +355,10 @@ void ParquetBlockOutputFormat::writeUsingArrow(std::vector<Chunk> chunks)
         builder.version(getParquetVersion(format_settings));
         auto compression_codec = getParquetCompression(format_settings.parquet.output_compression_method);
         builder.compression(compression_codec);
+        if (format_settings.parquet.max_dictionary_size == 0)
+            builder.disable_dictionary();
+        else
+            builder.dictionary_pagesize_limit(format_settings.parquet.max_dictionary_size);
 
         if (arrow::util::Codec::SupportsCompressionLevel(compression_codec))
         {
@@ -491,7 +500,7 @@ void ParquetBlockOutputFormat::startMoreThreadsIfNeeded(const std::unique_lock<s
         {
             try
             {
-                ThreadGroupSwitcher switcher(thread_group, "ParquetEncoder");
+                ThreadGroupSwitcher switcher(thread_group, ThreadName::PARQUET_ENCODER);
 
                 threadFunction();
             }

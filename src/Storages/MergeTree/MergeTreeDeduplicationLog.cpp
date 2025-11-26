@@ -1,7 +1,8 @@
 #include <filesystem>
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/WriteMode.h>
+#include <Disks/supportWritingWithAppend.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -82,17 +83,6 @@ size_t getLogNumber(const std::string & path_str)
 
 }
 
-static bool supportWritingWithAppend(const DiskPtr & disk)
-{
-    if (auto * object_storage = dynamic_cast<DiskObjectStorage *>(disk.get()))
-    {
-        if (!object_storage->getMetadataStorage()->supportWritingWithAppend())
-            return false;
-    }
-    return true;
-}
-
-
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
     const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_)
     : logs_dir(logs_dir_)
@@ -172,16 +162,23 @@ void MergeTreeDeduplicationLog::rotate()
     if (deduplication_window == 0)
         return;
 
+    try
+    {
+        if (current_writer)
+        {
+            current_writer->finalize();
+            current_writer->sync();
+        }
+    } catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Error while writing MergeTree deduplication log on path " + existing_logs[current_log_number].path + ", lost recods: " + DB::toString(existing_logs[current_log_number].entries_count));
+        current_writer = nullptr;
+    }
+
     current_log_number++;
     auto new_path = getLogPath(logs_dir, current_log_number);
     MergeTreeDeduplicationLogNameDescription log_description{new_path, 0};
     existing_logs.emplace(current_log_number, log_description);
-
-    if (current_writer)
-    {
-        current_writer->finalize();
-        current_writer->sync();
-    }
 
     current_writer = disk->writeFile(log_description.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 }

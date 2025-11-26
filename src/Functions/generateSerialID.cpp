@@ -12,6 +12,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <base/StringViewHash.h>
 
 #include <filesystem>
 
@@ -182,7 +183,7 @@ public:
                 UInt64 num_rows = 0;
                 UInt64 old_value = 0;
             };
-            std::unordered_map<StringRef, Series, StringRefHash> series;
+            std::unordered_map<std::string_view, Series, StringViewHash> series;
 
             /// Count the number of rows for each name:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -190,7 +191,7 @@ public:
 
             /// Update counters in Keeper:
             for (auto & [series_name, values] : series)
-                values.old_value = update(series_name.toString(), start_value, current_series, values.num_rows, keeper);
+                values.old_value = update(std::string{series_name}, start_value, current_series, values.num_rows, keeper);
 
             /// Populate the result:
             for (size_t i = 0; i < input_rows_count; ++i)

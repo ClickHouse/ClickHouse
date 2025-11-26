@@ -60,6 +60,8 @@ class Result(MetaClasses.Serializable):
         NOT_REQUIRED = "not required"
         FLAKY = "flaky"
         BROKEN = "broken"
+        OK_ON_RETRY = "retry_ok"
+        FAILED_ON_RETRY = "retry_failed"
 
     name: str
     status: str
@@ -321,7 +323,13 @@ class Result(MetaClasses.Serializable):
 
     @classmethod
     def from_pytest_run(
-        cls, command, cwd=None, name="Tests", env=None, pytest_report_file=None
+        cls,
+        command,
+        cwd=None,
+        name="Tests",
+        env=None,
+        pytest_report_file=None,
+        logfile=None,
     ):
         """
         Runs a pytest command, captures results in jsonl format, and creates a Result object.
@@ -331,21 +339,26 @@ class Result(MetaClasses.Serializable):
             cwd (str, optional): Working directory to run the command in
             name (str, optional): Name for the root Result object
             env (dict, optional): Environment variables for the pytest command
-            verbose (bool, optional): Whether to print pytest output to console
+            pytest_report_file (str, optional): Path to write the pytest jsonl report
+            logfile (str, optional): Path to write pytest output logs
 
         Returns:
             Result: A Result object with test cases as sub-Results
         """
         sw = Utils.Stopwatch()
+        files = []
         if pytest_report_file:
-            files = [pytest_report_file]
+            files.append(pytest_report_file)
         else:
-            files = []
             pytest_report_file = ResultTranslator.PYTEST_RESULT_FILE
+        if logfile:
+            files.append(logfile)
 
         with ContextManager.cd(cwd):
             # Construct the full pytest command with jsonl report
             full_command = f"pytest {command} --report-log={pytest_report_file}"
+            if logfile:
+                full_command += f" --log-file={logfile}"
 
             # Apply environment
             for key, value in (env or {}).items():
@@ -425,13 +438,11 @@ class Result(MetaClasses.Serializable):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
             if result_.name == result.name:
-                if result_.is_skipped():
+                if result_.is_skipped() and result.is_dropped():
                     # job was skipped in workflow configuration by a user' hook
                     print(
                         f"NOTE: Job [{result.name}] has completed status [{result_.status}] - do not switch status to [{result.status}]"
                     )
-                    if not result.is_dropped():
-                        print(f"ERROR: Unexpected new result status [{result.status}]")
                     continue
                 if drop_nested_results:
                     # self.results[i] = self._filter_out_ok_results(result)
@@ -660,12 +671,21 @@ class Result(MetaClasses.Serializable):
         return self.ext.get("do_not_block_pipeline_on_failure", False)
 
     def complete_job(
-        self, with_job_summary_in_info=True, do_not_block_pipeline_on_failure=False
+        self,
+        with_job_summary_in_info=True,
+        do_not_block_pipeline_on_failure=False,
+        disable_attached_files_sorting=False,
     ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
+        if not disable_attached_files_sorting:
+            try:
+                # Normalize to string and sort by filename case-insensitively
+                self.files.sort(key=lambda f: Path(str(f)).name.lower())
+            except Exception as e:
+                print(f"WARNING: Failed to sort attached files: {e}")
         self.dump()
         print(self.to_stdout_formatted())
         if not self.is_ok():
@@ -673,33 +693,47 @@ class Result(MetaClasses.Serializable):
         else:
             sys.exit(0)
 
-    def to_stdout_formatted(self, indent="", res=""):
-        add_frame = not res
+    def to_stdout_formatted(self, indent="", output=""):
+        """
+        Format the result and its sub-results as a human-readable string for stdout output.
+
+        Args:
+            indent: Current indentation level (used for nested results)
+            output: Accumulated output string (used for recursive calls)
+
+        Returns:
+            Formatted string representation of the result
+        """
+        add_frame = not output
         sub_indent = indent + "  "
+        MAX_INFO_LINES_CNT = 100
 
         if add_frame:
-            res = "+" * 80 + "\n"
-        if add_frame or not self.is_ok():
-            res += f"{indent}{self.status} [{self.name}]\n"
-            info_lines = self.info.splitlines()
-            if len(info_lines) > 30:
-                info_lines = (
-                    info_lines[:10]
-                    + [
-                        f"~~~~~ truncated {len(info_lines) - 20} lines ~~~~~",
-                    ]
-                    + info_lines[-10:]
-                )
-            for line in info_lines:
-                res += f"{sub_indent}| {line}\n"
+            output = indent + "+" * 80 + "\n"
 
+        if add_frame or not self.is_ok():
+            output += f"{indent}{self.status} [{self.name}]\n"
+            info_lines = self.info.splitlines()
+
+            # Truncate info lines if too many, showing only the last N lines
+            if len(info_lines) > MAX_INFO_LINES_CNT:
+                truncated_count = len(info_lines) - MAX_INFO_LINES_CNT
+                info_lines = [
+                    f"~~~~~ truncated {truncated_count} lines ~~~~~"
+                ] + info_lines[-MAX_INFO_LINES_CNT:]
+
+            for line in info_lines:
+                output += f"{sub_indent}| {line}\n"
+
+        # Recursively format sub-results if this result is not ok
         if not self.is_ok():
             for sub_result in self.results:
-                res = sub_result.to_stdout_formatted(sub_indent, res)
+                output = sub_result.to_stdout_formatted(sub_indent, output)
 
         if add_frame:
-            res += "+" * 80 + "\n"
-        return res
+            output += indent + "+" * 80 + "\n"
+
+        return output
 
     def get_sub_result_by_name(self, name, recursive=False) -> Optional["Result"]:
         if not name:
@@ -1107,13 +1141,13 @@ class ResultTranslator:
         )
 
     @classmethod
-    def from_pytest_jsonl(cls, pytest_report_file):
+    def from_pytest_jsonl(cls, pytest_report_file, enable_capture_output_to_info=False):
         """
         Parses a pytest jsonl report file and creates a hierarchical Result object.
 
         Args:
-            jsonl_path (str): Path to the pytest jsonl report file
-            name (str): Name for the root Result object
+            pytest_report_file (str): Path to the pytest jsonl report file
+            enable_capture_output_to_info (bool): Whether to capture test output in Result.info
 
         Returns:
             List[Result]: A list of Result objects representing individual test cases
@@ -1217,21 +1251,22 @@ class ResultTranslator:
                                             info_parts.append(lr_txt)
                                     except Exception:
                                         pass
-                                # Sections (captured output) if any
-                                sections = entry.get("sections", [])
-                                try:
-                                    sec_chunks = []
-                                    for sec in sections:
-                                        if isinstance(sec, list) and len(sec) == 2:
-                                            title, content = sec
-                                            if content:
-                                                sec_chunks.append(
-                                                    f"===== {title} =====\n{content}"
-                                                )
-                                    if sec_chunks:
-                                        info_parts.append("\n".join(sec_chunks))
-                                except Exception:
-                                    pass
+                                if enable_capture_output_to_info:
+                                    # Sections (captured output) if any
+                                    sections = entry.get("sections", [])
+                                    try:
+                                        sec_chunks = []
+                                        for sec in sections:
+                                            if isinstance(sec, list) and len(sec) == 2:
+                                                title, content = sec
+                                                if content:
+                                                    sec_chunks.append(
+                                                        f"===== {title} =====\n{content}"
+                                                    )
+                                        if sec_chunks:
+                                            info_parts.append("\n".join(sec_chunks))
+                                    except Exception:
+                                        pass
 
                                 # Create a result for the module/node that failed to collect
                                 test_results[node_id or "<collection>"] = Result(
@@ -1408,7 +1443,11 @@ class ResultTranslator:
                                 test_failures[node_id][when] = status
 
                             # Include captured sections (stdout/stderr) for failures to help debugging
-                            if outcome in ("failed", "error") and entry.get("sections"):
+                            if (
+                                outcome in ("failed", "error")
+                                and entry.get("sections")
+                                and enable_capture_output_to_info
+                            ):
                                 try:
                                     sec_chunks = []
                                     for sec in entry.get("sections", []):
@@ -1461,11 +1500,7 @@ class ResultTranslator:
                                     Result.StatusExtended.ERROR,
                                 ):
                                     # For non-failures, prefer 'call' phase over others
-                                    if (
-                                        when == "call"
-                                        or test_results[node_id].ext.get("when")
-                                        != "call"
-                                    ):
+                                    if when == "call":
                                         test_results[node_id].status = status
                                         test_results[node_id].duration = duration
 

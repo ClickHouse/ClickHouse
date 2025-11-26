@@ -15,8 +15,8 @@ digraph
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
     n6[label="ApplySquashingTransform_11"];
     n7[label="ConvertingTransform_6"];
-    n8[label="NestedElementsValidationTransform_7"];
-    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n8[label="RemovingReplicatedColumnsTransform_7"];
+    n9[label="NestedElementsValidationTransform_8"];
     n10[label="RemovingSparseTransform_9"];
     n11[label="LogSink_10"];
     n12[label="EmptySink_12"];
@@ -49,8 +49,8 @@ digraph
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
     n6[label="ApplySquashingTransform_10"];
     n7[label="ConvertingTransform_6"];
-    n8[label="NestedElementsValidationTransform_7"];
-    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n8[label="RemovingReplicatedColumnsTransform_7"];
+    n9[label="NestedElementsValidationTransform_8"];
     n10[label="MergeTreeSink_9"];
     n11[label="EmptySink_11"];
   }
@@ -81,8 +81,8 @@ digraph
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
     n6[label="ApplySquashingTransform_21"];
     n7[label="ConvertingTransform_6"];
-    n8[label="NestedElementsValidationTransform_7"];
-    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n8[label="RemovingReplicatedColumnsTransform_7"];
+    n9[label="NestedElementsValidationTransform_8"];
     n10[label="MergeTreeSink_9"];
     n11[label="Copy_18"];
     n12[label="BeginingViewsTransform_10"];
@@ -90,8 +90,8 @@ digraph
     n14[label="CountingTransform_12"];
     n15[label="PlanSquashingTransform_20"];
     n16[label="ApplySquashingTransform_11"];
-    n17[label="NestedElementsValidationTransform_14"];
-    n18[label="RemovingReplicatedColumnsTransform_15"];
+    n17[label="RemovingReplicatedColumnsTransform_14"];
+    n18[label="NestedElementsValidationTransform_15"];
     n19[label="RemovingSparseTransform_16"];
     n20[label="LogSink_17"];
     n21[label="FinalizingViewsTransform_19"];
@@ -136,8 +136,8 @@ digraph
     n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
     n6[label="ApplySquashingTransform_21"];
     n7[label="ConvertingTransform_6"];
-    n8[label="NestedElementsValidationTransform_7"];
-    n9[label="RemovingReplicatedColumnsTransform_8"];
+    n8[label="RemovingReplicatedColumnsTransform_7"];
+    n9[label="NestedElementsValidationTransform_8"];
     n10[label="RemovingSparseTransform_9"];
     n11[label="LogSink_10"];
     n12[label="Copy_18"];
@@ -146,8 +146,8 @@ digraph
     n15[label="CountingTransform_13"];
     n16[label="PlanSquashingTransform_20"];
     n17[label="ApplySquashingTransform_12"];
-    n18[label="NestedElementsValidationTransform_15"];
-    n19[label="RemovingReplicatedColumnsTransform_16"];
+    n18[label="RemovingReplicatedColumnsTransform_15"];
+    n19[label="NestedElementsValidationTransform_16"];
     n20[label="MergeTreeSink_17"];
     n21[label="FinalizingViewsTransform_19"];
     n22[label="EmptySink_22"];

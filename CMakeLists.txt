@@ -1,5 +1,20 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Some CMakeLists.txt in contrib/ are not being good citizens and change cmake cache variables
+# globally. This policy prevents such *cache* variable assignments from altering *normal* variables
+# that we've set.
+#
+# Example: suppose our root CMakeLists.txt assigns a normal variable:
+#   set(CMAKE_CXX_STANDARD 23)
+# then llvm-project assigns cache variable with the same name:
+#   set(CMAKE_CXX_STANDARD 17 CACHE STRING "...")
+# The latter assignment doesn't affect the normal variable, so llvm-project effectively uses C++23.
+#
+# Without this policy, the behavior is nonlocal and brittle: if the cache variable doesn't exists,
+# the normal variable is unset; otherwise it's left alone. So the effective value would depend e.g.
+# on the order in which contrib/ libraries are traversed.
+set (CMAKE_POLICY_DEFAULT_CMP0126 NEW)
+
 project(ClickHouse LANGUAGES C CXX ASM)
 
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
@@ -182,7 +197,7 @@ endif ()
 # Add a section with the hash of the compiled machine code for integrity checks.
 # Only for official builds, because adding a section can be time consuming (rewrite of several GB).
 # And cross compiled binaries are not supported (since you cannot execute clickhouse hash-binary)
-if (CLICKHOUSE_OFFICIAL_BUILD AND (NOT CMAKE_TOOLCHAIN_FILE OR CMAKE_TOOLCHAIN_FILE MATCHES "linux/toolchain-x86_64.cmake$") AND NOT ENABLE_CLANG_TIDY)
+if (CLICKHOUSE_OFFICIAL_BUILD AND NOT CMAKE_CROSSCOMPILING AND NOT ENABLE_CLANG_TIDY)
     message(STATUS "Official build: A checksum hash will be added to the clickhouse executable")
     set (USE_BINARY_HASH 1 CACHE STRING "Calculate binary hash and store it in the separate section")
 else ()
