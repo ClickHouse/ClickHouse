@@ -109,19 +109,9 @@ bool SSHKey::verifySignature(std::string_view signature, std::string_view origin
     ssh_key verify_key = nullptr;
     String sig_str(signature);
     int rc = sshsig_verify(original.data(), original.size(), sig_str.c_str(), "clickhouse", &verify_key);
-    if (rc != SSH_OK)
-    {
-        if (verify_key != nullptr)
-            ssh_key_free(verify_key);
-        return false;
-    }
-    bool keys_match = false;
     if (verify_key != nullptr)
-    {
-        keys_match = (ssh_key_cmp(key, verify_key, SSH_KEY_CMP_PUBLIC) == 0);
         ssh_key_free(verify_key);
-    }
-    return keys_match;
+    return rc == SSH_OK;
 }
 
 bool SSHKey::isPrivate() const
