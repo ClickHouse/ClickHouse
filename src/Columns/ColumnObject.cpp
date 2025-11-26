@@ -643,7 +643,6 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), n, 1);
-    validateDynamicPathsSizes();
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -678,7 +677,6 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// Finally, insert paths from shared data.
     insertFromSharedDataAndFillRemainingDynamicPaths(src_object_column, std::move(src_dynamic_paths_for_shared_data), start, length);
-    validateDynamicPathsSizes();
 }
 
 void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::ColumnObject & src_object_column, std::vector<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length)
@@ -742,31 +740,14 @@ void ColumnObject::insertFromSharedDataAndFillRemainingDynamicPaths(const DB::Co
                 /// Deserialize binary value into dynamic column from shared data.
                 if (it->second->size() != current_size)
                 {
-                    if (src_object_column.getDynamicPaths().contains(path))
-                        throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Path {} is present both in shared data and in dynamic paths at row {}. Dynamic path value type: {}. Shared data path value type: {}",
-                            path,
-                            row,
-                            src_object_column.getDynamicPathsPtrs().at(toString(path))->getTypeNameAt(row),
-                            decodeDataType(src_shared_data_values->getDataAt(i).toString())->getName());
-
-                    for (size_t j = offset; j != end; ++j)
-                    {
-                        if (j != i && src_shared_data_paths->getDataAt(j).toView() == path)
-                            throw Exception(
-                            ErrorCodes::LOGICAL_ERROR,
-                            "Path {} is duplicated inside shared data at offsets {} and {}. First value type: {}. Second value type: {}",
-                            path,
-                            i,
-                            j,
-                            decodeDataType(src_shared_data_values->getDataAt(i).toString())->getName(),
-                            decodeDataType(src_shared_data_values->getDataAt(j).toString())->getName());
-                    }
-
+                    src_object_column.validateDynamicPathsAndSharedData();
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, it->second->size(), current_size);
                 }
                 deserializeValueFromSharedData(src_shared_data_values, i, *it->second);
+            }
+            else if (auto * dynamic_path_column = tryToAddNewDynamicPath(path))
+            {
+                deserializeValueFromSharedData(src_shared_data_values, i, *dynamic_path_column);
             }
             else
             {
@@ -2094,13 +2075,27 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
     return 1;
 }
 
-void ColumnObject::validateDynamicPathsSizes() const
+void ColumnObject::validateDynamicPathsAndSharedData(size_t shared_data_offset) const
 {
+    if (dynamic_paths.empty())
+        return;
+
     size_t expected_size = shared_data->size();
     for (const auto & [path, column] : dynamic_paths)
     {
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
+    }
+
+    const auto & shared_data_offsets = getSharedDataOffsets();
+    const auto [shared_data_paths, _] = getSharedDataPathsAndValues();
+    size_t shared_data_paths_start = shared_data_offsets[ssize_t(shared_data_offset) - 1];
+    size_t shared_data_paths_end = shared_data_offsets.back();
+    for (size_t i = shared_data_paths_start; i != shared_data_paths_end; ++i)
+    {
+        auto path = shared_data_paths->getDataAt(i);
+        if (dynamic_paths.contains(path))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Path {} is present both in dynamic paths and in shared data", path.toString());
     }
 }
 
