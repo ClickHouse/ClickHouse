@@ -149,7 +149,7 @@ void SQLBase::setTablePath(RandomGenerator & rg, const FuzzConfig & fc, const bo
     has_partition_by = (isRedisEngine() || isKeeperMapEngine() || isMaterializedPostgreSQLEngine() || isAnyIcebergEngine()
                         || isAzureEngine() || isS3Engine())
         && rg.nextSmallNumber() < 4;
-    has_order_by = (isAnyIcebergEngine() || isAnyDeltaLakeEngine()) && rg.nextSmallNumber() < 4;
+    has_order_by = isAnyIcebergEngine() && rg.nextSmallNumber() < 4;
     if (isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyS3Engine() || isAnyAzureEngine())
     {
         /// Set bucket path first if possible
