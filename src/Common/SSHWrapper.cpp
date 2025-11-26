@@ -21,10 +21,6 @@ namespace ErrorCodes
 
 namespace
 {
-struct SSHStringDeleter
-{
-    void operator()(char * ptr) const { ssh_string_free_char(ptr); }
-};
 struct CStringDeleter
 {
     void operator()(char * ptr) const { std::free(ptr); }
@@ -100,7 +96,7 @@ String SSHKey::signString(std::string_view input) const
     char * signature = nullptr;
     if (int rc = sshsig_sign(input.data(), input.size(), key, nullptr, "clickhouse", SSHSIG_DIGEST_SHA2_256, &signature); rc != SSH_OK)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Error signing with ssh key");
-    std::unique_ptr<char, SSHStringDeleter> sig_ptr(signature);
+    std::unique_ptr<char, CStringDeleter> sig_ptr(signature);
     return String(sig_ptr.get());
 }
 
