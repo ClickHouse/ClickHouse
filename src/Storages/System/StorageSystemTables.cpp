@@ -120,7 +120,7 @@ ColumnPtr getFilteredTables(
 
     for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
-        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
+        const auto database_name = filtered_databases_column->getDataAt(database_idx);
         DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (!database)
             continue;
@@ -264,7 +264,7 @@ public:
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
-            tables.insert(tables_->getDataAt(idx).toString());
+            tables.insert(std::string{tables_->getDataAt(idx)});
     }
 
     String getName() const override { return "Tables"; }
@@ -322,7 +322,7 @@ protected:
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
-                database_name = databases->getDataAt(database_idx).toString();
+                database_name = databases->getDataAt(database_idx);
                 database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)

@@ -782,7 +782,7 @@ struct FormatImpl<DataTypeEnum<FieldType>>
         }
         else
         {
-            StringRef res;
+            std::string_view res;
             bool is_ok = type->getNameForValue(x, res);
             if (is_ok)
                 writeString(res, wb);
@@ -1724,8 +1724,8 @@ struct ConvertImpl
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).toString().empty())
-                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i).toString());
+                if (arguments.size() > 2 && !arguments[2].column.get()->getDataAt(i).empty())
+                    time_zone = &DateLUT::instance(arguments[2].column.get()->getDataAt(i));
 
                 if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
@@ -1848,8 +1848,8 @@ struct ConvertImpl
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            if (!arguments[1].column.get()->getDataAt(i).empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -1882,8 +1882,8 @@ struct ConvertImpl
                     {
                         if (!time_zone_column && arguments.size() > 1)
                         {
-                            if (!arguments[1].column.get()->getDataAt(i).toString().empty())
-                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i).toString());
+                            if (!arguments[1].column.get()->getDataAt(i).empty())
+                                time_zone = &DateLUT::instance(arguments[1].column.get()->getDataAt(i));
                             else
                                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Provided time zone must be non-empty");
                         }
@@ -2411,7 +2411,7 @@ struct ConvertImplGenericFromString
             }
 
             const auto & val = column_from.getDataAt(i);
-            ReadBufferFromMemory read_buffer(val.data, val.size);
+            ReadBufferFromMemory read_buffer(val.data(), val.size());
             try
             {
                 serialization_from.deserializeWholeText(column_to, read_buffer, format_settings);
@@ -2506,7 +2506,7 @@ struct ConvertImplFromDynamicToColumn
                 if (local_discriminators[i] == shared_variant_local_discr)
                 {
                     auto value = shared_variant.getDataAt(offsets[i]);
-                    ReadBufferFromMemory buf(value.data, value.size);
+                    ReadBufferFromMemory buf(value.data(), value.size());
                     auto type = decodeDataType(buf);
                     auto type_name = type->getName();
                     auto it = shared_variant_to_index.find(type_name);
@@ -5802,7 +5802,7 @@ private:
                         if (!nullable_col->isNullAt(i))
                         {
                             const auto & value = enum_type->getNameForValue(enum_data[i]);
-                            res->insertData(value.data, value.size);
+                            res->insertData(value.data(), value.size());
                         }
                         else
                             res->insertDefault();
@@ -5813,7 +5813,7 @@ private:
                     for (size_t i = 0; i < size; ++i)
                     {
                         const auto & value = enum_type->getNameForValue(enum_data[i]);
-                        res->insertData(value.data, value.size);
+                        res->insertData(value.data(), value.size());
                     }
                 }
 
