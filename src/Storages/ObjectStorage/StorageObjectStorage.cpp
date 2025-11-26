@@ -728,4 +728,5 @@ void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, 
     configuration->checkAlterIsPossible(commands);
 }
 
+
 }

@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
+#include <Storages/ObjectStorage/Common.h>
 
 namespace DB
 {

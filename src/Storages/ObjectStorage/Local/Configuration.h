@@ -81,15 +81,14 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }
 
+protected:
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
+private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
-
     Path path;
     Paths paths;
-
-private:
     void initializeFromParsedArguments(const LocalStorageParsedArguments & parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);

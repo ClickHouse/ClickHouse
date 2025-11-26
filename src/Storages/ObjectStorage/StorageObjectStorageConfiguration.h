@@ -9,13 +9,13 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Interpreters/StorageID.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
-#include <Storages/MutationCommands.h>
-#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Storages/StorageFactory.h>
 #include <Common/Exception.h>
+#include <Storages/StorageFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 
 namespace DB
 {

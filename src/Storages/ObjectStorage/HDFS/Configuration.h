@@ -80,12 +80,11 @@ public:
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
+private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsable_arguments)
     {
         StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
     }
-
-private:
     void setURL(const std::string & url_);
     void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
 
