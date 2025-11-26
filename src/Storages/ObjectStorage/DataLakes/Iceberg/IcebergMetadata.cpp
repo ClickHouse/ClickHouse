@@ -175,11 +175,11 @@ IcebergMetadata::IcebergMetadata(
     StorageObjectStorageConfigurationPtr configuration_,
     const ContextPtr & context_,
     IcebergMetadataFilesCachePtr cache_ptr)
-    : object_storage(std::move(object_storage_))
+    : log(getLogger("IcebergMetadata"))
+    , object_storage(std::move(object_storage_))
     , persistent_components(initializePersistentTableComponents(configuration_, cache_ptr, context_))
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
-    , log(getLogger("IcebergMetadata"))
 {
 }
 
