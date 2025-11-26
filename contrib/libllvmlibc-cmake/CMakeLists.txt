@@ -345,6 +345,7 @@ target_compile_definitions(libllvmlibc PRIVATE
     LIBC_COPT_PUBLIC_PACKAGING=1
     LIBC_MATH_HAS_NO_ERRNO=1
     LIBC_MATH_HAS_NO_EXCEPT=1
+    LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
 )
 
 target_include_directories(libllvmlibc SYSTEM BEFORE
