@@ -342,7 +342,7 @@ def test_multiple_tables_streaming_sync_distributed(started_cluster, mode):
 
 
 def test_max_set_age(started_cluster):
-    # We use a instance without keeper fault injection,
+    # We use an instance without keeper fault injection,
     # because otherwise we fail to update keeper state in 1.5 * max_age,
     # so we cannot check max_set_age correctness properly.
     node = started_cluster.instances["instance_without_keeper_fault_injection"]

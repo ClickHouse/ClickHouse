@@ -30,7 +30,6 @@ from helpers.s3_queue_common import (
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
-#test
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
