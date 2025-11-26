@@ -45,7 +45,6 @@ public:
 
     ~MergeTreeDataPartCompact() override;
 
-protected:
      static void loadIndexGranularityImpl(
          MergeTreeIndexGranularityPtr & index_granularity_,
          const MergeTreeIndexGranularityInfo & index_granularity_info_,
@@ -53,6 +52,7 @@ protected:
          const IDataPartStorage & data_part_storage_,
          const MergeTreeSettings & storage_settings);
 
+protected:
      void doCheckConsistency(bool require_part_metadata) const override;
 
 private:

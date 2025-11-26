@@ -40,7 +40,6 @@ public:
     void loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const override;
     void removeMarksFromCache(MarkCache * mark_cache) const override;
 
-protected:
     static void loadIndexGranularityImpl(
         MergeTreeIndexGranularityPtr & index_granularity_ptr,
         MergeTreeIndexGranularityInfo & index_granularity_info_,
@@ -48,6 +47,7 @@ protected:
         const std::string & any_column_file_name,
         const MergeTreeSettings & storage_settings);
 
+protected:
     void doCheckConsistency(bool require_part_metadata) const override;
 
 private:
