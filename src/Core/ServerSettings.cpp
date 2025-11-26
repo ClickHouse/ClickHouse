@@ -780,7 +780,7 @@ namespace DB
 
     **Example**
     ```xml
-    <max_access_entities_num_to_throw>400</max_access_entities_num_to_throw>
+    <max_access_entities_per_storage_to_throw>400</max_access_entities_per_storage_to_throw>
     ```
     )", 0) \
     DECLARE(UInt64, max_authentication_methods_per_user, 100, R"(

@@ -328,7 +328,7 @@ void MemoryAccessStorage::throwTooManyEntities(UInt64 result_number) const
     result_number = result_number ? result_number : entries_by_id.size();
     throw Exception(ErrorCodes::TOO_MANY_ACCESS_ENTITIES,
                                     "Too many access entities. "
-                                    "The limit (server configuration parameter `max_access_entities_num_to_throw`) is set to {}, the current number is {}, the result number will be {}",
+                                    "The limit (server configuration parameter `max_access_entities_per_storage_to_throw`) is set to {}, the current number is {}, the result number will be {}",
                                         access_entities_num_limit, entries_by_id.size(), result_number);
 }
 
