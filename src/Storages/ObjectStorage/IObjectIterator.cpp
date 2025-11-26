@@ -3,7 +3,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Core/Settings.h>
 #include <Core/Defines.h>
@@ -66,7 +66,10 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
                 path = path.substr(1);
             path = std::filesystem::path(object_namespace) / path;
 
-            VirtualColumnUtils::filterByPathOrFile(keys, std::vector<std::string>{path}, filter_actions, virtual_columns, hive_partition_columns, getContext());
+            VirtualColumnUtils::filterByPathOrFile(
+                keys, std::vector<std::string>{path}, filter_actions,
+                virtual_columns, hive_partition_columns, getContext());
+
             if (keys.empty())
                 continue;
         }

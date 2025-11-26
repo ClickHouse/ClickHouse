@@ -729,6 +729,7 @@ test_sharding_key_from_default_column/test.py	131910
 test_shutdown_static_destructor_failure/test.py	37850
 test_shutdown_wait_unfinished_queries/test.py	86490
 test_sql_user_defined_functions_on_cluster/test.py	81480
+test_sql_user_impersonate/test.py     49390
 test_ssh/test.py	29400
 test_ssh/test_options_propagation_enabled.py	29010
 test_ssh_keys_authentication/test.py	37980
