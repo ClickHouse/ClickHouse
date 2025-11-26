@@ -43,11 +43,16 @@ options {
     caseInsensitive = true;
 }
 
-fragment NUMERAL: [0-9]+ ('.' [0-9]+)?;
+fragment NUMERAL: [0-9]+ ('_'? [0-9]+)* ('.' ([0-9]+ ('_'? [0-9]+)*)? )?;
 
 fragment SCIENTIFIC_NUMBER: NUMERAL ('e' [-+]? NUMERAL)?;
 
-NUMBER: NUMERAL | SCIENTIFIC_NUMBER | DURATION;
+fragment INF: 'inf';
+fragment NAN: 'nan';
+
+fragment HEXADECIMAL_NUMBER: ('0x' | '0X') [0-9A-F]+ ('_'? [0-9A-F]+)*;
+
+NUMBER: NUMERAL | SCIENTIFIC_NUMBER | INF | NAN | HEXADECIMAL_NUMBER | DURATION;
 
 STRING: '\'' (~('\'' | '\\') | '\\' .)* '\'' | '"' (~('"' | '\\') | '\\' .)* '"';
 
@@ -200,7 +205,11 @@ SUBQUERY_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? ':' WS_FRAGMENT? N
 TIME_RANGE: LEFT_BRACKET WS_FRAGMENT? NUMBER WS_FRAGMENT? RIGHT_BRACKET;
 
 // The proper order (longest to the shortest) must be validated after parsing
-fragment DURATION: ([0-9]+ ('ms' | [smhdwy]))+;
+fragment DURATION options {
+    caseInsensitive = false;
+}:
+    ([0-9]+ ('ms' | [smhdwy]))+
+;
 
 METRIC_NAME : [a-z_:] [a-z0-9_:]*;
 LABEL_NAME  : [a-z_] [a-z0-9_]*;
