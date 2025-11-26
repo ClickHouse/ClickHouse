@@ -140,6 +140,17 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
         analyzed_granules.add(index_mark);
     }
 
+    if (const auto * data_part = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
+        data_part->getDataPart()->storage.merging_params.mode == MergeTreeData::MergingParams::Replacing)
+    {
+        /*
+         * When a text index created on a table with the ReplacingMergeTree engine, marks cannot be directly skipped
+         * due to search terms might exist only on the old parts but does not exist in new parts.
+         * The Replacing merge strategy would handle such cases but it still needs the range marks to operate.
+        */
+        return false;
+    }
+
     return !it->second.may_be_true;
 }
 

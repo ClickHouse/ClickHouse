@@ -1,0 +1,23 @@
+Updated: foo
+-- direct read disabled
+foo
+foo updated
+foo updated
+-- direct read enabled
+foo
+foo updated
+foo updated
+Removed: bar
+-- direct read disabled
+1
+0
+-- direct read enabled
+1
+0
+New: baz
+-- direct read disabled
+1
+1
+-- direct read enabled
+1
+1
