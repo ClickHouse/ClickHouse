@@ -287,10 +287,14 @@ void LocalConnection::sendQuery(
                 state->block = state->pushing_executor->getHeader();
             }
 
+            const auto & table_id = query_context->getInsertionTable();
             if (query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
             {
-                if (query_context->hasInsertionTableColumnsDescription())
-                    state->columns_description = query_context->getInsertionTableColumnsDescription();
+                if (!table_id.empty())
+                {
+                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    state->columns_description = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+                }
             }
         }
         else if (state->io.pipeline.pulling())
