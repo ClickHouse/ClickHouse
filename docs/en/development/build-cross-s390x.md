@@ -20,7 +20,7 @@ These instructions assume that the host machine is Linux x86_64/ARM and has all 
 In addition to installing the tooling used to build natively, the following additional packages need to be installed:
 
 ```bash
-apt-get install binutils-s390x-linux-gnu libc6-dev-s390x-cross gcc-s390x-linux-gnu binfmt-support qemu-user-static mold
+apt-get install binutils-s390x-linux-gnu binfmt-support qemu-user-static mold
 ```
 
 If you wish to cross compile rust code install the rust cross compile target for s390x:
