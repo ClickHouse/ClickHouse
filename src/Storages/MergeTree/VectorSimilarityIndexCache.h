@@ -23,15 +23,14 @@ namespace DB
 
 struct VectorSimilarityIndexCacheKey
 {
-    /// We put the index name and mark in the key because i) A table/part can have multiple vector indexes ii) If vector index
-    /// granularity is smaller than number of granules/marks in the part, then multiple vector index granules, each starting at
-    /// 'index_mark' will be created on the part.
-
-    /// Storage related path of the part - uniquely identifies one part from another
+    /// Storage-related path of the part - uniquely identifies one part from another
     String path_to_data_part;
 
+    /// Also have the index name and mark are part of the the key because
+    /// - a table/part can have multiple vector indexes
+    /// - if the vector index granularity is smaller than number of granules/marks in the part, then
+    ///   multiple vector index granules, each starting at 'index_mark' will be created on the part.
     String index_name;
-
     size_t index_mark;
 
     bool operator==(const VectorSimilarityIndexCacheKey & rhs) const
@@ -45,17 +44,13 @@ struct VectorSimilarityIndexCacheHashFunction
     size_t operator()(const VectorSimilarityIndexCacheKey & key) const
     {
         SipHash siphash;
-        siphash.update(key.path_to_data_part.size());
-        siphash.update(key.path_to_data_part.data(), key.path_to_data_part.size());
-        siphash.update(key.index_name.size());
-        siphash.update(key.index_name.data(), key.index_name.size());
+        siphash.update(key.path_to_data_part);
+        siphash.update(key.index_name);
         siphash.update(key.index_mark);
 
-        UInt128TrivialHash hash;
-        return hash(siphash.get128());
+        return siphash.get64();
     }
 };
-
 
 struct VectorSimilarityIndexCacheCell
 {
@@ -115,7 +110,7 @@ public:
         return result.first->granule;
     }
 
-    void removePartGranulesFromCache(const String & path_to_data_part)
+    void removeEntriesFromCache(const String & path_to_data_part)
     {
         Base::remove([path_to_data_part](const Key & key, const MappedPtr &) { return key.path_to_data_part == path_to_data_part; });
     }
