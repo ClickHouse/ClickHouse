@@ -34,7 +34,7 @@ struct Base58DecodeTraits
         /// In addition all the leading zeros are converted to "1"s as is.
         /// Thus, if we decode the can have at most same amount of bytes as a result.
         /// Example:
-        /// b'\x00\x00\x00\x00\x00' (5 bytes) → "11111" (5 chars)
+        /// "11111" (5 chars) -> b'\x00\x00\x00\x00\x00' (5 bytes)
         return src_column.getChars().size();
     }
 
