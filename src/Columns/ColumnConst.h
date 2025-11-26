@@ -76,7 +76,7 @@ public:
         return data->getValueNameAndTypeImpl(name_buf, 0, options);
     }
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -174,7 +174,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }

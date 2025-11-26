@@ -117,7 +117,7 @@ UInt64 ColumnReplicated::get64(size_t n) const
     return nested_column->get64(indexes.getIndexAt(n));
 }
 
-StringRef ColumnReplicated::getDataAt(size_t n) const
+std::string_view ColumnReplicated::getDataAt(size_t n) const
 {
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
@@ -133,12 +133,12 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin);
 }
 
-StringRef ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
 }

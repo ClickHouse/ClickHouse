@@ -143,7 +143,7 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method isDefaultAt is not supported for ColumnAggregateFunction");
     }
 
-    StringRef getDataAt(size_t n) const override;
+    std::string_view getDataAt(size_t n) const override;
 
     void insertData(const char * pos, size_t length) override;
 
@@ -171,7 +171,7 @@ public:
 
     void insertDefault() override;
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
 
