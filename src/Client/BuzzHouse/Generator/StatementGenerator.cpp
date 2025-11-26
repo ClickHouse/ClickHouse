@@ -303,7 +303,8 @@ void StatementGenerator::generateHotTableSettingsValues(RandomGenerator & rg, co
         sv->set_property(next);
         sv->set_value(
             ((create
-              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")))
+              && (startsWith(next, "add_") || startsWith(next, "allow_") || startsWith(next, "index_") || startsWith(next, "enable_")
+                  || startsWith(next, "ttl_")))
              || rg.nextBool())
                 ? "1"
                 : "0");
