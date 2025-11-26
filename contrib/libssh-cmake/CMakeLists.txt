@@ -62,7 +62,6 @@ set(libssh_SRCS
     ${LIB_SOURCE_DIR}/src/string.c
     ${LIB_SOURCE_DIR}/src/threads.c
     ${LIB_SOURCE_DIR}/src/token.c
-    ${LIB_SOURCE_DIR}/src/ttyopts.c
     ${LIB_SOURCE_DIR}/src/wrapper.c
     # some files of libssh/src/ are missing - why?
 
