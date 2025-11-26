@@ -42,9 +42,9 @@ struct LocalStorageParsedArguments : private StorageParsedArguments
     using Path = StorageObjectStorageConfiguration::Path;
     String path;
     String path_suffix;
-    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr);
-    void fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr);
+    void fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
 };
 
 class StorageLocalConfiguration : public StorageObjectStorageConfiguration
@@ -89,10 +89,6 @@ private:
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     Path path;
     Paths paths;
-    void initializeFromParsedArguments(const LocalStorageParsedArguments & parsable_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
-        path = parsable_arguments.path;
-    }
+    void initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments);
 };
 }

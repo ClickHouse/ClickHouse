@@ -80,9 +80,9 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     String path_suffix;
 
 public:
-    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
-    void fromDiskImpl(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     S3StorageParsedArguments() = default;
 };
 
@@ -152,14 +152,7 @@ protected:
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override;
 
 private:
-    void initializeFromParsedArguments(S3StorageParsedArguments && parsable_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
-        url = std::move(parsable_arguments.url);
-        s3_settings = std::move(parsable_arguments.s3_settings);
-        s3_capabilities = std::move(parsable_arguments.s3_capabilities);
-        headers_from_ast = std::move(parsable_arguments.headers_from_ast);
-    }
+    void initializeFromParsedArguments(S3StorageParsedArguments && parsed_arguments);
 
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
 

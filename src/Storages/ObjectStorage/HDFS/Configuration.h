@@ -34,8 +34,8 @@ struct HDFSStorageParsedArguments : private StorageParsedArguments
         return with_structure ? max_number_of_arguments_with_structure : max_number_of_arguments_without_structure;
     }
 
-    void fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr context);
-    void fromASTImpl(ASTs & args, ContextPtr context, bool with_structure);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromAST(ASTs & args, ContextPtr context, bool with_structure);
 
     std::string url_str;
 };
@@ -81,10 +81,7 @@ public:
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
 
 private:
-    void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsable_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsableArguments(parsable_arguments);
-    }
+    void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
     void setURL(const std::string & url_);
     void fromAST(ASTs & args, ContextPtr, bool /* with_structure */) override;
 

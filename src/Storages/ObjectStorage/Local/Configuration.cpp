@@ -21,7 +21,7 @@ namespace ErrorCodes
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-void LocalStorageParsedArguments::fromNamedCollectionImpl(const NamedCollection & collection, ContextPtr)
+void LocalStorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr)
 {
     path = collection.get<String>("path");
     format = collection.getOrDefault<String>("format", "auto");
@@ -29,7 +29,7 @@ void LocalStorageParsedArguments::fromNamedCollectionImpl(const NamedCollection 
     structure = collection.getOrDefault<String>("structure", "auto");
 }
 
-void LocalStorageParsedArguments::fromDiskImpl(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
+void LocalStorageParsedArguments::fromDisk(DiskPtr disk, ASTs & args, ContextPtr context, bool with_structure)
 {
     ParseFromDiskResult parsing_result = parseFromDisk(args, with_structure, context, disk->getPath());
 
@@ -42,7 +42,7 @@ void LocalStorageParsedArguments::fromDiskImpl(DiskPtr disk, ASTs & args, Contex
     path_suffix = parsing_result.path_suffix;
 }
 
-void LocalStorageParsedArguments::fromASTImpl(ASTs & args, ContextPtr context, bool with_structure)
+void LocalStorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     if (args.empty() || args.size() > LocalStorageParsedArguments::getMaxNumberOfArguments(with_structure))
         throw Exception(
@@ -92,21 +92,27 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
         .ignore_non_existent_file = false};
 }
 
+    void StorageLocalConfiguration::initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments)
+    {
+        StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
+        path = parsed_arguments.path;
+    }
+
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
-    LocalStorageParsedArguments parsabled_arguments;
-    parsabled_arguments.fromASTImpl(args, context, with_structure);
-    initializeFromParsedArguments(parsabled_arguments);
+    LocalStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromAST(args, context, with_structure);
+    initializeFromParsedArguments(parsed_arguments);
     paths = {path};
 }
 void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
 {
-    LocalStorageParsedArguments parsabled_arguments;
+    LocalStorageParsedArguments parsed_arguments;
     auto disk = context->getDisk(disk_name);
-    parsabled_arguments.fromDiskImpl(disk, args, context, with_structure);
+    parsed_arguments.fromDisk(disk, args, context, with_structure);
     fs::path root = disk->getPath();
-    fs::path suffix = parsabled_arguments.path_suffix;
-    initializeFromParsedArguments(parsabled_arguments);
+    fs::path suffix = parsed_arguments.path_suffix;
+    initializeFromParsedArguments(parsed_arguments);
     path = String(root / suffix);
     setPathForRead(path);
     setPaths({path});
@@ -114,9 +120,9 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name, ASTs & args, 
 
 void StorageLocalConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
-    LocalStorageParsedArguments parsabled_arguments;
-    parsabled_arguments.fromNamedCollectionImpl(collection, context);
-    initializeFromParsedArguments(parsabled_arguments);
+    LocalStorageParsedArguments parsed_arguments;
+    parsed_arguments.fromNamedCollection(collection, context);
+    initializeFromParsedArguments(parsed_arguments);
     paths = {path};
 }
 }
