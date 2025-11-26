@@ -784,7 +784,7 @@ TEST(AccessRights, IntersectionWithPartialRevokes)
     lhs.makeIntersection(rhs);
     ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "test"));
     ASSERT_TRUE(lhs.isGranted(AccessType::SELECT, "testing"));
-    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "test_env")); /// Not in rhs
+    ASSERT_FALSE(lhs.isGranted(AccessType::SELECT, "test_env"));
 
     lhs = {};
     rhs = {};
@@ -915,7 +915,7 @@ TEST(AccessRights, ColumnLevelWildcardOperations)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "col_id"));
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "table", "column"));
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table", "other"));
-    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table")); /// Not full table
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "table"));
 
     root = {};
     root.grantWildcardWithGrantOption(AccessType::SELECT, "db", "table", "visible");
@@ -957,7 +957,7 @@ TEST(AccessRights, ComplexWildcardScenarios)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "analytics_read_only", "normal"));
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "analytics_read_only", "sensitive"));
     ASSERT_TRUE(root.isGranted(AccessType::INSERT, "analytics_write", "data"));
-    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "analytics", "data")); /// Not in analytics_write*
+    ASSERT_FALSE(root.isGranted(AccessType::INSERT, "analytics", "data"));
 
     root = {};
     root.grantWildcard(AccessType::SELECT, "");
@@ -983,8 +983,8 @@ TEST(AccessRights, PartialRevokePropagation)
     root.revoke(AccessType::SELECT, "db1", "secret");
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db1", "secret"));
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db1", "public"));
-    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db2", "secret")); /// Different db
-    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db2")); /// Full db access
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db2", "secret"));
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db2"));
 
     root = {};
     root.grant(AccessType::SELECT);
@@ -993,7 +993,7 @@ TEST(AccessRights, PartialRevokePropagation)
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "temp"));
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "temp1"));
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "temporary"));
-    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "team")); /// "team" doesn't start with "temp"
+    ASSERT_TRUE(root.isGranted(AccessType::SELECT, "team"));
 
     root = {};
     root.grant(AccessType::SELECT, "db");
@@ -1001,7 +1001,7 @@ TEST(AccessRights, PartialRevokePropagation)
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "t1", "col2"));
     ASSERT_TRUE(root.isGranted(AccessType::SELECT, "db", "t2"));
     ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "t1", "col1"));
-    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "t1")); /// Full table not granted due to col1 revoke
+    ASSERT_FALSE(root.isGranted(AccessType::SELECT, "db", "t1"));
 
     root = {};
     root.grant(AccessType::SELECT);
