@@ -395,7 +395,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
             const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
             for (size_t i = 0; i != shared_data_paths->size(); ++i)
             {
-                auto path = shared_data_paths->getDataAt(i).toView();
+                auto path = shared_data_paths->getDataAt(i);
                 if (auto it = shared_data_paths_statistics.find(path); it != shared_data_paths_statistics.end())
                     ++it->second;
                 else if (shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -863,7 +863,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
         for (size_t i = start; i != end; ++i)
         {
-            auto path = shared_data_paths->getDataAt(i).toView();
+            auto path = shared_data_paths->getDataAt(i);
             if (auto it = object_state->statistics.shared_data_paths_statistics.find(path); it != object_state->statistics.shared_data_paths_statistics.end())
                 ++it->second;
             else if (object_state->statistics.shared_data_paths_statistics.size() < ColumnObject::Statistics::MAX_SHARED_DATA_STATISTICS_SIZE)
@@ -1109,7 +1109,7 @@ void SerializationObject::serializeBinary(const IColumn & col, size_t row_num, W
     {
         writeStringBinary(shared_data_paths->getDataAt(i), ostr);
         auto value = shared_data_values->getDataAt(i);
-        ostr.write(value.data, value.size);
+        ostr.write(value.data(), value.size());
     }
 }
 
