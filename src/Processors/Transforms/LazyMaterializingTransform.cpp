@@ -208,7 +208,7 @@ void LazyMaterializingTransform::prepareMainChunk()
                 if (!(next_index < sorted_indexes.size()))
                     break;
 
-                if (!(range.begin < row_end))
+                if (!(range.begin < range.end))
                     break;
 
                 ++range.begin;
