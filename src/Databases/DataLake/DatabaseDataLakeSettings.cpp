@@ -28,8 +28,8 @@ namespace ErrorCodes
     DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0) \
     DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0) \
     DECLARE(String, region, "", "Region for Glue catalog", 0) \
-    DECLARE(String, aws_role_arn, "", "Key for AWS connection for Glue catalog", 0) \
-    DECLARE(String, aws_role_session_name, "", "Key for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_role_arn, "", "Role arn for AWS connection for Glue catalog", 0) \
+    DECLARE(String, aws_role_session_name, "", "Role session name for AWS connection for Glue catalog", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
