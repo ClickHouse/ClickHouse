@@ -3,7 +3,6 @@
 import pytest
 import time
 
-import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster, ZOOKEEPER_CONTAINERS
 
 cluster = ClickHouseCluster(__file__)
