@@ -286,7 +286,7 @@ namespace ErrorCodes
     - `single_stream` — Use the standard serialization format with inline sizes.
     - `with_size_stream` — Use a separate size stream for top-level `String` columns.
     )", 0) \
-    DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "allow_sparse", R"(
+    DECLARE(MergeTreeNullableSerializationVersion, nullable_serialization_version, "basic", R"(
     Controls the serialization method used for `Nullable(T)` columns.
 
     Possible values:

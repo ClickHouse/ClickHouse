@@ -31,6 +31,9 @@
     -- test named tuple
     SELECT id, t.a.size, t.b.null FROM t_sparse_nullable WHERE id % 13 = 0 OR id % 22 = 0 ORDER BY id LIMIT 10;
 
+    -- test some interesting functions when working with nullable values
+    SELECT ifNull(n, 42), coalesce(s, t.a, '42') FROM t_sparse_nullable WHERE id % 13 = 0 OR id % 22 = 0 ORDER BY id LIMIT 2;
+
     SELECT sum(n), uniqExact(n), uniqExact(s) FROM t_sparse_nullable;
     SELECT id % 10 AS key, sum(n), uniqExact(s) FROM t_sparse_nullable GROUP BY key ORDER BY key;
 
