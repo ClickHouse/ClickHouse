@@ -4,7 +4,6 @@ sidebar_label: 'Testing'
 sidebar_position: 40
 slug: /development/tests
 title: 'Testing ClickHouse'
-doc_type: 'guide'
 ---
 
 # Testing ClickHouse
@@ -16,7 +15,10 @@ Most of ClickHouse features can be tested with functional tests and they are man
 
 Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
 
-Tests are located in `./tests/queries` directory.
+Tests are located in `queries` directory.
+There are two subdirectories: `stateless` and `stateful`.
+- Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself.
+- Stateful tests require preloaded test data from ClickHouse and it is available to general public. See [stateful test in continuous integration](continuous-integration.md#functional-stateful-tests).
 
 Each test can be one of two types: `.sql` and `.sh`.
 - An `.sql` test is the simple SQL script that is piped to `clickhouse-client`.

@@ -6,7 +6,6 @@ keywords: ['ORC']
 output_format: true
 slug: /interfaces/formats/ORC
 title: 'ORC'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

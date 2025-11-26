@@ -67,9 +67,6 @@ class BackupEntriesCollector;
 class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
-
-struct RangesInDataParts;
 
 class ActionsDAG;
 
@@ -98,17 +95,6 @@ public:
 
     virtual bool isMergeTree() const { return false; }
 
-    virtual bool isDataLake() const { return false; }
-
-    /// Returns true if the storage is an external database (MySQL, PostgreSQL, MongoDB, etc.)
-    virtual bool isExternalDatabase() const { return false; }
-
-    /// Returns true if the storage is object storage (S3, Azure, GCS, HDFS, etc.)
-    virtual bool isObjectStorage() const { return false; }
-
-    /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
-    virtual bool isMessageQueue() const { return false; }
-
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -133,7 +119,7 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
-    virtual ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const RangesInDataParts &, ContextPtr) const;
+    virtual ConditionSelectivityEstimator getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const;
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
@@ -171,6 +157,9 @@ public:
     /// This method can return true for readonly engines that return the same rows for reading (such as SystemNumbers)
     virtual bool supportsTransactions() const { return false; }
 
+    /// Returns true if the storage supports storing of data type Object.
+    virtual bool supportsDynamicSubcolumnsDeprecated() const { return false; }
+
     /// Returns true if the storage supports storing of dynamic subcolumns.
     virtual bool supportsDynamicSubcolumns() const { return false; }
 
@@ -204,10 +193,7 @@ public:
     /// Get immutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
-    virtual StorageMetadataPtr getInMemoryMetadataPtr(bool /*bypass_metadata_cache*/ = false) const // NOLINT
-    {
-        return metadata.get();
-    }
+    virtual StorageMetadataPtr getInMemoryMetadataPtr() const { return metadata.get(); }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
@@ -247,7 +233,7 @@ public:
     bool isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const;
 
     /// Modify a CREATE TABLE query to make a variant which must be written to a backup.
-    virtual void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const;
+    virtual void applyMetadataChangesToCreateQueryForBackup(ASTPtr & create_query) const;
 
     /// Makes backup entries to backup the data of this storage.
     virtual void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions);
@@ -292,7 +278,7 @@ public:
     }
 
     /// Returns hints for serialization of columns accorsing to statistics accumulated by storage.
-    virtual SerializationInfoByName getSerializationHints() const { return SerializationInfoByName{{}}; }
+    virtual SerializationInfoByName getSerializationHints() const { return {}; }
 
     /// Add engine args that were inferred during storage creation to create query to avoid the same
     /// inference on server restart. For example - data format inference in File/URL/S3/etc engines.
@@ -470,7 +456,9 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual std::optional<QueryPipeline> distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/);
+    virtual std::optional<QueryPipeline> distributedWrite(
+        const ASTInsertQuery & /*query*/,
+        ContextPtr /*context*/);
 
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
@@ -517,7 +505,7 @@ public:
 
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.
-    virtual void updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { }
+    virtual bool updateExternalDynamicMetadataIfExists(ContextPtr /* context */) { return false; }
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -735,6 +723,12 @@ public:
     virtual StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const
     {
         return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
+    }
+
+    /// Creates a storage snapshot from given metadata and columns, which are used in query.
+    virtual StorageSnapshotPtr getStorageSnapshotForQuery(const StorageMetadataPtr & metadata_snapshot, const ASTPtr & /*query*/, ContextPtr query_context) const
+    {
+        return getStorageSnapshot(metadata_snapshot, query_context);
     }
 
     /// Creates a storage snapshot but without holding a data specific to storage.

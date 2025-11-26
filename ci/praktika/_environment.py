@@ -41,9 +41,6 @@ class _Environment(MetaClasses.Serializable):
     REPORT_INFO: List[str] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
-    WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    WORKFLOW_STATUS_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     name = "environment"
 
     @classmethod
@@ -66,14 +63,6 @@ class _Environment(MetaClasses.Serializable):
         PR_LABELS = []
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
-
-        assert Path(Settings.WORKFLOW_JOB_FILE).is_file(), f"File not found: {Settings.WORKFLOW_JOB_FILE}"
-        with open(Settings.WORKFLOW_JOB_FILE, "r", encoding="utf8") as f:
-            WORKFLOW_JOB_DATA = json.load(f)
-
-        assert Path(Settings.WORKFLOW_STATUS_FILE).is_file(), f"File not found: {Settings.WORKFLOW_STATUS_FILE}"
-        with open(Settings.WORKFLOW_STATUS_FILE, "r", encoding="utf8") as f:
-            WORKFLOW_STATUS_DATA = json.load(f)
 
         if EVENT_FILE_PATH:
             with open(EVENT_FILE_PATH, "r", encoding="utf-8") as f:
@@ -210,9 +199,6 @@ class _Environment(MetaClasses.Serializable):
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_INFO=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
-            JOB_KV_DATA={},
-            WORKFLOW_JOB_DATA=WORKFLOW_JOB_DATA,
-            WORKFLOW_STATUS_DATA=WORKFLOW_STATUS_DATA,
         )
 
     @classmethod

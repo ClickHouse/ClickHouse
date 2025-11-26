@@ -150,6 +150,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             tmp_requested_column_names);
 
         auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+            .withExtendedObjects()
             .withSubcolumns(storage.supportsSubcolumns());
 
         NamesAndTypesList columns_for_reader = storage_snapshot->getColumnsByNames(options, tmp_requested_column_names);
@@ -158,7 +159,6 @@ void MergeTreeLazilyReader::readLazyColumns(
             data_part_info,
             columns_for_reader,
             storage_snapshot,
-            storage.getSettings(),
             mark_ranges,
             /*virtual_fields=*/ {},
             use_uncompressed_cache ? storage.getContext()->getUncompressedCache().get() : nullptr,
@@ -169,7 +169,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             ReadBufferFromFileBase::ProfileCallback{});
 
         size_t idx = 0;
-        auto * mark_range_iter = mark_ranges.begin();
+        auto mark_range_iter = mark_ranges.begin();
         auto row_offset = row_offsets[idx].row_offset;
         size_t next_offset = row_offset - index_granularity.getMarkStartingRow(mark_range_iter->begin);
         size_t skipped_rows = next_offset;
@@ -198,7 +198,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             reader->performRequiredConversions(columns_to_read);
 
             for (auto & col : columns_to_read)
-                col = removeSpecialRepresentations(col->convertToFullColumnIfConst());
+                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < columns_size; ++i)
                 lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);

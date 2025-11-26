@@ -1775,9 +1775,8 @@ public:
             return arguments[0];
         }
 
-        /// Special case - one argument is IPv4 and the other is Ipv4 or an integer
-        if ((isIPv4(arguments[0]) && (isIPv4(arguments[1]) || isInteger(arguments[1])))
-            || (isIPv4(arguments[1]) && isInteger(arguments[0])))
+        /// Special case - one or both arguments are IPv4
+        if (isIPv4(arguments[0]) || isIPv4(arguments[1]))
         {
             DataTypes new_arguments {
                     isIPv4(arguments[0]) ? std::make_shared<DataTypeUInt32>() : arguments[0],
@@ -1787,9 +1786,8 @@ public:
             return getReturnTypeImplStatic2(new_arguments, context);
         }
 
-        /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
-        if ((isIPv6(arguments[0]) && (isIPv6(arguments[1]) || isInteger(arguments[1])))
-            || (isIPv6(arguments[1]) && isInteger(arguments[0])))
+        /// Special case - one or both arguments are IPv6
+        if (isIPv6(arguments[0]) || isIPv6(arguments[1]))
         {
             DataTypes new_arguments {
                     isIPv6(arguments[0]) ? std::make_shared<DataTypeUInt128>() : arguments[0],
@@ -2070,7 +2068,16 @@ public:
                     }
                     else if constexpr (std::is_same_v<ResultDataType, DataTypeTime>)
                     {
-                        type_res = std::make_shared<DataTypeTime>();
+                        // Special case for Time: binary OPS should reuse timezone
+                        // of Time argument as timezeone of result type.
+                        // NOTE: binary plus/minus are not allowed on Time64, and we are not handling it here.
+
+                        const TimezoneMixin * tz = nullptr;
+                        if constexpr (std::is_same_v<RightDataType, DataTypeTime>)
+                            tz = &right;
+                        if constexpr (std::is_same_v<LeftDataType, DataTypeTime>)
+                            tz = &left;
+                        type_res = std::make_shared<DataTypeTime>(*tz);
                     }
                     else
                         type_res = std::make_shared<ResultDataType>();

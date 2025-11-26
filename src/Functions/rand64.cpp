@@ -21,7 +21,7 @@ For scenarios where true randomness is crucial, consider using alternative metho
     )";
     FunctionDocumentation::Syntax syntax = "rand64([x])";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "Optional and ignored. The only purpose of the argument is to prevent [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) when the same function call is used multiple times in a query.", {"Any"}}
+        {"x", "Optional and ignored. The only purpose of the argument is to prevent common subexpression elimination when the same function call is used multiple times in a query.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a random UInt64 number with uniform distribution.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {
