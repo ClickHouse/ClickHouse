@@ -1440,6 +1440,11 @@ void StatementGenerator::generateEngineDetails(
     {
         colRefOrExpression(rg, rel, b, rg.pickRandomly(entries), te->mutable_primary_key()->add_exprs()->mutable_expr());
     }
+    if (te->has_engine() && b.has_order_by)
+    {
+        /// Optional ORDER BY
+        generateTableKey(rg, rel, b, false, te->mutable_order());
+    }
     if (te->has_engine() && b.has_partition_by)
     {
         /// Optional PARTITION BY
@@ -2190,7 +2195,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 {
     SQLTable next;
     uint32_t tname = 0;
-    bool added_pkey = false, has_ttl = false;
+    bool has_ttl = false;
+    bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
     const bool alltables = rg.nextMediumNumber() < 26;
     const bool prev_enforce_final = this->enforce_final;

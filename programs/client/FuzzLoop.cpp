@@ -864,7 +864,7 @@ bool Client::buzzHouse()
                     external_call
                     && nopt < (correctness_oracle + settings_oracle + dump_oracle + peer_oracle + restart_client + external_call + 1))
                 {
-                    const uint64_t nseed = rg.nextRandomUInt64();
+                    const uint64_t nseed = rg.nextInFullRange();
                     const auto & tbl
                         = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
                     const auto & ndname = tbl.getSparkCatalogName();
