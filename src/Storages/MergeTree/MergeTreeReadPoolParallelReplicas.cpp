@@ -2,6 +2,8 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/NetException.h>
+#include <Common/ZooKeeper/IKeeper.h>
 
 #include <algorithm>
 #include <iterator>
@@ -104,6 +106,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int SOCKET_TIMEOUT;
 }
 
 MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
@@ -158,11 +161,18 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
     if (no_more_tasks_available)
         return nullptr;
 
+    // if (failed_to_get_task)
+    //     return nullptr;
+
     if (buffered_ranges.empty())
     {
         std::optional<ParallelReadResponse> response;
         try
         {
+            if (extension.getNumberOfCurrentReplica() == 0 && attempt++ == 0)
+                throw NetException(
+                    ErrorCodes::SOCKET_TIMEOUT, "Simulated network error on the first attempt to get a task from the coordinator");
+
             response = extension.sendReadRequest(
                 coordination_mode,
                 min_marks_per_task * pool_settings.threads,
@@ -172,6 +182,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicas::getTask(size_t /*task_id
         catch (...)
         {
             tryLogCurrentException(log, "Error while requesting more tasks from the coordinator");
+            failed_to_get_task = true;
             throw;
         }
 
