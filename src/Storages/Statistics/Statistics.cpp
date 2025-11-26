@@ -38,6 +38,7 @@ namespace ErrorCodes
 enum StatisticsFileVersion : UInt16
 {
     V0 = 0,
+    V1 = 1, /// modify the format of uniq, https://github.com/ClickHouse/ClickHouse/pull/90311
 };
 
 std::optional<Float64> StatisticsUtils::tryConvertToFloat64(const Field & value, const DataTypePtr & data_type)
@@ -231,7 +232,7 @@ Estimate ColumnStatistics::getEstimate() const
 
 void ColumnStatistics::serialize(WriteBuffer & buf)
 {
-    writeIntBinary(V0, buf);
+    writeIntBinary(V1, buf);
 
     UInt64 stat_types_mask = 0;
     for (const auto & [type, _]: stats)
@@ -250,7 +251,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
-    if (version != V0)
+    if (version != V1)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
 
     UInt64 stat_types_mask = 0;
