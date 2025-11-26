@@ -5,6 +5,14 @@
         <name>client</name>
       </cert>
       <ssl>
+        <verificationMode>strict</verificationMode>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <cacheSessions>false</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
         <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
         <certificateFile></certificateFile>
         <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>

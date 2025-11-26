@@ -2533,15 +2533,7 @@ The following settings can be configured by sub-tags:
 |------------------|-------------------------------------------------------------------|
 | `name`           | Named certificate role for TLS certificate authentication method. |
 
-`ssl` contains the following settings with, which can be configured by sub-tags:
-
-| Sub-tags             | Definition                                                                                                                                        |
-|----------------------|--------------------------------------------------|
-| `privateKeyFile`     | Client's private key file.                       |
-| `certificateFile`    | Client's certificate file.                       |
-| `caLocation`         | Server's CA certificate file.                    |
-
-`ssl` section is obligatory for TLS certificate auth method, but it may be used with any supported auth methods.
+`ssl` contains the same settings as `<openSSL><client>` section. This section is obligatory for TLS certificate auth method, but it may be used with any supported auth methods.
 
 Each section in ClickHouse configuration or users configuration may have the following attributes:
 
@@ -2587,6 +2579,7 @@ ClickHouse configuration for TLS certificate authentication method:
         <name>client</name>
       </cert>
       <ssl>
+        <verificationMode>strict</verificationMode>
         <privateKeyFile>/etc/clickhouse-server/config.d/client.key</privateKeyFile>
         <certificateFile>/etc/clickhouse-server/config.d/client.crt</certificateFile>
         <caLocation>/etc/clickhouse-server/config.d/ca.crt</caLocation>
