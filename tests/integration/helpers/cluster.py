@@ -4710,6 +4710,10 @@ class ClickHouseInstance:
                     time.sleep(1)
 
             if not stopped:
+                # Some sanitizer report in progress?
+                while self.get_process_pid("llvm-symbolizer") is not None:
+                    time.sleep(1)
+
                 pid = self.get_process_pid("clickhouse")
                 if pid is not None:
                     logging.warning(
@@ -4923,6 +4927,25 @@ class ClickHouseInstance:
             )
         logging.debug("grep result %s", result)
         return result
+
+    def count_log_lines(
+        self,
+        filename="/var/log/clickhouse-server/clickhouse-server.log",
+    ):
+        result = self.exec_in_container(
+            [
+                "bash",
+                "-c",
+                'wc -l {}'.format(
+                    filename,
+                ),
+            ]
+        )
+        separator = result.find(" ")
+        assert separator > 0, f"no separator in wc output: '{result}'"
+        wc_count = result[:separator]
+        assert wc_count.isdigit(), f"Line count is not a number: {wc_count}"
+        return int(wc_count)
 
     def count_in_log(self, substring):
         result = self.exec_in_container(

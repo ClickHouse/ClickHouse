@@ -430,6 +430,7 @@ CREATE TABLE system.mutations
     `create_time` DateTime,
     `block_numbers.partition_id` Array(String),
     `block_numbers.number` Array(Int64),
+    `parts_in_progress_names` Array(String),
     `parts_to_do_names` Array(String),
     `parts_to_do` Int64,
     `is_done` UInt8,

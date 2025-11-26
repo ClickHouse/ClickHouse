@@ -144,6 +144,10 @@ public:
 
     /// Metadata related methods
 
+    /// Generate blob name for passed absolute local path.
+    /// Path can be generated either independently or based on `path`.
+    virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) const = 0;
+
     /// Create metadata file on paths with content consisting of objects
     virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
 
@@ -202,6 +206,9 @@ public:
     /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
     virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
+
+    /// Returns true if underlying blob ids generator uses random.
+    virtual bool areBlobPathsRandom() const = 0;
 
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
@@ -302,6 +309,16 @@ public:
     virtual bool isReadOnly() const = 0;
 
     virtual bool isTransactional() const
+    {
+        return false;
+    }
+
+    virtual bool isPlain() const
+    {
+        return false;
+    }
+
+    virtual bool isWriteOnce() const
     {
         return false;
     }
