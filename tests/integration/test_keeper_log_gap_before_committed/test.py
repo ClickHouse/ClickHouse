@@ -85,7 +85,7 @@ def test_keeper_log_gap_before_committed(started_cluster):
         logging.info(f"Snapshot index: {snapshot_index}")
 
         def get_from_to_index(changelog):
-            parts = log_file.replace("changelog_", "").replace(".bin", "").split("_")
+            parts = changelog.replace("changelog_", "").replace(".bin", "").split("_")
             return (int(parts[0]), int(parts[1]))
 
         # Find a changelog file that is before the snapshot index
@@ -129,7 +129,7 @@ def test_keeper_log_gap_before_committed(started_cluster):
         node1_conn = get_fake_zk()
 
         children = node1_conn.get_children("/test_log_gap")
-        assert len(children) == 20, f"Expected 10 children but got {len(children)}"
+        assert len(children) == 20, f"Expected 20 children but got {len(children)}"
 
         for child in children:
             data = node1_conn.get(f"/test_log_gap/{child}")[0]
@@ -153,7 +153,7 @@ def test_keeper_log_gap_before_committed(started_cluster):
         for log_file in log_files:
             if log_file.startswith("changelog_"):
                 from_index, to_index = get_from_to_index(log_file)
-                assert from_index > deleted_changelog_to_index, f"Changelog {log_files} was expected to be deleted"
+                assert from_index > deleted_changelog_to_index, f"Changelog {log_file} was expected to be deleted"
 
     finally:
         try:
