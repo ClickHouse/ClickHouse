@@ -295,6 +295,7 @@ public:
         ContextPtr context,
         std::shared_ptr<DataLake::ICatalog> catalog) override
     {
+        update(object_storage, context, /* if_not_updated_before */ true);
         return current_metadata->write(
             sample_block,
             table_id,

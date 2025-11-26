@@ -17,8 +17,6 @@ public:
 
     const char * getName() const override { return name; }
 
-    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationWeakPtr configuration_, ContextPtr context_);
-
     NamesAndTypesList getTableSchema(ContextPtr /*local_context*/) const override { return {}; }
 
     bool operator ==(const IDataLakeMetadata & other) const override
@@ -28,6 +26,8 @@ public:
             && !data_files.empty() && !hudi_metadata->data_files.empty()
             && data_files == hudi_metadata->data_files;
     }
+
+    HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_);
 
     static void createInitial(
         const ObjectStoragePtr & /*object_storage*/,
@@ -46,7 +46,7 @@ public:
         StorageObjectStorageConfigurationWeakPtr configuration,
         ContextPtr local_context)
     {
-        return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
+        return std::make_unique<HudiMetadata>(object_storage, configuration.lock(), local_context);
     }
 
 protected:
@@ -59,7 +59,8 @@ protected:
 
 private:
     const ObjectStoragePtr object_storage;
-    const StorageObjectStorageConfigurationWeakPtr configuration;
+    const String read_path;
+    const String format;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;

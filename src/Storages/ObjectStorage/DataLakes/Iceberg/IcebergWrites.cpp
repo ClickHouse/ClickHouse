@@ -561,28 +561,31 @@ void generateManifestList(
 
 IcebergStorageSink::IcebergStorageSink(
     ObjectStoragePtr object_storage_,
-    StorageObjectStorageConfigurationPtr configuration_,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
     ContextPtr context_,
     std::shared_ptr<DataLake::ICatalog> catalog_,
-    const StorageID & table_id_)
+    const Iceberg::PersistentTableComponents & persistent_table_components_,
+    const DataLakeStorageSettings & data_lake_settings_,
+    const StorageID & table_id_,
+    const String & write_format_)
     : SinkToStorage(sample_block_)
     , sample_block(sample_block_)
     , object_storage(object_storage_)
     , context(context_)
-    , configuration(configuration_)
     , format_settings(format_settings_)
     , catalog(catalog_)
     , table_id(table_id_)
+    , persistent_table_components(persistent_table_components_)
+    , data_lake_settings(data_lake_settings_)
+    , write_format(write_format_)
 {
-    configuration->update(object_storage, context, /* if_not_updated_before */ true);
-    auto [last_version, metadata_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration_, nullptr, context_, log.get());
+    auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage, persistent_table_components.read_path, persistent_table_components, data_lake_settings, context_, log.get());
 
-    metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, log, compression_method);
+    metadata = getMetadataJSONObject(metadata_path, object_storage, persistent_table_components, context, log, compression_method);
     metadata_compression_method = compression_method;
-    auto config_path = configuration_->getPathForWrite().path;
+    auto config_path = persistent_table_components.read_path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!config_path.starts_with('/'))
@@ -590,14 +593,16 @@ IcebergStorageSink::IcebergStorageSink(
 
     if (!context_->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata])
     {
-        filename_generator = FileNamesGenerator(config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
+        filename_generator = FileNamesGenerator(
+            config_path, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
     }
     else
     {
         auto bucket = metadata->getValue<String>(Iceberg::f_location);
         if (bucket.empty() || bucket.back() != '/')
             bucket += "/";
-        filename_generator = FileNamesGenerator(bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, configuration_->format);
+        filename_generator = FileNamesGenerator(
+            bucket, config_path, (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);
     }
 
     filename_generator.setVersion(last_version + 1);
@@ -651,7 +656,7 @@ void IcebergStorageSink::consume(Chunk & chunk)
                 object_storage,
                 context,
                 format_settings,
-                configuration,
+                write_format,
                 sample_block);
             writer_per_partition_key.emplace(partition_key, std::move(writer));
         }
@@ -739,15 +744,21 @@ bool IcebergStorageSink::initializeMetadata()
 
         if (retry_because_of_metadata_conflict)
         {
-            auto [last_version, metadata_path, compression_method]
-                = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration, nullptr, context, getLogger("IcebergWrites").get());
+            auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+                object_storage,
+                persistent_table_components.read_path,
+                persistent_table_components,
+                data_lake_settings,
+                context,
+                getLogger("IcebergWrites").get());
 
             LOG_DEBUG(log, "Rereading metadata file {} with version {}", metadata_path, last_version);
 
             metadata_compression_method = compression_method;
             filename_generator.setVersion(last_version + 1);
 
-            metadata = getMetadataJSONObject(metadata_path, object_storage, configuration, nullptr, context, getLogger("IcebergWrites"), compression_method);
+            metadata = getMetadataJSONObject(
+                metadata_path, object_storage, persistent_table_components, context, getLogger("IcebergWrites"), compression_method);
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 
@@ -798,7 +809,7 @@ bool IcebergStorageSink::initializeMetadata()
                     writer.getResultStatistics(),
                     sample_block,
                     new_snapshot,
-                    configuration->format,
+                    write_format,
                     partititon_spec,
                     partition_spec_id,
                     *buffer_manifest_entry,
@@ -841,7 +852,15 @@ bool IcebergStorageSink::initializeMetadata()
 
             LOG_DEBUG(log, "Writing new metadata file {}", storage_metadata_name);
             auto hint = filename_generator.generateVersionHint();
-            if (!writeMetadataFileAndVersionHint(storage_metadata_name, json_representation, hint.path_in_storage, storage_metadata_name, object_storage, context, metadata_compression_method, configuration->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint]))
+            if (!writeMetadataFileAndVersionHint(
+                    storage_metadata_name,
+                    json_representation,
+                    hint.path_in_storage,
+                    storage_metadata_name,
+                    object_storage,
+                    context,
+                    metadata_compression_method,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
             {
                 LOG_DEBUG(log, "Failed to write metadata {}, retrying", storage_metadata_name);
                 cleanup(true);

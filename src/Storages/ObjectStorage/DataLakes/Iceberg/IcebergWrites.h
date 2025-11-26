@@ -1,16 +1,17 @@
 #pragma once
 
 #include <unordered_map>
+#include <Columns/IColumn.h>
+#include <Core/Range.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Core/Range.h>
-#include <Columns/IColumn.h>
-#include <IO/CompressionMethod.h>
-#include <Databases/DataLake/ICatalog.h>
 
 #if USE_AVRO
 
@@ -73,12 +74,14 @@ class IcebergStorageSink : public SinkToStorage
 public:
     IcebergStorageSink(
         ObjectStoragePtr object_storage_,
-        StorageObjectStorageConfigurationPtr configuration_,
         const std::optional<FormatSettings> & format_settings_,
         SharedHeader sample_block_,
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
-        const StorageID & table_id_);
+        const Iceberg::PersistentTableComponents & persistent_table_components_,
+        const DataLakeStorageSettings & data_lake_settings_,
+        const StorageID & table_id_,
+        const String & write_format_);
 
     ~IcebergStorageSink() override = default;
 
@@ -97,7 +100,6 @@ private:
     Int64 current_schema_id;
     Poco::JSON::Object::Ptr current_schema;
     ContextPtr context;
-    StorageObjectStorageConfigurationPtr configuration;
     std::optional<FormatSettings> format_settings;
     Int32 total_rows = 0;
     Int32 total_chunks_size = 0;
@@ -115,6 +117,9 @@ private:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
+    Iceberg::PersistentTableComponents persistent_table_components;
+    const DataLakeStorageSettings & data_lake_settings;
+    String write_format;
 };
 
 }

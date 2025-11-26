@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -59,8 +60,7 @@ std::optional<TransformAndArgument> parseTransformAndArgument(const String & tra
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const PersistentTableComponents & persistent_table_components,
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method);
@@ -84,8 +84,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    StorageObjectStorageConfigurationPtr configuration_ptr,
-    IcebergMetadataFilesCachePtr cache_ptr,
+    const String & path_for_read,
+    const PersistentTableComponents & persistent_table_components,
+    const DataLakeStorageSettings & data_lake_settings,
     const ContextPtr & local_context,
     Poco::Logger * log);
 }
