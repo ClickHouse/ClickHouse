@@ -40,6 +40,7 @@ workflow = Workflow.Config(
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
+    enable_commit_status_on_failure=True,
     cron_schedules=["13 4 * * *"],
     pre_hooks=["python3 ./ci/jobs/scripts/workflow_hooks/store_data.py"],
 )
