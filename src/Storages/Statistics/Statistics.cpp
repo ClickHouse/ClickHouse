@@ -252,7 +252,7 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
     UInt16 version;
     readIntBinary(version, buf);
     if (version != V1)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}", version);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}. We should run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
