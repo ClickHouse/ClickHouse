@@ -15,7 +15,7 @@ if (NOT EXISTS "${BUILTINS_LIBRARY}")
     if (CMAKE_CXX_COMPILER_TARGET STREQUAL "x86_64-linux-musl" OR
             CMAKE_CXX_COMPILER_TARGET STREQUAL "riscv64-linux-gnu" OR
             CMAKE_CXX_COMPILER_TARGET STREQUAL "s390x-linux-gnu")
-        build_clang_builtin(CMAKE_CXX_COMPILER_TARGET BUILTINS_LIBRARY)
+        build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
     else ()
         message (WARNING "Builtins library not found at ${BUILTINS_LIBRARY} and no build rule for target ${CMAKE_CXX_COMPILER_TARGET}. Using libgcc as fallback.")
         set (BUILTINS_LIBRARY "-lgcc")
