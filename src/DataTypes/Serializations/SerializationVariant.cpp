@@ -500,7 +500,7 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         if (rows_offset)
             col.getLocalDiscriminatorsPtr()->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         else
-            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows);
+            insertDataFromCachedColumn(settings, col.getLocalDiscriminatorsPtr(), cached_column, num_read_rows, cache);
 
         num_read_discriminators = num_read_rows;
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
