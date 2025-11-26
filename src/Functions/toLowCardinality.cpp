@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -40,12 +41,10 @@ public:
         if (arg.type->lowCardinality())
             return arg.column;
 
-        /// res_type may have LowCardinality stripped by KeyCondition optimization
-        DataTypePtr low_cardinality_type = res_type->lowCardinality()
-            ? res_type
-            : std::make_shared<DataTypeLowCardinality>(res_type);
+        if (!res_type->lowCardinality())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected LowCardinality type as result type for toLowCardinality function, got: {}", res_type->getName());
 
-        auto column = low_cardinality_type->createColumn();
+        auto column = res_type->createColumn();
         typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
         return column;
     }

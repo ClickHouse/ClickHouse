@@ -1049,7 +1049,7 @@ bool applyFunctionChainToColumn(
             return false;
 
         result_column = castColumnAccurate({result_column, result_type, ""}, argument_type);
-        result_type = removeLowCardinality(func->getResultType());
+        result_type = func->getResultType();
         result_column = func->execute({{result_column, argument_type, ""}}, result_type, result_column->size(), /* dry_run = */ false);
 
         // Transforming nullable columns to the nested ones, in case no nulls found
