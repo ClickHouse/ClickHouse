@@ -131,7 +131,7 @@ UInt64 ColumnSparse::get64(size_t n) const
     return values->get64(getValueIndex(n));
 }
 
-StringRef ColumnSparse::getDataAt(size_t n) const
+std::string_view ColumnSparse::getDataAt(size_t n) const
 {
     return values->getDataAt(getValueIndex(n));
 }
@@ -159,12 +159,12 @@ void ColumnSparse::insertData(const char * pos, size_t length)
     insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
 }
 
-StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
 }
 
-StringRef ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
 }

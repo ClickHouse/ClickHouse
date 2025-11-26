@@ -93,6 +93,42 @@ def put_azure_file_content(started_cluster, filename, data, bucket=None):
     client.upload_blob(buf, "BlockBlob", len(data))
 
 
+def count_minio_objects(started_cluster, bucket_name, prefix):
+    minio = started_cluster.minio_client
+    objects = list(minio.list_objects(
+        bucket_name,
+        prefix=prefix,
+        recursive=True))
+    return len(objects)
+
+
+def count_azurite_blobs(started_cluster, container_name, prefix):
+    container_client = started_cluster.blob_service_client.get_container_client(
+        container_name
+    )
+    blob_names = list(container_client.list_blob_names(
+        name_starts_with=prefix))
+    return len(blob_names)
+
+
+def recreate_minio_bucket(started_cluster, bucket_name):
+    minio_client = started_cluster.minio_client
+    if minio_client.bucket_exists(bucket_name):
+        logging.debug(f"minio bucket '{bucket_name}' exists, removing to recreate")
+        minio_client.remove_bucket(bucket_name)
+    minio_client.make_bucket(bucket_name)
+
+
+def recreate_azurite_container(started_cluster, container_name):
+    container_client = started_cluster.blob_service_client.get_container_client(
+        container_name
+    )
+    if container_client.exists():
+        logging.debug(f"azurite container '{container_name}' exists, deleting to recreate")
+        container_client.delete_container()
+    container_client.create_container()
+
+
 def create_table(
     started_cluster,
     node,
@@ -110,19 +146,40 @@ def create_table(
     database_name="default",
     replace=False,
     no_settings=False,
+    after_processing="keep",
+    move_to_prefix=None,
+    move_to_bucket=None,
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
 
     settings = {
         "s3queue_loading_retries": 0,
-        "after_processing": "keep",
+        "after_processing": after_processing,
         "keeper_path": f"/clickhouse/test_{table_name}",
         "mode": f"{mode}",
     }
     if version is None:
         settings["enable_hash_ring_filtering"] = 1
         settings["use_persistent_processing_nodes"] = random.choice([True, False])
+
+    azurite_connection_string = started_cluster.env_variables['AZURITE_CONNECTION_STRING']
+
+    if after_processing == "move":
+        assert move_to_prefix or move_to_bucket
+
+        if move_to_prefix:
+            settings["after_processing_move_prefix"] = move_to_prefix
+        if move_to_bucket:
+            if engine_name == "S3Queue":
+                move_uri = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{move_to_bucket}"
+                settings["after_processing_move_uri"] = move_uri
+                minio_access_key_id, minio_secret_access_key = [s.strip("'") for s in DEFAULT_AUTH]
+                settings["after_processing_move_access_key_id"] = minio_access_key_id
+                settings["after_processing_move_secret_access_key"] = minio_secret_access_key
+            else:
+                settings["after_processing_move_connection_string"] = azurite_connection_string
+                settings["after_processing_move_container"] = move_to_bucket
 
     settings.update(additional_settings)
 
@@ -131,7 +188,7 @@ def create_table(
         url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
         engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
     else:
-        engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
+        engine_def = f"{engine_name}('{azurite_connection_string}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
     create = "REPLACE" if replace else "CREATE"
     if not replace:
