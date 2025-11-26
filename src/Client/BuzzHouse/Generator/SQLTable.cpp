@@ -473,13 +473,25 @@ void StatementGenerator::generateTableExpression(
 void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::optional<SQLTable> & t, Expr * ttl_expr)
 {
     chassert(filtered_entries.empty());
+
+    /// Prioritize TTL col
     for (const auto & entry : this->entries)
     {
-        SQLType * tp = entry.getBottomType();
-
-        if (!tp || (tp && (tp->getTypeClass() == SQLTypeClass::DATE || tp->getTypeClass() == SQLTypeClass::DATETIME)))
+        if (entry.special == ColumnSpecial::TTL_COL && rg.nextMediumNumber() < 96)
         {
             filtered_entries.emplace_back(std::ref<const ColumnPathChain>(entry));
+        }
+    }
+    if (filtered_entries.empty())
+    {
+        for (const auto & entry : this->entries)
+        {
+            SQLType * tp = entry.getBottomType();
+
+            if (!tp || (tp && (tp->getTypeClass() == SQLTypeClass::DATE || tp->getTypeClass() == SQLTypeClass::DATETIME)))
+            {
+                filtered_entries.emplace_back(std::ref<const ColumnPathChain>(entry));
+            }
         }
     }
     if (!filtered_entries.empty() && rg.nextMediumNumber() < 96)
@@ -1535,6 +1547,26 @@ void StatementGenerator::addTableColumnInternal(
                 rg, this->next_type_mask, cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
         }
     }
+    else if (special == ColumnSpecial::TTL_COL)
+    {
+        /// Use now() functions for TTL
+        DefaultModifier * def_value = cd->mutable_defaultv();
+        SQLFuncCall * fcall = def_value->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        static const std::vector<SQLFunc> & ttlfuncs
+            = {SQLFunc::FUNCnow, SQLFunc::FUNCnowInBlock, SQLFunc::FUNCnow64, SQLFunc::FUNCnowInBlock64};
+        const SQLFunc tfunc = rg.pickRandomly(ttlfuncs);
+
+        tp = randomDateTimeType(
+            rg, std::numeric_limits<uint64_t>::max(), cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
+        def_value->set_dvalue(DModifier::DEF_MATERIALIZED);
+        col.dmod = std::optional<DModifier>(DModifier::DEF_MATERIALIZED);
+        fcall->mutable_func()->set_catalog_func(tfunc);
+        if (tfunc != SQLFunc::FUNCnowInBlock && rg.nextBool())
+        {
+            /// Add precision modifier
+            fcall->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_int_lit(3);
+        }
+    }
     else
     {
         tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
@@ -1542,16 +1574,16 @@ void StatementGenerator::addTableColumnInternal(
     delete col.tp;
     col.tp = tp;
     col.special = special;
-    if (!modify && tp->isNullable() && rg.nextSmallNumber() < 3)
+    if (special != ColumnSpecial::TTL_COL && !modify && tp->isNullable() && rg.nextSmallNumber() < 3)
     {
         cd->set_nullable(rg.nextBool());
         col.nullable = std::optional<bool>(cd->nullable());
     }
-    if (rg.nextSmallNumber() < 2)
+    if (special != ColumnSpecial::TTL_COL && rg.nextSmallNumber() < 2)
     {
         generateNextStatistics(rg, cd->mutable_stats());
     }
-    if (rg.nextMediumNumber() < 6)
+    if (special != ColumnSpecial::TTL_COL && rg.nextMediumNumber() < 6)
     {
         DefaultModifier * def_value = cd->mutable_defaultv();
         std::uniform_int_distribution<uint32_t> dmod_range(1, static_cast<uint32_t>(DModifier_MAX));
@@ -1570,7 +1602,7 @@ void StatementGenerator::addTableColumnInternal(
             generateTableExpression(rg, rel, false, def_value->mutable_expr());
         }
     }
-    if (t.isMergeTreeFamily() || rg.nextLargeNumber() < 4)
+    if (special != ColumnSpecial::TTL_COL && (t.isMergeTreeFamily() || rg.nextLargeNumber() < 4))
     {
         const auto & csettings = allColumnSettings.at(t.teng);
 
@@ -2158,7 +2190,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
 {
     SQLTable next;
     uint32_t tname = 0;
-    bool added_pkey = false;
+    bool added_pkey = false, has_ttl = false;
     TableEngine * te = ct->mutable_engine();
     const bool alltables = rg.nextMediumNumber() < 26;
     const bool prev_enforce_final = this->enforce_final;
@@ -2207,8 +2239,11 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         added_pkey
             |= (!next.isMergeTreeFamily() && !next.isRocksEngine() && !next.isKeeperMapEngine() && !next.isRedisEngine()
                 && !next.isMaterializedPostgreSQLEngine());
+        has_ttl = !next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool();
+
         const bool add_version_to_replacing
             = next.teng == ReplacingMergeTree && !next.hasPostgreSQLPeer() && !next.hasSQLitePeer() && rg.nextSmallNumber() < 4;
+        const bool add_special_ttl_expr = has_ttl && rg.nextBool();
         uint32_t added_cols = 0;
         uint32_t added_idxs = 0;
         uint32_t added_projs = 0;
@@ -2216,17 +2251,19 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         uint32_t added_sign = 0;
         uint32_t added_is_deleted = 0;
         uint32_t added_version = 0;
+        uint32_t added_ttl_expr = 0;
         const uint32_t to_addcols = rg.randomInt<uint32_t>(1, fc.max_columns);
         const uint32_t to_addidxs
             = rg.randomInt<uint32_t>(1, 4) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 4);
         const uint32_t to_addprojs
             = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(next.isMergeTreeFamily() && rg.nextSmallNumber() < 5);
         const uint32_t to_addconsts = rg.randomInt<uint32_t>(1, 3) * static_cast<uint32_t>(rg.nextSmallNumber() < 3);
+        const uint32_t to_add_ttl_expr = static_cast<uint32_t>(add_special_ttl_expr);
         const uint32_t to_add_sign = static_cast<uint32_t>(next.hasSignColumn());
         const uint32_t to_add_version = static_cast<uint32_t>(next.hasVersionColumn() || add_version_to_replacing);
-        const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing && rg.nextSmallNumber() < 4);
+        const uint32_t to_add_is_deleted = static_cast<uint32_t>(add_version_to_replacing);
         const uint32_t total_to_add
-            = to_addcols + to_addidxs + to_addprojs + to_addconsts + to_add_sign + to_add_version + to_add_is_deleted;
+            = to_addcols + to_addidxs + to_addprojs + to_addconsts + to_add_ttl_expr + to_add_sign + to_add_version + to_add_is_deleted;
 
         for (uint32_t i = 0; i < total_to_add; i++)
         {
@@ -2234,11 +2271,12 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
             const uint32_t add_proj = 4 * static_cast<uint32_t>(!next.cols.empty() && added_projs < to_addprojs);
             const uint32_t add_const = 4 * static_cast<uint32_t>(!next.cols.empty() && added_consts < to_addconsts);
             const uint32_t add_col = 8 * static_cast<uint32_t>(added_cols < to_addcols);
+            const uint32_t add_ttl = 2 * static_cast<uint32_t>(added_ttl_expr < to_add_ttl_expr);
             const uint32_t add_sign = 2 * static_cast<uint32_t>(added_sign < to_add_sign);
             const uint32_t add_version = 2 * static_cast<uint32_t>(added_version < to_add_version && added_sign == to_add_sign);
             const uint32_t add_is_deleted
                 = 2 * static_cast<uint32_t>(added_is_deleted < to_add_is_deleted && added_version == to_add_version);
-            const uint32_t prob_space = add_idx + add_proj + add_const + add_col + add_sign + add_version + add_is_deleted;
+            const uint32_t prob_space = add_idx + add_proj + add_const + add_col + add_ttl + add_sign + add_version + add_is_deleted;
             std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
             const uint32_t nopt = next_dist(rg.generator);
             TableDefItem * ndef = colsdef->add_table_defs();
@@ -2270,7 +2308,10 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
             {
                 const uint32_t cname = next.col_counter++;
                 const bool add_pkey = !added_pkey && rg.nextMediumNumber() < 4;
-                const bool add_version_col = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_version + 1);
+                const bool add_ttl_col = add_ttl && nopt < (add_idx + add_proj + add_const + add_col + add_ttl + 1);
+                const bool add_sign_col = add_sign && nopt < (add_idx + add_proj + add_const + add_col + add_ttl + add_sign + 1);
+                const bool add_version_col
+                    = add_version && nopt < (add_idx + add_proj + add_const + add_col + add_ttl + add_sign + add_version + 1);
 
                 addTableColumn(
                     rg,
@@ -2279,18 +2320,23 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
                     false,
                     false,
                     add_pkey,
-                    add_version_col ? ColumnSpecial::VERSION : (add_sign ? ColumnSpecial::SIGN : ColumnSpecial::IS_DELETED),
+                    add_ttl_col
+                        ? ColumnSpecial::TTL_COL
+                        : (add_sign_col ? ColumnSpecial::SIGN : (add_version_col ? ColumnSpecial::VERSION : ColumnSpecial::IS_DELETED)),
                     ndef->mutable_col_def());
                 added_pkey |= add_pkey;
                 te->add_params()->mutable_cols()->mutable_col()->set_column("c" + std::to_string(cname));
-                if (add_version_col)
+                if (add_ttl_col)
+                {
+                    added_ttl_expr++;
+                }
+                else if (add_sign_col)
+                {
+                    added_sign++;
+                }
+                else if (add_version_col)
                 {
                     added_version++;
-                }
-                else if (add_sign)
-                {
-                    chassert(!add_is_deleted);
-                    added_sign++;
                 }
                 else
                 {
@@ -2332,6 +2378,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
         t.setName(cta->mutable_est(), false);
         dupTableDef(next, t);
+        has_ttl = !next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool();
     }
 
     flatTableColumnPath(flat_tuple | flat_nested | flat_json | skip_nested_node, next.cols, [](const SQLColumn &) { return true; });
@@ -2362,7 +2409,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
         connections.createPeerTable(rg, next.peer_table, next, ct, entries);
         entries.clear();
     }
-    if (!next.is_deterministic && (next.isMergeTreeFamily() || rg.nextLargeNumber() < 8) && rg.nextBool())
+    if (has_ttl)
     {
         flatTableColumnPath(flat_tuple | flat_nested, next.cols, [](const SQLColumn &) { return true; });
         generateNextTTL(rg, std::make_optional<SQLTable>(next), te, te->mutable_ttl_expr());
