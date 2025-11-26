@@ -84,6 +84,7 @@ extern const int SAMPLING_NOT_SUPPORTED;
 extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
 extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 extern const int STORAGE_REQUIRES_PARAMETER;
+extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -1677,6 +1678,20 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     });
 
     return column_sizes;
+}
+
+std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() const
+{
+    try
+    {
+        return getColumnSizes();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+            return std::nullopt;
+        throw;
+    }
 }
 
 

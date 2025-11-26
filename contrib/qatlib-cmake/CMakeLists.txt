@@ -190,7 +190,8 @@ target_include_directories(_qatlib PRIVATE
 target_link_libraries(_qatlib PRIVATE _qatmgr _osal OpenSSL::SSL ch_contrib::isal)
 target_compile_definitions(_qatlib PRIVATE -DUSER_SPACE -DLAC_BYTE_ORDER=__LITTLE_ENDIAN -DOSAL_ENSURE_ON)
 target_link_options(_qatlib PRIVATE -pie -z relro -z now -z noexecstack)
-target_compile_options(_qatlib PRIVATE -march=native)
+# -mcx16: Needed to avoid link failure "undefined symbol: __atomic_compare_exchange_16"
+target_compile_options(_qatlib PRIVATE -mcx16)
 add_library (ch_contrib::qatlib ALIAS _qatlib)
 
 # _usdm

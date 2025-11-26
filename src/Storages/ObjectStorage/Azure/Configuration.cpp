@@ -8,7 +8,7 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Disks/IO/ReadBufferFromAzureBlobStorage.h>
 #include <Disks/IO/WriteBufferFromAzureBlobStorage.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Formats/FormatFactory.h>
 #include <azure/storage/blobs.hpp>
