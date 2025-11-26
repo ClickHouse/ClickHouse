@@ -7,7 +7,6 @@ on:
 #      - "v*"
   pull_request:
     branches: ['master']
-  dispatch_workflow: []
 
 jobs:
   build_praktika:
