@@ -3,8 +3,7 @@
     <substitution>
       <name>N</name>
       <values>
-        <value>5000000</value>
-        <value>50000000</value>
+        <value>3000000</value>
       </values>
     </substitution>
     <substitution>
