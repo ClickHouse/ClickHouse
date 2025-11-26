@@ -431,11 +431,14 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
                 "Correlated subqueries are not allowed in PREWHERE expression. In query {}",
                 query_node->formatASTForErrorMessage());
 
-        prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
-
+        ActionsDAG::NodeRawConstPtrs & outputs = prewhere_actions_dag.getOutputs();
         for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
             if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
-                prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
+                outputs.push_back(prewhere_input_node);
+
+        /// Don't add duplicate output in case `SELECT x PREWHERE x`.
+        if (std::find(outputs.begin(), outputs.end(), expression_nodes.back()) == outputs.end())
+            outputs.push_back(expression_nodes.back());
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }
