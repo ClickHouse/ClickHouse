@@ -41,7 +41,7 @@ public:
     }
     SourceStepWithFilterBase(SourceStepWithFilterBase &&) = default;
 
-    virtual void addFilter(ActionsDAG filter_dag, std::string column_name)
+    void addFilter(ActionsDAG filter_dag, std::string column_name)
     {
         LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "column_name={}\n{}", column_name, filter_dag.dumpDAG());
 
