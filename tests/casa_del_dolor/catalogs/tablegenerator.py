@@ -644,7 +644,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                     "partial-progress.enabled": true_false_lambda,
                     "partial-progress.max-commits": lambda: random.randint(0, 20),
                     "use-starting-sequence-number": true_false_lambda,
-                    "rewrite-job-order": random.choice(
+                    "rewrite-job-order": lambda: random.choice(
                         ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
                     ),
                     "target-file-size-bytes": lambda: random.choice(
@@ -699,14 +699,14 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id => '{random.choice(snapshots)}'"
+                res += f", snapshot_id => {random.choice(snapshots)}"
             res += ")"
             return res
         if next_option == 6:
             res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id => '{random.choice(snapshots)}'"
+                res += f", snapshot_id => {random.choice(snapshots)}"
             res += ")"
             return res
         if next_option == 7:
@@ -732,7 +732,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                     "partial-progress.enabled": true_false_lambda,
                     "partial-progress.max-commits": lambda: random.randint(0, 20),
                     "use-starting-sequence-number": true_false_lambda,
-                    "rewrite-job-order": random.choice(
+                    "rewrite-job-order": lambda: random.choice(
                         ["bytes-asc", "bytes-desc", "files-asc", "files-desc", "none"]
                     ),
                     "target-file-size-bytes": lambda: random.choice(
