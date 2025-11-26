@@ -970,6 +970,25 @@ std::string QueryAnalyzer::rewriteAggregateFunctionNameIfNeeded(
 
 /// Resolve identifier functions implementation
 
+/** Check if a node contains expressions that cannot be safely cached. */
+static bool nodeRequiresCloneFromCache(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    auto node_type = node->getNodeType();
+
+    /// Subqueries need unique table aliases assigned by createUniqueAliasesIfNecessary
+    if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+        return true;
+
+    for (const auto & child : node->getChildren())
+        if (nodeRequiresCloneFromCache(child))
+            return true;
+
+    return false;
+}
+
 /** Resolve identifier from scope aliases.
   *
   * Resolve strategy:
@@ -1036,6 +1055,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 
 
     auto node_type = alias_node->getNodeType();
+
     if (!identifier_lookup.isTableExpressionLookup())
     {
         alias_node = alias_node->clone();
@@ -1298,7 +1318,24 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         {
             const auto * cached_result = scope.identifier_to_resolved_expression_cache.find(identifier_lookup);
             if (cached_result)
-                return *cached_result;
+            {
+                // aggregate functions can be rewritten in ways which require multiple instances
+                // requires_clone_from_cache is precomputed at insert time to avoid repeated tree traversal
+                if (scope.expressions_in_resolve_process_stack.hasAggregateFunction()
+                    || cached_result->requires_clone_from_cache)
+                {
+                    // cloning is obviously not as fast as returning the same pointer, but still faster
+                    // than re-resolving from scratch
+                    return IdentifierResolveResult
+                    {
+                        .resolved_identifier = cached_result->resolved_identifier->clone(),
+                        .resolve_place = cached_result->resolve_place,
+                        .requires_clone_from_cache = cached_result->requires_clone_from_cache
+                    };
+                }
+                else
+                    return *cached_result;
+            }
         }
 
         auto [insert_it, _] = scope.identifier_in_lookup_process.insert({identifier_lookup, IdentifierResolveState()});
@@ -1414,6 +1451,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         scope.identifier_in_lookup_process.erase(it);
         if (can_use_cache && resolve_result.resolved_identifier)
         {
+            resolve_result.requires_clone_from_cache = nodeRequiresCloneFromCache(resolve_result.resolved_identifier);
             scope.identifier_to_resolved_expression_cache.insert(identifier_lookup, resolve_result);
         }
     }
@@ -4859,8 +4897,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
 
     resolveQueryJoinTreeNode(query_node_typed.getJoinTree(), scope, visitor);
-    if (!scope.group_by_use_nulls)
-        scope.identifier_to_resolved_expression_cache.enable();
+
+     if (!scope.group_by_use_nulls)
+         scope.identifier_to_resolved_expression_cache.enable();
 
     /// Resolve query node sections.
 
@@ -4877,6 +4916,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
     {
+        scope.identifier_to_resolved_expression_cache.clear();
+
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

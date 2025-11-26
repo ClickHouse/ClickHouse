@@ -116,6 +116,7 @@ struct IdentifierResolveResult
 {
     QueryTreeNodePtr resolved_identifier;
     IdentifierResolvePlace resolve_place = IdentifierResolvePlace::NONE;
+    bool requires_clone_from_cache = false;  /// Computed at cache insert time to avoid repeated tree traversal
 
     explicit operator bool() const
     {
