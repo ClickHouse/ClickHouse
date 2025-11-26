@@ -268,7 +268,7 @@ public:
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, max_dictionaries = 5,
              max_columns = 5, time_to_run = 0, port = 9000, secure_port = 9440, http_port = 8123, http_secure_port = 8443,
              use_dump_table_oracle = 2, max_reconnection_attempts = 3, time_to_sleep_between_reconnects = 3000, min_string_length = 0,
-             max_string_length = 1009, max_parallel_queries = 5, max_number_alters = 4;
+             max_string_length = 1009, max_parallel_queries = 5, max_number_alters = 4, deterministic_prob = 50;
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           client_file_path = "/var/lib/clickhouse/user_files", server_file_path = "/var/lib/clickhouse/user_files",
                           fuzz_client_out = client_file_path / "fuzz.data", fuzz_server_out = server_file_path / "fuzz.data",

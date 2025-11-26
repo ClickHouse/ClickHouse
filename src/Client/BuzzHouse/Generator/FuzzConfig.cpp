@@ -355,6 +355,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
          [&](const JSONObjectType & value) { max_parallel_queries = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
         {"max_number_alters",
          [&](const JSONObjectType & value) { max_number_alters = std::max(UINT32_C(1), static_cast<uint32_t>(value.getUInt64())); }},
+        {"deterministic_prob", [&](const JSONObjectType & value) { deterministic_prob = static_cast<uint32_t>(value.getUInt64()); }},
         {"query_time", [&](const JSONObjectType & value) { metrics.insert({{"query_time", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_memory", [&](const JSONObjectType & value) { metrics.insert({{"query_memory", loadPerformanceMetric(value, 10, 2000)}}); }},
         {"query_bytes_read",
@@ -443,6 +444,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
     if (max_columns == 0)
     {
         throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "max_columns must be at least 1");
+    }
+    if (deterministic_prob > 100)
+    {
+        throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Deterministic table probability must be 100 at most");
     }
     for (const auto & entry : std::views::values(metrics))
     {

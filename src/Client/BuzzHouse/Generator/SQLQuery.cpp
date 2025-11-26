@@ -1128,7 +1128,7 @@ bool StatementGenerator::joinedTableOrFunction(
         UNREACHABLE();
     }
     return (t && t->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3))
-        || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3));
+        || (v && v->supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3)) || rg.nextLargeNumber() < 4;
 }
 
 void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_t allowed_clauses, TableOrSubquery * tos)

@@ -164,6 +164,8 @@ def main():
         "max_reconnection_attempts": 3,
         "time_to_sleep_between_reconnects": 5000,
         "keeper_map_path_prefix": "/keeper_map_tables",
+        # Oracles don't run check correctness on CI, so set deterministic probability low
+        "deterministic_prob": random.randint(0, 20),
         "disabled_types": disabled_types_str,
         "disabled_engines": disabled_engines_str,
         # Make CI logs less verbose

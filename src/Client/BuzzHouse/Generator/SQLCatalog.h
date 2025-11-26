@@ -222,10 +222,10 @@ public:
     SQLBase(SQLBase &&) = default;
     SQLBase & operator=(SQLBase &&) = default;
 
-    static void setDeterministic(RandomGenerator & rg, SQLBase & b)
+    static void setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
     {
-        b.is_deterministic = rg.nextSmallNumber() < 7;
-        b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 16;
+        b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
+        b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
     }
 
     static bool supportsFinal(const TableEngineValues teng)

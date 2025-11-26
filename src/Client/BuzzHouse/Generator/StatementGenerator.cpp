@@ -504,7 +504,7 @@ void StatementGenerator::generateNextCreateView(RandomGenerator & rg, CreateView
     const bool prev_allow_not_deterministic = this->allow_not_deterministic;
     SelectParen * sparen = cv->mutable_select();
 
-    SQLBase::setDeterministic(rg, next);
+    SQLBase::setDeterministic(fc, rg, next);
     this->allow_not_deterministic = !next.is_deterministic;
     this->enforce_final = next.is_deterministic;
     next.is_temp = fc.allow_memory_tables && rg.nextMediumNumber() < 11;
