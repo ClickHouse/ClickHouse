@@ -21,6 +21,42 @@ namespace CurrentMetrics
 namespace DB
 {
 
+struct VectorSimilarityIndexCacheKey
+{
+    /// We put the index name and mark in the key because i) A table/part can have multiple vector indexes ii) If vector index
+    /// granularity is smaller than number of granules/marks in the part, then multiple vector index granules, each starting at
+    /// 'index_mark' will be created on the part.
+
+    /// Storage related path of the part - uniquely identifies one part from another
+    String path_to_data_part;
+
+    String index_name;
+
+    size_t index_mark;
+
+    bool operator==(const VectorSimilarityIndexCacheKey & rhs) const
+    {
+        return (path_to_data_part == rhs.path_to_data_part && index_name == rhs.index_name && index_mark == rhs.index_mark);
+    }
+};
+
+struct VectorSimilarityIndexCacheHashFunction
+{
+    size_t operator()(const VectorSimilarityIndexCacheKey & key) const
+    {
+        SipHash siphash;
+        siphash.update(key.path_to_data_part.size());
+        siphash.update(key.path_to_data_part.data(), key.path_to_data_part.size());
+        siphash.update(key.index_name.size());
+        siphash.update(key.index_name.data(), key.index_name.size());
+        siphash.update(key.index_mark);
+
+        UInt128TrivialHash hash;
+        return hash(siphash.get128());
+    }
+};
+
+
 struct VectorSimilarityIndexCacheCell
 {
     /// memoryUsageBytes() gives only approximate results ... adding some excess bytes should make it less bad
@@ -48,30 +84,6 @@ struct VectorSimilarityIndexCacheWeightFunction
     }
 };
 
-struct VectorSimilarityIndexCacheKey
-{
-    /// The actual key:
-    UInt128 key;
-
-    /// Auxiliary information, conceptually not part of the key
-    String path_to_data_part;
-
-    bool operator==(const VectorSimilarityIndexCacheKey & rhs) const
-    {
-        return (key == rhs.key && path_to_data_part == rhs.path_to_data_part);
-    }
-};
-
-struct VectorSimilarityIndexCacheHashFunction
-{
-    size_t operator()(const VectorSimilarityIndexCacheKey & key) const
-    {
-        UInt128TrivialHash hash;
-        return hash(key.key);
-    }
-};
-
-
 /// Cache of deserialized vector index granules.
 class VectorSimilarityIndexCache : public CacheBase<VectorSimilarityIndexCacheKey, VectorSimilarityIndexCacheCell, VectorSimilarityIndexCacheHashFunction, VectorSimilarityIndexCacheWeightFunction>
 {
@@ -82,17 +94,6 @@ public:
     VectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
         : Base(cache_policy, CurrentMetrics::VectorSimilarityIndexCacheBytes, CurrentMetrics::VectorSimilarityIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
     {}
-
-    static VectorSimilarityIndexCacheKey hash(const String & path_to_data_part, const String & index_name, size_t index_mark)
-    {
-        SipHash hash;
-        hash.update(path_to_data_part.size());
-        hash.update(path_to_data_part.data(), path_to_data_part.size());
-        hash.update(index_name.size());
-        hash.update(index_name.data(), index_name.size());
-        hash.update(index_mark);
-        return VectorSimilarityIndexCacheKey{hash.get128(), path_to_data_part};
-    }
 
     /// LoadFunc should have signature () -> MergeTreeIndexGranulePtr.
     template <typename LoadFunc>
