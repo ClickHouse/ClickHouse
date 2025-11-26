@@ -97,9 +97,9 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    StringRef getDataAt(size_t index) const override
+    std::string_view getDataAt(size_t index) const override
     {
-        return StringRef(&chars[n * index], n);
+        return {reinterpret_cast<const char *>(&chars[n * index]), n};
     }
 
     bool isDefaultAt(size_t index) const override;
