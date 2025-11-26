@@ -29,6 +29,7 @@ struct Base58DecodeTraits
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
+        /// According to the RFC https://datatracker.ietf.org/doc/html/draft-msporny-base58-03
         /// base58 doesn't have a clean bitsequence-to-character mapping like base64 or base64. 
         /// Instead, it uses division by 58 and modulo operations on big integers.
         /// In addition all the leading zeros are converted to "1"s as is.
