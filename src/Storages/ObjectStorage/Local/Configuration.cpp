@@ -92,11 +92,11 @@ StorageObjectStorageQuerySettings StorageLocalConfiguration::getQuerySettings(co
         .ignore_non_existent_file = false};
 }
 
-    void StorageLocalConfiguration::initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments)
-    {
-        StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
-        path = parsed_arguments.path;
-    }
+void StorageLocalConfiguration::initializeFromParsedArguments(const LocalStorageParsedArguments & parsed_arguments)
+{
+    StorageObjectStorageConfiguration::initializeFromParsedArguments(parsed_arguments);
+    path = parsed_arguments.path;
+}
 
 void StorageLocalConfiguration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
