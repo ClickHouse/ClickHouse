@@ -94,7 +94,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     /// We can do it because projection is stored for every part separately.
     for (const auto & virt_column : key_virtual_columns)
     {
-        const auto * input = &info.before_aggregation->addInput(virt_column);
+        const auto * input = &info.before_aggregation->addInput(virt_column.name, virt_column.type);
         info.before_aggregation->getOutputs().push_back(input);
         info.keys.push_back(virt_column.name);
     }

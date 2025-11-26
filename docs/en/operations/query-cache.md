@@ -153,6 +153,9 @@ cache evicts entries "lazily", i.e. when an entry becomes stale, it is not immed
 is to be inserted into the query cache, the database checks whether the cache has enough free space for the new entry. If this is not the
 case, the database tries to remove all stale entries. If the cache still has not enough free space, the new entry is not inserted.
 
+If the query is run via HTTP, then ClickHouse sets the `Age` and `Expires` headers with the age (in seconds) and expiration timestamp of the
+cached entry.
+
 Entries in the query cache are compressed by default. This reduces the overall memory consumption at the cost of slower writes into / reads
 from the query cache. To disable compression, use setting [query_cache_compress_entries](/operations/settings/settings#query_cache_compress_entries).
 

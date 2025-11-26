@@ -122,6 +122,7 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf);
 void encodeDataTypeForHashCalculation(const DataTypePtr & type, WriteBuffer & buf);
 
 DataTypePtr decodeDataType(const String & data);
+DataTypePtr decodeDataType(std::string_view data);
 DataTypePtr decodeDataType(ReadBuffer & buf);
 
 }
