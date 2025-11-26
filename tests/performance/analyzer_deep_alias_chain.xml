@@ -4,6 +4,10 @@
         <max_expanded_ast_elements>5000000000</max_expanded_ast_elements>
     </settings>
 
+    <create_query>CREATE TABLE sample_table (id UInt64, value UInt64) ENGINE = MergeTree() ORDER BY id</create_query>
+
+    <fill_query>INSERT INTO sample_table VALUES (1, 10)</fill_query>
+
     <query>
 SELECT
     multiIf(number = 0, 0, number = 1, 2, number = 2, 4, number = 3, 6, number = 4, 8, number = 5, 10, number = 6, 12, number = 7, 14, number = 8, 16, number = 9, 18, number = 10, 20, number = 11, 22, number = 12, 24, number = 13, 26, number = 14, 28, number = 15, 30, number = 16, 32, number = 17, 34, number = 18, 36, number = 19, 38, number = 20, 40, number = 21, 42, number = 22, 44, number = 23, 46, number = 24, 48, number = 25, 50, number = 26, 52, number = 27, 54, number = 28, 56, number = 29, 58, number = 30, 60, number = 31, 62, number = 32, 64, number = 33, 66, number = 34, 68, number = 35, 70, number = 36, 72, number = 37, 74, number = 38, 76, number = 39, 78, number = 40, 80, number = 41, 82, number = 42, 84, number = 43, 86, number = 44, 88, number = 45, 90, number = 46, 92, number = 47, 94, number = 48, 96, number = 49, 98, number = 50, 100, number = 51, 102, number = 52, 104, number = 53, 106, number = 54, 108, number = 55, 110, number = 56, 112, number = 57, 114, number = 58, 116, number = 59, 118, number = 60, 120, number = 61, 122, number = 62, 124, number = 63, 126, number = 64, 128, number = 65, 130, number = 66, 132, number = 67, 134, number = 68, 136, number = 69, 138, number = 70, 140, number = 71, 142, number = 72, 144, number = 73, 146, number = 74, 148, number = 75, 150, number = 76, 152, number = 77, 154, number = 78, 156, number = 79, 158, number = 80, 160, number = 81, 162, number = 82, 164, number = 83, 166, number = 84, 168, number = 85, 170, number = 86, 172, number = 87, 174, number = 88, 176, number = 89, 178, number = 90, 180, number = 91, 182, number = 92, 184, number = 93, 186, number = 94, 188, number = 95, 190, number = 96, 192, number = 97, 194, number = 98, 196, number = 99, 198, number) AS number_revised,
@@ -12,5 +16,178 @@ SELECT
     multiIf(number_revised_3 = 0, 0, number_revised_3 = 1, 2, number_revised_3 = 2, 4, number_revised_3) AS number_revised_4
 FROM system.numbers
 LIMIT 100
+    </query>
+
+    <query>
+    WITH
+    -- Step 1: Compute col1
+    col1_cte AS (
+        SELECT
+            id,
+            if(value = 10, 'A',
+                if(value = 20, 'B',
+                    if(value = 30, 'C',
+                        if(value = 40, 'D',
+                            if(value = 50, 'E', 'F')
+                        )
+                    )
+                )
+
+            ) AS col1
+        FROM sample_table
+    ),
+
+    -- Step 2: Compute col2 based on col1
+    col2_cte AS (
+        SELECT
+            id,
+            col1,
+            if(col1 = 'A', 'Alpha',
+                if(col1 = 'B', 'Beta',
+                    if(col1 = 'C', 'Gamma',
+                        if(col1 = 'D', 'Delta',
+                            if(col1 = 'E', 'Epsilon', 'Other')
+                        )
+                    )
+                )
+            ) AS col2
+        FROM col1_cte
+    ),
+
+    -- Step 3: Compute col3 based on col2
+    col3_cte AS (
+        SELECT
+            id,
+            col1,
+            col2,
+            if(col2 = 'Alpha', 1,
+                if(col2 = 'Beta', 2,
+                    if(col2 = 'Gamma', 3,
+                        if(col2 = 'Delta', 4,
+                            if(col2 = 'Epsilon', 5, 0)
+                        )
+                    )
+                )
+            ) AS col3
+        FROM col2_cte
+    ),
+
+    -- Step 4: Compute col4 based on col3
+    col4_cte AS (
+        SELECT
+            id,
+            col1,
+            col2,
+            col3,
+            if(col3 = 1, 'One',
+                if(col3 = 2, 'Two',
+                    if(col3 = 3, 'Three',
+                        if(col3 = 4, 'Four',
+                            if(col3 = 5, 'Five', 'Zero')
+                        )
+                    )
+                )
+            ) AS col4
+        FROM col3_cte
+    ),
+
+    -- Step 5: Compute col5 based on col4
+    col5_cte AS (
+        SELECT
+            id,
+            col1,
+            col2,
+            col3,
+            col4,
+            if(col4 = 'One', 'Uno',
+                if(col4 = 'Two', 'Dos',
+                    if(col4 = 'Three', 'Tres',
+                        if(col4 = 'Four', 'Cuatro',
+                            if(col4 = 'Five', 'Cinco', 'Cero')
+                        )
+                    )
+                )
+            ) AS col5
+        FROM col4_cte
+    ),
+
+    -- Step 6: Compute col6 based on col5
+    col6_cte AS (
+        SELECT
+            id,
+            col1,
+            col2,
+            col3,
+            col4,
+            col5,
+            if(col5 = 'Uno', 'I',
+                if(col5 = 'Dos', 'II',
+                    if(col5 = 'Tres', 'III',
+                        if(col5 = 'Cuatro', 'IV',
+                            if(col5 = 'Cinco', 'V', 'Other')
+                        )
+                    )
+                )
+            ) AS col6
+        FROM col5_cte
+    ),
+
+    -- Step 7: Compute col7 based on col6
+    col7_cte AS (
+        SELECT
+            id,
+            col1,
+            col2,
+            col3,
+            col4,
+            col5,
+            col6,
+            if(col6 = 'I', 'Primero',
+                if(col6 = 'II', 'Segundo',
+                    if(col6 = 'III', 'Tercero',
+                        if(col6 = 'IV', 'Cuarto',
+                            if(col6 = 'V', 'Quinto', 'Otro')
+                        )
+                    )
+                )
+            ) AS col7
+        FROM col6_cte
+    ),
+
+    -- Step 8: Compute col8 based on col7
+    col8_cte AS (
+        SELECT
+            id,
+            col1,
+            col2,
+            col3,
+            col4,
+            col5,
+            col6,
+            col7,
+            if(col7 = 'Primero', 'First',
+                if(col7 = 'Segundo', 'Second',
+                    if(col7 = 'Tercero', 'Third',
+                        if(col7 = 'Cuarto', 'Fourth',
+                            if(col7 = 'Quinto', 'Fifth', 'Other')
+                        )
+                    )
+                )
+            ) AS col8
+        FROM col7_cte
+    )
+
+-- Final Query to Get All Columns
+SELECT
+    id,
+    col1,
+    col2,
+    col3,
+    col4,
+    col5,
+    col6,
+    col7,
+    col8
+FROM col8_cte
     </query>
 </test>
