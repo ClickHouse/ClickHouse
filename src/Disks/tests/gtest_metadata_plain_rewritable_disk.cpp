@@ -1,10 +1,8 @@
-#include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/createMetadataStorageMetrics.h>
-#include <Disks/ObjectStorages/PlainRewritableObjectStorage.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
 #include <IO/ReadSettings.h>
@@ -77,15 +75,9 @@ public:
 private:
     std::shared_ptr<IMetadataStorage> createMetadataStorage(const std::string & key_prefix)
     {
-        MetadataStorageMetrics metadata_storage_metrics = MetadataStorageMetrics::create<LocalObjectStorage, MetadataStorageType::PlainRewritable>();
-        EXPECT_EQ(metadata_storage_metrics.directory_created, ProfileEvents::DiskPlainRewritableLocalDirectoryCreated);
-        EXPECT_EQ(metadata_storage_metrics.directory_removed, ProfileEvents::DiskPlainRewritableLocalDirectoryRemoved);
-        EXPECT_EQ(metadata_storage_metrics.directory_map_size, CurrentMetrics::DiskPlainRewritableLocalDirectoryMapSize);
-        EXPECT_EQ(metadata_storage_metrics.file_count, CurrentMetrics::DiskPlainRewritableLocalFileCount);
-
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("./" + key_prefix, /*read_only_=*/false);
-        auto object_storage = std::make_shared<PlainRewritableObjectStorage<LocalObjectStorage>>(std::move(metadata_storage_metrics), std::move(settings));
+        auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 
         active_metadatas.emplace(key_prefix, metadata_storage);
