@@ -366,7 +366,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
                 size_t lower_bound_index = ColumnObject::findPathLowerBoundInSharedData(prefix, *shared_data_paths, start, end);
                 for (; lower_bound_index != end; ++lower_bound_index)
                 {
-                    auto path = shared_data_paths->getDataAt(lower_bound_index).toView();
+                    auto path = shared_data_paths->getDataAt(lower_bound_index);
                     if (!path.starts_with(prefix))
                         break;
 

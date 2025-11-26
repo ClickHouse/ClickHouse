@@ -12,7 +12,7 @@ Header: count() UInt64
     Header: __table1.a2 String
       Expression (Post Join Actions)
       Header: __table1.a2 String
-        Join
+        Join (JOIN FillRightFirst)
         Header: __table1.a2 String
           Expression (Left Pre Join Actions)
           Header: __table3.c1 UInt64
@@ -20,7 +20,7 @@ Header: count() UInt64
             Expression (Post Join Actions)
             Header: __table1.a2 String
                     __table3.c1 UInt64
-              Join
+              Join (JOIN FillRightFirst)
               Header: __table1.a2 String
                       __table3.c1 UInt64
                 Expression (Left Pre Join Actions)
@@ -29,7 +29,7 @@ Header: count() UInt64
                   Expression (Post Join Actions)
                   Header: __table1.a2 String
                           __table2.b1 UInt64
-                    Join
+                    Join (JOIN FillRightFirst)
                     Header: __table1.a2 String
                             __table2.b1 UInt64
                       Expression (Left Pre Join Actions)
@@ -68,7 +68,7 @@ Header: a2 String
   Expression (Post Join Actions)
   Header: __table1.a2 String
           __table4.d2 String
-    Join
+    Join (JOIN FillRightFirst)
     Header: __table1.a2 String
             __table4.d2 String
       Expression (Left Pre Join Actions)
@@ -77,7 +77,7 @@ Header: a2 String
         Expression (Post Join Actions)
         Header: __table1.a2 String
                 __table1.k UInt64
-          Join
+          Join (JOIN FillRightFirst)
           Header: __table1.k UInt64
                   __table1.a2 String
             Expression (Left Pre Join Actions)
@@ -86,7 +86,7 @@ Header: a2 String
               Expression (Post Join Actions)
               Header: __table1.a2 String
                       __table1.k UInt64
-                Join
+                Join (JOIN FillRightFirst)
                 Header: __table1.k UInt64
                         __table1.a2 String
                   Expression (Left Pre Join Actions)
@@ -137,7 +137,7 @@ Header: bx String
       Expression (Post Join Actions)
       Header: __table1.a2 String
               __table2.bx String
-        Join
+        Join (JOIN FillRightFirst)
         Header: __table1.a2 String
                 __table2.bx String
           Expression (Left Pre Join Actions)
@@ -148,7 +148,7 @@ Header: bx String
             Header: __table1.a2 String
                     __table2.bx String
                     __table4.c1 UInt64
-              Join
+              Join (JOIN FillRightFirst)
               Header: __table1.a2 String
                       __table2.bx String
                       __table4.c1 UInt64
@@ -160,7 +160,7 @@ Header: bx String
                   Header: __table1.a2 String
                           __table2.b1 UInt64
                           __table2.bx String
-                    Join
+                    Join (JOIN FillRightFirst)
                     Header: __table1.a2 String
                             __table2.b1 UInt64
                             __table2.bx String
