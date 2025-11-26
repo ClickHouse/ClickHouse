@@ -1,36 +1,45 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Core/ColumnWithTypeAndName.h>
-#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
+extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+template <bool apply_distinct>
+constexpr String getFunctionArrayJaccardIndexName()
+{
+    if constexpr (apply_distinct)
+        return "arrayJaccard";
+    else
+        return "arrayJaccardIndex";
+}
+}
+
+template <bool apply_distinct = false>
 class FunctionArrayJaccardIndex : public IFunction
 {
 private:
     using ResultType = Float64;
 
-    struct LeftAndRightSizes
-    {
-        size_t left_size;
-        size_t right_size;
-    };
-
     template <bool left_is_const, bool right_is_const>
-    static LeftAndRightSizes getArraySizes(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t i)
+    static std::pair<size_t, size_t>
+    getArraySizes(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t i)
     {
         size_t left_size;
         size_t right_size;
@@ -49,33 +58,39 @@ private:
     }
 
     template <bool left_is_const, bool right_is_const>
-    static void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    static void vector(
+        const ColumnArray::Offsets & intersect_offsets,
+        const ColumnArray::Offsets & left_offsets,
+        const ColumnArray::Offsets & right_offsets,
+        PaddedPODArray<ResultType> & res)
     {
         for (size_t i = 0; i < res.size(); ++i)
         {
-            LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
+            auto [left_size, right_size] = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            res[i] = static_cast<ResultType>(intersect_size) / (sizes.left_size + sizes.right_size - intersect_size);
+            res[i] = static_cast<ResultType>(intersect_size) / (left_size + right_size - intersect_size);
         }
     }
 
     template <bool left_is_const, bool right_is_const>
-    static void vectorWithEmptyIntersect(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, PaddedPODArray<ResultType> & res)
+    static void vectorWithEmptyIntersect(const ColumnArray::Offsets & left_offsets, const ColumnArray::Offsets & right_offsets, size_t rows)
     {
-        for (size_t i = 0; i < res.size(); ++i)
+        for (size_t i = 0; i < rows; ++i)
         {
-            LeftAndRightSizes sizes = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
-            if (sizes.left_size == 0 && sizes.right_size == 0)
+            auto [left_size, right_size] = getArraySizes<left_is_const, right_is_const>(left_offsets, right_offsets, i);
+            if (left_size == 0 && right_size == 0)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "array aggregate functions cannot be performed on two empty arrays");
-            res[i] = 0;
         }
     }
 
 public:
-    static constexpr auto name = "arrayJaccardIndex";
+    static constexpr String name{getFunctionArrayJaccardIndexName<apply_distinct>()};
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
-    explicit FunctionArrayJaccardIndex(ContextPtr context_) : context(context_) {}
+    explicit FunctionArrayJaccardIndex(ContextPtr context_)
+        : context(context_)
+    {
+    }
     size_t getNumberOfArguments() const override { return 2; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -90,23 +105,24 @@ public:
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto cast_to_array = [&](const ColumnWithTypeAndName & col) -> std::pair<const ColumnArray *, bool>
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto cast_to_array = [&](const ColumnPtr & col) -> std::pair<const ColumnArray *, bool>
         {
-            if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col.column.get()))
+            if (const ColumnConst * col_const = typeid_cast<const ColumnConst *>(col.get()))
             {
                 const ColumnArray & col_const_array = checkAndGetColumn<ColumnArray>(*col_const->getDataColumnPtr());
                 return {&col_const_array, true};
             }
-            if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.column.get()))
+            if (const ColumnArray * col_non_const_array = checkAndGetColumn<ColumnArray>(col.get()))
                 return {col_non_const_array, false};
-            throw Exception(
-                ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col.column->getName(), getName());
-        };
 
-        const auto & [left_array, left_is_const] = cast_to_array(arguments[0]);
-        const auto & [right_array, right_is_const] = cast_to_array(arguments[1]);
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Argument for function {} must be array but it has type {}.", col->getName(), getName());
+        };
 
         auto intersect_array = FunctionFactory::instance().get("arrayIntersect", context)->build(arguments);
 
@@ -118,29 +134,72 @@ public:
         if (!intersect_column_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected return type for function arrayIntersect");
 
-        auto col_res = ColumnVector<ResultType>::create();
-        typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
+        bool intersection_empty = typeid_cast<const DataTypeNothing *>(intersect_column_type->getNestedType().get());
+
+        if (intersection_empty && apply_distinct)
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        else if (intersection_empty && !apply_distinct)
+        {
+            const auto [left_array, left_is_const] = cast_to_array(arguments[0].column);
+            const auto [right_array, right_is_const] = cast_to_array(arguments[1].column);
+
+            const auto & left_offsets = left_array->getOffsets();
+            const auto & right_offsets = right_array->getOffsets();
+
+            if (left_is_const && right_is_const)
+                vectorWithEmptyIntersect<true, true>(left_offsets, right_offsets, input_rows_count);
+            else if (!left_is_const && right_is_const)
+                vectorWithEmptyIntersect<false, true>(left_offsets, right_offsets, input_rows_count);
+            else if (left_is_const && !right_is_const)
+                vectorWithEmptyIntersect<true, false>(left_offsets, right_offsets, input_rows_count);
+            else
+                vectorWithEmptyIntersect<false, false>(left_offsets, right_offsets, input_rows_count);
+
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
+
+        ColumnPtr left_column;
+        ColumnPtr right_column;
+
+        if constexpr (apply_distinct)
+        {
+            auto distinct_function_resolver = FunctionFactory::instance().get("arrayDistinct", context);
+
+            auto left_distinct_array = distinct_function_resolver->build({arguments[0]});
+            left_column = left_distinct_array->execute(
+                {arguments[0]}, left_distinct_array->getResultType(), input_rows_count, /* dry_run = */ false);
+
+            auto right_distinct_array = distinct_function_resolver->build({arguments[1]});
+            right_column = right_distinct_array->execute(
+                {arguments[1]}, right_distinct_array->getResultType(), input_rows_count, /* dry_run = */ false);
+        }
+        else
+        {
+            left_column = arguments[0].column;
+            right_column = arguments[1].column;
+        }
+
+        const auto [left_array, left_is_const] = cast_to_array(left_column);
+        const auto [right_array, right_is_const] = cast_to_array(right_column);
+
+        const auto & left_offsets = left_array->getOffsets();
+        const auto & right_offsets = right_array->getOffsets();
+
+        const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column);
+        const auto & intersect_offsets = intersect_column_array.getOffsets();
+
+        auto col_res = result_type->createColumn();
+        auto & vec_res = typeid_cast<ColumnVector<ResultType> &>(*col_res).getData();
         vec_res.resize(input_rows_count);
 
-#define EXECUTE_VECTOR(left_is_const, right_is_const) \
-    if (typeid_cast<const DataTypeNothing *>(intersect_column_type->getNestedType().get())) \
-        vectorWithEmptyIntersect<left_is_const, right_is_const>(left_array->getOffsets(), right_array->getOffsets(), vec_res); \
-    else \
-    { \
-        const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column); \
-        vector<left_is_const, right_is_const>(intersect_column_array.getOffsets(), left_array->getOffsets(), right_array->getOffsets(), vec_res); \
-    }
-
-        if (!left_is_const && !right_is_const)
-            EXECUTE_VECTOR(false, false)
+        if (left_is_const && right_is_const)
+            vector<true, true>(intersect_offsets, left_offsets, right_offsets, vec_res);
         else if (!left_is_const && right_is_const)
-            EXECUTE_VECTOR(false, true)
+            vector<false, true>(intersect_offsets, left_offsets, right_offsets, vec_res);
         else if (left_is_const && !right_is_const)
-            EXECUTE_VECTOR(true, false)
+            vector<true, false>(intersect_offsets, left_offsets, right_offsets, vec_res);
         else
-            EXECUTE_VECTOR(true, true)
-
-#undef EXECUTE_VECTOR
+            vector<false, false>(intersect_offsets, left_offsets, right_offsets, vec_res);
 
         return col_res;
     }
@@ -151,19 +210,45 @@ private:
 
 REGISTER_FUNCTION(ArrayJaccardIndex)
 {
-    FunctionDocumentation::Description description = "Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.";
-    FunctionDocumentation::Syntax syntax = "arrayJaccardIndex(arr_x, arr_y)";
-    FunctionDocumentation::Arguments arguments = {
-        {"arr_x", "First array.", {"Array(T)"}},
-        {"arr_y", "Second array.", {"Array(T)"}},
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the Jaccard index of `arr_x` and `arr_y`", {"Float64"}};
-    FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res", "0.3333333333333333"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    {
+        FunctionDocumentation::Description description
+            = "Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.";
+        FunctionDocumentation::Syntax syntax = "arrayJaccardIndex(arr_x, arr_y)";
+        FunctionDocumentation::Arguments arguments = {
+            {"arr_x", "First array.", {"Array(T)"}},
+            {"arr_y", "Second array.", {"Array(T)"}},
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the Jaccard index of `arr_x` and `arr_y`", {"Float64"}};
+        FunctionDocumentation::Examples examples
+            = {{"Usage example", "SELECT arrayJaccardIndex([1, 2], [2, 3]) AS res", "0.3333333333333333"}};
+        FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionArrayJaccardIndex>(documentation);
+        factory.registerFunction<FunctionArrayJaccardIndex<false>>(documentation);
+    }
+
+    {
+        FunctionDocumentation::Description description = R"(
+Returns the [Jaccard index](https://en.wikipedia.org/wiki/Jaccard_index) of two arrays.
+
+:::note
+This function is essentially an alias for `arrayJaccardIndex(arrayDistinct(arr_x), arrayDistinct(arr_y))`, except when both arrays are empty. In that case, `arrayJaccard` returns 0, whereas `arrayJaccardIndex` throws an error.
+:::
+        )";
+        FunctionDocumentation::Syntax syntax = "arrayJaccard(arr_x, arr_y)";
+        FunctionDocumentation::Arguments arguments = {
+            {"arr_x", "First array.", {"Array(T)"}},
+            {"arr_y", "Second array.", {"Array(T)"}},
+        };
+        FunctionDocumentation::ReturnedValue returned_value = {"Returns the Jaccard index of `arr_x` and `arr_y`", {"Float64"}};
+        FunctionDocumentation::Examples examples
+            = {{"Usage example", "SELECT arrayJaccard([1, 2, 1, 2], [2, 3, 3, 3, 3]) AS res", "0.3333333333333333"}};
+        FunctionDocumentation::IntroducedIn introduced_in = {25, 7};
+        FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
+        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+
+        factory.registerFunction<FunctionArrayJaccardIndex<true>>(documentation);
+    }
 }
-
 }
