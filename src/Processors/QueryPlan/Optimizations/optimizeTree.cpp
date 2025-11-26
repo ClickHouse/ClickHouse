@@ -73,6 +73,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_n,
         optimization_settings.use_top_n_dynamic_filtering,
+        optimization_settings.max_limit_for_top_n_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
     };
 
@@ -201,6 +202,7 @@ void optimizeTreeSecondPass(
         optimization_settings.network_transfer_limits,
         optimization_settings.use_skip_indexes_for_top_n,
         optimization_settings.use_top_n_dynamic_filtering,
+        optimization_settings.max_limit_for_top_n_optimization,
         optimization_settings.use_skip_indexes_on_data_read,
     };
 

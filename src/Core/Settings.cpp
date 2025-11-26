@@ -1560,6 +1560,8 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(UInt64, query_plan_max_limit_for_top_n_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopN optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
+)", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
 

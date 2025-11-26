@@ -122,6 +122,7 @@ struct QueryPlanOptimizationSettings
     bool use_skip_indexes_for_top_n;
     bool use_top_n_dynamic_filtering;
     bool use_skip_indexes_on_data_read;
+    size_t max_limit_for_top_n_optimization = 0;
 
     /// Setting needed for Sets (JOIN -> IN optimization)
 

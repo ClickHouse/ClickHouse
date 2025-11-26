@@ -58,8 +58,9 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     if (!read_from_mergetree_step)
         return 0;
 
-    /// Extract N - TODO : is max check needed?
     size_t n = limit_step->getLimitForSorting();
+    if (settings.max_limit_for_top_n_optimization && n > settings.max_limit_for_top_n_optimization)
+        return 0;
 
     SortingStep::Type sorting_step_type = sorting_step->getType();
     if (sorting_step_type != SortingStep::Type::Full)
@@ -67,14 +68,14 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
 
     const auto & sort_description = sorting_step->getSortDescription();
 
-    /// TODO : It should be possible to keep the optimization in  multi-column sort e.g
-    /// ORDER BY EventDate, Priority, Status LIMIT 100. If the first column has a minmax
-    /// index, it will be good to use.
+    /// We only support ORDER BY <single column> right now. But easy to extend and support
+    /// multiple columns - just use the 1st column as the threshold and change comparisions
+    /// at a couple of places (from < to <=)
     if (sort_description.size() > 1)
         return 0;
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_description.front().column_name);
-    if (!sort_column.type->isValueRepresentedByNumber())
+    if (!sort_column.type->isValueRepresentedByNumber() && !sort_column.type->isNullable())
         return 0;
 
     const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();

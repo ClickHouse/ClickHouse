@@ -3427,7 +3427,7 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopN(const String & sort_column) 
 
     for (const auto & index : all_indexes)
     {
-        if (index.column_names.size() == 1 && index.column_names[0] == sort_column && index.type == "minmax")
+        if (index.isSimpleSingleColumnIndex() && index.type == "minmax" && index.column_names[0] == sort_column)
             return true;
     }
     return false;

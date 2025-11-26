@@ -53,6 +53,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"use_skip_indexes_for_top_n", false, false, "New setting."},
             {"use_top_n_dynamic_filtering", false, false, "New setting."},
+            {"query_plan_max_limit_for_top_n_optimization", 0, 1000, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

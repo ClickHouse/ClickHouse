@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool use_skip_indexes_for_top_n;
     extern const SettingsBool use_top_n_dynamic_filtering;
+    extern const SettingsUInt64 query_plan_max_limit_for_top_n_optimization;
 }
 
 namespace ServerSetting
@@ -179,6 +180,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
     use_skip_indexes_for_top_n = from[Setting::use_skip_indexes_for_top_n];
     use_top_n_dynamic_filtering = from[Setting::use_top_n_dynamic_filtering];
+    max_limit_for_top_n_optimization = from[Setting::query_plan_max_limit_for_top_n_optimization];
     use_skip_indexes_on_data_read = from[Setting::use_skip_indexes_on_data_read];
     prepared_sets_cache = std::move(prepared_sets_cache_);
 

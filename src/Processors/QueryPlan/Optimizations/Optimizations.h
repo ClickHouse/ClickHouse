@@ -44,6 +44,7 @@ struct Optimization
 
         bool use_skip_indexes_for_top_n;
         bool use_top_n_dynamic_filtering;
+        size_t max_limit_for_top_n_optimization;
         bool use_skip_indexes_on_data_read;
     };
 
@@ -131,7 +132,7 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
-size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* nodes*/, const Optimization::ExtraSettings & settings);
+size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
 inline const auto & getOptimizations()
 {

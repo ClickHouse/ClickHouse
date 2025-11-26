@@ -68,6 +68,8 @@ struct IndexDescription
 
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
+    bool isSimpleSingleColumnIndex() const;
+
 private:
     static FieldVector parsePositionalArgumentsFromAST(const ASTPtr & arguments);
 };

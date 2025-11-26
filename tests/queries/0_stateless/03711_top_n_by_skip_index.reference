@@ -18,3 +18,11 @@
 9992	9992
 9991	9991
 9990	9990
+Description: Filter TopN Granules
+Prewhere filter column: __topNFilter(v1) (removed)
+FUNCTION __topNFilter(v1 : 0) -> __topNFilter(v1) UInt8 : 1
+1	1
+2	2
+3	3
+4	4
+5	5
