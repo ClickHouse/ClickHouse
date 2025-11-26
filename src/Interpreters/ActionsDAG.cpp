@@ -2734,8 +2734,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     bool removes_filter,
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
-    bool allow_non_deterministic_functions,
-    bool is_filter_column_const)
+    bool allow_non_deterministic_functions)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -2780,7 +2779,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         return {};
 
     /// Now, when actions are created, update the current DAG.
-    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter, is_filter_column_const);
+    actions->is_filter_const_after_push_down = removeUnusedConjunctions(std::move(conjunction.rejected), predicate, removes_filter);
 
     return actions;
 }
@@ -2794,8 +2793,7 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Block & right_stream_header,
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-    const bool is_filter_column_const)
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -2998,12 +2996,12 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
         return result;
 
     /// Now, when actions are created, update the current DAG.
-    result.is_filter_const_after_all_push_downs = removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter, is_filter_column_const);
+    result.is_filter_const_after_all_push_downs = removeUnusedConjunctions(std::move(rejected_conjunctions), predicate, removes_filter);
 
     return result;
 }
 
-bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter, bool is_filter_column_const)
+bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
 {
     bool is_filter_const = false;
     if (rejected_conjunctions.empty())
@@ -3022,13 +3020,6 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
             node.result_name = predicate->result_name;
             node.result_type = predicate->result_type;
             node.column = node.result_type->createColumnConst(0, 1);
-
-            if (!is_filter_column_const)
-            {
-                const auto & const_node = addNode(std::move(node));
-                const auto & materialized_node = materializeNodeWithoutRename(const_node, false);
-                node = createAlias(materialized_node, predicate->result_name);
-            }
 
             if (predicate->type != ActionType::INPUT)
                 *predicate = std::move(node);
