@@ -20,12 +20,7 @@ These instructions assume that the host machine is Linux x86_64/ARM and has all 
 In addition to installing the tooling used to build natively, the following additional packages need to be installed:
 
 ```bash
-apt-get install binutils-s390x-linux-gnu binfmt-support qemu-user-static mold
-```
-
-If you wish to cross compile rust code install the rust cross compile target for s390x:
-
-```bash
+apt-get mold
 rustup target add s390x-unknown-linux-gnu
 ```
 
@@ -37,6 +32,12 @@ ninja
 ```
 
 ## Running {#running}
+
+To emulate you'll need QEMU user static binary for s390x. On Ubuntu it can be installed with:
+
+```bash
+apt-get install binfmt-support binutils-s390x-linux-gnu qemu-user-static
+```
 
 Once built, the binary can be run with, e.g.:
 
@@ -94,7 +95,7 @@ Process 1 stopped
 
 - [CodeLLDB](https://github.com/vadimcn/vscode-lldb) extension is required for visual debugging.
 - [Command Variable](https://github.com/rioj7/command-variable) extension can help dynamic launches if using [CMake Variants](https://github.com/microsoft/vscode-cmake-tools/blob/main/docs/variants.md).
-- Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"`
+- Make sure to set the backend to your LLVM installation eg. `"lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-21.so"`
 - Make sure to run the clickhouse executable in debug mode prior to launch. (It is also possible to create a `preLaunchTask` that automates this)
 
 ### Example configurations {#example-configurations}
@@ -156,7 +157,7 @@ This would also put different builds under different subfolders of the `build` f
 ```json
 {
     "cmake.buildDirectory": "${workspaceFolder}/build/${buildKitVendor}-${buildKitVersion}-${variant:toolchain}-${variant:buildType}",
-    "lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-15.so"
+    "lldb.library": "/usr/lib/x86_64-linux-gnu/liblldb-21.so"
 }
 ```
 
