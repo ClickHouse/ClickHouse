@@ -2022,7 +2022,7 @@ namespace
             if (presence_column)
             {
                 if (row_num < presence_column->size())
-                    throw Exception(ErrorCodes::PROTOBUF_ONEOF_HAS_SEVERAL_VALUES, "Invalid protobuf data: oneof has more than one value");
+                    throw Exception(ErrorCodes::PROTOBUF_ONEOF_HAS_SEVERAL_VALUES, "Invalid protobuf data: OneOf has more than one value to track via column `{}`", oneof_column_name);
                 presence_column->insert(field_tag);
             }
             nested_serializer->readRow(row_num);
