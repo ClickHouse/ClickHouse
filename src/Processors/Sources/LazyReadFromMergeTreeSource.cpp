@@ -65,7 +65,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare()
 
     while (next_input_to_process != inputs.end())
     {
-        std::cerr << "LazyReadFromMergeTreeSource: " << std::distance(inputs.begin(), next_input_to_process) << " of " << inputs.size() << " inputs\n";
+        // std::cerr << "LazyReadFromMergeTreeSource: " << std::distance(inputs.begin(), next_input_to_process) << " of " << inputs.size() << " inputs\n";
         auto & input = *next_input_to_process;
         if (input.isFinished())
         {
@@ -77,7 +77,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare()
             return Status::NeedData;
 
         auto chunk = input.pull();
-        std::cerr << "Pulled chunk with " << chunk.getNumRows() << " rows\n";
+        // std::cerr << "Pulled chunk with " << chunk.getNumRows() << " rows\n";
         output.push(std::move(chunk));
 
         return Status::PortFull;
