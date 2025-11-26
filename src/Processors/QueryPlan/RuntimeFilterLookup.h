@@ -54,10 +54,11 @@ protected:
 };
 
 template <bool negate>
-class ExactRuntimeFilter : public IRuntimeFilter
+class RuntimeFilterBase : public IRuntimeFilter
 {
 public:
-    ExactRuntimeFilter(
+
+    RuntimeFilterBase(
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
         UInt64 bytes_limit_,
@@ -137,22 +138,11 @@ public:
         UNREACHABLE();
     }
 
-    void merge(const IRuntimeFilter * source) override
-    {
-        if (inserts_are_finished)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
-
-        const auto * source_typed = dynamic_cast<const ExactRuntimeFilter *>(source);
-        if (!source_typed)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
-
-        insert(source_typed->exact_values->getSetElements().front());
-        --filters_to_merge;
-    }
-
 protected:
 
-    bool isFull() const { return is_full; }
+    UInt64 getBytesLimit() const noexcept { return bytes_limit; }
+
+    bool isFull() const noexcept { return is_full; }
 
     ColumnPtr getValuesColumn() const
     {
@@ -162,10 +152,7 @@ protected:
 
     void releaseExactValues() { exact_values.reset(); }
 
-    const UInt64 bytes_limit;
-
 private:
-
     enum class ValuesCount
     {
         UNKNOWN,
@@ -174,6 +161,7 @@ private:
         MANY,
     };
 
+    const UInt64 bytes_limit;
     const UInt64 exact_values_limit;
 
     SetPtr exact_values;
@@ -184,12 +172,27 @@ private:
     std::optional<Field> single_element_in_set;
 };
 
-using ExactRuntimeFilterNegate = ExactRuntimeFilter<true>;
+
+class ExactNotContainsRuntimeFilter : public RuntimeFilterBase<true>
+{
+public:
+    ExactNotContainsRuntimeFilter(
+        size_t filters_to_merge_,
+        const DataTypePtr & filter_column_target_type_,
+        UInt64 bytes_limit_,
+        UInt64 exact_values_limit_
+    )
+        : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
+    {}
+
+    void merge(const IRuntimeFilter * source) override;
+};
 
 /// As long as the number of unique values is small they are stored in a Set but when it grows beyond the limit
 /// the values are moved into a BloomFilter.
-class ApproximateRuntimeFilter : public ExactRuntimeFilter<false>
+class ApproximateRuntimeFilter : public RuntimeFilterBase<false>
 {
+    using Base = RuntimeFilterBase<false>;
 public:
     ApproximateRuntimeFilter(
         size_t filters_to_merge_,

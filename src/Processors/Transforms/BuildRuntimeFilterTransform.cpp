@@ -40,7 +40,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
             exact_values_limit_,
             bloom_filter_hash_functions_);
     else
-        built_filter = std::make_unique<ExactRuntimeFilter<true>>(
+        built_filter = std::make_unique<ExactNotContainsRuntimeFilter>(
             filters_to_merge_,
             filter_column_target_type,
             bloom_filter_bytes_,

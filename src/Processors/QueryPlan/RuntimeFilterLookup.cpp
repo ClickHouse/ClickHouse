@@ -30,13 +30,26 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
 
 static constexpr UInt64 BLOOM_FILTER_SEED = 42;
 
+void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
+{
+    if (inserts_are_finished)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after it was marked as finished");
+
+    const auto * source_typed = typeid_cast<const ExactNotContainsRuntimeFilter *>(source);
+    if (!source_typed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge runtime filters with different types");
+
+    insert(source_typed->getValuesColumn());
+    --filters_to_merge;
+}
+
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(
     size_t filters_to_merge_,
     const DataTypePtr & filter_column_target_type_,
     UInt64 bytes_limit_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_hash_functions_)
-    : ExactRuntimeFilter(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
+    : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, bytes_limit_, exact_values_limit_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
     , bloom_filter(nullptr)
 {}
@@ -52,7 +65,7 @@ void ApproximateRuntimeFilter::insert(ColumnPtr values)
     }
     else
     {
-        ExactRuntimeFilter::insert(std::move(values));
+        Base::insert(std::move(values));
 
         if (isFull())
             switchToBloomFilter();
@@ -69,7 +82,7 @@ void ApproximateRuntimeFilter::finishInsert()
     if (bloom_filter)
         return;
 
-    ExactRuntimeFilter::finishInsert();
+    Base::finishInsert();
 }
 
 /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
@@ -116,7 +129,7 @@ ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) c
     }
     else
     {
-        return ExactRuntimeFilter::find(values);
+        return Base::find(values);
     }
 }
 
@@ -136,7 +149,7 @@ void ApproximateRuntimeFilter::switchToBloomFilter()
     if (bloom_filter)
         return;
 
-    bloom_filter = std::make_unique<BloomFilter>(bytes_limit, bloom_filter_hash_functions, BLOOM_FILTER_SEED);
+    bloom_filter = std::make_unique<BloomFilter>(getBytesLimit(), bloom_filter_hash_functions, BLOOM_FILTER_SEED);
     insertIntoBloomFilter(getValuesColumn());
 
     releaseExactValues();
