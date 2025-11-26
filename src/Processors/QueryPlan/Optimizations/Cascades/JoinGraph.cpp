@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -39,6 +40,7 @@ void JoinGraphBuilder::addRelation(String name, QueryPlan::Node & node)
 
 void JoinGraphBuilder::addEqualityPredicate(const String & lhs_column_name, const String & rhs_column_name)
 {
+    LOG_TEST(log, "Add equality '{}' == '{}'", lhs_column_name, rhs_column_name);
     equivalent_columns.add(lhs_column_name, rhs_column_name);
 }
 
