@@ -50,6 +50,8 @@ private:
     std::unordered_map<String, RelationId> relation_name_to_id;
     std::unordered_map<String, RelationId> column_source_relation;
     EquivalenceClasses equivalent_columns;
+
+    LoggerPtr log = getLogger("JoinGraphBuilder");
 };
 
 /// JOIN graph is used to enumerate all allowed combinations of JOINs from the query based on the predicates.

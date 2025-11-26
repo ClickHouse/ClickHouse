@@ -242,17 +242,15 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
                         continue;
 
                     /// And if there are predicates connecting relations from these 2 groups
-                    auto edges = listEdges(join_graph, larger_subgroup.relations, smaller_subgroup.relations);
-                    if (edges.empty())
-                        continue;
-
-                    /// Add expression for joining larger_subgroup with smaller_subgroup on the predicates from edges
                     auto predicates = listEdges(join_graph, larger_subgroup.relations, smaller_subgroup.relations);
+                    if (predicates.empty())
+                        continue;
 
                     Block joined_output_columns(larger_subgroup.output_columns->cloneEmpty());
                     for (const auto & column_from_smaller_group : smaller_subgroup.output_columns->getColumnsWithTypeAndName())
                         joined_output_columns.insert(column_from_smaller_group);
 
+                    /// Add expression for joining larger_subgroup with smaller_subgroup on the predicates from edges
                     auto join_expression = std::make_shared<GroupExpression>(nullptr); // TODO:
                     join_expression->inputs = {{larger_subgroup.group_id, {}}, {smaller_subgroup.group_id, {}}};
 #if 0
@@ -329,7 +327,7 @@ GroupId CascadesOptimizer::populateMemoFromJoinGraph(const JoinGraph & join_grap
                         }
 
                         JoinOperator join_operator(
-                            JoinKind::Inner,
+                            predicate_action_refs.empty() ? JoinKind::Cross : JoinKind::Inner,
                             JoinStrictness::All,
                             JoinLocality::Unspecified,
                             std::move(predicate_action_refs)
