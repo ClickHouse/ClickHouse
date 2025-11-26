@@ -50,6 +50,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_hint_max_selectivity", 0.2, 0.2, "New setting"},
             {"allow_experimental_time_time64_type", false, true, "Enable Time and Time64 type by default"},
             {"enable_time_time64_type", false, true, "Enable Time and Time64 type by default"},
+            {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
         });
