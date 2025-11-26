@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
+#include <Common/ObjectStorageKeyGenerator.h>
 #include <Common/StackTrace.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getRandomASCIIString.h>
@@ -223,11 +224,9 @@ void LocalObjectStorage::throwIfReadonly() const
         throw Exception(ErrorCodes::READONLY, "Local object storage `{}` is readonly", getName());
 }
 
-ObjectStorageKey
-LocalObjectStorage::generateObjectKeyForPath(const std::string & /* path */, const std::optional<std::string> & /* key_prefix */) const
+ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
-    constexpr size_t key_name_total_size = 32;
-    return ObjectStorageKey::createAsRelative(settings.key_prefix, getRandomASCIIString(key_name_total_size));
+    return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
 }
 
 }
