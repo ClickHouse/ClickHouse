@@ -1162,19 +1162,23 @@ void StorageBuffer::reschedule()
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
-    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
+    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 0);
+    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 0);
     size_t reschedule_sec = 0;
     if (flush_thresholds.time)
     {
-        size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 1);
+        size_t flush = std::max<ssize_t>(flush_thresholds.time - time_passed, 0);
         reschedule_sec = std::min({min, max, flush});
     }
     else
     {
         reschedule_sec = std::min({min, max});
     }
-    flush_handle->scheduleAfter(reschedule_sec * 1000);
+    /// Schedule flush in background immediately, otherwise in case of frequent INSERTs we will never schedule the background flush
+    if (reschedule_sec == 0)
+        flush_handle->schedule();
+    else
+        flush_handle->scheduleAfter(reschedule_sec * 1000);
     LOG_TRACE(log, "Reschedule in {} sec (processed buffers: {}, rows in processed buffers: {}, time passed: {})", reschedule_sec, processed_buffers, rows, time_passed);
 }
 
