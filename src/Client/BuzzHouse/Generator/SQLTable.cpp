@@ -499,7 +499,7 @@ void StatementGenerator::generateTTLExpression(RandomGenerator & rg, const std::
         BinaryExpr * bexpr = ttl_expr->mutable_comp_expr()->mutable_binary_expr();
         IntervalExpr * ie = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_interval();
         IntLiteral * il = ie->mutable_expr()->mutable_lit_val()->mutable_int_lit();
-        std::uniform_int_distribution<int64_t> next_dist(-15, 15);
+        std::uniform_int_distribution<int64_t> next_dist(-3, 10);
         std::uniform_int_distribution<uint32_t> i_range(1, static_cast<uint32_t>(IntervalExpr_Interval_MINUTE));
 
         bexpr->set_op(rg.nextMediumNumber() < 76 ? BinaryOperator::BINOP_PLUS : BinaryOperator::BINOP_MINUS);

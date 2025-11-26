@@ -408,8 +408,11 @@ void StatementGenerator::generateNextCreateFunction(RandomGenerator & rg, Create
 
 static void SetViewInterval(RandomGenerator & rg, RefreshInterval * ri)
 {
-    ri->set_interval(rg.nextSmallNumber() - 1);
-    ri->set_unit(RefreshInterval_RefreshUnit::RefreshInterval_RefreshUnit_SECOND);
+    std::uniform_int_distribution<uint32_t> next_dist(1, 10);
+    std::uniform_int_distribution<uint32_t> i_range(1, static_cast<uint32_t>(RefreshInterval_RefreshUnit_MINUTE));
+
+    ri->set_interval(next_dist(rg.generator));
+    ri->set_unit(static_cast<RefreshInterval_RefreshUnit>(i_range(rg.generator)));
 }
 
 void StatementGenerator::generateNextRefreshableView(RandomGenerator & rg, RefreshableView * rv)
