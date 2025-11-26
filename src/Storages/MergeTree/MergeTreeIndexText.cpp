@@ -15,6 +15,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
@@ -318,7 +319,7 @@ TextIndexHeaderPtr deserializeHeader(
 
     if (condition_text.useHeaderCache())
         return condition_text.headerCache()->getOrSet(
-            TextIndexHeaderCache::hash(state.path_to_data_part, state.index_name, state.index_mark), load_header);
+            TextIndexHeaderCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), state.index_mark), load_header);
 
     return load_header();
 }
@@ -466,7 +467,7 @@ void MergeTreeIndexGranuleText::analyzeDictionary(MergeTreeIndexReaderStream & s
 
         if (condition_text.useDictionaryBlockCache())
             return condition_text.dictionaryBlockCache()->getOrSet(
-                TextIndexDictionaryBlockCache::hash(state.path_to_data_part, state.index_name, state.index_mark, block_id),
+                TextIndexDictionaryBlockCache::hash(state.part.getDataPartStorage().getFullPath(), state.index.getFileName(), state.index_mark, block_id),
                 load_dictionary_block);
 
         return load_dictionary_block();
@@ -509,17 +510,27 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
         + remaining_tokens.capacity() * sizeof(*remaining_tokens.begin());
 }
 
-bool MergeTreeIndexGranuleText::hasAnyTokenFromQuery(const TextSearchQuery & query) const
+bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
     {
         if (remaining_tokens.contains(token))
             return true;
     }
-    return query.tokens.empty();
+    return false;
 }
 
-bool MergeTreeIndexGranuleText::hasAllTokensFromQuery(const TextSearchQuery & query) const
+bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
+{
+    for (const auto & token : query.tokens)
+    {
+        if (!remaining_tokens.contains(token))
+            return false;
+    }
+    return !query.tokens.empty(); /// return false in case of no tokens
+}
+
+bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
 {
     for (const auto & token : query.tokens)
     {
@@ -1138,13 +1149,13 @@ std::pair<String, std::vector<Field>> extractTokenizer(std::unordered_map<String
 
 UInt64 extractNgramParam(const std::vector<Field> & params)
 {
-    assertParamsCount(NgramTokenExtractor::getExternalName(), params.size(), 1);
+    assertParamsCount(NgramsTokenExtractor::getExternalName(), params.size(), 1);
     return params.empty() ? DEFAULT_NGRAM_SIZE : castAs<UInt64>(params.at(0), "ngram_size");
 }
 
 std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 {
-    assertParamsCount(SplitTokenExtractor::getExternalName(), params.size(), 1);
+    assertParamsCount(SplitByStringTokenExtractor::getExternalName(), params.size(), 1);
     if (params.empty())
         return std::vector<String>{" "};
 
@@ -1159,7 +1170,7 @@ std::vector<String> extractSplitByStringParam(const std::vector<Field> & params)
 
 std::tuple<UInt64, UInt64, std::optional<UInt64>> extractSparseGramsParams(const std::vector<Field> & params)
 {
-    assertParamsCount(SparseGramTokenExtractor::getExternalName(), params.size(), 3);
+    assertParamsCount(SparseGramsTokenExtractor::getExternalName(), params.size(), 3);
 
     UInt64 min_length = DEFAULT_SPARSE_GRAMS_MIN_LENGTH;
     UInt64 max_length = DEFAULT_SPARSE_GRAMS_MAX_LENGTH;
@@ -1185,28 +1196,28 @@ MergeTreeIndexPtr textIndexCreator(const IndexDescription & index)
     const auto [tokenizer, params] = extractTokenizer(options);
     std::unique_ptr<ITokenExtractor> token_extractor;
 
-    if (tokenizer == DefaultTokenExtractor::getExternalName())
+    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName())
     {
-        token_extractor = std::make_unique<DefaultTokenExtractor>();
+        token_extractor = std::make_unique<SplitByNonAlphaTokenExtractor>();
     }
-    else if (tokenizer == NgramTokenExtractor::getExternalName())
+    else if (tokenizer == NgramsTokenExtractor::getExternalName())
     {
         auto ngram_size = extractNgramParam(params);
-        token_extractor = std::make_unique<NgramTokenExtractor>(ngram_size);
+        token_extractor = std::make_unique<NgramsTokenExtractor>(ngram_size);
     }
-    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
     {
         auto separators = extractSplitByStringParam(params);
-        token_extractor = std::make_unique<SplitTokenExtractor>(separators);
+        token_extractor = std::make_unique<SplitByStringTokenExtractor>(separators);
     }
-    else if (tokenizer == NoOpTokenExtractor::getExternalName())
+    else if (tokenizer == ArrayTokenExtractor::getExternalName())
     {
-        token_extractor = std::make_unique<NoOpTokenExtractor>();
+        token_extractor = std::make_unique<ArrayTokenExtractor>();
     }
-    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
     {
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
-        token_extractor = std::make_unique<SparseGramTokenExtractor>(min_length, max_length, min_cutoff_length);
+        token_extractor = std::make_unique<SparseGramsTokenExtractor>(min_length, max_length, min_cutoff_length);
     }
     else
     {
@@ -1240,11 +1251,11 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
     const auto [tokenizer, params] = extractTokenizer(options);
 
     /// Check that tokenizer is supported
-    const bool is_supported_tokenizer = (tokenizer == DefaultTokenExtractor::getExternalName()
-                                      || tokenizer == NgramTokenExtractor::getExternalName()
-                                      || tokenizer == SplitTokenExtractor::getExternalName()
-                                      || tokenizer == NoOpTokenExtractor::getExternalName()
-                                      || tokenizer == SparseGramTokenExtractor::getExternalName());
+    const bool is_supported_tokenizer = (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName()
+                                      || tokenizer == NgramsTokenExtractor::getExternalName()
+                                      || tokenizer == SplitByStringTokenExtractor::getExternalName()
+                                      || tokenizer == ArrayTokenExtractor::getExternalName()
+                                      || tokenizer == SparseGramsTokenExtractor::getExternalName());
     if (!is_supported_tokenizer)
     {
         throw Exception(
@@ -1254,11 +1265,11 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
             tokenizer);
     }
 
-    if (tokenizer == DefaultTokenExtractor::getExternalName() || tokenizer == NoOpTokenExtractor::getExternalName())
+    if (tokenizer == SplitByNonAlphaTokenExtractor::getExternalName() || tokenizer == ArrayTokenExtractor::getExternalName())
     {
         assertParamsCount(tokenizer, params.size(), 0);
     }
-    else if (tokenizer == NgramTokenExtractor::getExternalName())
+    else if (tokenizer == NgramsTokenExtractor::getExternalName())
     {
         auto ngram_size = extractNgramParam(params);
 
@@ -1269,7 +1280,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 tokenizer, ngram_size);
         }
     }
-    else if (tokenizer == SplitTokenExtractor::getExternalName())
+    else if (tokenizer == SplitByStringTokenExtractor::getExternalName())
     {
         auto separators = extractSplitByStringParam(params);
 
@@ -1280,7 +1291,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/)
                 tokenizer);
         }
     }
-    else if (tokenizer == SparseGramTokenExtractor::getExternalName())
+    else if (tokenizer == SparseGramsTokenExtractor::getExternalName())
     {
         auto [min_length, max_length, min_cutoff_length] = extractSparseGramsParams(params);
 

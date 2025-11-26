@@ -209,7 +209,7 @@ struct LogEntryStorage
 
     void refreshCache();
 
-    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
+    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
@@ -361,8 +361,8 @@ public:
     /// Get entry with latest config in logstore
     LogEntryPtr getLatestConfigChange() const;
 
-    /// Return log entries between [start, end)
-    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
+    /// Return log entries between [start, end) with optional byte size limit
+    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
