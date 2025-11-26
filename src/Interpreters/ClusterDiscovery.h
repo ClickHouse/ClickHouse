@@ -207,7 +207,6 @@ private:
     std::vector<MulticlusterDiscovery> multicluster_discovery_paths;
 
     MultiVersion<Macros>::Version macros;
-    const UInt64 wait_timeout_secs = 5;
 };
 
 }

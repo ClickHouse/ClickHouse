@@ -18,7 +18,6 @@
 #include <Common/ZooKeeper/Types.h>
 
 #include <Core/ServerUUID.h>
-#include <Core/ServerSettings.h>
 
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterDiscovery.h>
@@ -40,11 +39,6 @@ namespace ErrorCodes
     extern const int KEEPER_EXCEPTION;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 cluster_discovery_wait_timeout;
 }
 
 namespace FailPoints
@@ -105,13 +99,10 @@ public:
             flags.erase(key);
     }
 
-    std::unordered_map<T, bool> wait(std::chrono::milliseconds timeout, bool & finished)
+    std::unordered_map<T, bool> wait(bool & finished)
     {
         std::unique_lock<std::mutex> lk(mu);
-        if (timeout.count() > 0)
-            cv.wait_for(lk, timeout, [this]() -> bool { return any_need_update || stop_flag; });
-        else
-            cv.wait(lk, [this]() -> bool { return any_need_update || stop_flag; });
+        cv.wait(lk, [this]() -> bool { return any_need_update || stop_flag; });
         finished = stop_flag;
 
         any_need_update = false;
@@ -147,7 +138,6 @@ ClusterDiscovery::ClusterDiscovery(
     , current_node_name(toString(ServerUUID::get()))
     , log(getLogger("ClusterDiscovery"))
     , macros(macros_)
-    , wait_timeout_secs(context_->getServerSettings()[ServerSetting::cluster_discovery_wait_timeout])
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
 
@@ -668,7 +658,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     while (!finished)
     {
         bool all_up_to_date = true;
-        auto clusters = clusters_to_update->wait(5s, finished);
+        auto clusters = clusters_to_update->wait(finished);
         if (finished)
             break;
 
