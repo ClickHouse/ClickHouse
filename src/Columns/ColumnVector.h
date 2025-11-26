@@ -106,9 +106,9 @@ public:
         data.resize_assume_reserved(data.size() - n);
     }
 
-    void deserializeAndInsertFromArena(ReadBuffer & in) override;
+    const char * deserializeAndInsertFromArena(const char * pos) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
+    const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
@@ -205,7 +205,7 @@ public:
         res = (*this)[n];
     }
 
-    DataTypePtr getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -269,7 +269,6 @@ public:
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-    std::span<char> insertRawUninitialized(size_t count) override;
 
     std::string_view getRawData() const override
     {
@@ -289,8 +288,6 @@ public:
     }
 
     ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const ColumnConst & column_with_default_value, size_t total_rows, size_t shift) const override;
-
-    void updateAt(const IColumn & src, size_t dst_pos, size_t src_pos) override;
 
     ColumnPtr compress(bool force_compression) const override;
 

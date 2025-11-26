@@ -1,4 +1,4 @@
-#include <Common/SensitiveDataMasker.h>
+#include "SensitiveDataMasker.h"
 
 #include <set>
 #include <string>
@@ -41,8 +41,6 @@ private:
     const std::string replacement_string;
     const std::string regexp_string;
 
-    const bool throw_on_match;
-
     const RE2 regexp;
     const std::string_view replacement;
 
@@ -54,16 +52,10 @@ public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
     // re2::set should also work quite fast, but it doesn't return the match position, only which regexp was matched
 
-    MaskingRule(
-        const std::string & name_,
-        const std::string & regexp_string_,
-        const std::string & replacement_string_,
-        bool throw_on_match_
-    )
+    MaskingRule(const std::string & name_, const std::string & regexp_string_, const std::string & replacement_string_)
         : name(name_)
         , replacement_string(replacement_string_)
         , regexp_string(regexp_string_)
-        , throw_on_match(throw_on_match_)
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
     {
@@ -74,39 +66,13 @@ public:
                 regexp_string_, regexp.error());
     }
 
-    uint64_t applyThrow(std::string & data) const
+    uint64_t apply(std::string & data) const
     {
-        auto m = RE2::GlobalReplace(&data, regexp, replacement);
-
-        if (throw_on_match && m > 0)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "The rule {} was triggered on the log line {}",
-                name, data);
-        }
-
-
-#ifndef NDEBUG
-        matches_count += m;
-#endif
-        return m;
-    }
-
-    uint64_t applyNoThrow(std::string & data) const
-    {
-        /// FIXME(nikitamikhylov): There is a misuse of the SensitiveDataMasker class.
-        /// It is used in some places where we serialize a query to the storage (Keeper for example).
-        /// Effectively breaking it by wiping the crucial information (credentials, etc).
-        /// So, rules that may touch a query (those that mask passwords) should be checked in `applyThrow` method only.
-        if (throw_on_match)
-            return 0;
-
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
 #ifndef NDEBUG
         matches_count += m;
 #endif
         return m;
-
     }
 
     const std::string & getName() const { return name; }
@@ -149,22 +115,15 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
     LoggerPtr logger = getLogger("SensitiveDataMaskerConfigRead");
 
     std::set<std::string> used_names;
-    std::set<std::string> used_rules;
 
     for (const auto & rule : keys)
     {
-        /// Rules names are expected to be unique and be in a form of "rule1", "rule2", etc.
         if (startsWith(rule, "rule"))
         {
             auto rule_config_prefix = config_prefix + "." + rule;
 
-            if (!used_rules.insert(rule).second)
-            {
-                throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "There are at least two rules with the same prefix '{}' in the query_masking_rules configuration", rule);
-            }
-
             auto rule_name = config.getString(rule_config_prefix + ".name", rule_config_prefix);
+
             if (!used_names.insert(rule_name).second)
             {
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -181,11 +140,10 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             }
 
             auto replace = config.getString(rule_config_prefix + ".replace", "******");
-            auto throw_on_match = config.getBool(rule_config_prefix + ".throw_on_match", false);
 
             try
             {
-                addMaskingRule(rule_name, regexp, replace, throw_on_match);
+                addMaskingRule(rule_name, regexp, replace);
             }
             catch (DB::Exception & e)
             {
@@ -205,28 +163,17 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 }
 
 void SensitiveDataMasker::addMaskingRule(
-    const std::string & name,
-    const std::string & regexp_string,
-    const std::string & replacement_string,
-    bool throw_on_match)
+    const std::string & name, const std::string & regexp_string, const std::string & replacement_string)
 {
-    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string, throw_on_match));
+    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string));
 }
 
-
-size_t SensitiveDataMasker::wipeSensitiveDataThrow(std::string & data) const
-{
-    size_t matches = 0;
-    for (const auto & rule : all_masking_rules)
-        matches += rule->applyThrow(data);
-    return matches;
-}
 
 size_t SensitiveDataMasker::wipeSensitiveData(std::string & data) const
 {
     size_t matches = 0;
     for (const auto & rule : all_masking_rules)
-        matches += rule->applyNoThrow(data);
+        matches += rule->apply(data);
 
     if (matches)
         ProfileEvents::increment(ProfileEvents::QueryMaskingRulesMatch, matches);
@@ -253,7 +200,7 @@ size_t SensitiveDataMasker::rulesCount() const
 
 std::string wipeSensitiveDataAndCutToLength(std::string str, size_t max_length, bool wipe_sensitive)
 {
-    std::string res = std::move(str);
+    std::string res = str;
 
     if (wipe_sensitive)
         if (auto masker = SensitiveDataMasker::getInstance())

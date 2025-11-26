@@ -115,7 +115,6 @@ void SerializationNullable::serializeBinaryBulkWithMultipleStreams(
 
 void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr & column,
-    size_t rows_offset,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state,
@@ -125,19 +124,18 @@ void SerializationNullable::deserializeBinaryBulkWithMultipleStreams(
     ColumnNullable & col = assert_cast<ColumnNullable &>(*mutable_column);
 
     settings.path.push_back(Substream::NullMap);
-    if (insertDataFromSubstreamsCacheIfAny(cache, settings, col.getNullMapColumnPtr()))
+    if (auto cached_column = getFromSubstreamsCache(cache, settings.path))
     {
-        /// Data was inserted from cache.
+        col.getNullMapColumnPtr() = cached_column;
     }
     else if (auto * stream = settings.getter(settings.path))
     {
-        size_t prev_size = col.getNullMapColumnPtr()->size();
-        SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, rows_offset, limit, 0);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr(), col.getNullMapColumnPtr()->size() - prev_size);
+        SerializationNumber<UInt8>().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
+        addToSubstreamsCache(cache, settings.path, col.getNullMapColumnPtr());
     }
 
     settings.path.back() = Substream::NullableElements;
-    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), rows_offset, limit, settings, state, cache);
+    nested->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumnPtr(), limit, settings, state, cache);
     settings.path.pop_back();
 }
 
@@ -177,16 +175,6 @@ void SerializationNullable::serializeBinary(const IColumn & column, size_t row_n
     writeBinary(is_null, ostr);
     if (!is_null)
         nested->serializeBinary(col.getNestedColumn(), row_num, ostr, settings);
-}
-
-void SerializationNullable::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
-{
-    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-
-    bool is_null = col.isNullAt(row_num);
-    writeBinary(is_null, ostr);
-    if (!is_null)
-        nested->serializeForHashCalculation(col.getNestedColumn(), row_num, ostr);
 }
 
 template <typename ReturnType>
@@ -830,16 +818,6 @@ void SerializationNullable::serializeTextJSON(const IColumn & column, size_t row
         serializeNullJSON(ostr);
     else
         nested->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
-}
-
-void SerializationNullable::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
-{
-    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
-
-    if (col.isNullAt(row_num))
-        serializeNullJSON(ostr);
-    else
-        nested->serializeTextJSONPretty(col.getNestedColumn(), row_num, ostr, settings, indent);
 }
 
 void SerializationNullable::serializeNullJSON(DB::WriteBuffer & ostr)

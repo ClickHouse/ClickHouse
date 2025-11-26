@@ -1,16 +1,13 @@
 #pragma once
 
 #include <IO/WriteBufferFromFile.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Core/Block.h>
 
 
 namespace DB
 {
-
-class IOutputFormat;
-using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 class InputFormatErrorsLogger
 {

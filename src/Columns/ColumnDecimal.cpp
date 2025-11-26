@@ -11,6 +11,9 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
+#include <base/TypeName.h>
+#include <base/sort.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
@@ -19,11 +22,6 @@
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-
-#include <base/TypeName.h>
-#include <base/sort.h>
-
-#include <algorithm>
 
 
 namespace DB
@@ -46,14 +44,6 @@ template <is_decimal T>
 TypeIndex ColumnDecimal<T>::getDataType() const
 {
     return TypeToTypeIndex<T>;
-}
-
-template <is_decimal T>
-std::span<char> ColumnDecimal<T>::insertRawUninitialized(size_t count)
-{
-    size_t start = data.size();
-    data.resize(start + count);
-    return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
 
@@ -80,17 +70,16 @@ Float64 ColumnDecimal<T>::getFloat64(size_t n) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::deserializeAndInsertFromArena(ReadBuffer & in)
+const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    T dec;
-    readBinaryLittleEndian(dec, in);
-    data.push_back(std::move(dec));
+    data.push_back(unalignedLoad<T>(pos));
+    return pos + sizeof(T);
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::skipSerializedInArena(ReadBuffer & in) const
+const char * ColumnDecimal<T>::skipSerializedInArena(const char * pos) const
 {
-    in.ignore(sizeof(T));
+    return pos + sizeof(T);
 }
 
 template <is_decimal T>
@@ -473,19 +462,16 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.resize_exact(offsets.back());
-
-    const T * src = data.data();
-    T * dst = res_data.data();
+    res_data.reserve_exact(offsets.back());
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        size_t count = offsets[i] - prev_offset;
+        size_t size_to_replicate = offsets[i] - prev_offset;
         prev_offset = offsets[i];
 
-        std::fill_n(dst, count, src[i]);
-        dst += count;
+        for (size_t j = 0; j < size_to_replicate; ++j)
+            res_data.push_back(data[i]);
     }
 
     return res;
@@ -542,18 +528,10 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
     max = NearestFieldType<T>(cur_max, scale);
 }
 
-template <is_decimal T>
-void ColumnDecimal<T>::updateAt(const IColumn & src, size_t dst_pos, size_t src_pos)
-{
-    const auto & src_data = assert_cast<const Self &>(src).getData();
-    data[dst_pos] = src_data[src_pos];
-}
-
 template class ColumnDecimal<Decimal32>;
 template class ColumnDecimal<Decimal64>;
 template class ColumnDecimal<Decimal128>;
 template class ColumnDecimal<Decimal256>;
 template class ColumnDecimal<DateTime64>;
-template class ColumnDecimal<Time64>;
 
 }

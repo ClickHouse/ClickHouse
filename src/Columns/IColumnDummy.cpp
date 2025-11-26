@@ -3,7 +3,6 @@
 #include <Core/Field.h>
 #include <Common/Arena.h>
 #include <Common/iota.h>
-#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -26,7 +25,7 @@ void IColumnDummy::get(size_t, Field &) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
 }
 
-DataTypePtr IColumnDummy::getValueNameAndTypeImpl(WriteBufferFromOwnString &, size_t, const Options &) const
+std::pair<String, DataTypePtr> IColumnDummy::getValueNameAndType(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value name and type from {}", getName());
 }
@@ -49,15 +48,15 @@ StringRef IColumnDummy::serializeValueIntoArena(size_t /*n*/, Arena & arena, cha
     return { res, 1 };
 }
 
-void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in)
+const char * IColumnDummy::deserializeAndInsertFromArena(const char * pos)
 {
     ++s;
-    in.ignore(1);
+    return pos + 1;
 }
 
-void IColumnDummy::skipSerializedInArena(ReadBuffer & in) const
+const char * IColumnDummy::skipSerializedInArena(const char * pos) const
 {
-    in.ignore(1);
+    return pos;
 }
 
 ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
@@ -84,7 +83,7 @@ ColumnPtr IColumnDummy::index(const IColumn & indexes, size_t limit) const
     if (indexes.size() < limit)
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required.");
 
-    return cloneDummy(limit ? limit : indexes.size());
+    return cloneDummy(limit ? limit : s);
 }
 
 void IColumnDummy::getPermutation(IColumn::PermutationSortDirection /*direction*/, IColumn::PermutationSortStability /*stability*/,
@@ -102,7 +101,7 @@ ColumnPtr IColumnDummy::replicate(const Offsets & offsets) const
     return cloneDummy(offsets.back());
 }
 
-MutableColumns IColumnDummy::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns IColumnDummy::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     if (s != selector.size())
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column.");

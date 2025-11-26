@@ -4,11 +4,10 @@ description: 'differs from MergeTree in that it removes duplicate entries with t
 sidebar_label: 'ReplacingMergeTree'
 sidebar_position: 40
 slug: /engines/table-engines/mergetree-family/replacingmergetree
-title: 'ReplacingMergeTree table engine'
-doc_type: 'reference'
+title: 'ReplacingMergeTree'
 ---
 
-# ReplacingMergeTree table engine
+# ReplacingMergeTree
 
 The engine differs from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -20,9 +19,9 @@ Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the ba
 A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/guides/replacing-merge-tree).
 :::
 
-## Creating a table {#creating-a-table}
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -42,16 +41,16 @@ For a description of request parameters, see [statement description](../../../sq
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
-## ReplacingMergeTree parameters {#replacingmergetree-parameters}
+## ReplacingMergeTree Parameters {#replacingmergetree-parameters}
 
-### `ver` {#ver}
+### ver {#ver}
 
 `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
 When merging, `ReplacingMergeTree` from all the rows with the same sorting key leaves only one:
 
-- The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
-- With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
+   - The last in the selection, if `ver` not set. A selection is a set of rows in a set of parts participating in the merge. The most recently created part (the last insert) will be the last one in the selection. Thus, after deduplication, the very last row from the most recent insert will remain for each unique sorting key.
+   - With the maximum version, if `ver` specified. If `ver` is the same for several rows, then it will use "if `ver` is not specified" rule for them, i.e. the most recent inserted row will remain.
 
 Example:
 
@@ -96,7 +95,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### `is_deleted` {#is_deleted}
+### is_deleted {#is_deleted}
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
@@ -163,7 +162,7 @@ When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/t
 Do not use this method in new projects and, if possible, switch old projects to the method described above.
 :::
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],

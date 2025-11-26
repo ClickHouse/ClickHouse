@@ -1,8 +1,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnString.h>
-#include <IO/ReadBufferFromString.h>
-#include <gtest/gtest.h>
 #include <Common/Arena.h>
+#include <gtest/gtest.h>
 
 using namespace DB;
 
@@ -756,12 +755,10 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena1)
     column->serializeValueIntoArena(1, arena, pos);
     column->serializeValueIntoArena(2, arena, pos);
     column->serializeValueIntoArena(3, arena, pos);
-
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
-    column->deserializeAndInsertFromArena(in);
-    column->deserializeAndInsertFromArena(in);
-    column->deserializeAndInsertFromArena(in);
-    column->deserializeAndInsertFromArena(in);
+    pos = column->deserializeAndInsertFromArena(ref1.data);
+    pos = column->deserializeAndInsertFromArena(pos);
+    pos = column->deserializeAndInsertFromArena(pos);
+    column->deserializeAndInsertFromArena(pos);
 
     ASSERT_EQ((*column)[column->size() - 4], 42);
     ASSERT_EQ((*column)[column->size() - 3], 42.42);
@@ -785,11 +782,10 @@ TEST(ColumnDynamic, SerializeDeserializeFromArena2)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = ColumnDynamic::create(254);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
+    pos = column_to->deserializeAndInsertFromArena(ref1.data);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    column_to->deserializeAndInsertFromArena(pos);
 
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 3], 42.42);
@@ -818,11 +814,10 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow1)
     column_from->serializeValueIntoArena(3, arena, pos);
 
     auto column_to = getDynamicWithManyVariants(253);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
+    pos = column_to->deserializeAndInsertFromArena(ref1.data);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    column_to->deserializeAndInsertFromArena(pos);
 
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 3], 42.42);
@@ -853,12 +848,11 @@ TEST(ColumnDynamic, SerializeDeserializeFromArenaOverflow2)
 
     auto column_to = ColumnDynamic::create(2);
     column_to->insert(Field(42.42));
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
-    column_to->deserializeAndInsertFromArena(in);
+    pos = column_to->deserializeAndInsertFromArena(ref1.data);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    pos = column_to->deserializeAndInsertFromArena(pos);
+    column_to->deserializeAndInsertFromArena(pos);
 
     ASSERT_EQ((*column_to)[column_to->size() - 5], 42);
     ASSERT_EQ((*column_to)[column_to->size() - 4], 42.42);
@@ -885,16 +879,16 @@ TEST(ColumnDynamic, skipSerializedInArena)
     auto ref1 = column_from->serializeValueIntoArena(0, arena, pos);
     column_from->serializeValueIntoArena(1, arena, pos);
     column_from->serializeValueIntoArena(2, arena, pos);
-    column_from->serializeValueIntoArena(3, arena, pos);
+    auto ref4 = column_from->serializeValueIntoArena(3, arena, pos);
 
+    const char * end = ref4.data + ref4.size;
     auto column_to = ColumnDynamic::create(254);
-    ReadBufferFromString in({ref1.data, arena.usedBytes()});
-    column_to->skipSerializedInArena(in);
-    column_to->skipSerializedInArena(in);
-    column_to->skipSerializedInArena(in);
-    column_to->skipSerializedInArena(in);
+    pos = column_to->skipSerializedInArena(ref1.data);
+    pos = column_to->skipSerializedInArena(pos);
+    pos = column_to->skipSerializedInArena(pos);
+    pos = column_to->skipSerializedInArena(pos);
 
-    ASSERT_TRUE(in.eof());
+    ASSERT_EQ(pos, end);
     ASSERT_EQ(column_to->getVariantInfo().variant_name_to_discriminator.at("SharedVariant"), 0);
     ASSERT_EQ(column_to->getVariantInfo().variant_names, Names{"SharedVariant"});
 }

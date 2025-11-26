@@ -3,7 +3,6 @@ description: 'Calculates Cramer''s V, but uses a bias correction.'
 sidebar_position: 128
 slug: /sql-reference/aggregate-functions/reference/cramersvbiascorrected
 title: 'cramersVBiasCorrected'
-doc_type: 'reference'
 ---
 
 # cramersVBiasCorrected
@@ -12,7 +11,7 @@ Cramer's V is a measure of association between two columns in a table. The resul
 
 **Syntax**
 
-```sql
+``` sql
 cramersVBiasCorrected(column1, column2)
 ```
 
@@ -29,11 +28,11 @@ Type: always [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
-The following two columns being compared below have a moderate association with each other. Notice the result of `cramersVBiasCorrected` is smaller than the result of `cramersV`:
+The following two columns being compared below have a small association with each other. Notice the result of `cramersVBiasCorrected` is smaller than the result of `cramersV`:
 
 Query:
 
-```sql
+``` sql
 SELECT
     cramersV(a, b),
     cramersVBiasCorrected(a ,b)
@@ -50,7 +49,7 @@ FROM
 Result:
 
 ```response
-┌─────cramersV(a, b)─┬─cramersVBiasCorrected(a, b)─┐
-│ 0.5798088336225178 │          0.5305112825189074 │
-└────────────────────┴─────────────────────────────┘
+┌──────cramersV(a, b)─┬─cramersVBiasCorrected(a, b)─┐
+│ 0.41171788506213564 │         0.33369281784141364 │
+└─────────────────────┴─────────────────────────────┘
 ```
