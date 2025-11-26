@@ -116,7 +116,6 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
 void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
 {
     /// Special CTE case, where the right argument of IN is alias (ASTIdentifier) from WITH clause.
-
     if (checkFunctionIsInOrGlobalInOperator(func))
     {
         auto & ast = func.arguments->children.at(1);
@@ -147,6 +146,25 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                             func.arguments->children[1]->setAlias(old_alias);
                     }
                 }
+            }
+        }
+    }
+    /// Rewrite dictionary name in dictGet*()
+    else if (functionIsDictGet(func.name))
+    {
+        auto & dict_name_arg = func.arguments->children.at(0);
+        if (const auto * identifier = dict_name_arg->as<ASTIdentifier>(); identifier && identifier->isShort())
+        {
+            LOG_TRACE(getLogger("visitor"), "identifier = {}", identifier->formatForLogging());
+            auto name = identifier->shortName();
+
+            auto literal_it = data.literals.find(name);
+            if (literal_it != data.literals.end())
+            {
+                auto old_alias = dict_name_arg->tryGetAlias();
+                dict_name_arg = literal_it->second->clone();
+                /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
+                dict_name_arg->setAlias(old_alias);
             }
         }
     }
