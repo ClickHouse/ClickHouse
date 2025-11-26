@@ -11,4 +11,6 @@ filesystem_prefetch_max_memory_usage	NonZeroUInt64	1073741824
 max_memory_usage	UInt64	5000000000
 max_memory_usage_for_user	UInt64	32000000000
 max_untracked_memory	UInt64	1048576
+memory_profiler_sample_min_allocation_size	UInt64	8388608
+memory_profiler_sample_probability	Float	0.01
 memory_profiler_step	UInt64	1048576
