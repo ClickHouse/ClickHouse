@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import pytest
-import time
 
 from helpers.cluster import ClickHouseCluster, ZOOKEEPER_CONTAINERS
 
