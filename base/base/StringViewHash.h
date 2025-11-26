@@ -41,41 +41,7 @@
 #include <stdexcept> // for std::logic_error
 #endif
 
-/**
- * The std::string_view-like container to avoid creating strings to find substrings in the hash table.
- */
-struct StringRef
-{
-    const char * data = nullptr;
-    size_t size = 0;
-
-    /// Non-constexpr due to reinterpret_cast.
-    template <typename CharT>
-    requires (sizeof(CharT) == 1)
-    StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_)
-    {
-        /// Sanity check for overflowed values.
-        assert(size < 0x8000000000000000ULL);
-    }
-
-    constexpr StringRef(const char * data_, size_t size_) : data(data_), size(size_) {}
-
-    StringRef(const std::string & s) : data(s.data()), size(s.size()) {} /// NOLINT
-    constexpr explicit StringRef(std::string_view s) : data(s.data()), size(s.size()) {}
-    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {} /// NOLINT
-    constexpr StringRef() = default;
-
-    bool empty() const { return size == 0; }
-
-    std::string toString() const { return std::string(data, size); }
-    explicit operator std::string() const { return toString(); }
-
-    std::string_view toView() const { return std::string_view(data, size); }
-    constexpr explicit operator std::string_view() const { return std::string_view(data, size); }
-};
-
-
-using StringRefs = std::vector<StringRef>;
+using StringViews = std::vector<std::string_view>;
 
 
 #if defined(__SSE2__)
@@ -204,36 +170,36 @@ inline bool memequalWide(const char * p1, const char * p2, size_t size)
 
 #endif
 
-inline bool operator== (StringRef lhs, StringRef rhs)
+inline bool operator== (std::string_view lhs, std::string_view rhs)
 {
-    if (lhs.size != rhs.size)
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
-    return memequalWide(lhs.data, rhs.data, lhs.size);
+    return memequalWide(lhs.data(), rhs.data(), lhs.size()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
 #else
-    return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size());
 #endif
 }
 
-inline bool operator!= (StringRef lhs, StringRef rhs)
+inline bool operator!= (std::string_view lhs, std::string_view rhs)
 {
     return !(lhs == rhs);
 }
 
-inline bool operator< (StringRef lhs, StringRef rhs)
+inline bool operator< (std::string_view lhs, std::string_view rhs)
 {
-    int cmp = memcmp(lhs.data, rhs.data, std::min(lhs.size, rhs.size));
-    return cmp < 0 || (cmp == 0 && lhs.size < rhs.size);
+    int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
+    return cmp < 0 || (cmp == 0 && lhs.size() < rhs.size());
 }
 
-inline bool operator> (StringRef lhs, StringRef rhs)
+inline bool operator> (std::string_view lhs, std::string_view rhs)
 {
-    int cmp = memcmp(lhs.data, rhs.data, std::min(lhs.size, rhs.size));
-    return cmp > 0 || (cmp == 0 && lhs.size > rhs.size);
+    int cmp = memcmp(lhs.data(), rhs.data(), std::min(lhs.size(), rhs.size()));
+    return cmp > 0 || (cmp == 0 && lhs.size() > rhs.size());
 }
 
 
@@ -245,16 +211,11 @@ inline bool operator> (StringRef lhs, StringRef rhs)
   * For more information, see hash_map_string_3.cpp
   */
 
-struct StringRefHash64
+struct StringViewHash64
 {
     size_t operator() (std::string_view x) const
     {
         return CityHash_v1_0_2::CityHash64(x.data(), x.size());
-    }
-
-    size_t operator() (StringRef x) const
-    {
-        return CityHash_v1_0_2::CityHash64(x.data, x.size);
     }
 };
 
@@ -315,11 +276,10 @@ inline size_t hashLessThan16(const char * data, size_t size)
 
 struct CRC32Hash
 {
-    size_t operator()(std::string_view x) const { return (*this)(StringRef{x}); }
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         if (size == 0)
             return 0;
@@ -328,7 +288,7 @@ struct CRC32Hash
 
         if (size < 8)
         {
-            return static_cast<unsigned>(hashLessThan8(x.data, x.size));
+            return static_cast<unsigned>(hashLessThan8(x.data(), x.size()));
         }
 
         const char * end = pos + size;
@@ -353,51 +313,24 @@ struct CRC32Hash
     }
 };
 
-struct StringRefHash : CRC32Hash {};
+struct StringViewHash : CRC32Hash {};
 
 #else
 
 struct CRC32Hash
 {
-    unsigned operator() (StringRef /* x */) const
+    unsigned operator() (std::string_view /* x */) const
     {
        throw std::logic_error{"Not implemented CRC32Hash without SSE"};
     }
 };
 
-struct StringRefHash : StringRefHash64 {};
+struct StringViewHash : StringViewHash64 {};
 
 #endif
 
-using StringViewHash = StringRefHash;
-
-namespace std
-{
-    template <>
-    struct hash<StringRef> : public StringRefHash {};
-}
-
-
 namespace ZeroTraits
 {
-    inline bool check(const StringRef & x) { return 0 == x.size; }
-    inline void set(StringRef & x) { x.size = 0; }
+    inline bool check(const std::string_view & x) { return x.empty(); }
+    inline void set(std::string_view & x) { x = std::string_view(); }
 }
-
-namespace PackedZeroTraits
-{
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline bool check(const PackedPairNoInit<StringRef, Second> p)
-    {
-        return 0 == p.key.size;
-    }
-
-    template <typename Second, template <typename, typename> class PackedPairNoInit>
-    inline void set(PackedPairNoInit<StringRef, Second> & p)
-    {
-        p.key.size = 0;
-    }
-}
-
-
-std::ostream & operator<<(std::ostream & os, const StringRef & str);
