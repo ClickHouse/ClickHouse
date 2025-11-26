@@ -29,7 +29,13 @@ struct Base58DecodeTraits
     template <typename Col>
     static size_t getBufferSize(Col const & src_column)
     {
-        return src_column.getChars().size() + 1;
+        /// base58 doesn't have a clean bitsequence-to-character mapping like base64 or base64. 
+        /// Instead, it uses division by 58 and modulo operations on big integers.
+        /// In addition all the leading zeros are converted to "1"s as is.
+        /// Thus, if we decode the can have at most same amount of bytes as a result.
+        /// Example:
+        /// b'\x00\x00\x00\x00\x00' (5 bytes) → "11111" (5 chars)
+        return src_column.getChars().size();
     }
 
     static std::optional<size_t> perform(std::string_view src, UInt8 * dst)
