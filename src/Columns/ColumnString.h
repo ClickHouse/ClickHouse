@@ -208,13 +208,11 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
-    std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
     void batchSerializeValueIntoMemory(std::vector<char *> & memories, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
     void skipSerializedInArena(ReadBuffer & in) const override;
 

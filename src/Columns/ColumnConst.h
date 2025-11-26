@@ -192,13 +192,6 @@ public:
         ++s;
     }
 
-    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override
-    {
-        data->deserializeAndInsertAggregationStateValueFromArena(in);
-        data->popBack(1);
-        ++s;
-    }
-
     void skipSerializedInArena(ReadBuffer & in) const override
     {
         data->skipSerializedInArena(in);

@@ -302,16 +302,6 @@ public:
       */
     virtual std::string_view serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const SerializationSettings * settings) const;
 
-    /// The same as serializeValueIntoArena but is used to store values inside aggregation states.
-    /// It's used in generic implementation of some aggregate functions.
-    /// serializeValueIntoArena is used for in-memory value representations, so it's implementation can be changed.
-    /// This method must respect compatibility with older versions because aggregation states may be serialized/deserialized
-    /// by servers with different versions.
-    virtual std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-    {
-        return serializeValueIntoArena(n, arena, begin, nullptr);
-    }
-
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
     virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */, const SerializationSettings * settings) const;
@@ -344,13 +334,6 @@ public:
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
     virtual void deserializeAndInsertFromArena(ReadBuffer & in, const SerializationSettings * settings) = 0;
-
-    /// Deserializes a value that was serialized using IColumn::serializeAggregationStateValueIntoArena method.
-    /// Note that it needs to deal with user input
-    virtual void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-    {
-        deserializeAndInsertFromArena(in, nullptr);
-    }
 
     /// Skip previously serialized value that was serialized using IColumn::serializeValueIntoArena method.
     virtual void skipSerializedInArena(ReadBuffer & in) const = 0;

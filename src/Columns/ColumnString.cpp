@@ -10,7 +10,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
-#include <Common/logger_useful.h>
 #include <Common/assert_cast.h>
 
 
@@ -275,23 +274,6 @@ std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, 
     return {pos, result_size};
 }
 
-std::string_view ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    /// Serialize string values with 0 byte at the end for compatibility
-    /// with old versions where we stored 0 byte at the end of each string value.
-    size_t string_size_with_zero_byte = sizeAt(n) + 1;
-    size_t offset = offsetAt(n);
-
-    auto res_size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
-    char * pos = arena.allocContinue(res_size, begin);
-    memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
-    memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
-    /// Add 0 byte at the end.
-    *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
-    return {pos, res_size};
-}
-
-
 ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -335,21 +317,6 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     chars.resize(new_size);
     in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size - serialize_string_with_zero_byte);
     in.ignore(serialize_string_with_zero_byte);
-
-    offsets.push_back(new_size);
-}
-
-void ColumnString::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    /// Serialized value contains string values with 0 byte at the end for compatibility.
-    size_t string_size_with_zero_byte;
-    readBinaryLittleEndian<size_t>(string_size_with_zero_byte, in);
-
-    const size_t old_size = chars.size();
-    const size_t new_size = old_size + string_size_with_zero_byte - 1;
-    chars.resize(new_size);
-    in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size_with_zero_byte - 1);
-    in.ignore(1); /// ignore the 0 byte at the end.
 
     offsets.push_back(new_size);
 }

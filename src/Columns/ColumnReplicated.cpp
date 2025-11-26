@@ -138,11 +138,6 @@ std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & are
     return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin, settings);
 }
 
-std::string_view ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
-}
-
 char * ColumnReplicated::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     return nested_column->serializeValueIntoMemory(indexes.getIndexAt(n), memory, settings);
@@ -156,12 +151,6 @@ std::optional<size_t> ColumnReplicated::getSerializedValueSize(size_t n) const
 void ColumnReplicated::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     nested_column->deserializeAndInsertFromArena(in, settings);
-    indexes.insertIndex(nested_column->size() - 1);
-}
-
-void ColumnReplicated::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    nested_column->deserializeAndInsertAggregationStateValueFromArena(in);
     indexes.insertIndex(nested_column->size() - 1);
 }
 

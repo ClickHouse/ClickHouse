@@ -164,11 +164,6 @@ std::string_view ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, 
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin, settings);
 }
 
-std::string_view ColumnSparse::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    return values->serializeAggregationStateValueIntoArena(getValueIndex(n), arena, begin);
-}
-
 char * ColumnSparse::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     return values->serializeValueIntoMemory(getValueIndex(n), memory, settings);
@@ -182,11 +177,6 @@ std::optional<size_t> ColumnSparse::getSerializedValueSize(size_t n) const
 void ColumnSparse::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     insertSingleValue([&](IColumn & column) { column.deserializeAndInsertFromArena(in, settings); });
-}
-
-void ColumnSparse::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    insertSingleValue([&](IColumn & column) { column.deserializeAndInsertAggregationStateValueFromArena(in); });
 }
 
 void ColumnSparse::skipSerializedInArena(ReadBuffer & in) const

@@ -156,11 +156,6 @@ std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, cha
     return nested->serializeValueIntoArena(n, arena, begin, settings);
 }
 
-std::string_view ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
-}
-
 char * ColumnMap::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     return nested->serializeValueIntoMemory(n, memory, settings);
@@ -174,11 +169,6 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
 void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     nested->deserializeAndInsertFromArena(in, settings);
-}
-
-void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    nested->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
 void ColumnMap::skipSerializedInArena(ReadBuffer & in) const

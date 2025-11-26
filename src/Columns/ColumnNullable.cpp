@@ -190,25 +190,6 @@ std::string_view ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena
     return std::string_view(nested_ref.data() - 1, nested_ref.size() + 1);
 }
 
-std::string_view ColumnNullable::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    const auto & arr = getNullMapData();
-
-    /// First serialize the NULL map byte.
-    auto * pos = arena.allocContinue(1, begin);
-    *pos = arr[n];
-
-    /// If the value is NULL, that's it.
-    if (arr[n])
-        return std::string_view(pos, 1);
-
-    /// Now serialize the nested value. Note that it also uses allocContinue so that the memory range remains contiguous.
-    auto nested_ref = getNestedColumn().serializeAggregationStateValueIntoArena(n, arena, begin);
-
-    /// serializeAggregationStateValueIntoArena may reallocate memory. Have to use ptr from nested_ref.data and move it back.
-    return std::string_view(nested_ref.data() - 1, nested_ref.size() + 1);
-}
-
 char * ColumnNullable::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     const auto & arr = getNullMapData();
@@ -239,19 +220,6 @@ void ColumnNullable::deserializeAndInsertFromArena(ReadBuffer & in, const IColum
 
     if (val == 0)
         getNestedColumn().deserializeAndInsertFromArena(in, settings);
-    else
-        getNestedColumn().insertDefault();
-}
-
-void ColumnNullable::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    UInt8 val;
-    readBinaryLittleEndian<UInt8>(val, in);
-
-    getNullMapData().push_back(val);
-
-    if (val == 0)
-        getNestedColumn().deserializeAndInsertAggregationStateValueFromArena(in);
     else
         getNestedColumn().insertDefault();
 }

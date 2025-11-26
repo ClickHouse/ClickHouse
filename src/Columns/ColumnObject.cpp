@@ -942,21 +942,6 @@ std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, 
     return res;
 }
 
-std::string_view ColumnObject::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    std::string_view res;
-    /// First serialize values from typed paths in sorted order. They are the same for all instances of this column.
-    for (auto path : sorted_typed_paths)
-    {
-        auto data_ref = typed_paths.find(path)->second->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res = std::string_view{data_ref.data() - res.size(), res.size() + data_ref.size()};
-    }
-
-    /// Second, serialize paths and values in binary format from dynamic paths and shared data in sorted by path order.
-    serializeDynamicPathsAndSharedDataIntoArena(n, arena, begin, res);
-    return res;
-}
-
 void ColumnObject::serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const
 {
     /// Calculate total number of paths to serialize and write it.
@@ -1023,16 +1008,6 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     /// First deserialize typed paths. They come first.
     for (auto path : sorted_typed_paths)
         typed_paths.find(path)->second->deserializeAndInsertFromArena(in, settings);
-
-    /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
-    deserializeDynamicPathsAndSharedDataFromArena(in);
-}
-
-void ColumnObject::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    /// First deserialize typed paths. They come first.
-    for (auto path : sorted_typed_paths)
-        typed_paths.find(path)->second->deserializeAndInsertAggregationStateValueFromArena(in);
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
     deserializeDynamicPathsAndSharedDataFromArena(in);

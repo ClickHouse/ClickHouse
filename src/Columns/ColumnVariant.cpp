@@ -806,21 +806,6 @@ std::string_view ColumnVariant::serializeValueIntoArena(size_t n, Arena & arena,
     return std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
 }
 
-std::string_view ColumnVariant::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr = globalDiscriminatorAt(n);
-    char * pos = arena.allocContinue(sizeof(global_discr), begin);
-    memcpy(pos, &global_discr, sizeof(global_discr));
-    std::string_view res(pos, sizeof(global_discr));
-
-    if (global_discr == NULL_DISCRIMINATOR)
-        return res;
-
-    auto value_ref = variants[localDiscriminatorByGlobal(global_discr)]->serializeAggregationStateValueIntoArena(offsetAt(n), arena, begin);
-    return std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
-}
-
 void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     /// During any serialization/deserialization we should always use global discriminators.
@@ -837,24 +822,6 @@ void ColumnVariant::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
     getOffsets().push_back(variants[local_discr]->size());
     variants[local_discr]->deserializeAndInsertFromArena(in, settings);
-}
-
-void ColumnVariant::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    /// During any serialization/deserialization we should always use global discriminators.
-    Discriminator global_discr;
-    readBinaryLittleEndian<Discriminator>(global_discr, in);
-
-    Discriminator local_discr = localDiscriminatorByGlobal(global_discr);
-    getLocalDiscriminators().push_back(local_discr);
-    if (local_discr == NULL_DISCRIMINATOR)
-    {
-        getOffsets().emplace_back();
-        return;
-    }
-
-    getOffsets().push_back(variants[local_discr]->size());
-    variants[local_discr]->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
 void ColumnVariant::skipSerializedInArena(ReadBuffer & in) const

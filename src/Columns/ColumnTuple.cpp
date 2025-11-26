@@ -349,26 +349,6 @@ std::string_view ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, c
     return res;
 }
 
-std::string_view ColumnTuple::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    if (columns.empty())
-    {
-        /// Has to put one useless byte into Arena, because serialization into zero number of bytes is ambiguous.
-        char * res = arena.allocContinue(1, begin);
-        *res = 0;
-        return { res, 1 };
-    }
-
-    std::string_view res;
-    for (const auto & column : columns)
-    {
-        auto value_ref = column->serializeAggregationStateValueIntoArena(n, arena, begin);
-        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
-    }
-
-    return res;
-}
-
 char * ColumnTuple::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     if (columns.empty())
@@ -413,20 +393,6 @@ void ColumnTuple::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
 
     for (auto & column : columns)
         column->deserializeAndInsertFromArena(in, settings);
-}
-
-void ColumnTuple::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    ++column_length;
-
-    if (columns.empty())
-    {
-        in.ignore(1);
-        return;
-    }
-
-    for (auto & column : columns)
-        column->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
 void ColumnTuple::skipSerializedInArena(ReadBuffer & in) const

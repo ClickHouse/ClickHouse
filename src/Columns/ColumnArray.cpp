@@ -245,27 +245,6 @@ ColumnArray::serializeValueIntoArena(size_t n, Arena & arena, char const *& begi
     return res;
 }
 
-
-std::string_view ColumnArray::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
-{
-    size_t array_size = sizeAt(n);
-    size_t offset = offsetAt(n);
-
-    char * pos = arena.allocContinue(sizeof(array_size), begin);
-    memcpy(pos, &array_size, sizeof(array_size));
-
-    std::string_view res(pos, sizeof(array_size));
-
-    for (size_t i = 0; i < array_size; ++i)
-    {
-        auto value_ref = getData().serializeAggregationStateValueIntoArena(offset + i, arena, begin);
-        res = std::string_view{value_ref.data() - res.size(), res.size() + value_ref.size()};
-    }
-
-    return res;
-}
-
-
 char * ColumnArray::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
     size_t array_size = sizeAt(n);
@@ -305,17 +284,6 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
 
     for (size_t i = 0; i < array_size; ++i)
         getData().deserializeAndInsertFromArena(in, settings);
-
-    getOffsets().push_back(getOffsets().back() + array_size);
-}
-
-void ColumnArray::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
-{
-    size_t array_size;
-    readBinaryLittleEndian<size_t>(array_size, in);
-
-    for (size_t i = 0; i < array_size; ++i)
-        getData().deserializeAndInsertAggregationStateValueFromArena(in);
 
     getOffsets().push_back(getOffsets().back() + array_size);
 }

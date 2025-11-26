@@ -3731,7 +3731,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool>
     auto bucket_num = blocks.front().info.bucket_num;
     bool is_overflows = blocks.front().info.is_overflows;
 
-    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {} {}).", bucket_num, static_cast<size_t>(method_chosen));
+    LOG_TRACE(log, "Merging partially aggregated blocks (bucket = {}).", bucket_num);
     Stopwatch watch;
 
     /** If possible, change 'method' to some_hash64. Otherwise, leave as is.
