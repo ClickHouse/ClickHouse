@@ -845,7 +845,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         first_failed_disk = primary_disk;
 
         const auto & disks = volume->getDisks();
-        if (!primary_disk_suitable && disks.size() > 1) {
+        if (!primary_disk_suitable && disks.size() > 1)
+        {
 
             for (const auto & disk : disks)
             {
@@ -883,7 +884,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                 backQuote(first_failed_disk->getName()),
                 formatReadableSizeWithBinarySuffix(first_failed_disk_info.total_bytes));
         }
-    } else {
+    }
+    else
+    {
         /// No free space check needed, use default reservation
         reservation = data.reserveSpacePreferringTTLRules(metadata_snapshot, expected_size, move_ttl_infos, time(nullptr), 0, true);
     }
