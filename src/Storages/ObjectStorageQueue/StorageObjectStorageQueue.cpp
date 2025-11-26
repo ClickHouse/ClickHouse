@@ -46,7 +46,6 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueCommitRequests;
     extern const Event ObjectStorageQueueSuccessfulCommits;
     extern const Event ObjectStorageQueueUnsuccessfulCommits;
-    extern const Event ObjectStorageQueueRemovedObjects;
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
 }
@@ -106,6 +105,15 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const ObjectStorageQueueSettingsBool use_persistent_processing_nodes;
     extern const ObjectStorageQueueSettingsUInt32 persistent_processing_node_ttl_seconds;
+    extern const ObjectStorageQueueSettingsUInt32 after_processing_retries;
+    extern const ObjectStorageQueueSettingsString after_processing_move_uri;
+    extern const ObjectStorageQueueSettingsString after_processing_move_prefix;
+    extern const ObjectStorageQueueSettingsString after_processing_move_access_key_id;
+    extern const ObjectStorageQueueSettingsString after_processing_move_secret_access_key;
+    extern const ObjectStorageQueueSettingsString after_processing_move_connection_string;
+    extern const ObjectStorageQueueSettingsString after_processing_move_container;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_key;
+    extern const ObjectStorageQueueSettingsString after_processing_tag_value;
 }
 
 namespace ErrorCodes
@@ -143,6 +151,55 @@ namespace
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
                             queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value,
                             queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
+        }
+        if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::MOVE)
+        {
+            bool move_uri = !queue_settings[ObjectStorageQueueSetting::after_processing_move_uri].toString().empty();
+            bool move_access_key_id = !queue_settings[ObjectStorageQueueSetting::after_processing_move_access_key_id].toString().empty();
+            bool move_secret_access_key = !queue_settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key].toString().empty();
+            bool move_connection_string = !queue_settings[ObjectStorageQueueSetting::after_processing_move_connection_string].toString().empty();
+            bool move_container = !queue_settings[ObjectStorageQueueSetting::after_processing_move_container].toString().empty();
+            bool move_prefix = !queue_settings[ObjectStorageQueueSetting::after_processing_move_prefix].toString().empty();
+
+            if (move_uri || move_access_key_id || move_secret_access_key)
+            {
+                if (!move_uri || !move_access_key_id || !move_secret_access_key)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Move to S3 bucket requires all of settings: move_uri, move_access_key_id, move_secret_access_key");
+                }
+                if (move_connection_string || move_container)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unexpected Azure settings when S3 settings are provided:{}{}",
+                        move_connection_string ? " move_connection_string" : "",
+                        move_container ? " move_container" : "");
+                }
+            }
+            else if (move_connection_string || move_container)
+            {
+                if (!move_connection_string || !move_container)
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Move to Azure container requires all of settings: move_connection_string, move_container");
+                }
+            }
+            else if (!move_prefix)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Move of processed objects requires specifying target bucket/container or prefix");
+            }
+        }
+        if (queue_settings[ObjectStorageQueueSetting::after_processing] == ObjectStorageQueueAction::TAG)
+        {
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_key].toString().empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_key");
+            }
+            if (queue_settings[ObjectStorageQueueSetting::after_processing_tag_value].toString().empty())
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "after_processing action 'tag' requires non-empty after_processing_tag_value");
+            }
         }
     }
 
@@ -200,6 +257,17 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         .max_processed_rows_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_rows_before_commit],
         .max_processed_bytes_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processed_bytes_before_commit],
         .max_processing_time_sec_before_commit = (*queue_settings_)[ObjectStorageQueueSetting::max_processing_time_sec_before_commit],
+    })
+    , after_processing_settings(AfterProcessingSettings{
+        .after_processing_retries = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_retries],
+        .after_processing_move_uri = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_uri],
+        .after_processing_move_prefix = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_prefix],
+        .after_processing_move_access_key_id = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_access_key_id],
+        .after_processing_move_secret_access_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_secret_access_key],
+        .after_processing_move_connection_string = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_connection_string],
+        .after_processing_move_container = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_move_container],
+        .after_processing_tag_key = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_key],
+        .after_processing_tag_value = (*queue_settings_)[ObjectStorageQueueSetting::after_processing_tag_value],
     })
     , min_insert_block_size_rows_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views])
     , min_insert_block_size_bytes_for_materialized_views((*queue_settings_)[ObjectStorageQueueSetting::min_insert_block_size_bytes_for_materialized_views])
@@ -529,9 +597,11 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
     bool commit_once_processed)
 {
     CommitSettings commit_settings_copy;
+    AfterProcessingSettings after_processing_settings_copy;
     {
         std::lock_guard lock(mutex);
         commit_settings_copy = commit_settings;
+        after_processing_settings_copy = after_processing_settings;
     }
     return std::make_shared<ObjectStorageQueueSource>(
         getName(),
@@ -544,6 +614,7 @@ std::shared_ptr<ObjectStorageQueueSource> StorageObjectStorageQueue::createSourc
         format_settings,
         parser_shared_resources,
         commit_settings_copy,
+        after_processing_settings_copy,
         files_metadata,
         local_context,
         max_block_size,
@@ -811,6 +882,27 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
     return total_rows > 0;
 }
 
+void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_objects) const
+{
+    std::optional<ObjectStorageQueuePostProcessor> post_processor;
+
+    {
+        std::lock_guard lock(mutex);
+        post_processor.emplace(
+            getContext(),
+            type,
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
+    }
+
+    if (post_processor)
+    {
+        post_processor->process(successful_objects);
+    }
+}
+
 void StorageObjectStorageQueue::commit(
     bool insert_succeeded,
     size_t inserted_rows,
@@ -835,12 +927,9 @@ void StorageObjectStorageQueue::commit(
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCommitRequests, requests.size());
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueRemovedObjects, successful_objects.size());
+        postProcess(successful_objects);
     }
 
     auto context = getContext();
@@ -932,6 +1021,15 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "after_processing_retries",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
 };
 
 static const std::unordered_set<std::string_view> changeable_settings_ordered_mode
@@ -953,6 +1051,15 @@ static const std::unordered_set<std::string_view> changeable_settings_ordered_mo
     "cleanup_interval_min_ms",
     "use_persistent_processing_nodes",
     "persistent_processing_node_ttl_seconds",
+    "after_processing_retries",
+    "after_processing_move_uri",
+    "after_processing_move_prefix",
+    "after_processing_move_access_key_id",
+    "after_processing_move_secret_access_key",
+    "after_processing_move_connection_string",
+    "after_processing_move_container",
+    "after_processing_tag_key",
+    "after_processing_tag_value",
 };
 
 static std::string normalizeSetting(const std::string & name)
@@ -1218,6 +1325,24 @@ void StorageObjectStorageQueue::alter(
                 list_objects_batch_size = change.value.safeGet<UInt64>();
             else if (change.name == "enable_hash_ring_filtering")
                 enable_hash_ring_filtering = change.value.safeGet<bool>();
+            else if (change.name == "after_processing_retries")
+                after_processing_settings.after_processing_retries = change.value.safeGet<UInt32>();
+            else if (change.name == "after_processing_move_uri")
+                after_processing_settings.after_processing_move_uri = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_prefix")
+                after_processing_settings.after_processing_move_prefix = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_access_key_id")
+                after_processing_settings.after_processing_move_access_key_id = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_secret_access_key")
+                after_processing_settings.after_processing_move_secret_access_key = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_connection_string")
+                after_processing_settings.after_processing_move_connection_string = change.value.safeGet<String>();
+            else if (change.name == "after_processing_move_container")
+                after_processing_settings.after_processing_move_container = change.value.safeGet<String>();
+            else if (change.name == "after_processing_tag_key")
+                after_processing_settings.after_processing_tag_key = change.value.safeGet<String>();
+            else if (change.name == "after_processing_tag_value")
+                after_processing_settings.after_processing_tag_value = change.value.safeGet<String>();
         }
 
         files_metadata->updateSettings(changed_settings);
@@ -1307,6 +1432,15 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
         settings[ObjectStorageQueueSetting::max_processed_rows_before_commit] = commit_settings.max_processed_rows_before_commit;
         settings[ObjectStorageQueueSetting::max_processed_bytes_before_commit] = commit_settings.max_processed_bytes_before_commit;
         settings[ObjectStorageQueueSetting::max_processing_time_sec_before_commit] = commit_settings.max_processing_time_sec_before_commit;
+        settings[ObjectStorageQueueSetting::after_processing_retries] = after_processing_settings.after_processing_retries;
+        settings[ObjectStorageQueueSetting::after_processing_move_uri] = after_processing_settings.after_processing_move_uri;
+        settings[ObjectStorageQueueSetting::after_processing_move_prefix] = after_processing_settings.after_processing_move_prefix;
+        settings[ObjectStorageQueueSetting::after_processing_move_access_key_id] = after_processing_settings.after_processing_move_access_key_id;
+        settings[ObjectStorageQueueSetting::after_processing_move_secret_access_key] = after_processing_settings.after_processing_move_secret_access_key;
+        settings[ObjectStorageQueueSetting::after_processing_move_connection_string] = after_processing_settings.after_processing_move_connection_string;
+        settings[ObjectStorageQueueSetting::after_processing_move_container] = after_processing_settings.after_processing_move_container;
+        settings[ObjectStorageQueueSetting::after_processing_tag_key] = after_processing_settings.after_processing_tag_key;
+        settings[ObjectStorageQueueSetting::after_processing_tag_value] = after_processing_settings.after_processing_tag_value;
         settings[ObjectStorageQueueSetting::enable_hash_ring_filtering] = enable_hash_ring_filtering;
         settings[ObjectStorageQueueSetting::list_objects_batch_size] = list_objects_batch_size;
         settings[ObjectStorageQueueSetting::min_insert_block_size_rows_for_materialized_views] = min_insert_block_size_rows_for_materialized_views;

@@ -46,7 +46,7 @@ Positions: 6 0 1 2 3 4
                INPUT :: 4 -> __table3.name String : 4
                INPUT :: 5 -> __table3.age Int16 : 5
       Positions: 0 1 2 3 4 5
-        Join
+        Join (JOIN FillRightFirst)
         Type: INNER
         Strictness: ALL
         Algorithm: ConcurrentHashJoin
@@ -135,7 +135,7 @@ Positions: 6 0 1 2 3 4
                INPUT :: 4 -> __table3.name String : 4
                INPUT :: 5 -> __table3.age Int16 : 5
       Positions: 0 1 2 3 4 5
-        Join
+        Join (JOIN FillRightFirst)
         Type: INNER
         Strictness: ALL
         Algorithm: ConcurrentHashJoin
@@ -234,7 +234,7 @@ Positions: 6 0 1 2 3 4
                  INPUT :: 4 -> __table3.name String : 4
                  INPUT :: 5 -> __table3.age Int16 : 5
         Positions: 0 1 2 3 4 5
-          Join
+          Join (JOIN FillRightFirst)
           Type: LEFT
           Strictness: SEMI
           Algorithm: ConcurrentHashJoin
@@ -331,7 +331,7 @@ Positions: 6 0 1 2 3 4
                  INPUT :: 4 -> __table3.name String : 4
                  INPUT :: 5 -> __table3.age Int16 : 5
         Positions: 0 1 2 3 4 5
-          Join
+          Join (JOIN FillRightFirst)
           Type: FULL
           Strictness: ALL
           Algorithm: ConcurrentHashJoin
@@ -428,7 +428,7 @@ Positions: 6 0 1 2 3 4
                  INPUT :: 4 -> __table3.name String : 4
                  INPUT :: 5 -> __table3.age Int16 : 5
         Positions: 0 1 2 3 4 5
-          Join
+          Join (JOIN FillRightFirst)
           Type: LEFT
           Strictness: ANTI
           Algorithm: ConcurrentHashJoin

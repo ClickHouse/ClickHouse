@@ -3,12 +3,11 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <filesystem>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 #include <Storages/ObjectStorage/Common.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
-
 
 namespace DB
 {
