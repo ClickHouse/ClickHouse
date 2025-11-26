@@ -340,6 +340,7 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
     in.readStrict(reinterpret_cast<char *>(chars.data() + old_size), string_size - serialize_string_with_zero_byte);
+    in.ignore(serialize_string_with_zero_byte);
 
     offsets.push_back(new_size);
 }
