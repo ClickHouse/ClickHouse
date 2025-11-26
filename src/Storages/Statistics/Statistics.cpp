@@ -28,7 +28,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CORRUPTED_DATA;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
@@ -251,8 +250,9 @@ void ColumnStatistics::deserialize(ReadBuffer &buf)
 {
     UInt16 version;
     readIntBinary(version, buf);
+    /// TODO: we should check the version of statistics format when we start clickhouse server, and do materialize statistics automatically.
     if (version != V1)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown file format version: {}. We should run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
+        throw Exception(ErrorCodes::ILLEGAL_STATISTICS, "We try to read stale file format version: {}. Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics", version);
 
     UInt64 stat_types_mask = 0;
     readIntBinary(stat_types_mask, buf);
