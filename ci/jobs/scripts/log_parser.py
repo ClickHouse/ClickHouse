@@ -235,35 +235,40 @@ class FuzzerLogParser:
         sanitizer_pattern = re.compile(r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:")
         stack_frame_pattern = re.compile(r"^\s+#\d+\s+")
         stack_frame_pattern_1st_line = re.compile(r"^\s+#0\s")
+        # Pattern to remove ANSI escape codes (colors from tools like ripgrep)
+        ansi_escape = re.compile(r"\x1b\[[0-9;]*m")
+
         with open(self.server_log, "r", errors="replace") as file:
             all_lines = file.readlines()
 
         in_sanitizer_trace = False
         for line in all_lines:
+            # Strip ANSI color codes before pattern matching
+            clean_line = ansi_escape.sub("", line)
+
             if not in_sanitizer_trace:
-                if stack_frame_pattern_1st_line.search(line):
+                if stack_frame_pattern_1st_line.search(clean_line):
                     in_sanitizer_trace = True
-                    lines.append(line.strip())
+                    lines.append(clean_line.strip())
             else:
-                if stack_frame_pattern.match(line):
-                    lines.append(line.strip())
+                if stack_frame_pattern.match(clean_line):
+                    lines.append(clean_line.strip())
                 elif in_sanitizer_trace:
                     # End of stack trace
                     break
         return "\n".join(lines) if lines else None
 
-    def get_stack_trace(self, max_lines=1000):
+    def get_stack_trace(self):
         lines = []
         stack_trace_pattern = re.compile(r"<Fatal> BaseDaemon: \d+(?:\.\d+)*\.\s*")
+
         if self.stack_trace_str:
             all_lines = self.stack_trace_str.splitlines()
         else:
             with open(self.server_log, "r", errors="replace") as file:
                 all_lines = file.readlines()
 
-        last_lines = all_lines[-max_lines:]
-
-        for line in reversed(last_lines):
+        for line in reversed(all_lines):
             if "<Fatal> BaseDaemon: Stack trace:" in line:
                 break
             match = stack_trace_pattern.search(line)
@@ -305,37 +310,40 @@ class FuzzerLogParser:
         for line in lines:
             # Normalize multiple DB:: occurrences
             line = line.replace(", DB::", "")
-            if " DB::" not in line:
-                continue
 
-            # Extract substring starting from DB::
-            start_idx = line.find(" DB::")
-            substring = line[start_idx:].removeprefix(" ")
+            # Check if line contains DB:: namespace
+            if " DB::" in line:
+                start_idx = line.find(" DB::")
+                substring = line[start_idx + 1 :]  # Skip the leading space
+            elif line.startswith("DB::"):
+                substring = line
+            else:
+                continue
 
             # Truncate at first '(' or '<' to keep only function name
             paren_idx = substring.find("(")
             angle_idx = substring.find("<")
-            end_idx = min(
-                paren_idx if paren_idx != -1 else len(substring),
-                angle_idx if angle_idx != -1 else len(substring),
-            )
 
-            if end_idx < len(substring):
-                substring = substring[:end_idx]
+            if paren_idx != -1 and angle_idx != -1:
+                end_idx = min(paren_idx, angle_idx)
+            elif paren_idx != -1:
+                end_idx = paren_idx
+            elif angle_idx != -1:
+                end_idx = angle_idx
+            else:
+                end_idx = len(substring)
 
+            substring = substring[:end_idx]
             functions.append(substring)
 
         # Remove exception functions and everything above them
-        # (the actual issue typically occurs before the exception is thrown)
-        for i, func in enumerate(reversed(functions)):
+        for i, func in enumerate(functions):
             if "DB::Exception" in func:
-                cutoff = len(functions) - i
-                functions = functions[:cutoff]
+                functions = functions[:i]
                 break
 
         # Limit to top ST_MAX_DEPTH functions for broader matching
-        if len(functions) > ST_MAX_DEPTH:
-            functions = functions[:ST_MAX_DEPTH]
+        functions = functions[:ST_MAX_DEPTH]
 
         if not functions:
             return None
