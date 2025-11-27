@@ -138,7 +138,7 @@ PaimonMetadata::PaimonMetadata(
     , log(getLogger("PaimonMetadata"))
     , table_client_ptr(table_client_ptr_)
     , last_metadata_object(schema_json_object_)
-    , read_path(configuration_->getPathForRead().path)
+    , table_path(configuration_->getPathForRead().path)
 {
     updateState();
 }
@@ -188,7 +188,7 @@ ObjectIterator PaimonMetadata::iterate(
                 LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
                 continue;
             }
-            data_files.emplace_back(std::filesystem::path(read_path) / file_entry.file.bucket_path / file_entry.file.file_name);
+            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
             LOG_TEST(log, "base_manifest data file: {}", data_files.back());
         }
     }
@@ -204,7 +204,7 @@ ObjectIterator PaimonMetadata::iterate(
                 LOG_TEST(log, "partition prun manifest file: {}, {}", file_entry.file.file_name, file_entry.file.bucket_path);
                 continue;
             }
-            data_files.emplace_back(std::filesystem::path(read_path) / file_entry.file.bucket_path / file_entry.file.file_name);
+            data_files.emplace_back(std::filesystem::path(table_path) / file_entry.file.bucket_path / file_entry.file.file_name);
             LOG_TEST(log, "delta_manifest data file: {}", data_files.back());
         }
     }

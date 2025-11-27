@@ -168,7 +168,7 @@ std::optional<ManifestFileEntry> SingleThreadIcebergKeysIterator::next()
                 local_context,
                 "",
                 DB::IcebergMetadataLogLevel::ManifestFileEntry,
-                persistent_components.read_path,
+                persistent_components.table_path,
                 current_manifest_file_content->getPathToManifestFile(),
                 manifest_file_entry.row_number,
                 pruning_status);

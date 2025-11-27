@@ -43,7 +43,7 @@ namespace ErrorCodes
 Strings HudiMetadata::getDataFilesImpl() const
 {
     auto log = getLogger("HudiMetadata");
-    const auto keys = listFiles(*object_storage, read_path, "", Poco::toLower(format));
+    const auto keys = listFiles(*object_storage, table_path, "", Poco::toLower(format));
 
     using Partition = std::string;
     using FileID = std::string;
@@ -88,7 +88,7 @@ Strings HudiMetadata::getDataFilesImpl() const
 HudiMetadata::HudiMetadata(ObjectStoragePtr object_storage_, StorageObjectStorageConfigurationPtr configuration_, ContextPtr context_)
     : WithContext(context_)
     , object_storage(object_storage_)
-    , read_path(configuration_->getPathForRead().path)
+    , table_path(configuration_->getPathForRead().path)
     , format(configuration_->format)
 {
 }

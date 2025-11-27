@@ -88,7 +88,7 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    const String & path_for_read,
+    const String & table_path,
     const DataLakeStorageSettings & data_lake_settings,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,

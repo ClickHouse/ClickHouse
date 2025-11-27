@@ -174,7 +174,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .format_version = format_version,
         .table_location = table_location,
         .metadata_compression_method = compression_method,
-        .read_path = configuration->getPathForRead().path,
+        .table_path = configuration->getPathForRead().path,
         .table_uuid = table_uuid,
     };
 }
@@ -182,7 +182,13 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage, persistent_components.read_path,  data_lake_settings, persistent_components.metadata_cache, context, log.get(), persistent_components.table_uuid);
+        object_storage,
+        persistent_components.table_path,
+        data_lake_settings,
+        persistent_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_components.table_uuid);
     return getState(context, metadata_file_path, metadata_version);
 }
 
@@ -313,7 +319,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
             persistent_components,
             local_context,
             getProperFilePathFromMetadataInfo(
-                manifest_list_file_path, persistent_components.read_path, persistent_components.table_location),
+                manifest_list_file_path, persistent_components.table_path, persistent_components.table_location),
             log),
         snapshot_id,
         schema_id,
@@ -345,7 +351,6 @@ bool IcebergMetadata::optimize(
             persistent_components,
             object_storage,
             data_lake_settings,
-            persistent_components.read_path,
             format_settings,
             sample_block,
             context,
@@ -371,7 +376,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Time travel with timestamp and snapshot id for iceberg table by path {} cannot be changed simultaneously",
-            persistent_components.read_path);
+            persistent_components.table_path);
     }
     if (timestamp_changed)
     {
@@ -379,7 +384,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "No snapshot log found in metadata for iceberg table {} so it is impossible to get relevant snapshot id using timestamp",
-                persistent_components.read_path);
+                persistent_components.table_path);
         std::optional<Int64> current_snapshot_id = std::nullopt;
         {
             Int64 closest_timestamp = 0;
@@ -400,7 +405,7 @@ IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Obje
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "No snapshot found in snapshot log before requested timestamp for iceberg table {}",
-                persistent_components.read_path);
+                persistent_components.table_path);
         auto data_snapshot = getIcebergDataSnapshot(metadata_object, *current_snapshot_id, local_context);
         return {data_snapshot, data_snapshot->schema_id_on_snapshot_commit};
     }
@@ -439,7 +444,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
         local_context,
         dumpMetadataObjectToString(metadata_object),
         DB::IcebergMetadataLogLevel::Metadata,
-        persistent_components.read_path,
+        persistent_components.table_path,
         metadata_path,
         std::nullopt,
         std::nullopt);
@@ -537,8 +542,7 @@ void IcebergMetadata::alter(const AlterCommands & params, ContextPtr context)
             "To allow its usage, enable setting allow_experimental_insert_into_iceberg");
     }
 
-    Iceberg::alter(
-        params, context, object_storage, data_lake_settings, persistent_components, write_format, persistent_components.read_path);
+    Iceberg::alter(params, context, object_storage, data_lake_settings, persistent_components, write_format);
 }
 
 
@@ -654,7 +658,13 @@ DataLakeMetadataPtr IcebergMetadata::create(
 IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_context) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-        object_storage, persistent_components.read_path, data_lake_settings, persistent_components.metadata_cache, local_context, log.get(), persistent_components.table_uuid);
+        object_storage,
+        persistent_components.table_path,
+        data_lake_settings,
+        persistent_components.metadata_cache,
+        local_context,
+        log.get(),
+        persistent_components.table_uuid);
 
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
@@ -1052,7 +1062,7 @@ void IcebergMetadata::drop(ContextPtr context)
 {
     if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
-        auto files = listFiles(*object_storage, persistent_components.read_path, persistent_components.read_path, "");
+        auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));
     }
@@ -1070,7 +1080,7 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForObject(ObjectInfoPtr object_i
     return persistent_components.schema_processor->getColumnMapperById(iceberg_object_info->info.underlying_format_read_schema_id);
 }
 
-// (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occured during ).
+// (TODO): usage of this function is wrong and should be removed completely (it was done as a temporary workaround for a bug which occured during supporting concurrent SELECTs).
 ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
 {
     if (Poco::toLower(write_format) != "parquet")

@@ -39,8 +39,7 @@ void alter(
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     PersistentTableComponents & persistent_table_components,
-    String write_format,
-    const String & read_path);
+    String write_format);
 }
 
 #endif

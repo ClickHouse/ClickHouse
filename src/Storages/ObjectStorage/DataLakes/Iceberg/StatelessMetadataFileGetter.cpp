@@ -96,7 +96,7 @@ Iceberg::ManifestFilePtr getManifestFile(
             manifest_file_deserializer,
             filename,
             persistent_table_components.format_version,
-            persistent_table_components.read_path,
+            persistent_table_components.table_path,
             *persistent_table_components.schema_processor,
             inherited_sequence_number,
             inherited_snapshot_id,
@@ -144,7 +144,7 @@ ManifestFileCacheKeys getManifestList(
             local_context,
             manifest_list_deserializer.getMetadataContent(),
             DB::IcebergMetadataLogLevel::ManifestListMetadata,
-            persistent_table_components.read_path,
+            persistent_table_components.table_path,
             filename,
             std::nullopt,
             std::nullopt);
@@ -154,7 +154,7 @@ ManifestFileCacheKeys getManifestList(
             const std::string file_path
                 = manifest_list_deserializer.getValueFromRowByName(i, f_manifest_path, TypeIndex::String).safeGet<std::string>();
             const auto manifest_file_name = getProperFilePathFromMetadataInfo(
-                file_path, persistent_table_components.read_path, persistent_table_components.table_location);
+                file_path, persistent_table_components.table_path, persistent_table_components.table_location);
             Int64 added_sequence_number = 0;
             auto added_snapshot_id = manifest_list_deserializer.getValueFromRowByName(i, f_added_snapshot_id);
             if (added_snapshot_id.isNull())
@@ -179,7 +179,7 @@ ManifestFileCacheKeys getManifestList(
                 local_context,
                 manifest_list_deserializer.getContent(i),
                 DB::IcebergMetadataLogLevel::ManifestListEntry,
-                persistent_table_components.read_path,
+                persistent_table_components.table_path,
                 filename,
                 i,
                 std::nullopt);

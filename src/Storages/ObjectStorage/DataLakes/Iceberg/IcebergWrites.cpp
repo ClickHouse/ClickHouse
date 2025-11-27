@@ -585,7 +585,7 @@ IcebergStorageSink::IcebergStorageSink(
 {
     auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
-        persistent_table_components.read_path,
+        persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
         context_,
@@ -601,7 +601,7 @@ IcebergStorageSink::IcebergStorageSink(
         compression_method,
         persistent_table_components.table_uuid);
     metadata_compression_method = compression_method;
-    auto config_path = persistent_table_components.read_path;
+    auto config_path = persistent_table_components.table_path;
     if (config_path.empty() || config_path.back() != '/')
         config_path += "/";
     if (!config_path.starts_with('/'))
@@ -836,7 +836,7 @@ bool IcebergStorageSink::initializeMetadata()
         {
             auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
                 object_storage,
-                persistent_table_components.read_path,
+                persistent_table_components.table_path,
                 data_lake_settings,
                 persistent_table_components.metadata_cache,
                 context,
@@ -990,6 +990,7 @@ bool IcebergStorageSink::initializeMetadata()
     }
     return true;
 }
+
 }
 
 // NOLINTEND(clang-analyzer-core.uninitialized.UndefReturn)

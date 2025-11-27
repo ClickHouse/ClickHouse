@@ -544,7 +544,7 @@ void mutate(
     const String& blob_storage_type_name,
     const String& blob_storage_namespace_name)
 {
-    auto common_path = persistent_table_components.read_path;
+    auto common_path = persistent_table_components.table_path;
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
 
@@ -554,7 +554,13 @@ void mutate(
         FileNamesGenerator filename_generator(common_path, common_path, false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergMutations");
         auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, persistent_table_components.read_path,  data_lake_settings, persistent_table_components.metadata_cache, context, log.get(), persistent_table_components.table_uuid);
+            object_storage,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_table_components.table_uuid);
 
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);
@@ -668,8 +674,7 @@ void alter(
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     PersistentTableComponents & persistent_table_components,
-    String write_format,
-    const String & read_path)
+    String write_format)
 {
     if (params.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Params with size 1 is not supported");
@@ -677,10 +682,17 @@ void alter(
     size_t i = 0;
     while (i++ < MAX_TRANSACTION_RETRIES)
     {
-        FileNamesGenerator filename_generator(read_path, read_path, false, CompressionMethod::None, write_format);
+        FileNamesGenerator filename_generator(
+            persistent_table_components.table_path, persistent_table_components.table_path, false, CompressionMethod::None, write_format);
         auto log = getLogger("IcebergMutations");
         auto [last_version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
-            object_storage, read_path, data_lake_settings, persistent_table_components.metadata_cache, context, log.get(), persistent_table_components.table_uuid);
+            object_storage,
+            persistent_table_components.table_path,
+            data_lake_settings,
+            persistent_table_components.metadata_cache,
+            context,
+            log.get(),
+            persistent_table_components.table_uuid);
 
         filename_generator.setVersion(last_version + 1);
         filename_generator.setCompressionMethod(compression_method);

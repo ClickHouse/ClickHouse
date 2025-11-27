@@ -872,7 +872,7 @@ For legacy reasons, we keep the option to not use table_uuid for metadata file s
  */
 static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    const String & path_for_read,
+    const String & table_path,
     const DataLakeStorageSettings & data_lake_settings,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
@@ -886,10 +886,10 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         : MostRecentMetadataFileSelectionWay::BY_METADATA_FILE_VERSION;
     bool need_all_metadata_files_parsing = (selection_way == MostRecentMetadataFileSelectionWay::BY_LAST_UPDATED_MS_FIELD)
         || (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection);
-    const auto metadata_files = listFiles(*object_storage, path_for_read, "metadata", ".metadata.json");
+    const auto metadata_files = listFiles(*object_storage, table_path, "metadata", ".metadata.json");
     if (metadata_files.empty())
     {
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", path_for_read);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", table_path);
     }
     std::vector<ShortMetadataFileInfo> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
@@ -940,7 +940,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST,
             "The metadata file for Iceberg table with path {} and table UUID {} doesn't exist",
-            path_for_read,
+            table_path,
             table_uuid.has_value() ? table_uuid.value() : "null");
     }
 
@@ -967,7 +967,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
 MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
-    const String & path_for_read,
+    const String & table_path,
     const DataLakeStorageSettings & data_lake_settings,
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
@@ -987,8 +987,8 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
                 if (*it == "." || *it == "..")
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Relative paths are not allowed");
             }
-            if (!explicit_metadata_path.starts_with(path_for_read))
-                explicit_metadata_path = std::filesystem::path(path_for_read) / explicit_metadata_path;
+            if (!explicit_metadata_path.starts_with(table_path))
+                explicit_metadata_path = std::filesystem::path(table_path) / explicit_metadata_path;
             return getMetadataFileAndVersion(explicit_metadata_path);
         }
         catch (const std::exception & ex)
@@ -1004,13 +1004,13 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
             log,
             "Explicit table UUID is specified {}, will read the latest metadata file for Iceberg table at path {}",
             explicit_table_uuid.value(),
-            path_for_read);
+            table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, path_for_read, data_lake_settings, metadata_cache, local_context, explicit_table_uuid, true);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, explicit_table_uuid, true);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
-        auto version_hint_path = std::filesystem::path(path_for_read) / "metadata" / "version-hint.text";
+        auto version_hint_path = std::filesystem::path(table_path) / "metadata" / "version-hint.text";
         std::string metadata_file;
         StoredObject version_hint(version_hint_path);
         auto buf = object_storage->readObject(version_hint, ReadSettings{});
@@ -1025,12 +1025,12 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
         LOG_TEST(log, "Version hint file points to {}, will read from this metadata file", metadata_file);
         ProfileEvents::increment(ProfileEvents::IcebergVersionHintUsed);
 
-        return getMetadataFileAndVersion(std::filesystem::path(path_for_read) / "metadata" / fs::path(metadata_file).filename());
+        return getMetadataFileAndVersion(std::filesystem::path(table_path) / "metadata" / fs::path(metadata_file).filename());
     }
     else
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, path_for_read, data_lake_settings, metadata_cache, local_context, table_uuid, false);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false);
     }
 }
 

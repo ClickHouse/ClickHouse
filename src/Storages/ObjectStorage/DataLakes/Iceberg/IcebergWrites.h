@@ -3,18 +3,18 @@
 #include <unordered_map>
 #include <Columns/IColumn.h>
 #include <Core/Range.h>
+#include <Core/SortDescription.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Functions/IFunction.h>
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
+#include <Processors/Chunk.h>
+#include <Storages/KeyDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Poco/Dynamic/Var.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Core/SortDescription.h>
-#include <Processors/Chunk.h>
-#include <Storages/KeyDescription.h>
 
 #if USE_AVRO
 

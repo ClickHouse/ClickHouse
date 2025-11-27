@@ -87,7 +87,7 @@ private:
     LoggerPtr log;
     PaimonTableClientPtr table_client_ptr;
     Poco::JSON::Object::Ptr last_metadata_object TSA_GUARDED_BY(mutex);
-    String read_path;
+    String table_path;
 
 
     constexpr static String PARTITION_DEFAULT_VALUE = "__DEFAULT_PARTITION__";
