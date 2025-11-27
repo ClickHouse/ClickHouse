@@ -670,10 +670,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     size_t num_streams,
     ReadFromMergeTree::IndexStats & index_stats,
     bool use_skip_indexes,
+    bool use_skip_indexes_for_disjunctions_,
     bool find_exact_ranges,
     bool is_final_query,
-    bool is_parallel_reading_from_replicas,
-    bool is_support_disjuncts)
+    bool is_parallel_reading_from_replicas)
 {
     const auto original_num_parts = parts_with_ranges.size();
     const Settings & settings = context->getSettingsRef();
@@ -753,8 +753,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    const bool support_disjuncts = is_support_disjuncts && !settings[Setting::use_skip_indexes_on_data_read] &&
-                                        key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
+    bool support_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
+                                && !settings[Setting::use_skip_indexes_on_data_read] &&
+                                key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
@@ -865,7 +866,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
                 PartialDisjunctionResult partial_eval_results;
-                if (support_disjuncts)
+                if (support_skip_indexes_for_disjunctions)
                     partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
@@ -907,7 +908,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
-                            support_disjuncts,
+                            support_skip_indexes_for_disjunctions,
                             partial_eval_results,
                             log);
                     }
@@ -919,7 +920,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (support_disjuncts && key_condition_rpn_template.has_value())
+                if (support_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
                 {
                     ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
                                         ranges.ranges, key_condition_rpn_template.value(),
@@ -1076,7 +1077,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         }
 
-        if (support_disjuncts)
+        if (support_skip_indexes_for_disjunctions)
         {
             index_stats.emplace_back(ReadFromMergeTree::IndexStat{
                 .type = ReadFromMergeTree::IndexType::Skip,
@@ -1788,7 +1789,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
-    bool support_disjuncts,
+    bool use_skip_indexes_for_disjunctions,
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
@@ -1800,7 +1801,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !support_disjuncts;
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
 
     auto index_granularity = index_helper->index.granularity;
 
@@ -1950,7 +1951,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 else
                 {
                     bool result = true;
-                    if (support_disjuncts && key_condition_rpn_template)
+                    if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
                     {
                         auto range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
 

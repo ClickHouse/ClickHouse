@@ -25,7 +25,7 @@ namespace ErrorCodes
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
     std::optional<KeyCondition> & key_condition_rpn_template_,
-    bool support_disjuncts_,
+    bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
@@ -33,7 +33,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
     , key_condition_rpn_template(key_condition_rpn_template_)
-    , support_disjuncts(support_disjuncts_)
+    , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
     , uncompressed_cache(std::move(uncompressed_cache_))
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
@@ -49,7 +49,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     auto ranges = part.ranges;
     size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
-    if (support_disjuncts)
+    if (use_for_disjunctions)
         partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
@@ -72,12 +72,12 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
             mark_cache.get(),
             uncompressed_cache.get(),
             vector_similarity_index_cache.get(),
-            support_disjuncts,
+            use_for_disjunctions,
             partial_eval_results,
             log).first;
     }
 
-    if (support_disjuncts)
+    if (use_for_disjunctions)
     {
         ranges = MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
                             part.data_part, ranges, key_condition_rpn_template.value(),

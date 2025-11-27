@@ -2129,10 +2129,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             num_streams,
             result.index_stats,
             indexes->use_skip_indexes,
+            indexes->use_skip_indexes_for_disjunctions,
             find_exact_ranges,
             query_info_.isFinal(),
-            is_parallel_reading_from_replicas_,
-            indexes->use_skip_indexes_for_disjunctions);
+            is_parallel_reading_from_replicas_);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])

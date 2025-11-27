@@ -89,7 +89,7 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
-        bool support_disjuncts,
+        bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
 
@@ -221,10 +221,10 @@ public:
         size_t num_streams,
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
+        bool use_skip_indexes_for_disjunctions_,
         bool find_exact_ranges,
         bool is_final_query,
-        bool is_parallel_reading_from_replicas,
-        bool is_support_disjuncts);
+        bool is_parallel_reading_from_replicas);
 
     /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
