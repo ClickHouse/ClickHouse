@@ -302,7 +302,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
     ARM_TSAN = "arm_tsan"
-
+    MY_COVERAGE = "my_coverage"
     AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
@@ -363,6 +363,8 @@ class ToolSet:
 
 class ArtifactNames:
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
+    CH_AMD_LLVM_COVERAGE = "CH_AMD_LLVM_COVERAGE" # this is llvm coverage!!
+    AMD_LLVM_COVERAGE_FILE = "AMD_LLVM_COVERAGE_FILE"  # this is llvm coverage!!
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     CH_AMD_ASAN = "CH_AMD_ASAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
@@ -392,6 +394,7 @@ class ArtifactNames:
     UNITTEST_AMD_TSAN = "UNITTEST_AMD_TSAN"
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_AMD_UBSAN = "UNITTEST_AMD_UBSAN"
+    UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
@@ -420,6 +423,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
+            ArtifactNames.CH_AMD_LLVM_COVERAGE,
             ArtifactNames.CH_AMD_RELEASE,
             ArtifactNames.CH_AMD_ASAN,
             ArtifactNames.CH_AMD_TSAN,
@@ -443,6 +447,11 @@ class ArtifactConfigs:
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
         ]
+    )
+    llvm_cov_file = Artifact.Config(
+        name=ArtifactNames.AMD_LLVM_COVERAGE_FILE,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/<path-to-*.profraw>",
     )
     clickhouse_debians = Artifact.Config(
         name="*",
@@ -491,6 +500,7 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_TSAN,
             ArtifactNames.UNITTEST_AMD_MSAN,
             ArtifactNames.UNITTEST_AMD_UBSAN,
+            ArtifactNames.UNITTEST_LLVM_COVERAGE
         ]
     )
     fuzzers = Artifact.Config(

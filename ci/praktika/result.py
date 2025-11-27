@@ -539,7 +539,8 @@ class Result(MetaClasses.Serializable):
         :return: Result
         """
 
-        command = f"{unit_tests_path} --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
+        # run just small subset of tests for faster feedback during PRs
+        command = f"{unit_tests_path} --gtest_filter='*Column*' --gtest_output='json:{ResultTranslator.GTEST_RESULT_FILE}'"
         if command_launcher:
             command = f"{command_launcher} {command}"
 

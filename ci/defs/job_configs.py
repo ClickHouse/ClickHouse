@@ -170,6 +170,11 @@ class JobConfigs:
         ],
     ).parametrize(
         Job.ParamSet(
+            parameter=BuildTypes.MY_COVERAGE,
+            provides=[ArtifactNames.CH_AMD_LLVM_COVERAGE, ArtifactNames.UNITTEST_LLVM_COVERAGE],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
+        Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
             runs_on=RunnerLabels.AMD_LARGE,
@@ -628,6 +633,11 @@ class JobConfigs:
             parameter="ubsan",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_AMD_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="llvm coverage",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
         ),
     )
     stress_test_jobs = common_stress_job_config.parametrize(

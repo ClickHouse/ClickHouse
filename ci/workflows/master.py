@@ -48,6 +48,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.llvm_cov_file
     ],
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
