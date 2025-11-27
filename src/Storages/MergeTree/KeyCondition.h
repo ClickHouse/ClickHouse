@@ -79,6 +79,7 @@ public:
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
     using UpdatePartialDisjunctionResultFn = std::function<void (size_t position, bool result, bool is_unknown)>;
+
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
