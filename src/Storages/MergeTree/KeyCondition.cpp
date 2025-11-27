@@ -3126,7 +3126,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const FunctionPartialEvalResults & function_partial_eval_results) const
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
 {
     std::vector<BoolMask> rpn_stack;
 
@@ -3450,9 +3450,9 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
-        if (function_partial_eval_results)
+        if (update_partial_disjunction_result_fn)
         {
-            function_partial_eval_results(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
             ++element_idx;
         }
     }

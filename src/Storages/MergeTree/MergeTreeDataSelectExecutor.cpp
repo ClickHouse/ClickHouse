@@ -1954,12 +1954,12 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                     {
                         auto range_begin = std::max(ranges[i].begin, index_mark * index_granularity);
 
-                        auto support_disjunct_callback = [&](size_t position, bool element_result, bool is_unknown)
+                        auto update_partial_disjunction_result_fn = [&](size_t position, bool element_result, bool is_unknown)
                         {
                             if (!is_unknown)
                                 partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
                         };
-                        result = condition->mayBeTrueOnGranule(granule, support_disjunct_callback);
+                        result = condition->mayBeTrueOnGranule(granule, update_partial_disjunction_result_fn);
                     }
                     else
                     {
