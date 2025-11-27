@@ -221,7 +221,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
 
-    size_t current_element_idx = 0;
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         switch (element.function)
@@ -287,8 +287,8 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
 
         if (update_partial_result_disjuntion_fn)
         {
-            update_partial_result_disjuntion_fn(current_element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
-            ++current_element_idx;
+            update_partial_result_disjuntion_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
     }
 

@@ -231,7 +231,7 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
     /// Check like in KeyCondition.
     std::vector<BoolMask> rpn_stack;
-    size_t current_element_idx = 0;
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
@@ -317,8 +317,8 @@ bool MergeTreeIndexConditionText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr id
 
         if (update_partial_disjunction_result_fn)
         {
-            update_partial_disjunction_result_fn(current_element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
-            ++current_element_idx;
+            update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            ++element_idx;
         }
     }
 
