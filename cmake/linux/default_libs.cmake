@@ -22,15 +22,20 @@ endif ()
 
 if (OS_ANDROID)
     # pthread and rt are included in libc
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -lc")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
+message(STATUS "Builtins library: ${BUILTINS_LIBRARY}")
 
+# Link them first to have proper order for static linking.
+set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${BUILTINS_LIBRARY} -Wl,--no-whole-archive")
+
+# Other libraries go last
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 

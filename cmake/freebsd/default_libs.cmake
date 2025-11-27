@@ -28,7 +28,7 @@ if (NOT EXISTS "${BUILTINS_LIBRARY}")
     build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
 endif ()
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread")
+set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} -lc -lm -lrt -lpthread")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 
