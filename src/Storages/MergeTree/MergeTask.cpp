@@ -489,23 +489,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
-    /// Skip fully expired columns manually, since in case of
-    /// need_remove_expired_values is not set, TTLTransform will not be used,
-    /// and columns that had been removed by TTL (via TTLColumnAlgorithm) will
-    /// be added again with default values.
-    ///
-    /// Also note, that it is better to do this here, since in other places it
-    /// will be too late (i.e. they will be written, and we will burn CPU/disk
-    /// resources for this).
-    if (!ctx->need_remove_expired_values)
+    /// Determine columns that are absent in all source parts, either fully expired or never written, and mark them as
+    /// expired to avoid reading or writing unnecessary data.
     {
-        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+        NameSet columns_present_in_parts;
+        columns_present_in_parts.reserve(global_ctx->storage_columns.size());
+
+        /// Collect all column names that actually exist in the source parts
+        for (const auto & part : global_ctx->future_part->parts)
         {
-            if (ttl.finished())
-            {
-                global_ctx->new_data_part->expired_columns.insert(column_name);
-                LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
-            }
+            for (const auto & col : part->getColumns())
+                columns_present_in_parts.emplace(col.name);
+        }
+
+        /// Any storage column not present in any part is considered expired
+        for (const auto & storage_column : global_ctx->storage_columns)
+        {
+            if (!columns_present_in_parts.contains(storage_column.name))
+                global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
     }
 

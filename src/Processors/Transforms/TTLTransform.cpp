@@ -91,36 +91,39 @@ TTLTransform::TTLTransform(
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
                 getInputPort().getHeader(), storage_));
 
+    const auto & storage_columns = metadata_snapshot_->getColumns();
+    const auto & column_defaults = storage_columns.getDefaults();
+
+    auto build_default_expr = [&](const String & name)
+    {
+        using Result = std::pair<ExpressionActionsPtr, String>;
+        auto it = column_defaults.find(name);
+        if (it == column_defaults.end())
+            return Result{};
+        const auto & column = storage_columns.get(name);
+        auto default_ast = it->second.expression->clone();
+        default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
+        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAllPhysical());
+        auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
+        return Result{actions, default_ast->getColumnName()};
+    };
+
+    auto expired_columns_map = expired_columns.getNameToTypeMap();
+
+    for (const auto & expired_column : expired_columns)
+    {
+        auto [default_expression, default_column_name] = build_default_expr(expired_column.name);
+        expired_columns_data.emplace(
+            expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
+    }
+
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
-        const auto & storage_columns = metadata_snapshot_->getColumns();
-        const auto & column_defaults = storage_columns.getDefaults();
-
-        auto expired_columns_map = expired_columns.getNameToTypeMap();
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            ExpressionActionsPtr default_expression;
-            String default_column_name;
-            auto it = column_defaults.find(name);
-            if (it != column_defaults.end())
+            if (!expired_columns_map.contains(name))
             {
-                const auto & column = storage_columns.get(name);
-                auto default_ast = it->second.expression->clone();
-                default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-
-                auto syntax_result
-                    = TreeRewriter(storage_.getContext()).analyze(default_ast, metadata_snapshot_->getColumns().getAllPhysical());
-                default_expression = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
-                default_column_name = default_ast->getColumnName();
-            }
-
-            auto type_it = expired_columns_map.find(name);
-            if (type_it != expired_columns_map.end())
-            {
-                expired_columns_data.emplace(name, ExpiredColumnData{type_it->second, default_expression, default_column_name});
-            }
-            else
-            {
+                auto [default_expression, default_column_name] = build_default_expr(name);
                 algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
                     getExpressions(description, subqueries_for_sets, context),
                     description,
@@ -133,8 +136,6 @@ TTLTransform::TTLTransform(
                     isCompactPart(data_part)));
             }
         }
-
-        chassert(expired_columns_data.size() == expired_columns.size());
     }
 
     for (const auto & move_ttl : metadata_snapshot_->getMoveTTLs())
