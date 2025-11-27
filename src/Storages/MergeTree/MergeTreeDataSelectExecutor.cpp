@@ -753,7 +753,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         num_threads = std::min<size_t>(num_streams, settings[Setting::max_threads_for_indexes]);
     }
 
-    bool support_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
+    bool use_skip_indexes_for_disjunctions = use_skip_indexes_for_disjunctions_
                                 && !settings[Setting::use_skip_indexes_on_data_read] &&
                                 key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
@@ -866,7 +866,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
                 PartialDisjunctionResult partial_eval_results;
-                if (support_skip_indexes_for_disjunctions)
+                if (use_skip_indexes_for_disjunctions)
                     partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
@@ -908,7 +908,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                             mark_cache.get(),
                             uncompressed_cache.get(),
                             vector_similarity_index_cache.get(),
-                            support_skip_indexes_for_disjunctions,
+                            use_skip_indexes_for_disjunctions,
                             partial_eval_results,
                             log);
                     }
@@ -920,7 +920,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     skip_index_used_in_part[part_index] = 1; /// thread-safe
                 }
 
-                if (support_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
+                if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
                 {
                     ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
                                         ranges.ranges, key_condition_rpn_template.value(),
@@ -1077,11 +1077,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
         }
 
-        if (support_skip_indexes_for_disjunctions)
+        if (use_skip_indexes_for_disjunctions)
         {
             index_stats.emplace_back(ReadFromMergeTree::IndexStat{
                 .type = ReadFromMergeTree::IndexType::Skip,
-                .name = "<Combined Skip Indexes>",
+                .name = "<Combined skip indexes>",
                 .description = "Final set of granules after AND/OR processing",
                 .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
                 .num_granules_after = sum_marks_union.load(std::memory_order_relaxed)});

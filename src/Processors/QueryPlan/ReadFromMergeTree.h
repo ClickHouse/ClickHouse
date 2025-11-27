@@ -212,7 +212,7 @@ public:
         {}
 
         KeyCondition key_condition;
-        std::optional<KeyCondition> key_condition_rpn_template;
+        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
         std::optional<PartitionPruner> partition_pruner;
         std::optional<KeyCondition> minmax_idx_condition;
         std::optional<KeyCondition> part_offset_condition;
