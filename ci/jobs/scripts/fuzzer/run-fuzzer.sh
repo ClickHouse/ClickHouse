@@ -303,4 +303,4 @@ case "$stage" in
     ;&
 esac
 
-exit $task_exit_code
+exit $server_exit_code
