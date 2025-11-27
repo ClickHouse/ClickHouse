@@ -3,6 +3,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <fmt/format.h>
+#include <mutex>
 #include <Common/Exception.h>
 #include <Common/clibssh.h>
 
@@ -19,7 +20,7 @@ namespace ErrorCodes
 namespace ssh
 {
 
-SSHSession::SSHSession() : session(ssh_new())
+SSHSession::SSHSession() : session(ssh_new()), disconnected(false)
 {
     if (!session)
         throw DB::Exception(DB::ErrorCodes::SSH_EXCEPTION, "Failed to create ssh_session");
@@ -39,7 +40,9 @@ SSHSession::SSHSession(SSHSession && rhs) noexcept
 SSHSession & SSHSession::operator=(SSHSession && rhs) noexcept
 {
     this->session = rhs.session;
+    this->disconnected.store(rhs.disconnected.load());
     rhs.session = nullptr;
+    rhs.disconnected.store(true);
     return *this;
 }
 
@@ -98,7 +101,13 @@ void SSHSession::handleKeyExchange()
 
 void SSHSession::disconnect()
 {
-    ssh_disconnect(session);
+    bool expected = false;
+    if (disconnected.compare_exchange_strong(expected, true))
+    {
+        static std::mutex global_disconnect_mutex;
+        std::lock_guard<std::mutex> lock(global_disconnect_mutex);
+        ssh_disconnect(session);
+    }
 }
 
 String SSHSession::getError()

@@ -5,6 +5,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <memory>
+#include <atomic>
 #include <base/types.h>
 
 struct ssh_session_struct;
@@ -51,6 +52,7 @@ public:
 
 private:
     SessionPtr session = nullptr;
+    std::atomic<bool> disconnected{false};
 };
 
 }
