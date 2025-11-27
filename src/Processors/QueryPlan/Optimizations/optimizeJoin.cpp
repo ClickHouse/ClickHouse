@@ -1065,7 +1065,7 @@ QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan
 
 /// Quick check if a node will definitely produce zero rows
 /// This is a lightweight check that avoids expensive estimateReadRowsCount
-/// It only checks for obvious cases without analyzing indexes
+/// It only checks for obvious cases without building indexes
 static bool isDefinitelyEmpty(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
@@ -1076,12 +1076,8 @@ static bool isDefinitelyEmpty(QueryPlan::Node & node)
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
     {
         auto analyzed_result = reading->getAnalyzedResult();
-        if (!analyzed_result)
-            analyzed_result = reading->selectRangesToRead();
-
         if (analyzed_result && analyzed_result->selected_rows == 0)
             return true;
-        // If not analyzed yet or has rows, return false
         return false;
     }
 
@@ -1163,7 +1159,6 @@ bool tryOptimizeJoinWithEmptyInput(
     JoinKind kind,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
-    // Check if statistics-based optimizations are enabled
     if (!optimization_settings.allow_statistics_optimize)
         return false;
 
