@@ -105,7 +105,7 @@ class Runner:
             FORK_NAME="",
             PR_LABELS=[],
             EVENT_TIME="",
-            WORKFLOW_DATA={
+            WORKFLOW_STATUS_DATA={
                 Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME): {
                     "outputs": {
                         "data": json.dumps(
