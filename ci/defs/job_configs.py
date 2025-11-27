@@ -336,7 +336,7 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.FUZZERS,
+            parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
@@ -1056,7 +1056,7 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="cd ./tests/ci && python3 libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=["Build (fuzzers)"],
+        requires=["Build (arm_fuzzers)"],
     )
     vector_search_stress_job = Job.Config(
         name="Vector Search Stress",
