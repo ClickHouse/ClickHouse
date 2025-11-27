@@ -15,6 +15,7 @@ SETTINGS disk = disk(type = cache,
                      max_file_segment_size = '40Mi',
                      boundary_alignment = '20Mi',
                      path = '$CLICKHOUSE_TEST_UNIQUE_NAME',
+                     name = '$CLICKHOUSE_TEST_UNIQUE_NAME',
                      disk = 's3_disk');
 
 INSERT INTO test SELECT number, randomString(100) FROM numbers(1000000);
@@ -45,6 +46,7 @@ FROM (
 ) AS data_paths
 INNER JOIN system.filesystem_cache_log AS cache_log
 ON data_paths.remote_path = cache_log.source_file_path
+AND cache.cache_name = 'your_value'
 WHERE query_id = '$QUERY_ID' "
 
 # File segments cannot be less that 20Mi,
@@ -85,7 +87,7 @@ query2="
 SELECT *
 FROM (SELECT * FROM ($query)) AS cache_log
 INNER JOIN system.filesystem_cache AS cache
-ON cache_log.cache_path = cache.cache_path "
+ON cache_log.cache_path = cache.cache_path AND cache.cache_name = '$CLICKHOUSE_TEST_UNIQUE_NAME'"
 
 $CLICKHOUSE_CLIENT -m -q "
 SELECT count() FROM ($query2)
