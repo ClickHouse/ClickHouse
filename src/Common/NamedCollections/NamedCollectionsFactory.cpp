@@ -8,6 +8,11 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Interpreters/Context.h>
 
+namespace CurrentMetrics
+{
+    extern const Metric NamedCollection;
+}
+
 namespace DB
 {
 
@@ -18,6 +23,7 @@ namespace ErrorCodes
     extern const int NAMED_COLLECTION_IS_IMMUTABLE;
     extern const int LOGICAL_ERROR;
 }
+
 
 NamedCollectionFactory & NamedCollectionFactory::instance()
 {
@@ -316,6 +322,7 @@ void NamedCollectionFactory::removeFromSQL(const ASTDropNamedCollectionQuery & q
 
     metadata_storage->remove(query.collection_name);
     remove(query.collection_name, lock);
+    CurrentMetrics::sub(CurrentMetrics::NamedCollection);
 }
 
 void NamedCollectionFactory::updateFromSQL(const ASTAlterNamedCollectionQuery & query)

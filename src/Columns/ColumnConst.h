@@ -76,7 +76,7 @@ public:
         return data->getValueNameAndTypeImpl(name_buf, 0, options);
     }
 
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         return data->getDataAt(0);
     }
@@ -174,7 +174,7 @@ public:
         s -= n;
     }
 
-    StringRef serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
+    std::string_view serializeValueIntoArena(size_t, Arena & arena, char const *& begin) const override
     {
         return data->serializeValueIntoArena(0, arena, begin);
     }
@@ -184,17 +184,23 @@ public:
         return data->serializeValueIntoMemory(0, memory);
     }
 
-    const char * deserializeAndInsertFromArena(const char * pos) override
+    void deserializeAndInsertFromArena(ReadBuffer & in) override
     {
-        const auto * res = data->deserializeAndInsertFromArena(pos);
+        data->deserializeAndInsertFromArena(in);
         data->popBack(1);
         ++s;
-        return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
+    void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override
     {
-        return data->skipSerializedInArena(pos);
+        data->deserializeAndInsertAggregationStateValueFromArena(in);
+        data->popBack(1);
+        ++s;
+    }
+
+    void skipSerializedInArena(ReadBuffer & in) const override
+    {
+        data->skipSerializedInArena(in);
     }
 
     void updateHashWithValue(size_t, SipHash & hash) const override

@@ -76,6 +76,9 @@ struct ManifestFileEntry
     String file_format;
     std::optional<String> reference_data_file_path; // For position delete files only.
     std::optional<std::vector<Int32>> equality_ids;
+
+    /// Data file is sorted with this sort_order_id (can be read from metadata.json)
+    std::optional<Int32> sort_order_id;
 };
 
 /**
@@ -135,6 +138,8 @@ public:
     bool hasBoundsInfoInManifests() const;
     const std::set<Int32> & getColumnsIDsWithBounds() const;
     const String & getPathToManifestFile() const { return path_to_manifest_file; }
+
+    bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
     ManifestFileContent(ManifestFileContent &&) = delete;
     ManifestFileContent & operator=(ManifestFileContent &&) = delete;

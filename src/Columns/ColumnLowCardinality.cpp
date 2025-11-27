@@ -276,12 +276,12 @@ void ColumnLowCardinality::insertData(const char * pos, size_t length)
     idx.insertIndex(getDictionary().uniqueInsertData(pos, length));
 }
 
-StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
-StringRef ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnLowCardinality::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return getDictionary().serializeAggregationStateValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
@@ -309,29 +309,21 @@ void ColumnLowCardinality::collectSerializedValueSizes(PaddedPODArray<UInt64> & 
     idx.collectSerializedValueSizes(sizes, dict_sizes);
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * pos)
+void ColumnLowCardinality::deserializeAndInsertFromArena(ReadBuffer & in)
 {
     compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(pos, new_pos));
-
-    return new_pos;
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertFromArena(in));
 }
 
-const char * ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnLowCardinality::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
     compactIfSharedDictionary();
-
-    const char * new_pos;
-    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(pos, new_pos));
-
-    return new_pos;
+    idx.insertIndex(getDictionary().uniqueDeserializeAndInsertAggregationStateValueFromArena(in));
 }
 
-const char * ColumnLowCardinality::skipSerializedInArena(const char * pos) const
+void ColumnLowCardinality::skipSerializedInArena(ReadBuffer & in) const
 {
-    return getDictionary().skipSerializedInArena(pos);
+    getDictionary().skipSerializedInArena(in);
 }
 
 WeakHash32 ColumnLowCardinality::getWeakHash32() const

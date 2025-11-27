@@ -18,7 +18,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <IO/CompressionMethod.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
@@ -26,6 +26,7 @@
 #include <Storages/MutationCommands.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
 namespace DB::ErrorCodes
 {

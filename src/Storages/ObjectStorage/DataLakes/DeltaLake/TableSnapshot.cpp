@@ -16,6 +16,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ThreadStatus.h>
 #include <Common/escapeForFileName.h>
+#include <Common/setThreadName.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -421,8 +422,6 @@ private:
     /// A thread for async data scanning.
     ThreadFromGlobalPool thread;
 };
-
-static constexpr auto LATEST_SNAPSHOT_VERSION = -1;
 
 TableSnapshot::TableSnapshot(
     KernelHelperPtr helper_,

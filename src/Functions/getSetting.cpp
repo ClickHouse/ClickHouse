@@ -67,7 +67,7 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
         Field setting_value;
         if constexpr (mode == ErrorHandlingMode::Exception)
             setting_value = getContext()->getSettingsRef().get(setting_name);

@@ -167,10 +167,18 @@ void SystemLogQueue<LogElement>::waitFlush(SystemLogQueue<LogElement>::Index exp
     // there is no obligation to call notifyFlush before waitFlush, than we have to be sure that flush_event has been triggered before we wait the result
     notifyFlushUnlocked(expected_flushed_index, should_prepare_tables_anyway);
 
-    auto result = confirm_event.wait_for(lock, std::chrono::seconds(timeout_seconds), [&]
-    {
-        return (flushed_index >= expected_flushed_index) || is_shutdown;
-    });
+    // prepared_tables starts from -1, so we need to wait for prepared_tables >= 0 when expected_flushed_index == 0 to make sure the table is created
+    // In theory it should be possible to wait only for prepared_tables, but:
+    // 1. It reflects the logic more precisely
+    // 2. One extra comparison shouldn't matter here
+    auto result = confirm_event.wait_for(
+        lock,
+        std::chrono::seconds(timeout_seconds),
+        [&]
+        {
+            return (flushed_index >= expected_flushed_index && (!should_prepare_tables_anyway || prepared_tables >= expected_flushed_index))
+                || is_shutdown;
+        });
 
     if (!result)
     {
