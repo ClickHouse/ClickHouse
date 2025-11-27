@@ -96,7 +96,7 @@ struct SSDCacheKey final
 };
 
 using SSDCacheSimpleKey = SSDCacheKey<UInt64>;
-using SSDCacheComplexKey = SSDCacheKey<StringRef>;
+using SSDCacheComplexKey = SSDCacheKey<std::string_view>;
 
 /** Block is serialized with following structure
     check_sum | keys_size | [keys]
@@ -126,8 +126,8 @@ public:
     /// Checks if complex key can be written in empty block with block_size
     static bool canBeWrittenInEmptyBlock(SSDCacheComplexKey & complex_key, size_t block_size)
     {
-        StringRef & key = complex_key.key;
-        size_t complex_key_size = sizeof(key.size) + key.size;
+        std::string_view & key = complex_key.key;
+        size_t complex_key_size = sizeof(key.size()) + key.size();
 
         return (block_header_size + complex_key_size + sizeof(complex_key.size) + complex_key.size) <= block_size;
     }
@@ -150,8 +150,8 @@ public:
     /// Check if it is enough place to write key in block
     bool enoughtPlaceToWriteKey(const SSDCacheComplexKey & cache_key) const
     {
-        const StringRef & key = cache_key.key;
-        size_t complex_key_size = sizeof(key.size) + key.size;
+        std::string_view key = cache_key.key;
+        size_t complex_key_size = sizeof(key.size()) + key.size();
 
         return (current_block_offset + (complex_key_size + sizeof(cache_key.size) + cache_key.size)) <= block_size;
     }
@@ -197,16 +197,17 @@ public:
 
         char * current_block_offset_data = block_data + current_block_offset;
 
-        const StringRef & key = cache_key.key;
+        std::string_view key = cache_key.key;
 
         /// Write complex key
-        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(&key.size), sizeof(key.size));
-        current_block_offset_data += sizeof(key.size);
-        current_block_offset += sizeof(key.size);
+        auto key_size = key.size();
+        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(&key_size), sizeof(key_size));
+        current_block_offset_data += sizeof(key.size());
+        current_block_offset += sizeof(key.size());
 
-        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(key.data), key.size);
-        current_block_offset_data += key.size;
-        current_block_offset += key.size;
+        memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(key.data()), key.size());
+        current_block_offset_data += key.size();
+        current_block_offset += key.size();
 
         /// Write serialized columns size
         memcpy(reinterpret_cast<void *>(current_block_offset_data), reinterpret_cast<const void *>(&cache_key.size), sizeof(cache_key.size));
@@ -290,7 +291,7 @@ public:
         }
     }
 
-    void readComplexKeys(PaddedPODArray<StringRef> & complex_keys) const
+    void readComplexKeys(PaddedPODArray<std::string_view> & complex_keys) const
     {
         char * block_start = block_data + block_header_size;
         char * block_end = block_data + block_size;
@@ -302,7 +303,7 @@ public:
             size_t key_size = unalignedLoad<size_t>(block_start);
             block_start += sizeof(key_size);
 
-            StringRef complex_key (block_start, key_size);
+            std::string_view complex_key (block_start, key_size);
 
             block_start += key_size;
 
@@ -844,7 +845,7 @@ class SSDCacheDictionaryStorage final : public ICacheDictionaryStorage
 {
 public:
     using SSDCacheKeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SSDCacheSimpleKey, SSDCacheComplexKey>;
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     explicit SSDCacheDictionaryStorage(const SSDCacheDictionaryStorageConfiguration & configuration_)
         : configuration(configuration_)
@@ -904,7 +905,7 @@ public:
     bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
-        const PaddedPODArray<StringRef> & keys,
+        const PaddedPODArray<std::string_view> & keys,
         const DictionaryStorageFetchRequest & fetch_request,
         IColumn::Filter * const default_mask) override
     {
@@ -914,7 +915,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
     }
 
-    void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
+    void insertColumnsForKeys(const PaddedPODArray<std::string_view> & keys, Columns columns) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertColumnsForKeysImpl(keys, columns);
@@ -922,7 +923,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
     }
 
-    void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
+    void insertDefaultKeys(const PaddedPODArray<std::string_view> & keys) override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             insertDefaultKeysImpl(keys);
@@ -930,7 +931,7 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
     }
 
-    PaddedPODArray<StringRef> getCachedComplexKeys() const override
+    PaddedPODArray<std::string_view> getCachedComplexKeys() const override
     {
         if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             return getCachedKeysImpl();
@@ -1141,7 +1142,7 @@ private:
     void insertColumnsForKeysImpl(const PaddedPODArray<KeyType> & keys, Columns columns)
     {
         size_t columns_to_serialize_size = columns.size();
-        PaddedPODArray<StringRef> temporary_column_data(columns_to_serialize_size);
+        PaddedPODArray<std::string_view> temporary_column_data(columns_to_serialize_size);
 
         Arena temporary_values_pool;
 
@@ -1158,7 +1159,7 @@ private:
             {
                 auto & column = columns[column_index];
                 temporary_column_data[column_index] = column->serializeValueIntoArena(key_index, temporary_values_pool, block_start);
-                allocated_size_for_columns += temporary_column_data[column_index].size;
+                allocated_size_for_columns += temporary_column_data[column_index].size();
             }
 
             SSDCacheKeyType ssd_cache_key { key, allocated_size_for_columns, block_start };
@@ -1204,9 +1205,9 @@ private:
             if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             {
                 /// Copy complex key into arena and put in cache
-                size_t key_size = key.size;
+                size_t key_size = key.size();
                 char * place_for_key = complex_key_arena.alloc(key_size);
-                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
+                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data()), key_size);
                 KeyType updated_key{place_for_key, key_size};
                 key = updated_key;
             }
@@ -1403,8 +1404,8 @@ private:
 
         index.erase(key);
 
-        if constexpr (std::is_same_v<KeyType, StringRef>)
-            complex_key_arena.free(const_cast<char *>(key_copy.data), key_copy.size);
+        if constexpr (std::is_same_v<KeyType, std::string_view>)
+            complex_key_arena.free(const_cast<char *>(key_copy.data()), key_copy.size());
     }
 
     SSDCacheDictionaryStorageConfiguration configuration;
@@ -1416,7 +1417,7 @@ private:
     pcg64 rnd_engine;
 
     using SimpleKeyHashMap = HashMap<UInt64, Cell>;
-    using ComplexKeyHashMap = HashMapWithSavedHash<StringRef, Cell>;
+    using ComplexKeyHashMap = HashMapWithSavedHash<std::string_view, Cell>;
 
     using CacheMap = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,

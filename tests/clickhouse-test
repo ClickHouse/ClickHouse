@@ -1170,6 +1170,7 @@ class SettingsRandomizer:
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
+        "temporary_files_buffer_size": lambda: random.randint(128, 2048),
         # Use the new reader most of the time.
         "input_format_parquet_use_native_reader_v3": lambda: min(1, random.randint(0, 5)),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
@@ -3541,6 +3542,7 @@ def main(args):
     runner_process_killed = multiprocessing.Event()
     multiprocessing_manager = multiprocessing.Manager()
     restarted_tests = multiprocessing_manager.list()
+    tests_start_time = time()
 
     if not check_server_started(args):
         msg = "Server is not responding. Cannot execute 'SELECT 1' query."
@@ -3761,9 +3763,37 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    unchecked_memory = int(clickhouse_execute(args, "SELECT sum(value) FROM system.events WHERE event = 'MemoryAllocatedWithoutCheckBytes'"))
-    if unchecked_memory > 1e9:
-        print(f"Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB")
+    try:
+        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
+
+        unchecked_memory = int(clickhouse_execute(args, f"""
+        SELECT sum(size) FROM system.trace_log
+        WHERE
+            trace_type = 'MemoryAllocatedWithoutCheck'
+            AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
+            AND event_time >= fromUnixTimestamp({int(tests_start_time)})
+        """))
+        if unchecked_memory > 1e9:
+            print(f"""
+            Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
+            Take a look at:
+
+            SELECT arrayStringConcat(symbols, '\\n'), sum(size)
+            FROM system.trace_log
+            WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+                AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
+                AND event_time >= fromUnixTimestamp({int(tests_start_time)})
+            GROUP BY 1
+            ORDER BY 2
+            LIMIT -10
+            FORMAT Vertical
+
+            See also at
+            - MemoryTrackerDebugBlockerInThread
+            - AllocatorWithMemoryTracking
+            """)
+    except Exception as e:
+        print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
 
     if args.report_logs_stats:
         try:
