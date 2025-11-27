@@ -1162,7 +1162,7 @@ void StorageBuffer::reschedule()
     time_t current_time = time(nullptr);
     time_t time_passed = current_time - min_first_write_time;
 
-    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 0);
+    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
     size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 0);
     size_t reschedule_sec = 0;
     if (flush_thresholds.time)
