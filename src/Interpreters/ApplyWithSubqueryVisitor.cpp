@@ -155,7 +155,6 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
         auto & dict_name_arg = func.arguments->children.at(0);
         if (const auto * identifier = dict_name_arg->as<ASTIdentifier>(); identifier && identifier->isShort())
         {
-            LOG_TRACE(getLogger("visitor"), "identifier = {}", identifier->formatForLogging());
             auto name = identifier->shortName();
 
             auto literal_it = data.literals.find(name);
