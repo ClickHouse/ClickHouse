@@ -1319,8 +1319,7 @@ bool tryPrepareSetColumnsForIndex(
         new_columns.clear();
         new_types.clear();
     }
-    size_t set_types_size = set_types.size();
-    assert(set_types_size == set_columns.size());
+    chassert(set_types.size() == set_columns.size());
 
     Columns transformed_set_columns = set_columns;
     is_constant_transformed = false;
