@@ -638,6 +638,7 @@ class JobConfigs:
             parameter="llvm coverage",
             runs_on=RunnerLabels.AMD_LARGE,
             requires=[ArtifactNames.UNITTEST_LLVM_COVERAGE],
+            provides=[ArtifactNames.AMD_LLVM_COVERAGE_FILE],
         ),
     )
     stress_test_jobs = common_stress_job_config.parametrize(
