@@ -208,7 +208,7 @@ public:
         explicit Indexes(KeyCondition key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
-            , support_disjuncts_with_skip_indexes(false)
+            , evaluate_disjunctions_with_skip_indexes(false)
         {}
 
         KeyCondition key_condition;
@@ -219,7 +219,7 @@ public:
         std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
-        bool support_disjuncts_with_skip_indexes;
+        bool evaluate_disjunctions_with_skip_indexes;
         std::optional<std::unordered_set<String>> part_values;
     };
 

@@ -295,10 +295,10 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
             /// No `default:` to make the compiler warn if not all enum values are handled.
         }
 
-        if (unlikely(function_partial_eval_results))
+        if (function_partial_eval_results)
         {
             function_partial_eval_results(current_element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
-            current_element_idx++;
+            ++current_element_idx;
         }
     }
 

@@ -931,11 +931,10 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
     return node.tryGetConstant(out_value, out_type);
 }
 
-bool KeyCondition::isOnlyConjuncts() const
+bool KeyCondition::containsOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
 }
-
 
 static Field applyFunctionForField(
     const FunctionBasePtr & func,

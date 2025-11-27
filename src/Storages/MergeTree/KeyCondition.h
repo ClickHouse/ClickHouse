@@ -79,6 +79,7 @@ public:
 
     using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
     using FunctionPartialEvalResults = std::function<void (size_t position, bool result, bool is_unknown)>;
+
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
@@ -283,7 +284,7 @@ public:
     bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
-    bool isOnlyConjuncts() const;
+    bool containsOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);

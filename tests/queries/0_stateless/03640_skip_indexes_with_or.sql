@@ -33,7 +33,7 @@ SETTINGS
 INSERT INTO tab SELECT number + 1, number + 1, (10000 - number), (number * 5) FROM numbers(10000);
 
 SELECT 'Test without utilizing skip indexes for disjunctions';
-SET use_skip_indexes_on_disjuncts = 0;
+SET use_skip_indexes_for_disjunctions = 0;
 
 SELECT '-- Simple OR condition'; -- surviving granules: 159
 SELECT explain AS explain FROM (
@@ -56,7 +56,7 @@ SELECT explain AS explain FROM (
 ) WHERE explain LIKE '%Granules%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Name%';
 
 SELECT 'Test with utilizing skip indexes for disjunctions';
-SET use_skip_indexes_on_disjuncts = 1;
+SET use_skip_indexes_for_disjunctions = 1;
 
 SELECT '-- Simple OR condition'; -- 2
 SELECT explain AS explain FROM (
