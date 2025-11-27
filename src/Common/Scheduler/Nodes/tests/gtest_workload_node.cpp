@@ -6,7 +6,7 @@
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
 #include <Common/Priority.h>
-#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/WorkloadNode.h>
 
 using namespace DB;

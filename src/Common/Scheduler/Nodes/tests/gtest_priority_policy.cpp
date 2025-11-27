@@ -2,7 +2,7 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 
 using namespace DB;
 

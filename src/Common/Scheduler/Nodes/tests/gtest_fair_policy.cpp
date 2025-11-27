@@ -2,7 +2,7 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 
 using namespace DB;
 

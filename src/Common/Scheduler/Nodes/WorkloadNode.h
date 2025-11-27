@@ -8,15 +8,15 @@
 #include <Common/Scheduler/ISpaceSharedNode.h>
 #include <Common/Scheduler/ITimeSharedNode.h>
 #include <Common/Scheduler/IWorkloadNode.h>
-#include <Common/Scheduler/Nodes/AllocationLimit.h>
-#include <Common/Scheduler/Nodes/AllocationQueue.h>
-#include <Common/Scheduler/Nodes/FairAllocation.h>
-#include <Common/Scheduler/Nodes/FairPolicy.h>
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/PriorityAllocation.h>
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
-#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/PriorityAllocation.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/WorkloadSettings.h>
 
 #include <memory>

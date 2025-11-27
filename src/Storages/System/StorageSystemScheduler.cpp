@@ -6,12 +6,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Scheduler/ISchedulerNode.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/Nodes/FairPolicy.h>
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
-#include <Common/Scheduler/Nodes/ThrottlerConstraint.h>
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Interpreters/Context.h>
 
 

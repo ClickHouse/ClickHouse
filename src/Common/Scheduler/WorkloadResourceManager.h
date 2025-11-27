@@ -4,12 +4,12 @@
 #include <base/scope_guard.h>
 
 #include <Common/Logger.h>
-#include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/EventQueue.h>
+#include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/TimeSharedScheduler.h>
-#include <Common/Scheduler/SpaceSharedScheduler.h>
-#include <Common/Scheduler/Nodes/WorkloadNode.h>
+#include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
+#include <Common/setThreadName.h>
 
 #include <Parsers/IAST_fwd.h>
 

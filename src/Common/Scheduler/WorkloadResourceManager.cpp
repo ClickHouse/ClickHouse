@@ -1,7 +1,8 @@
 #include <Common/Scheduler/WorkloadResourceManager.h>
 
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
+#include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
 
 #include <Common/logger_useful.h>
 #include <Common/Exception.h>

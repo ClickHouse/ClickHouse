@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/FairPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
 

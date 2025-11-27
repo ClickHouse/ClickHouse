@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "Common/setThreadName.h"
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/SpaceShared/SpaceSharedScheduler.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 
-#include <Common/Scheduler/TimeSharedScheduler.h>
 #include <Common/randomSeed.h>
 
 #include <barrier>

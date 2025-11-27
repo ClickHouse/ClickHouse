@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/AllocationQueue.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>

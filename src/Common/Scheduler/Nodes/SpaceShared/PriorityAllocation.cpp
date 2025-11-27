@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/PriorityAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/PriorityAllocation.h>
 #include <Common/Exception.h>
 
 namespace DB

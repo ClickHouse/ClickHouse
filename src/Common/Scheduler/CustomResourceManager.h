@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/TimeSharedScheduler.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/TimeSharedScheduler.h>
 #include <Common/Scheduler/ClassifiersConfig.h>
 
 #include <mutex>

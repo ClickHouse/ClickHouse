@@ -4,14 +4,16 @@
 
 #include <Common/Scheduler/WorkloadSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
-#include <Common/Scheduler/TimeSharedScheduler.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
-#include <Common/Scheduler/Nodes/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/FifoQueue.h>
-#include <Common/Scheduler/Nodes/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
+#include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/WorkloadNode.h>
 #include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
+
+#include <Common/ThreadPool.h>
 
 #include <Poco/Util/XMLConfiguration.h>
 

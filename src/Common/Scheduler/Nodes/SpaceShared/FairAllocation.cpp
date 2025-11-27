@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/FairAllocation.h>
+#include <Common/Scheduler/Nodes/SpaceShared/FairAllocation.h>
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>
 

@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/AllocationLimit.h>
+#include <Common/Scheduler/Nodes/SpaceShared/AllocationLimit.h>
 #include <Common/Scheduler/IAllocationQueue.h>
 #include <Common/Scheduler/Debug.h>
 #include <Common/Exception.h>

@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
 
