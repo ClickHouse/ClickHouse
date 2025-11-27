@@ -6,8 +6,8 @@
 #if USE_AWS_S3
 
 #include <IO/S3/PocoHTTPClient.h>
+#include <IO/S3/Requests.h>
 
-#include <utility>
 #include <algorithm>
 #include <functional>
 
@@ -389,30 +389,6 @@ void PocoHTTPClient::observeLatency(const Aws::Http::HttpRequest & request, S3La
     }
 }
 
-String extractAttemptFromInfo(const Aws::String & request_info)
-{
-    static auto key = Aws::String("attempt=");
-
-    auto key_begin = request_info.find(key, 0);
-    if (key_begin == Aws::String::npos)
-        return "1";
-
-    auto val_begin = key_begin + key.size();
-    auto val_end = request_info.find(';', val_begin);
-    if (val_end == Aws::String::npos)
-        val_end = request_info.size();
-
-    return request_info.substr(val_begin, val_end-val_begin);
-}
-
-String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
-{
-    auto it = map.find(key);
-    if (it == map.end())
-        return {};
-    return it->second;
-}
-
 ConnectionTimeouts PocoHTTPClient::getTimeouts(const String & method, bool first_attempt, bool first_byte) const
 {
     if (!s3_use_adaptive_timeouts)
@@ -455,12 +431,12 @@ String getMethod(const Aws::Http::HttpRequest & request)
     }
 }
 
-PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(const String & sdk_attempt, const String & ch_attempt)
+PocoHTTPClient::S3LatencyType PocoHTTPClient::getFirstByteLatencyType(size_t sdk_attempt, size_t ch_attempt)
 {
     S3LatencyType result = S3LatencyType::FirstByteAttempt1;
-    if (sdk_attempt != "1" || ch_attempt != "1")
+    if (sdk_attempt != 1 || ch_attempt != 1)
     {
-        if ((sdk_attempt == "1" && ch_attempt == "2") || (sdk_attempt == "2" && ch_attempt == "1"))
+        if ((sdk_attempt == 1 && ch_attempt == 2) || (sdk_attempt == 2 && ch_attempt == 1))
             result = S3LatencyType::FirstByteAttempt2;
         else
             result = S3LatencyType::FirstByteAttemptN;
@@ -479,12 +455,20 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto uri = request.GetUri().GetURIString();
     auto method = getMethod(request);
 
-    auto sdk_attempt = extractAttemptFromInfo(getOrEmpty(request.GetHeaders(), Aws::Http::SDK_REQUEST_HEADER));
-    auto ch_attempt = extractAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
-    bool first_attempt = ch_attempt == "1" && sdk_attempt == "1";
+    auto sdk_attempt = getSDKAttemptNumber(request);
+    auto ch_attempt = getClickhouseAttemptNumber(request);
+    bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
 
-    if (enable_s3_requests_logging)
-        LOG_TEST(log, "Make request to: {}, aws sdk attempt: {}, clickhouse attempt: {}", uri, sdk_attempt, ch_attempt);
+    if (!first_attempt)
+        LOG_DEBUG(
+            log,
+            "Retrying S3 request to: {}, aws sdk attempt: {}, clickhouse attempt: {}, kind: {}",
+            uri, sdk_attempt, ch_attempt, getMetricKind(request) == S3MetricKind::Read ? "Read" : "Write");
+    else // if (enable_s3_requests_logging)
+        LOG_TEST(
+            log,
+            "Make S3 request to: {}, aws sdk attempt: {}, clickhouse attempt: {}, kind: {}",
+            uri, sdk_attempt, ch_attempt, getMetricKind(request) == S3MetricKind::Read ? "Read" : "Write");
 
     switch (request.GetMethod())
     {

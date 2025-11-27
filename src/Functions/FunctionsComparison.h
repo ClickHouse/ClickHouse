@@ -809,7 +809,7 @@ private:
             if (c0_const_string)
             {
                 c0_const_chars = &c0_const_string->getChars();
-                c0_const_size = c0_const_string->getDataAt(0).size;
+                c0_const_size = c0_const_string->getDataAt(0).size();
             }
             else if (c0_const_fixed_string)
             {
@@ -828,7 +828,7 @@ private:
             if (c1_const_string)
             {
                 c1_const_chars = &c1_const_string->getChars();
-                c1_const_size = c1_const_string->getDataAt(0).size;
+                c1_const_size = c1_const_string->getDataAt(0).size();
             }
             else if (c1_const_fixed_string)
             {

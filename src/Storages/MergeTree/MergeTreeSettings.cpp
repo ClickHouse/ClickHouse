@@ -16,7 +16,7 @@
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
 #include <fmt/ranges.h>
@@ -1810,12 +1810,12 @@ namespace ErrorCodes
     :::
 
     When `cache_populated_by_fetch` is disabled (the default setting), new data
-    parts are loaded into the cache only when a query is run that requires those
-    parts.
+    parts are loaded into the filesystem cache only when a query is run that requires
+    those parts.
 
     If enabled, `cache_populated_by_fetch` will instead cause all nodes to load
-    new data parts from storage into their cache without requiring a query to
-    trigger such an action.
+    new data parts from storage into their filesystem cache without requiring a query
+    to trigger such an action.
 
     **See Also**
 
