@@ -593,7 +593,7 @@ void MergeTreeDataPartWriterOnDisk::initOrAdjustDynamicStructureIfNeeded(Block &
                 /// and insert data into it. Resulting column will have required dynamic structure and the content
                 /// of the column in current block.
                 auto new_column = sample_column.type->createColumn();
-                new_column->takeDynamicStructureFromSourceColumns({sample_column.column});
+                new_column->takeDynamicStructureFromColumn(sample_column.column);
                 new_column->insertRangeFrom(*column.column, 0, column.column->size());
                 column.column = std::move(new_column);
             }
