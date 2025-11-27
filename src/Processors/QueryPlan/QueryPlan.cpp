@@ -345,15 +345,15 @@ static void explainStep(
     const std::optional<CostEstimationInfo> & cost_estimation,
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
-    size_t max_description_lengs)
+    size_t max_description_length)
 {
     const std::string prefix(settings.offset, ' ');
     settings.out << prefix;
     settings.out << step.getName();
 
     auto description = step.getStepDescription();
-    if (max_description_lengs)
-        description = description.substr(0, max_description_lengs);
+    if (max_description_length)
+        description = description.substr(0, max_description_length);
     if (options.description && !description.empty())
         settings.out <<" (" << description << ')';
 

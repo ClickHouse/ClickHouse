@@ -442,7 +442,7 @@ public:
         {
             if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
-            auto day_count_str = arguments[3].column->getDataAt(0).toString();
+            auto day_count_str = arguments[3].column->getDataAt(0);
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
@@ -650,7 +650,7 @@ public:
         {
             if (!isColumnConst(*arguments[3].column) || !isString(arguments[3].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Fourth argument (daycount) must be a constant string");
-            auto day_count_str = arguments[3].column->getDataAt(0).toString();
+            auto day_count_str = arguments[3].column->getDataAt(0);
             auto parsed_day_count = parseDayCount(day_count_str);
             if (!parsed_day_count.has_value())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Invalid day count value: {}", day_count_str);
