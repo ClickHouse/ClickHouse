@@ -64,7 +64,7 @@ String DPJoinEntry::dump() const
 {
     if (isLeaf())
         return fmt::format("Leaf({})", relation_id);
-    return fmt::format("Join({})", toString(relations));
+    return fmt::format("Join({})", fmt::join(relations, ","));
 }
 
 class JoinOrderOptimizer
@@ -79,7 +79,7 @@ public:
 private:
     void buildQueryGraph();
 
-    std::shared_ptr<DPJoinEntry> solveDP();
+    std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
@@ -329,6 +329,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
         if (best_i == best_j)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find components to join");
 
+        LOG_TEST(log, "Best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, join operator: {}",
+            best_plan->dump(), best_plan->left->dump(), best_plan->right->dump(),
+            best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown",
+            best_plan->join_operator.dump());
+
         /// replace the two components with the best plan
         components.erase(components.begin() + std::max(best_i, best_j));
         components.erase(components.begin() + std::min(best_i, best_j));
@@ -351,9 +356,90 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 }
 
 
-std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDP()
+/// Checks if predicate has sources from both left and right sets
+static bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet & right)
 {
-    return nullptr;
+    const auto & participating = predicate->getSourceRelations();
+    return (participating & left) && (participating & right);
+}
+
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
+{
+    const size_t total_relations_count = query_graph.relation_stats.size();
+
+    /// Components by size (index 0 is not used that why the size is is N+1)
+    std::vector<std::unordered_map<BitSet, DPJoinEntryPtr>> components(total_relations_count + 1);
+
+    /// Populate DP table for components of size=1
+    for (size_t i = 0; i < total_relations_count; ++i)
+    {
+        const auto & rel = query_graph.relation_stats[i];
+        auto entry = std::make_shared<DPJoinEntry>(i, rel.estimated_rows);
+        components[1][entry->relations] = entry;
+        dp_table[entry->relations] = entry;
+    }
+
+    /// Iteratively build components of size from 2 to N
+    for (size_t component_size = 2; component_size <= total_relations_count; ++component_size)
+    {
+        for (size_t smaller_component_size = 1; smaller_component_size <= component_size / 2; ++smaller_component_size)
+        {
+            const size_t bigger_component_size = component_size - smaller_component_size;
+
+            for (const auto & [_, right] : components[smaller_component_size])
+            {
+                for (const auto & [_, left] : components[bigger_component_size])
+                {
+                    /// Do components overlap?
+                    if (left->relations & right->relations)
+                        continue;
+
+                    const auto combined_relations = left->relations | right->relations;
+
+                    auto join_kind = isValidJoinOrder(left->relations, right->relations);
+                    if (!join_kind)
+                        continue;
+
+                    auto edge = getApplicableExpressions(left->relations, right->relations);
+                    /// Only leave the edges that connect left and right
+                    edge.erase(
+                        std::remove_if(edge.begin(), edge.end(),
+                            [&](auto predicate) { return !connects(predicate, left->relations, right->relations); }),
+                        edge.end());
+
+                    LOG_TEST(log, "Checking pair: {} and {}, predicates count: {}", left->dump(), right->dump(), edge.size());
+
+                    if (edge.empty())
+                        continue;
+
+                    auto selectivity = computeSelectivity(edge);
+                    auto new_cost = computeJoinCost(left, right, selectivity);
+
+                    auto current_best = dp_table.find(combined_relations);
+                    if (current_best == dp_table.end() || new_cost < current_best->second->cost)
+                    {
+                        if (!edge.empty() && join_kind == JoinKind::Cross)
+                            join_kind = JoinKind::Inner;
+                        auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
+                        JoinOperator join_operator(
+                            join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified,
+                            std::ranges::to<std::vector>(edge | std::views::transform([](const auto * e) { return *e; })));
+                        auto new_best_plan = std::make_shared<DPJoinEntry>(left, right, new_cost, cardinality, std::move(join_operator));
+
+                        LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
+                            new_best_plan->dump(), new_best_plan->left->dump(), new_best_plan->right->dump(),
+                            new_best_plan->cost, new_best_plan->estimated_rows ? toString(*new_best_plan->estimated_rows) : "unknown",
+                            new_best_plan->join_operator.dump());
+
+                        dp_table[combined_relations] = new_best_plan;
+                        components[component_size][combined_relations] = new_best_plan;
+                    }
+                }
+            }
+        }
+    }
+
+    return dp_table[BitSet::allSet(total_relations_count)];
 }
 
 std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const
