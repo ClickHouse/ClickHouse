@@ -76,7 +76,6 @@ TEST(ColumnDynamic, InsertFieldsOverflow1)
     ASSERT_EQ(column->getVariantInfo().variant_names.size(), 254);
     ASSERT_EQ(column->getVariantInfo().variant_names.size(), 254);
 
-
     column->insert(Field(42.42));
     ASSERT_EQ(column->size(), 254);
     ASSERT_EQ(column->getVariantInfo().variant_names.size(), 255);

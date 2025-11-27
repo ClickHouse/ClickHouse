@@ -451,7 +451,12 @@ class ArtifactConfigs:
     llvm_cov_file = Artifact.Config(
         name=ArtifactNames.AMD_LLVM_COVERAGE_FILE,
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/<path-to-*.profraw>",
+        path=[
+            f"{TEMP_DIR}/*.profraw",
+            f"{TEMP_DIR}/build/*.profraw",
+            f"{TEMP_DIR}/build/programs*.profraw",
+            f"{TEMP_DIR}/build/src/unit_tests_dbms/*.profraw",
+        ]
     )
     clickhouse_debians = Artifact.Config(
         name="*",
