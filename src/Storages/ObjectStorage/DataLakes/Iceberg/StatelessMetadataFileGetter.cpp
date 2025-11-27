@@ -105,10 +105,10 @@ Iceberg::ManifestFilePtr getManifestFile(
             filename);
     };
 
-    if (use_iceberg_metadata_cache)
+    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid, filename), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -191,9 +191,9 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (use_iceberg_metadata_cache)
+    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid, filename), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;

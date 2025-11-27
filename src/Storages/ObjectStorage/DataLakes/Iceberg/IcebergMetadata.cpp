@@ -152,15 +152,31 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
     Int32 format_version = metadata_object->getValue<Int32>(f_format_version);
     String table_location = metadata_object->getValue<String>(f_location);
-    String table_uuid = metadata_object->getValue<String>(f_table_uuid);
+    std::optional<String> table_uuid = std::nullopt;
+    if (metadata_object->has(Iceberg::f_table_uuid))
+    {
+        table_uuid = metadata_object->getValue<String>(f_table_uuid);
+    }
+    else
+    {
+        if (format_version >= 2)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata file '{}' doesn't contain required field '{}'",
+                metadata_file_path,
+                Iceberg::f_table_uuid);
+        }
+    }
     return PersistentTableComponents{
         .schema_processor = std::make_shared<IcebergSchemaProcessor>(),
         .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
         .metadata_compression_method = compression_method,
+        .read_path = configuration->getPathForRead().path,
         .table_uuid = table_uuid,
-        .read_path = configuration->getPathForRead().path};
+    };
 }
 
 std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context) const
