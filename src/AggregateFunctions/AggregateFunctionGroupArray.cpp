@@ -457,7 +457,7 @@ struct GroupArrayNodeGeneral : public GroupArrayNodeBase<GroupArrayNodeGeneral>
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
         const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
-        IColumn::SerializationSettings settings{.serialize_string_with_zero_byte = true};
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
         auto value = column.serializeValueIntoArena(row_num, *arena, begin, &settings);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));

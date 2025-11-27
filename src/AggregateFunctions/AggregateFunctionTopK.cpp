@@ -409,7 +409,7 @@ public:
         else
         {
             const char * begin = nullptr;
-            IColumn::SerializationSettings settings{.serialize_string_with_zero_byte = true};
+            auto settings = IColumn::SerializationSettings::createForAggregationState();
             auto str_serialized = columns[0]->serializeValueIntoArena(row_num, *arena, begin, &settings);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));

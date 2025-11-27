@@ -292,6 +292,13 @@ public:
     struct SerializationSettings
     {
         bool serialize_string_with_zero_byte = false;
+
+        static SerializationSettings createForAggregationState()
+        {
+            /// Same aggregation state can be serialized/deserialized by servers with different versions.
+            /// Add zero byte to the end of the string in aggregation state to keep it compatible with old versions.
+            return SerializationSettings{.serialize_string_with_zero_byte = true};
+        }
     };
 
     /** Serializes n-th element. Serialized element should be placed continuously inside Arena's memory.

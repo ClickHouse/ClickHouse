@@ -23,7 +23,7 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     else
     {
         const char * begin = nullptr;
-        IColumn::SerializationSettings settings{.serialize_string_with_zero_byte = true};
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
         auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
         chassert(!serialized.empty());
         return SerializedKeyHolder{serialized, arena};
@@ -38,7 +38,7 @@ static void deserializeAndInsert(std::string_view str, IColumn & data_to)
     else
     {
         ReadBufferFromString in(str);
-        IColumn::SerializationSettings settings{.serialize_string_with_zero_byte = true};
+        auto settings = IColumn::SerializationSettings::createForAggregationState();
         data_to.deserializeAndInsertFromArena(in, &settings);
         if (!in.eof())
         {
