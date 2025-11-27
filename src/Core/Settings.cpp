@@ -1541,9 +1541,8 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, use_skip_indexes_for_disjunctions, true, R"(
-Enable using data skipping indexes on predicates with OR clause(s)
-
-When enabled, evaluate WHERE conditions with conjunctions (OR connected logical atoms) using skip indexes, e.g. WHERE A = 5 AND (B = 5 OR C = 5)
+Evaluate WHERE filters with mixed AND and OR conditions using skip indexes. Example: WHERE A = 5 AND (B = 5 OR C = 5).
+If disabled, skip indexes are still used to evaluate WHERE conditions but they must only contain AND-ed clauses.
 
 Possible values:
 
