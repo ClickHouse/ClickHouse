@@ -354,7 +354,8 @@ void CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(
         LOG_TEST(log, "Bypassing cache because `read_from_filesystem_cache_if_exists_otherwise_bypass_cache` option is used");
 
         state.setReadBuffer(
-            getRemoteReadBuffer(file_segment, offset, state.read_type, info_), ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+            getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info_),
+            ReadType::REMOTE_FS_READ_BYPASS_CACHE);
         return;
     }
 
@@ -367,7 +368,8 @@ void CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(
                 LOG_TRACE(log, "Bypassing cache because file segment state is `DETACHED`");
 
                 state.setReadBuffer(
-                    getRemoteReadBuffer(file_segment, offset, state.read_type, info_), ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+                    getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info_),
+                    ReadType::REMOTE_FS_READ_BYPASS_CACHE);
                 return;
             }
             case FileSegment::State::DOWNLOADING:
@@ -448,7 +450,9 @@ void CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(
                     }
 
                     state.set_downloader = true;
-                    state.setReadBuffer(getRemoteReadBuffer(file_segment, offset, state.read_type, info_), ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE);
+                    state.setReadBuffer(
+                        getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE, info_),
+                        ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE);
                     return;
                 }
 
@@ -469,7 +473,8 @@ void CachedOnDiskReadBufferFromFile::getReadBufferForFileSegment(
                     "`PARTIALLY_DOWNLOADED_NO_CONTINUATION` and downloaded part already used");
 
                 state.setReadBuffer(
-                    getRemoteReadBuffer(file_segment, offset, state.read_type, info_), ReadType::REMOTE_FS_READ_BYPASS_CACHE);
+                    getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info_),
+                    ReadType::REMOTE_FS_READ_BYPASS_CACHE);
                 return;
             }
         }
@@ -1098,7 +1103,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
             //swap.reset();
             //resetWorkingBuffer();
 
-            auto buf = getRemoteReadBuffer(file_segment, offset, state.read_type, info);
+            auto buf = getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info);
             buf.swap(state.buf);
             state.setReadBuffer(buf, ReadType::REMOTE_FS_READ_BYPASS_CACHE);
 
