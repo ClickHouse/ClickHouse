@@ -494,7 +494,7 @@ struct HashMethodSerialized
         }
 
         return SerializedKeyHolder{
-            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool),
+            serializeKeysToPoolContiguous(row, keys_size, key_columns, pool, &serialization_settings),
             pool};
     }
 };
