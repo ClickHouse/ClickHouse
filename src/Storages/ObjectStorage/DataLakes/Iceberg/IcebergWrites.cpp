@@ -9,7 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DataLake/Common.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionDateOrDateTimeToSomething.h>
@@ -44,7 +44,7 @@
 #include <Common/FailPoint.h>
 #include <Core/Block.h>
 #include <Interpreters/sortBlock.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/CastOverloadResolver.h>
 #include <IO/WriteHelpers.h>

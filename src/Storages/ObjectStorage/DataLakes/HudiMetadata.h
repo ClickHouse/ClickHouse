@@ -1,10 +1,10 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Disks/ObjectStorages/IObjectStorage_fwd.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Core/Types.h>
 
 namespace DB

@@ -98,7 +98,7 @@ AuthenticationData::Digest AuthenticationData::Util::encodeBcrypt(std::string_vi
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_gensalt returned {}", ret);
 
-    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data()));  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+    ret = bcrypt_hashpw(text.data(), salt, reinterpret_cast<char *>(hash.data())); /// NOLINT(bugprone-suspicious-stringview-data-usage)
     if (ret != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "BCrypt library failed: bcrypt_hashpw returned {}", ret);
 
