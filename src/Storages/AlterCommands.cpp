@@ -1713,6 +1713,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             {
                 if (from_nested_table_name != to_nested_table_name)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from one nested name to another");
+                all_columns.rename(command.column_name, command.rename_to);
             }
             else if (!from_nested && !to_nested)
             {
