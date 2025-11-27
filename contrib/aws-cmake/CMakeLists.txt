@@ -25,7 +25,7 @@ include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsFeatureTests.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadAffinity.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsThreadName.cmake")
 include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsSIMD.cmake")
-include("${ClickHouse_SOURCE_DIR}/contrib/aws-crt-cpp/cmake/AwsGetVersion.cmake")
+include("${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/AwsGetVersion.cmake")
 
 set (AWS_STUBS "${ClickHouse_SOURCE_DIR}/contrib/aws-cmake/aws_stubs.cpp")
 
