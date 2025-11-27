@@ -97,6 +97,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
+std::string normalizeUuid(const std::string & uuid);
 
 /// Parse transform and argument from input parameter
 /// "x" -> {"identity", "x"}

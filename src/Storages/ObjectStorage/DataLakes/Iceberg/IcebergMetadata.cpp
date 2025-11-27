@@ -5,8 +5,8 @@
 #include <memory>
 #include <optional>
 #include <sstream>
-#include <fmt/format.h>
 #include <Columns/ColumnSet.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeSet.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
@@ -19,6 +19,7 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <fmt/format.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -155,7 +156,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     std::optional<String> table_uuid = std::nullopt;
     if (metadata_object->has(Iceberg::f_table_uuid))
     {
-        table_uuid = metadata_object->getValue<String>(f_table_uuid);
+        table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
     }
     else
     {

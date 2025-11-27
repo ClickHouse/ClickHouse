@@ -998,15 +998,25 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
-        std::optional<String> explicit_table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
-        chassert(!explicit_table_uuid.has_value() || !table_uuid.has_value() || (explicit_table_uuid.value() == table_uuid.value()));
+        String explicit_table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
+        if (table_uuid.has_value())
+        {
+            if (normalizeUuid(explicit_table_uuid) != table_uuid.value())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Explicit table UUID '{}' doesn't match the one from table properties '{}'",
+                    normalizeUuid(explicit_table_uuid),
+                    table_uuid.value());
+            }
+        }
         LOG_TEST(
             log,
             "Explicit table UUID is specified {}, will read the latest metadata file for Iceberg table at path {}",
-            explicit_table_uuid.value(),
+            explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, explicit_table_uuid, true);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
