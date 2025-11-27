@@ -155,7 +155,7 @@ public:
         return variant_column_ptr->isNullAt(n);
     }
 
-    StringRef getDataAt(size_t n) const override
+    std::string_view getDataAt(size_t n) const override
     {
         return variant_column_ptr->getDataAt(n);
     }
@@ -193,7 +193,7 @@ public:
         variant_column_ptr->popBack(n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     std::optional<size_t> getSerializedValueSize(size_t) const override { return std::nullopt; }
