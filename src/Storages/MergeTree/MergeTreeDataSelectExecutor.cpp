@@ -754,7 +754,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     const bool support_disjuncts = is_support_disjuncts && !settings[Setting::use_skip_indexes_on_data_read] &&
-                                        key_condition.getRPN().size() <= BITS_FOR_RPN_EVALUATION_RESULTS;
+                                        key_condition.getRPN().size() <= MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT;
     auto is_index_supported_on_data_read = [&](const MergeTreeIndexPtr & index) -> bool
     {
         /// Vector similarity indexes are not applicable on data reads.
@@ -864,9 +864,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 const auto num_indexes = skip_indexes.useful_indices.size();
 
-                PartialEvalResultsBits partial_eval_results;
+                PartialDisjunctionResult partial_eval_results;
                 if (support_disjuncts)
-                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * BITS_FOR_RPN_EVALUATION_RESULTS, true);
+                    partial_eval_results.resize(ranges.data_part->index_granularity->getMarksCountWithoutFinal() * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
 
                 for (size_t idx = 0; idx < num_indexes; ++idx)
                 {
@@ -1789,7 +1789,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache,
     bool support_disjuncts,
-    PartialEvalResultsBits & partial_eval_results_for_disjuncts,
+    PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->checksums, index_helper->getFileName()))
@@ -1957,7 +1957,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         auto support_disjunct_callback = [&](size_t position, bool element_result, bool is_unknown)
                         {
                             if (!is_unknown)
-                                partial_eval_results_for_disjuncts[(range_begin * BITS_FOR_RPN_EVALUATION_RESULTS) + position] = element_result;
+                                partial_disjunction_result[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position] = element_result;
                         };
                         result = condition->mayBeTrueOnGranule(granule, support_disjunct_callback);
                     }
@@ -2266,7 +2266,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
-    const PartialEvalResultsBits & partial_eval_results,
+    const PartialDisjunctionResult & partial_eval_results,
     MergeTreeReaderSettings reader_settings,
     LoggerPtr log)
 {
@@ -2296,7 +2296,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
             {
                 if (element.function == KeyCondition::RPNElement::FUNCTION_UNKNOWN)
                 {
-                    rpn_stack.emplace_back(partial_eval_results[(range_begin * BITS_FOR_RPN_EVALUATION_RESULTS) + position]);
+                    rpn_stack.emplace_back(partial_eval_results[(range_begin * MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT) + position]);
                 }
                 else if (element.function == KeyCondition::RPNElement::FUNCTION_NOT)
                 {

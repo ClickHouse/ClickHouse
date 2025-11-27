@@ -3137,7 +3137,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t current_element_idx = 0;
+    size_t element_idx = 0;
     for (const auto & element : rpn)
     {
         if (element.argument_num_of_space_filling_curve.has_value())
@@ -3449,10 +3449,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
-        if (unlikely(function_partial_eval_results))
+        if (function_partial_eval_results)
         {
-            function_partial_eval_results(current_element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            current_element_idx++;
+            function_partial_eval_results(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
+            ++element_idx;
         }
     }
 

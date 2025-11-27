@@ -1916,8 +1916,9 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
-    indexes->evaluate_disjunctions_with_skip_indexes = settings[Setting::use_skip_indexes_for_disjunctions] && skip_indexes.useful_indices.size() > 1 && !indexes->key_condition_rpn_template->containsOnlyConjunctions();
-
+    indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
+                                                    && !skip_indexes.useful_indices.empty()
+                                                    && !indexes->key_condition_rpn_template->containsOnlyConjunctions();
     {
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
@@ -2131,7 +2132,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             find_exact_ranges,
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_,
-            indexes->evaluate_disjunctions_with_skip_indexes);
+            indexes->use_skip_indexes_for_disjunctions);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2790,7 +2791,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
                 indexes->key_condition_rpn_template,
-                indexes->evaluate_disjunctions_with_skip_indexes,
+                indexes->use_skip_indexes_for_disjunctions,
                 context->getIndexMarkCache(),
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),
