@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 

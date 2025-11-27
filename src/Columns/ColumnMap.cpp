@@ -117,7 +117,7 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-StringRef ColumnMap::getDataAt(size_t) const
+std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
 }
@@ -151,12 +151,12 @@ void ColumnMap::popBack(size_t n)
     nested->popBack(n);
 }
 
-StringRef ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeValueIntoArena(n, arena, begin);
 }
 
-StringRef ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnMap::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested->serializeAggregationStateValueIntoArena(n, arena, begin);
 }
@@ -171,19 +171,19 @@ std::optional<size_t> ColumnMap::getSerializedValueSize(size_t n) const
     return nested->getSerializedValueSize(n);
 }
 
-const char * ColumnMap::deserializeAndInsertFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertFromArena(pos);
+    nested->deserializeAndInsertFromArena(in);
 }
 
-const char * ColumnMap::deserializeAndInsertAggregationStateValueFromArena(const char * pos)
+void ColumnMap::deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
 {
-    return nested->deserializeAndInsertAggregationStateValueFromArena(pos);
+    nested->deserializeAndInsertAggregationStateValueFromArena(in);
 }
 
-const char * ColumnMap::skipSerializedInArena(const char * pos) const
+void ColumnMap::skipSerializedInArena(ReadBuffer & in) const
 {
-    return nested->skipSerializedInArena(pos);
+    nested->skipSerializedInArena(in);
 }
 
 void ColumnMap::updateHashWithValue(size_t n, SipHash & hash) const
