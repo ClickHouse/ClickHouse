@@ -178,7 +178,7 @@ namespace Setting
     extern const SettingsBool split_intersecting_parts_ranges_into_layers_final;
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
-    extern const SettingsBool use_skip_indexes_on_disjuncts;
+    extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_uncompressed_cache;
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
@@ -1916,7 +1916,7 @@ static void buildIndexes(
             skip_indexes.useful_indices.emplace_back(index_helper, condition);
     }
 
-    indexes->support_disjuncts_with_skip_indexes = settings[Setting::use_skip_indexes_on_disjuncts] && skip_indexes.useful_indices.size() > 1 && !indexes->key_condition_rpn_template->isOnlyConjuncts();
+    indexes->evaluate_disjunctions_with_skip_indexes = settings[Setting::use_skip_indexes_for_disjunctions] && skip_indexes.useful_indices.size() > 1 && !indexes->key_condition_rpn_template->isOnlyConjuncts();
 
     {
         std::vector<size_t> index_sizes;
@@ -2131,7 +2131,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             find_exact_ranges,
             query_info_.isFinal(),
             is_parallel_reading_from_replicas_,
-            indexes->support_disjuncts_with_skip_indexes);
+            indexes->evaluate_disjunctions_with_skip_indexes);
 
         if (indexes->use_skip_indexes && !indexes->skip_indexes.empty() && query_info_.isFinal()
             && settings[Setting::use_skip_indexes_if_final_exact_mode])
@@ -2790,7 +2790,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
                 indexes->key_condition_rpn_template,
-                indexes->support_disjuncts_with_skip_indexes,
+                indexes->evaluate_disjunctions_with_skip_indexes,
                 context->getIndexMarkCache(),
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),

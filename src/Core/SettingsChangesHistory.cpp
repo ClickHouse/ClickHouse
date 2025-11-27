@@ -46,7 +46,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_limit", 1, 10, "Allow JOIN reordering with more tables by default"},
             {"iceberg_insert_max_partitions", 100, 100, "New setting."},
             {"use_paimon_partition_pruning", false, false, "New setting."},
-            {"use_skip_indexes_on_disjuncts", false, true, "New setting"},
+            {"use_skip_indexes_for_disjunctions", false, true, "New setting"},
             {"allow_statistics_optimize", false, true, "Enable this optimization by default."},
             {"allow_statistic_optimize", false, true, "Enable this optimization by default."},
             {"query_plan_text_index_add_hint", true, true, "New setting"},
