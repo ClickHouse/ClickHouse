@@ -727,7 +727,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
     /// FIXME: Use async buffer if use_cache,
     /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    bool use_async_buffer = use_prefetch || use_filesystem_cache || use_distributed_cache;
+    bool use_async_buffer = use_prefetch || use_distributed_cache;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
 #if ENABLE_DISTRIBUTED_CACHE

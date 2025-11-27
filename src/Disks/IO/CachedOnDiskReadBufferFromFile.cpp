@@ -1330,9 +1330,7 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 {
     ReadInfo current_info(
         info.cache_key, info.source_file_path, info.implementation_buffer_creator,
-        info.use_external_buffer, info.settings, info.read_until_position);
-
-    current_info.read_until_position = range_begin + n;
+        info.use_external_buffer, info.settings, /* read_until_position */range_begin + n);
 
     if (info.settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache)
     {
@@ -1360,32 +1358,46 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No file segments");
 
     size_t read_bytes = 0;
+    size_t offset = range_begin;
     bool cancelled = false;
-
-    ReadFromFileSegmentStatePtr current_state;
-    const size_t initial_range_begin = range_begin;
-
     bool implementation_buffer_can_be_reused = false;
+    ReadFromFileSegmentStatePtr current_state;
+
+    auto on_finished_file_segment = [&]
+    {
+        current_info.cache_file_reader.reset();
+        current_info.file_segments->front().increasePriority();
+        current_info.file_segments->completeAndPopFront(
+            info.settings.filesystem_cache_allow_background_download,
+            /* force_shrink_to_downloaded_size */false);
+
+        current_state.reset();
+    };
+
     while (!cancelled && read_bytes < n)
     {
         if (!current_state)
         {
             if (current_info.file_segments->empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected end of file segments. Offset: {}, read: {}/{}",
-                                range_begin, read_bytes, n);
+            {
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Unexpected end of file segments. Offset: {}, read: {}/{}",
+                    range_begin, read_bytes, n);
+            }
 
             current_state = prepareReadFromFileSegmentState(current_info.file_segments->front(), range_begin, current_info, log);
+            current_state->buf->set(to + read_bytes, n - read_bytes);
         }
-        else if (range_begin == current_info.file_segments->front().range().right + 1)
+        else if (offset == current_info.file_segments->front().range().right + 1)
         {
-            current_info.cache_file_reader.reset();
-            current_info.file_segments->front().increasePriority();
-            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download, false);
-            current_state.reset();
+            on_finished_file_segment();
             continue;
         }
 
-        current_state->buf->set(to + read_bytes, n - read_bytes);
+        chassert(offset >= current_info.file_segments->front().range().left);
+        chassert(offset < current_info.file_segments->front().range().right);
+
         auto size = readFromFileSegment(
             current_info.file_segments->front(),
             /* offset */range_begin,
@@ -1394,25 +1406,22 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
             implementation_buffer_can_be_reused,
             log);
 
-        LOG_TEST(log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}", size, initial_range_begin, read_bytes + size, n);
+        LOG_TEST(
+            log, "ReadBigAt() read {} bytes at offset: {}. Total: {}/{}",
+            size, offset, read_bytes + size, n);
 
         if (!size)
         {
-            auto & file_segment = current_info.file_segments->front();
-
-            chassert(range_begin == file_segment.range().right + 1,
-                     fmt::format("Offset: {}, {}", range_begin, file_segment.getInfoForLog()));
-
-            file_segment.increasePriority();
-
-            current_info.cache_file_reader.reset();
-            current_info.file_segments->completeAndPopFront(info.settings.filesystem_cache_allow_background_download, false);
-            current_state.reset();
-            continue;
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot read all data. Offset: {} (initial offset: {}), read bytes {}/{}",
+                offset, range_begin, read_bytes, n);
         }
 
         chassert(n - read_bytes >= size, fmt::format("{} >= {}", n, size));
+
         read_bytes += size;
+        offset += size;
         current_state->buf->position() += size;
 
         if (progress_callback)
