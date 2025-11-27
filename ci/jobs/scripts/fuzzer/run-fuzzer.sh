@@ -284,64 +284,7 @@ function fuzz
     wait $server_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
 
-    # Make files with status and description we'll show for this check on Github.
-    task_exit_code=$fuzzer_exit_code
-    if [ "$server_died" == 1 ]
-    then
-        # Prioritize Logical error and assertion lines over "Received signal"
-        if rg --text -o 'Logical error.*|Assertion.*failed|Failed assertion.*|.*runtime error: .*|.*is located.*|(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|.*_LIBCPP_ASSERT.*' server.log > description.txt || \
-           rg --text -o 'Received signal.*|.*Child process was terminated by signal 9.*' server.log > description.txt; then
-            # Save the stack trace of the server to the description file and preserve in raw text output.
-            rg --text '\s<Fatal>\s' server.log >> fatal.log || :
-        else
-            echo "Lost connection to server. See the logs." > fatal.log
-        fi
-
-        IS_SANITIZED=$(clickhouse-local --query "SELECT value LIKE '%-fsanitize=%' FROM system.build_options WHERE name = 'CXX_FLAGS'")
-
-        if [ "${IS_SANITIZED}" -eq "1" ] && rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' description.txt
-        then
-            # OOM of sanitizer is not a problem we can handle - treat it as success, but preserve the description.
-            # Why? Because sanitizers have the memory overhead, that is not controllable from inside clickhouse-server.
-            task_exit_code=0
-            echo "OK" > status.txt
-        else
-            task_exit_code=210
-            echo "FAIL" > status.txt
-        fi
-    elif [ "$fuzzer_exit_code" == "143" ] || [ "$fuzzer_exit_code" == "0" ]
-    then
-        # Variants of a normal run:
-        # 0 -- fuzzing ended earlier than timeout.
-        # 143 -- SIGTERM -- the fuzzer was killed by timeout.
-        task_exit_code=0
-        echo "OK" > status.txt
-        echo "OK" > description.txt
-    elif [ "$fuzzer_exit_code" == "227" ]
-    then
-        # BuzzHouse exception, it means a query oracle failed, or
-        # an unwanted exception was found
-        task_exit_code=$fuzzer_exit_code
-        echo "ERROR" > status.txt
-        if ! rg --text -o 'DB::Exception: Found disallowed error code.*' fuzzer.log > description.txt; then
-            echo "BuzzHouse fuzzer exception not found, fuzzer issue?" > description.txt
-        fi
-    elif [ "$fuzzer_exit_code" == "137" ]
-    then
-        # Killed.
-        task_exit_code=$fuzzer_exit_code
-        echo "ERROR" > status.txt
-        echo "Killed" > description.txt
-    else
-        # The server was alive, but the fuzzer returned some error. This might
-        # be some client-side error detected by fuzzing, or a problem in the
-        # fuzzer itself. Don't grep the server log in this case, because we will
-        # find a message about normal server termination (Received signal 15),
-        # which is confusing.
-        task_exit_code=$fuzzer_exit_code
-        echo "ERROR" > status.txt
-        echo "Let op!" > description.txt
-    fi
+    echo -e "$server_died\t$server_exit_code\t$fuzzer_exit_code" > status.tsv
 
     if test -f core.*; then
         zstd --threads=0 core.*

@@ -1,5 +1,3 @@
-#include <base/StringRef.h>
-
 #include <Columns/ColumnSparse.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -497,13 +495,13 @@ private:
                 {
                     const auto & key_col = key_columns[key_pos];
                     const char * begin = nullptr;
-                    StringRef ref = key_col->serializeValueIntoArena(row_id, arena, begin);
+                    auto ref = key_col->serializeValueIntoArena(row_id, arena, begin);
 
                     chassert(begin != nullptr);
-                    chassert(ref.data >= begin);
+                    chassert(ref.data() >= begin);
 
                     const size_t old_size = mapped->size();
-                    const size_t need = old_size + ref.size;
+                    const size_t need = old_size + ref.size();
 
                     /// PODArray has geometric growth with reserve. This is important.
                     /// Otherwise, each repeated incremental `resize()` will cause
@@ -511,9 +509,9 @@ private:
                     mapped->reserve(need);
                     mapped->resize_assume_reserved(need);
 
-                    std::memcpy(mapped->data() + old_size, ref.data, ref.size);
+                    std::memcpy(mapped->data() + old_size, ref.data(), ref.size());
 
-                    const size_t alloc = static_cast<size_t>((ref.data - begin) + ref.size);
+                    const size_t alloc = static_cast<size_t>((ref.data() - begin) + ref.size());
 
                     /// This is important to rollback otherwise we will have double memory consumption.
                     /// Additionally, just used memory is now hot in CPU cache which speeds up next serialization.
