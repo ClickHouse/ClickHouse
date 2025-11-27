@@ -83,7 +83,7 @@ public:
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}. Expected Point (Tuple), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), or Geometry (Variant)",
+                "Illegal type {} of argument of function {}. Expected Point (Tuple), LineString (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiLineString (Array(LineString)), MultiPolygon (Array(Polygon)), or Geometry (Variant)",
                 arg.type->getName(),
                 getName());
         }
@@ -304,12 +304,12 @@ private:
 
 REGISTER_FUNCTION(FlipCoordinates)
 {
-    FunctionDocumentation::Description description = "Flips the coordinates of a Point, Ring, Polygon, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
+    FunctionDocumentation::Description description = "Flips the coordinates of a Point, LineString, Ring, Polygon, MultiLineString, or MultiPolygon. For a Point, it swaps the coordinates. For arrays, it recursively applies the same transformation for each coordinate pair.";
     FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon))."}
+        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), LineString (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiLineString (Array(LineString)), MultiPolygon (Array(Polygon)), Geometry (Variant)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "Ring", "Polygon", "MultiPolygon"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The type is the same as the input.", {"Point", "LineString", "Ring", "Polygon", "MultiLineString", "MultiPolygon", "Geometry"}};
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",

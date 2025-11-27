@@ -1,6 +1,6 @@
+-- {echo}
 SET allow_suspicious_variant_types = 1;
 
--- {echo}
 SELECT flipCoordinates(CAST((10.0, 20.0) AS Point));
 
 SELECT flipCoordinates(CAST([(10, 20), (30, 40), (50, 60)] AS LineString));
