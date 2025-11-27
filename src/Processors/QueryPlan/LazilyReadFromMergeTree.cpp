@@ -1,8 +1,10 @@
-#include <Processors/QueryPlan/LazyReadFromMergeTree.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/Sources/LazyReadFromMergeTreeSource.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <IO/Operators.h>
+#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -19,7 +21,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-LazyReadFromMergeTree::LazyReadFromMergeTree(
+LazilyReadFromMergeTree::LazilyReadFromMergeTree(
     SharedHeader header,
     size_t max_block_size_,
     MergeTreeReaderSettings reader_settings_,
@@ -37,12 +39,12 @@ LazyReadFromMergeTree::LazyReadFromMergeTree(
 {
 }
 
-void LazyReadFromMergeTree::setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_)
+void LazilyReadFromMergeTree::setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_)
 {
     lazy_materializing_rows = std::move(lazy_materializing_rows_);
 }
 
-void LazyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void LazilyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromMergeTree: lazy_materializing_rows is not set");
@@ -62,6 +64,35 @@ void LazyReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, 
 
     Pipe pipe(std::move(source));
     pipeline.init(std::move(pipe));
+}
+
+void LazilyReadFromMergeTree::describeActions(FormatSettings & settings) const
+{
+    String prefix(settings.offset, ' ');
+
+    settings.out << prefix << "Lazily read columns: ";
+
+    bool first = true;
+    for (const auto & column : *getOutputHeader())
+    {
+        if (!first)
+            settings.out << ", ";
+        first = false;
+
+        settings.out << column.name;
+    }
+
+    settings.out << '\n';
+}
+
+void LazilyReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
+{
+    auto json_array = std::make_unique<JSONBuilder::JSONArray>();
+
+    for (const auto & column : *getOutputHeader())
+        json_array->add(column.name);
+
+    map.add("Lazily read columns", std::move(json_array));
 }
 
 }

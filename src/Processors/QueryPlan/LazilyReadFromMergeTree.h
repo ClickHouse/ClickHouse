@@ -11,10 +11,10 @@ struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
 
-class LazyReadFromMergeTree final : public ISourceStep
+class LazilyReadFromMergeTree final : public ISourceStep
 {
 public:
-    LazyReadFromMergeTree(
+    LazilyReadFromMergeTree(
         SharedHeader header,
         size_t max_block_size,
         MergeTreeReaderSettings reader_settings_,
@@ -25,9 +25,12 @@ public:
 
     void setLazyMaterializingRows(LazyMaterializingRowsPtr lazy_materializing_rows_);
 
-    String getName() const override { return "LazyReadFromMergeTree"; }
+    String getName() const override { return "LazilyReadFromMergeTree"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
+
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void describeActions(FormatSettings & settings) const override;
 
 private:
     size_t max_block_size;

@@ -1,7 +1,7 @@
 #include <Processors/Sources/LazyReadFromMergeTreeSource.h>
-#include <Processors/QueryPlan/LazyReadFromMergeTree.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
-#include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <QueryPipeline/Pipe.h>
@@ -115,6 +115,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
     size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
+    size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
 
     MergeTreeReadPoolBase::PoolSettings pool_settings{
         .threads = max_threads,
@@ -135,8 +136,10 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
 
+    bool has_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
+
     auto pool = std::make_shared<MergeTreeReadPoolInOrder>(
-        false,
+        has_limit_below_one_block,
         MergeTreeReadType::InOrder,
         lazy_materializing_rows->ranges_in_data_parts,
         mutations_snapshot,
@@ -168,7 +171,8 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     Processors processors;
     for (size_t i = 0; i < lazy_materializing_rows->ranges_in_data_parts.size(); ++i)
     {
-        //const auto & part_with_ranges = lazy_materializing_rows->ranges_in_data_parts[i];
+        const auto & part_with_ranges = lazy_materializing_rows->ranges_in_data_parts[i];
+        UInt64 total_rows = part_with_ranges.getRowsCount();
 
         MergeTreeSelectAlgorithmPtr algorithm = std::make_unique<MergeTreeInOrderSelectAlgorithm>(i);
 
@@ -188,7 +192,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), log_name);
         // if (set_total_rows_approx)
-        //     source->addTotalRowsApprox(total_rows);
+        source->addTotalRowsApprox(total_rows);
 
         processors.emplace_back(std::move(source));
     }

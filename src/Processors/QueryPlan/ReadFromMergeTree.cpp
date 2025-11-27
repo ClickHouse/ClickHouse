@@ -26,7 +26,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
-#include <Processors/QueryPlan/LazyReadFromMergeTree.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -2675,7 +2675,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithRequiredColumns(c
         number_of_current_replica);
 }
 
-std::unique_ptr<LazyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
+std::unique_ptr<LazilyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
 {
     if (output_header == nullptr)
         return {};
@@ -2698,11 +2698,13 @@ std::unique_ptr<LazyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumn
             columns_to_keep.insert(input->result_name);
     }
 
+    auto virtuals = data.getVirtualsPtr();
+
     Names new_column_names;
     Names columns_to_remove;
     for (const auto & column_name : all_column_names)
     {
-        if (columns_to_keep.contains(column_name))
+        if (columns_to_keep.contains(column_name) || virtuals->has(column_name))
             new_column_names.push_back(column_name);
         else
             columns_to_remove.push_back(column_name);
@@ -2719,7 +2721,7 @@ std::unique_ptr<LazyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumn
             nullptr) //query_info.prewhere_info)
     );
 
-    auto new_reading = std::make_unique<LazyReadFromMergeTree>(
+    auto new_reading = std::make_unique<LazilyReadFromMergeTree>(
         std::move(lazy_reading_header),
         block_size.max_block_size_rows,
         reader_settings,

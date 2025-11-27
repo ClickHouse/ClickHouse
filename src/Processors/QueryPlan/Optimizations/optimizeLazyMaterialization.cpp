@@ -13,9 +13,9 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
-#include <Processors/QueryPlan/LazyReadFromMergeTree.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
-#include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 
 namespace DB::ErrorCodes
 {
@@ -251,7 +251,7 @@ SplitFilterResult splitFilterStep(const FilterStep & filter_step, std::vector<bo
     return { std::move(required_input_positions), std::move(filter_dag_info), std::move(split_result.second) };
 }
 
-std::unique_ptr<LazyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
+std::unique_ptr<LazilyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFromMergeTree & reading_step, const std::vector<bool> & required_output_positions)
 {
     const auto & cols = reading_step.getOutputHeader()->getColumnsWithTypeAndName();
     chassert(cols.size() == required_output_positions.size());
@@ -623,6 +623,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (sorting_step->getType() != SortingStep::Type::Full && sorting_step->getType() != SortingStep::Type::FinishSorting)
         return false;
 
+    bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
+
     const auto limit = limit_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
@@ -643,6 +645,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     for (const auto & descr : sorting_step->getSortDescription())
         required_columns[sorting_header.getPositionByName(descr.column_name)] = true;
 
+    bool has_filter = false;
+
     auto * node = sorting_node->children.front();
     while (!node->children.empty())
     {
@@ -658,6 +662,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         {
             updateRequiredColumnsForFilterDAG(required_columns, *filter_step);
             required_columns = getRequiredInputPositions(filter_step->getExpression(), *filter_step->getInputHeaders().front(), std::move(required_columns));
+            has_filter = true;
         }
         else
             return false;
@@ -668,6 +673,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 
         node = node->children.front();
     }
+
+    /// Disable the case with read-in-order and no filter.
+    /// It's not likely we can optimize it more.
+    if (reading_in_order && !has_filter)
+        return false;
 
     auto * read_from_merge_tree = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_merge_tree)
@@ -743,7 +753,8 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
         }
     }
 
-    auto new_sorting_step = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
+    auto new_sorting_step = std::move(root.children.front()->step); // = std::make_unique<SortingStep>(main_plan.getCurrentHeader(), sorting_step->getSortDescription(), sorting_step->getLimit(), sorting_step->getSettings());
+    new_sorting_step->updateInputHeader(main_plan.getCurrentHeader());
     main_plan.addStep(std::move(new_sorting_step));
 
     limit_step->updateInputHeader(main_plan.getCurrentHeader());

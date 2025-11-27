@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Common/Exception.h>
-#include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 #include <IO/Operators.h>
 
 namespace DB

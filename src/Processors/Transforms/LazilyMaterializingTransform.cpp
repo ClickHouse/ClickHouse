@@ -1,11 +1,12 @@
 #include <iostream>
-#include <Processors/Transforms/LazyMaterializingTransform.h>
+#include <Processors/Transforms/LazilyMaterializingTransform.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Core/SortDescription.h>
 #include <Columns/ColumnsNumber.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -15,7 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
+Block LazilyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
 {
     auto pos = main_header.getPositionByName("__global_row_index");
     ColumnsWithTypeAndName columns = main_header.getColumnsWithTypeAndName();
@@ -25,7 +26,7 @@ Block LazyMaterializingTransform::transformHeader(const Block & main_header, con
     return Block(std::move(columns));
 }
 
-LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_)
+LazilyMaterializingTransform::LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))
@@ -33,7 +34,7 @@ LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header,
 {
 }
 
-LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
+LazilyMaterializingTransform::Status LazilyMaterializingTransform::prepare()
 {
     auto & output = outputs.front();
     auto & main_input = inputs.front();
@@ -97,7 +98,7 @@ LazyMaterializingTransform::Status LazyMaterializingTransform::prepare()
     return Status::Finished;
 }
 
-void LazyMaterializingTransform::work()
+void LazilyMaterializingTransform::work()
 {
     if (!result_chunk)
         prepareMainChunk();
@@ -105,7 +106,7 @@ void LazyMaterializingTransform::work()
         prepareLazyChunk();
 }
 
-void LazyMaterializingTransform::prepareMainChunk()
+void LazilyMaterializingTransform::prepareMainChunk()
 {
     result_chunk = Squashing::squash(std::move(chunks));
     chunks.clear();
@@ -243,13 +244,25 @@ void LazyMaterializingTransform::prepareMainChunk()
     }
 
     std::erase_if(ranges_in_data_parts, [](const auto & part) { return part.ranges.empty(); });
+
+    size_t total_ranges = 0;
+    size_t total_marks = 0;
+    for (auto & part : ranges_in_data_parts)
+    {
+        total_ranges += part.ranges.size();
+        total_marks += part.getMarksCount();
+    }
+
+    LOG_TRACE(getLogger("LazilyMaterializingTransform"), "Lazily reading {} rows from {} parts, {} ranges, {} marks",
+        rows, ranges_in_data_parts.size(), total_ranges, total_marks);
+
     // std::cerr << "Removed " << cnt << " empty ranges\n";
     // std::cerr << rows_in_parts.size() << " parts with rows\n";
 }
 
-void LazyMaterializingTransform::prepareLazyChunk()
+void LazilyMaterializingTransform::prepareLazyChunk()
 {
-    // std::cerr << "LazyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
+    // std::cerr << "LazilyMaterializingTransform::prepareLazyChunk " << chunks.size() << " chunks\n";
     // for (auto & chunk : chunks)
     //     std::cerr << "Chunk with " << chunk.getNumRows() << " rows\n";
 
@@ -257,7 +270,7 @@ void LazyMaterializingTransform::prepareLazyChunk()
     chunks.clear();
     if (chunk.getNumRows() != offsets.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "LazyMaterializingTransform: Number of rows in lazy chunk {} does not match number of offsets {}",
+            "LazilyMaterializingTransform: Number of rows in lazy chunk {} does not match number of offsets {}",
             chunk.getNumRows(), offsets.size());
 
     IColumn::Permutation inverted_permutation;

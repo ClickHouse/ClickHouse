@@ -21,14 +21,14 @@ struct LazyMaterializingRows
 
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-class LazyMaterializingTransform final : public IProcessor
+class LazilyMaterializingTransform final : public IProcessor
 {
 public:
-    LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_);
+    LazilyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_);
 
     static Block transformHeader(const Block & main_header, const Block & lazy_header);
 
-    String getName() const override { return "LazyMaterializingTransform"; }
+    String getName() const override { return "LazilyMaterializingTransform"; }
     Status prepare() override;
 
     void work() override;
