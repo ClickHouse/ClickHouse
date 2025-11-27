@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 Block LazyMaterializingTransform::transformHeader(const Block & main_header, const Block & lazy_header)
 {
     auto pos = main_header.getPositionByName("__global_row_index");

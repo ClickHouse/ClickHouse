@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 JoinLazyColumnsStep::JoinLazyColumnsStep(const SharedHeader & left_header_, const SharedHeader & right_header_, LazyMaterializingRowsPtr lazy_materializing_rows_)
     : lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {

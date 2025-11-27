@@ -14,6 +14,11 @@ namespace Setting
     extern const SettingsBool use_uncompressed_cache;
 }
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 LazyReadFromMergeTree::LazyReadFromMergeTree(
     SharedHeader header,
     size_t max_block_size_,
