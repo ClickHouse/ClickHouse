@@ -55,42 +55,11 @@ private:
     bool is_not_usable = false; /// true after purgeQueue() to prevent new requests
     std::exception_ptr cancel_error; /// preallocated exception for cancelling requests
 
-    /// Ordering by size and unique id for tie breaking
-    /// Used for both running and increasing allocations for consistent ordering
-    struct CompareAllocations
-    {
-        bool operator()(const ResourceAllocation & lhs, const ResourceAllocation & rhs) const noexcept
-        {
-            return AllocationQueue::compareAllocations(lhs, rhs); // because CompareAllocations is not a friend of Allocation
-        }
-    };
-
-    static bool compareAllocations(const ResourceAllocation & lhs, const ResourceAllocation & rhs) noexcept
-    {
-        // Note that is called outside of the scheduler thread and thus requires mutex
-        return std::tie(lhs.fair_key, lhs.unique_id) < std::tie(rhs.fair_key, rhs.unique_id);
-    }
-
-    /// Hooks for intrusive data structures
-    using PendingHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::pending_hook>;
-    using RunningHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::running_hook>;
-    using IncreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::increasing_hook>;
-    using DecreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::decreasing_hook>;
-    using RemovingHook   = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::removing_hook>;
-
-    /// Intrusive data structures for managing allocations
-    /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
-    using PendingList    = boost::intrusive::list<ResourceAllocation, PendingHook>;
-    using RunningSet     = boost::intrusive::set<ResourceAllocation, RunningHook, boost::intrusive::compare<CompareAllocations>>;
-    using IncreasingSet  = boost::intrusive::set<ResourceAllocation, IncreasingHook, boost::intrusive::compare<CompareAllocations>>;
-    using DecreasingList = boost::intrusive::list<ResourceAllocation, DecreasingHook>;
-    using RemovingList   = boost::intrusive::list<ResourceAllocation, RemovingHook>;
-
-    PendingList pending_allocations; /// Pending new allocations
-    RunningSet running_allocations; /// Currently running (not pending) allocations
-    IncreasingSet increasing_allocations; /// Allocations with pending increase request
-    DecreasingList decreasing_allocations; /// Allocations with pending decrease request
-    RemovingList removing_allocations; /// Allocations to remove
+    ResourceAllocation::PendingList pending_allocations; /// Pending new allocations
+    ResourceAllocation::RunningSet running_allocations; /// Currently running (not pending) allocations
+    ResourceAllocation::IncreasingSet increasing_allocations; /// Allocations with pending increase request
+    ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request
+    ResourceAllocation::RemovingList removing_allocations; /// Allocations to remove
 
     size_t last_unique_id = 0;
     ResourceCost pending_allocations_size = 0;
