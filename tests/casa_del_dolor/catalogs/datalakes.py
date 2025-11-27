@@ -311,14 +311,14 @@ logger.jetty.level = warn
         catalog_format = ""
         all_jars = [
             "com.microsoft.azure:azure-storage:8.6.6",
-            "io.delta:delta-spark_2.12:3.3.2",
-            "io.unitycatalog:unitycatalog-spark_2.12:0.2.0",
-            "org.apache.hadoop:hadoop-azure:3.3.6",
-            "org.apache.iceberg:iceberg-aws-bundle:1.9.2",
-            "org.apache.iceberg:iceberg-azure-bundle:1.9.2",
-            "org.apache.iceberg:iceberg-spark-extensions-3.5_2.12:1.9.2",
-            "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.2",
-            "org.apache.spark:spark-hadoop-cloud_2.12:3.5.6",
+            "io.delta:delta-spark_2.13:4.0.0",
+            "io.unitycatalog:unitycatalog-spark_2.13:0.3.0",
+            "org.apache.hadoop:hadoop-azure:3.4.2",
+            "org.apache.iceberg:iceberg-aws-bundle:1.10.0",
+            "org.apache.iceberg:iceberg-azure-bundle:1.10.0",
+            "org.apache.iceberg:iceberg-spark-extensions-4.0_2.13:1.10.0",
+            "org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0",
+            "org.apache.spark:spark-hadoop-cloud_2.13:4.0.1",
             # Derby jars
             "org.apache.derby:derby:10.14.2.0",
             "org.apache.derby:derbytools:10.14.2.0",
