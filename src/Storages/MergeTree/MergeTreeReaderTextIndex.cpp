@@ -147,6 +147,7 @@ bool MergeTreeReaderTextIndex::canSkipMark(size_t mark, size_t current_task_last
         analyzed_granules.add(index_mark);
     }
 
+    // This condition only applies to a FINAL query.
     if (const auto * data_part = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
         data_part->getDataPart()->storage.merging_params.mode == MergeTreeData::MergingParams::Replacing)
     {
