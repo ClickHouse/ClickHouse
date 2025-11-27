@@ -28,12 +28,14 @@ def start_cluster():
 
 def test_old_client_compatible(start_cluster):
     upstream_node.query(
+        "DROP TABLE IF EXISTS test_sparse"
+    )
+    upstream_node.query(
         "CREATE TABLE test_sparse (n Nullable(UInt64)) ENGINE MergeTree ORDER BY () SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 0.1, serialization_info_version = 'with_types', nullable_serialization_version = 'allow_sparse'"
     )
     upstream_node.query(
         "INSERT INTO test_sparse SELECT null FROM numbers(100)",
     )
     old_node.query(
-        "SELECT * FROM test_sparse",
-        host=upstream_node.ip_address,
+        f"SELECT * FROM remote('{upstream_node.ip_address}', default, test_sparse)",
     )
