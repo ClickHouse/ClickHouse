@@ -155,6 +155,11 @@ StorageView::StorageView(
     setInMemoryMetadata(storage_metadata);
 }
 
+QueryProcessingStage::Enum StorageView::getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
+{
+    return QueryProcessingStage::Complete;
+}
+
 void StorageView::read(
         QueryPlan & query_plan,
         const Names & column_names,

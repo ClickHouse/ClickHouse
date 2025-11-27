@@ -29,6 +29,7 @@ public:
     bool supportsDynamicSubcolumns() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
     void read(
         QueryPlan & query_plan,
