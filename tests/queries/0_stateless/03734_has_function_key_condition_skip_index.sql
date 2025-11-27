@@ -10,7 +10,8 @@ CREATE TABLE test_has_skip_minmax
     INDEX idx_key_minmax key_col TYPE minmax GRANULARITY 4
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS index_granularity = 8192;
 
 INSERT INTO test_has_skip_minmax
 SELECT number,
@@ -39,7 +40,8 @@ CREATE TABLE test_has_skip_set (
     INDEX user_set_idx user_id TYPE set(100) GRANULARITY 2
 )
 ENGINE = MergeTree
-ORDER BY event_time;
+ORDER BY event_time
+SETTINGS index_granularity = 8192;
 
 INSERT INTO test_has_skip_set 
 SELECT 
@@ -71,7 +73,8 @@ CREATE TABLE test_has_skip_bloom
     INDEX idx_key_bf key_str TYPE bloom_filter(0.1) GRANULARITY 4
 )
 ENGINE = MergeTree
-ORDER BY id;
+ORDER BY id
+SETTINGS index_granularity = 8192;
 
 INSERT INTO test_has_skip_bloom
 SELECT number,
