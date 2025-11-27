@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_praktika:
-    runs-on: [self-hosted, test]
+    runs-on: [self-hosted, amd-mini]
 
     steps:
       - name: Checkout
@@ -25,7 +25,7 @@ jobs:
       - name: Build package
         run: |
             cd ci/praktika
-            python -m build
+            python3 -m build
 
       - name: Upload to PyPI
         if: startsWith(github.ref, 'refs/tags/')
