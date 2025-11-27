@@ -158,8 +158,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         if (!result.final_filter.present() || result.final_filter.countBytesInFilter() != result.num_rows)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Final filter is missing or has mistaching size, read_result: {}", result.dumpInfo());
 
-        ColumnFilterCache cache;
-        MergeTreeRangeReader::filterColumns(read_columns, result.final_filter, cache);
+        MergeTreeRangeReader::filterColumns(read_columns, result.final_filter);
     }
 
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);

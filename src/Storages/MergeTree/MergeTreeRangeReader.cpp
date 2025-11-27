@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column, bool is_top_level = true)
+static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
 {
     if (!column)
         return true;
@@ -55,7 +55,7 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
     if (filter_column == column)
         return false;
 
-    if (!is_top_level && column->use_count() > 1)
+    if (column->use_count() > 1)
         return false;
 
     bool can_inplace = true;
@@ -64,14 +64,14 @@ static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_
         if (!can_inplace)
             return;
 
-        if (!canInplaceFilter(subcolumn, filter_column, false))
+        if (!canInplaceFilter(subcolumn, filter_column))
             can_inplace = false;
     });
 
     return can_inplace;
 }
 
-static void filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
+static void filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     const auto & filter_data = filter.getData();
 
@@ -79,14 +79,6 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
     {
         if (column)
         {
-            const IColumn * column_ptr = column.get();
-            auto iter = cache.find(column_ptr);
-            if (iter != cache.end())
-            {
-                column = iter->second;
-                continue;
-            }
-
             if (column->size() != filter.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of column {} doesn't match size of filter {}",
                     column->size(), filter.size());
@@ -101,13 +93,11 @@ static void filterColumns(Columns & columns, const FilterWithCachedCount & filte
                 columns.clear();
                 return;
             }
-
-            cache.emplace(column_ptr, column);
         }
     }
 }
 
-void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
+void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCachedCount & filter)
 {
     if (filter.alwaysTrue())
         return;
@@ -121,13 +111,13 @@ void MergeTreeRangeReader::filterColumns(Columns & columns, const FilterWithCach
         return;
     }
 
-    DB::filterColumns(columns, filter, cache);
+    DB::filterColumns(columns, filter);
 }
 
-void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter, ColumnFilterCache & cache)
+void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCount & filter)
 {
     auto columns = block.getColumns();
-    filterColumns(columns, filter, cache);
+    filterColumns(columns, filter);
 
     if (!columns.empty())
         block.setColumns(columns);
@@ -543,11 +533,10 @@ void MergeTreeRangeReader::ReadResult::applyFilter(const FilterWithCachedCount &
     LOG_TEST(log, "ReadResult::applyFilter() num_rows before: {}", num_rows);
 
     /// Prevents repeated in-place filter execution on the same column
-    ColumnFilterCache cache;
-    filterColumns(columns, filter, cache);
-    filterBlock(additional_columns, filter, cache);
-    filterBlock(columns_for_patches, filter, cache);
-    filterBlock(patch_versions_block, filter, cache);
+    filterColumns(columns, filter);
+    filterBlock(additional_columns, filter);
+    filterBlock(columns_for_patches, filter);
+    filterBlock(patch_versions_block, filter);
 
     num_rows = filter.countBytesInFilter();
 
