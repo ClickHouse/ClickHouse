@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/ClassifiersConfig.h>
+#include <Common/Scheduler/ClassifiersConfig.h>
 
 
 namespace DB

@@ -2,7 +2,7 @@
 
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/TimeSharedScheduler.h>
-#include <Common/Scheduler/Nodes/ClassifiersConfig.h>
+#include <Common/Scheduler/ClassifiersConfig.h>
 
 #include <mutex>
 

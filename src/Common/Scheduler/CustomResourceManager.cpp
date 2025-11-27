@@ -1,5 +1,5 @@
 #include <Common/setThreadName.h>
-#include <Common/Scheduler/Nodes/CustomResourceManager.h>
+#include <Common/Scheduler/CustomResourceManager.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
 #include <Common/Scheduler/ISchedulerQueue.h>

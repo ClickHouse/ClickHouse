@@ -1,4 +1,4 @@
-#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/Scheduler/WorkloadResourceManager.h>
 
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/Nodes/FairPolicy.h>
@@ -17,7 +17,6 @@
 #include <mutex>
 #include <unordered_map>
 
-// TODO(serxa): move this class outside of Nodes folder
 
 namespace DB
 {

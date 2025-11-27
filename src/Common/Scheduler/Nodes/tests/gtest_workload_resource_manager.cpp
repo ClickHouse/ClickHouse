@@ -18,7 +18,7 @@
 #include <Common/Scheduler/ResourceAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
-#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
