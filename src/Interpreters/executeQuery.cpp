@@ -1594,16 +1594,13 @@ static BlockIO executeQueryImpl(
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
+                        result_details.query_cache_entry_created_at = reader.entryCreatedAt();
+                        result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
+
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
                         query_result_cache_usage = QueryResultCacheUsage::Read;
-
-                        if (const auto & used_key = reader.getKey(); used_key)
-                        {
-                            result_details.query_cache_created_at = used_key->created_at;
-                            result_details.query_cache_expires_at = used_key->expires_at;
-                        }
 
                         return true;
                     }
@@ -1759,11 +1756,10 @@ static BlockIO executeQueryImpl(
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
 
-                            /// We will also provide the info in HTTP headers,
-                            /// but only if the cache is enabled for reading (otherwise browsers should not cache either)
-                            /// and we set only "expires_at", not "Age" as the entry has not aged at this moment in time.
+                            /// We will expose the info in HTTP headers, but only if the cache is enabled for reading (otherwise browsers should not cache either)
+                            /// Set only "expires_at", not "Age" as the entry has not aged at this moment in time.
                             if (settings[Setting::enable_reads_from_query_cache])
-                                result_details.query_cache_expires_at = expires_at;
+                                result_details.query_cache_entry_expires_at = expires_at;
                         }
                     }
                 }

@@ -36,6 +36,7 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Common/FailPoint.h>
 
 
 namespace ProfileEvents
@@ -81,6 +82,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
+}
+
+namespace FailPoints
+{
+    extern const char mt_mutate_task_pause_in_prepare[];
 }
 
 namespace ErrorCodes
@@ -2389,6 +2395,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
 bool MutateTask::prepare()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_in_prepare);
+
     ProfileEvents::increment(ProfileEvents::MutationTotalParts);
     ctx->checkOperationIsNotCanceled();
 
