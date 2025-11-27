@@ -46,7 +46,6 @@ FROM (
 ) AS data_paths
 INNER JOIN system.filesystem_cache_log AS cache_log
 ON data_paths.remote_path = cache_log.source_file_path
-AND cache.cache_name = 'your_value'
 WHERE query_id = '$QUERY_ID' "
 
 # File segments cannot be less that 20Mi,
