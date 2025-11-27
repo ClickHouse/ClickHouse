@@ -78,7 +78,7 @@ def test_revoke_requires_grant_option():
     instance.query("CREATE USER B")
 
     instance.query("GRANT SELECT ON test.table TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B;\n"
 
     expected_error = "Not enough privileges"
     assert expected_error in instance.query_and_get_error(

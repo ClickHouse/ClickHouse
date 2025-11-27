@@ -123,7 +123,7 @@ def test_admin_option():
 
     instance.query("GRANT R1 TO A")
     assert "Not enough privileges" in instance.query_and_get_error(
-        "GRANT R1 TO B", user="A"
+        "GRANT R1 TO B;", user="A"
     )
     assert "Not enough privileges" in instance.query_and_get_error(
         "SELECT * FROM test_table", user="B"
@@ -249,7 +249,7 @@ def test_introspection():
     )
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A", "GRANT R1 TO A"]
+        ["GRANT SELECT ON test.`table` TO A;", "GRANT R1 TO A;"]
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
