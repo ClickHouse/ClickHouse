@@ -13,13 +13,26 @@ FORMAT Vertical;
 
 SELECT '';
 
--- Test different hash algorithms produce different lengths
-SELECT length(HMAC('md5', 'test', 'key')) = 16; -- MD5 produces 16 bytes
-SELECT length(HMAC('sha1', 'test', 'key')) = 20; -- SHA1 produces 20 bytes
-SELECT length(HMAC('sha224', 'test', 'key')) = 28; -- SHA224 produces 28 bytes
-SELECT length(HMAC('sha256', 'test', 'key')) = 32; -- SHA256 produces 32 bytes
-SELECT length(HMAC('sha384', 'test', 'key')) = 48; -- SHA384 produces 48 bytes
-SELECT length(HMAC('sha512', 'test', 'key')) = 64; -- SHA512 produces 64 bytes
+-- Test output lengths for all supported hash algorithms
+SELECT length(HMAC('md4', 'test', 'key')); -- MD4 produces 16 bytes
+SELECT length(HMAC('md5', 'test', 'key')); -- MD5 produces 16 bytes
+SELECT length(HMAC('mdc2', 'test', 'key')); -- MDC2 produces 16 bytes
+SELECT length(HMAC('ripemd', 'test', 'key')); -- ripemd produces 20 bytes
+SELECT length(HMAC('sha1', 'test', 'key')); -- SHA1 produces 20 bytes
+SELECT length(HMAC('sha224', 'test', 'key')); -- SHA224 produces 28 bytes
+SELECT length(HMAC('sha256', 'test', 'key')); -- SHA256 produces 32 bytes
+SELECT length(HMAC('sha384', 'test', 'key')); -- SHA384 produces 48 bytes
+SELECT length(HMAC('sha512', 'test', 'key')); -- SHA512 produces 64 bytes
+SELECT length(HMAC('sha512-224', 'test', 'key')); -- SHA512/224 produces 28 bytes
+SELECT length(HMAC('sha512-256', 'test', 'key')); -- SHA512/256 produces 32 bytes
+SELECT length(HMAC('sha3-224', 'test', 'key')); -- SHA3-224 produces 28 bytes
+SELECT length(HMAC('sha3-256', 'test', 'key')); -- SHA3-256 produces 32 bytes
+SELECT length(HMAC('sha3-384', 'test', 'key')); -- SHA3-384 produces 48 bytes
+SELECT length(HMAC('sha3-512', 'test', 'key')); -- SHA3-512 produces 64 bytes
+SELECT length(HMAC('blake2b512', 'test', 'key')); -- BLAKE2b-512 produces 64 bytes
+SELECT length(HMAC('blake2s256', 'test', 'key')); -- BLAKE2s-256 produces 32 bytes
+SELECT length(HMAC('sm3', 'test', 'key')); -- SM3 produces 32 bytes
+SELECT length(HMAC('whirlpool', 'test', 'key')); -- Whirlpool produces 64 bytes
 
 SELECT '';
 
