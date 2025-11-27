@@ -2413,7 +2413,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderBetweenWorkload
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillsRunningInAnotherWorkload)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunningInAnotherWorkload)
 {
     ResourceTest t;
 
@@ -2434,19 +2434,17 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillsRunningInAno
         TestAllocation a3(l_prd, "P3-running", 20);
         a1.waitSync();
         a2.waitSync();
+        a3.waitSync();
 
         // Workload `dev` has 70, which is more than fair 50, so D4 is pending and should not kill others
         TestAllocation a4(l_dev, "D4-pending", 40);
-        a4.assertIncreaseEnqueued();
 
-        // Workload `prd` has 20, which is less than fair 50, so P5 should kill `dev` allocations even while pending
+        // Workload `prd` has 20, which is less than fair 50, so P5 should kill `dev` allocations, but it is pending an it CANNOT kill.
+        // NOTE: Otherwise, if D1 were to be killed first, then `dev` will have 10 and `prd` has 60, so D4 hits the limit and will kill P5
+        // NOTE: This is thrashing: P5 started only to be killed right away. Kill chain: D4 -> P5 -> D1.
         TestAllocation a5(l_prd, "P5-pending", 40);
-        a1.waitKilled();
-        a5.waitSync();
 
-        // Now `dev` has 10 and `prd` has 60, so D4 hits the limit and will kill P5
-        // This is weird - P5 started only to be killed right away. Kill chain: D4 -> P5 -> D1.
-        a5.waitKilled();
-        a4.waitSync();
+        a4.assertIncreaseEnqueued();
+        a5.assertIncreaseEnqueued();
     }
 }

@@ -28,7 +28,6 @@ public:
     {}
 
     ResourceCost allocated = 0; /// Currently allocated amount of resource under this node.
-    ResourceCost demand = 0; // Total demand by all pending allocations under this node.
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic
@@ -88,13 +87,13 @@ public:
     virtual void approveIncrease() = 0;
     virtual void approveDecrease() = 0;
 
-    /// Returns allocation to be killed from this node or its children to approve a `triggering` increase request.
+    /// Returns allocation to be killed from this node or its children to approve a `killer` increase request.
     /// NOTE: It is important to keep killing order opposite to acquire ordering.
     /// This means that allocation policies of every node should have:
     ///     -- acquire order -->
     ///  A0 A1 A2 A3 A4 A5 A6 A7 A8 - ResourceAllocations
     ///    <-- killing order --
-    virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest * triggering) = 0;
+    virtual ResourceAllocation * selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit) = 0;
 
     /// For parent only. Sets the usage key.
     void setUsageKey(double value, size_t tie_breaker)
@@ -105,24 +104,10 @@ public:
         usage_key.second = tie_breaker;
     }
 
-    /// For parent only. Sets the demand key.
-    void setDemandKey(double value, size_t tie_breaker)
-    {
-        chassert(!pending_hook.is_linked());
-        demand_key.first = value;
-        demand_key.second = tie_breaker;
-    }
-
     /// For parent only. Checks the usage key.
     bool usageKeyEquals(double value) const
     {
         return usage_key.first == value;
-    }
-
-    /// For parent only. Checks the demand key.
-    bool demandKeyEquals(double value) const
-    {
-        return demand_key.first == value;
     }
 
     /// For parent only. Checks the child state.
@@ -143,16 +128,13 @@ private:
     using DecreasingHook = boost::intrusive::member_hook<ISpaceSharedNode, boost::intrusive::list_member_hook<>, &ISpaceSharedNode::decreasing_hook>;
 
     /// Keys and comparators for intrusive sets
-    std::pair<double, size_t> demand_key{-1, 0}; /// (allocated + increase.size + demand) / weight and tie breaker
     std::pair<double, size_t> usage_key{-1, 0};  /// (allocated + increase.size) / weight and tie breaker
-    struct ByDemand { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.demand_key < rhs.demand_key; } };
     struct ByUsage { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.usage_key < rhs.usage_key; } };
     struct ByPriority { bool operator()(const ISpaceSharedNode & lhs, const ISpaceSharedNode & rhs) const noexcept { return lhs.info.priority < rhs.info.priority; } };
 
 protected:
     /// Intrusive data structures for managing sets of nodes for parent nodes (e.g. PriorityAllocation and FairAllocation)
     /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
-    using PendingSetByDemand = boost::intrusive::set<ISpaceSharedNode, PendingHook, boost::intrusive::compare<ByDemand>>;
     using RunningSetByUsage = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByUsage>>;
     using RunningSetByPriority = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByPriority>>;
     using IncreasingSetByUsage = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByUsage>>;

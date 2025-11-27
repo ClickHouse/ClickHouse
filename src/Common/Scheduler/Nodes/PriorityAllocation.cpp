@@ -57,12 +57,23 @@ ISchedulerNode * PriorityAllocation::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * PriorityAllocation::selectAllocationToKill(IncreaseRequest * triggering)
+ResourceAllocation * PriorityAllocation::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
 {
+    // Cases to consider:
+    // 1. Killer is not part of this node:
+    //    - decision to kill was already taken by the parent.
+    //    - propagate down to the least prioritized child (victim).
+    // 2. Killer is part of this node but from a different child than the victim child.
+    //    - this node is the least common ancestor of killer and victim.
+    //    - enforce priority rules: running allocation kills victims of equal and lower priority.
+    // 3. Killer is part of the victim child (thus, they have equal priority).
+    //    - we are above the least common ancestor of killer and victim.
+    //    - propagate down, decision will be taken lower in the tree.
+    // NOTE: All cases are automagically handled by picking the least priority running child as victim.
     if (running_children.empty())
         return nullptr;
-    // Kill the allocation from the least priority child. It is the last as the set is ordered by priority.
-    return running_children.rbegin()->selectAllocationToKill(triggering);
+    ISpaceSharedNode & victim_child = *running_children.rbegin();
+    return victim_child.selectAllocationToKill(killer, limit);
 }
 
 void PriorityAllocation::approveIncrease()

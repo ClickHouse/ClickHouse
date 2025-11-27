@@ -32,7 +32,6 @@ void FairAllocation::attachChild(const std::shared_ptr<ISchedulerNode> & child_b
             it->second->getPath());
     child->setParentNode(this);
     child->setUsageKey(-1, 0); // force key update
-    child->setDemandKey(-1, 0); // force key update
     propagateUpdate(*child, Update()
         .setAttached(child.get())
         .setIncrease(child->increase)
@@ -49,7 +48,6 @@ void FairAllocation::removeChild(ISchedulerNode * child_base)
             .setIncrease(nullptr)
             .setDecrease(nullptr));
         child->setUsageKey(-1, 0); // do not leave garbage
-        child->setDemandKey(-1, 0); // do not leave garbage
         child->setParentNode(nullptr);
         children.erase(iter);
     }
@@ -62,13 +60,38 @@ ISchedulerNode * FairAllocation::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest * triggering)
+ResourceAllocation * FairAllocation::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
 {
+    // Cases to consider:
+    // 1. Killer is not part of this node.
+    //    - decision to kill was already taken by the parent.
+    //    - propagate down to the largest child (victim).
+    // 2. Killer is part of this node but from a different child than the victim child.
+    //    - this node is the least common ancestor of killer and victim.
+    //    - we should enforce fairness rules and prevent killing that make allocation less fair.
+    //    - computing it exactly is expensive and tricky, so we only distinguish two cases:
+    //      a) running allocation always kills.
+    //      b) pending allocation never kills. // TODO(serxa): this should be improved for better isolation
+    // 3. Killer is part of the victim child.
+    //    - we are above the least common ancestor of killer and victim.
+    //    - propagate down, decision will be taken lower in the tree.
+
     if (running_children.empty())
         return nullptr;
-    ResourceAllocation * victim = running_children.rbegin()->selectAllocationToKill(triggering);
+    ISpaceSharedNode & victim_child = *running_children.rbegin();
 
-    return victim;
+    // Case 2b. Different children pending allocation never kill each other to avoid thrashing.
+    // Keep it simple for now. Otherwise, allocations from different children may keep killing each other.
+    // More sophisticated handling and tolerance rules preventing thrashing are required.
+    // This rules should take into account:
+    // - fair shares based on `limit` (expensive to compute in a hierarchy);
+    // - and accumulated unfairness in term of ResourceCost * Time (requires tracking time).
+    // - tolerance thresholds limiting the unfairness.
+    if (killer->pending_allocation && killer == increase && victim_child.increase != killer)
+        return nullptr;
+
+    /// Kill the allocation from the largest child. It is the last as the set is ordered by usage.
+    return victim_child.selectAllocationToKill(killer, limit);
 }
 
 void FairAllocation::approveIncrease()

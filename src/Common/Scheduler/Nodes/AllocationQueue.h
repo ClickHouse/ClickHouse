@@ -33,7 +33,7 @@ public:
     void propagateUpdate(ISpaceSharedNode &, Update &&) override;
     void approveIncrease() override;
     void approveDecrease() override;
-    ResourceAllocation * selectAllocationToKill(IncreaseRequest * triggering) override;
+    ResourceAllocation * selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit) override;
     void processActivation() override;
     void attachChild(const SchedulerNodePtr &) override;
     void removeChild(ISchedulerNode *) override;

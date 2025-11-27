@@ -70,9 +70,9 @@ ISchedulerNode * AllocationLimit::getChild(const String & child_name)
     return nullptr;
 }
 
-ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest * triggering)
+ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
 {
-    return child->selectAllocationToKill(triggering);
+    return child->selectAllocationToKill(killer, limit);
 }
 
 void AllocationLimit::approveIncrease()
@@ -155,7 +155,7 @@ bool AllocationLimit::setIncrease(IncreaseRequest * new_increase, bool reapply_c
             // Limit would be violated, so we have to reclaim resource
             if (!allocation_to_kill)
             {
-                allocation_to_kill = selectAllocationToKill(new_increase);
+                allocation_to_kill = selectAllocationToKill(new_increase, max_allocated);
                 if (allocation_to_kill)
                 {
                     SCHED_DBG("{} -- killing(allocated={}, increase_size={}, max={}, increasing={}, killing={})",

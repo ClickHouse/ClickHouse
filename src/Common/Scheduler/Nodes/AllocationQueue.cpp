@@ -210,10 +210,12 @@ void AllocationQueue::approveDecrease()
     setDecrease();
 }
 
-ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest * triggering)
+ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest * killer, ResourceCost limit)
 {
+    UNUSED(limit);
+
     // It is important not to kill allocation due to pending allocation in the same queue
-    if (triggering->pending_allocation && &triggering->allocation.queue == this)
+    if (killer->pending_allocation && &killer->allocation.queue == this)
         return nullptr;
 
     std::lock_guard lock(mutex);
