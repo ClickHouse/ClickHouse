@@ -306,6 +306,10 @@ def main():
         sequential_test_modules = []
         assert not is_sequential
 
+    # I will use only this for now
+    parallel_test_modules = ["test_dot_in_user_name/test.py"] 
+    sequential_test_modules = ["test_dot_in_user_name/test.py"] 
+
     # Setup environment variables for tests
     for image_name, env_name in IMAGES_ENV.items():
         tag = info.docker_tag(image_name)
@@ -414,6 +418,16 @@ def main():
             )
             if Path("./ci/tmp/docker-in-docker.log").exists():
                 files.append("./ci/tmp/docker-in-docker.log")
+
+    # Collect coverage reports 
+    # for p in Path("./").glob("*.profraw"):
+    #     files.append(str(p))    
+
+    # print("Following files will be attached to the report: ")
+    # for f in files:
+    #     print(f)
+    # print("\n")
+
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
