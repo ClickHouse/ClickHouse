@@ -283,7 +283,7 @@ public:
     bool isSinglePoint() const { return single_point; }
 
     /// Does the filter condition have any ORs?
-    bool isOnlyConjuncts() const;
+    bool hasOnlyConjunctions() const;
 
     void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
                                 std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);

@@ -1,5 +1,5 @@
 #pragma once
-#include <boost/dynamic_bitset.hpp>
+
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Interpreters/ActionsDAG.h>
 
+#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
@@ -16,13 +17,13 @@ class KeyCondition;
 struct QueryIdHolder;
 class VectorSimilarityIndexCache;
 
-using PartialEvalResultsBits = boost::dynamic_bitset<>;
-
 /** Executes SELECT queries on data from the merge tree.
   */
 class MergeTreeDataSelectExecutor
 {
 public:
+    using PartialDisjunctionResult = boost::dynamic_bitset<>;
+
     explicit MergeTreeDataSelectExecutor(const MergeTreeData & data_);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
@@ -89,7 +90,7 @@ public:
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         bool support_disjuncts,
-        PartialEvalResultsBits & partial_eval_results_for_disjuncts,
+        PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -103,11 +104,13 @@ public:
         VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
-    /// Maximum number of elements in the RPN condition for disjunct processing.
-    /// Each RPN element needs one bit for partial evaluation result storage.
-    /// 32 is a good limit, could be lowered for e.g (A = 5 OR B = 5) requires 3 bits,
-    /// (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits
-    static constexpr size_t BITS_FOR_RPN_EVALUATION_RESULTS = 32;
+    /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
+    /// 'use_skip_indexes_for_disjunctions') is enabled.
+    /// One bit per RPN element is consumed to store the partial evaluation results.
+    /// Example:
+    /// - (A = 5 OR B = 5) requires 3 bits - for A, for B and for OR(A, B).
+    /// - Likewise, (A = 5 OR B = 5) AND (C > 5 OR D > 5) requires 7 bits.
+    static constexpr size_t MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT = 32;
 
 private:
     const MergeTreeData & data;
@@ -256,7 +259,7 @@ public:
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,
-        const PartialEvalResultsBits & partial_eval_results,
+        const PartialDisjunctionResult & partial_eval_results,
         MergeTreeReaderSettings reader_settings,
         LoggerPtr log);
 

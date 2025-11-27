@@ -48,9 +48,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     auto ranges = part.ranges;
     size_t ending_mark = ranges.empty() ? 0 : ranges.back().end;
-    PartialEvalResultsBits partial_eval_results;
+    MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (support_disjuncts)
-        partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::BITS_FOR_RPN_EVALUATION_RESULTS, true);
+        partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
     for (const auto & index_and_condition : skip_indexes.useful_indices)
     {
         if (is_cancelled)
