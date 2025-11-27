@@ -18,6 +18,22 @@
                 <port>2888</port>
                 <priority>1</priority>
             </server>
+            <server>
+                <can_become_leader>true</can_become_leader>
+                <start_as_follower>true</start_as_follower>
+                <hostname>node2</hostname>
+                <id>2</id>
+                <port>2888</port>
+                <priority>2</priority>
+            </server>
+            <server>
+                <can_become_leader>true</can_become_leader>
+                <start_as_follower>true</start_as_follower>
+                <hostname>node3</hostname>
+                <id>3</id>
+                <port>2888</port>
+                <priority>3</priority>
+            </server>
         </raft_configuration>
     </keeper_server>
 
