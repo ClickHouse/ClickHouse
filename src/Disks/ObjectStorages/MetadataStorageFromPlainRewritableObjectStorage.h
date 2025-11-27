@@ -4,6 +4,7 @@
 #include <Disks/ObjectStorages/InMemoryDirectoryTree.h>
 #include <Disks/ObjectStorages/MetadataOperationsHolder.h>
 #include <Disks/ObjectStorages/FlatDirectoryStructureKeyGenerator.h>
+#include <Disks/ObjectStorages/PlainRewritableMetrics.h>
 
 #include <memory>
 
@@ -48,6 +49,8 @@ public:
     bool supportsStat() const override { return false; }
     bool isReadOnly() const override { return false; }
     bool areBlobPathsRandom() const override { return false; }
+    bool isPlain() const override { return true; }
+    bool isWriteOnce() const override { return false; }
 
     MetadataTransactionPtr createTransaction() override;
 
@@ -72,7 +75,8 @@ public:
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const std::string & path) const override;
 
 private:
-    const ObjectStoragePtr object_storage;
+    const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableMetrics> metrics;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
     const std::string metadata_key_prefix;

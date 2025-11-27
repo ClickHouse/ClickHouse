@@ -4710,6 +4710,10 @@ class ClickHouseInstance:
                     time.sleep(1)
 
             if not stopped:
+                # Some sanitizer report in progress?
+                while self.get_process_pid("llvm-symbolizer") is not None:
+                    time.sleep(1)
+
                 pid = self.get_process_pid("clickhouse")
                 if pid is not None:
                     logging.warning(
