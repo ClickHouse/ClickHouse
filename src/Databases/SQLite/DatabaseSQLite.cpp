@@ -1,21 +1,19 @@
-#include <Databases/SQLite/DatabaseSQLite.h>
+#include "DatabaseSQLite.h"
 
 #if USE_SQLITE
 
-#include <Storages/AlterCommands.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -104,7 +102,7 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */true);
 
-    const String query = fmt::format("SELECT name FROM sqlite_master WHERE type='table' AND name='{}';", table_name);
+    const String query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = " + quoteStringSQLite(table_name) + ";";
 
     auto callback_get_data = [](void * res, int, char **, char **) -> int
     {
@@ -181,10 +179,6 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
     return create_query;
 }
 
-void DatabaseSQLite::alterDatabaseComment(const AlterCommand & command)
-{
-    DB::updateDatabaseCommentWithMetadataFile(shared_from_this(), command);
-}
 
 ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {

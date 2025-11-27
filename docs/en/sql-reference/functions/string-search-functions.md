@@ -1,9 +1,9 @@
 ---
 description: 'Documentation for Functions for Searching in Strings'
-sidebar_label: 'String search'
+sidebar_label: 'Searching in Strings'
+sidebar_position: 160
 slug: /sql-reference/functions/string-search-functions
 title: 'Functions for Searching in Strings'
-doc_type: 'reference'
 ---
 
 # Functions for Searching in Strings
@@ -29,7 +29,7 @@ Returns the position (in bytes, starting at 1) of a substring `needle` in a stri
 
 **Syntax**
 
-```sql
+``` sql
 position(haystack, needle[, start_pos])
 ```
 
@@ -59,13 +59,13 @@ The same rules also apply to functions `locate`, `positionCaseInsensitive`, `pos
 
 Query:
 
-```sql
+``` sql
 SELECT position('Hello, world!', '!');
 ```
 
 Result:
 
-```text
+``` text
 ┌─position('Hello, world!', '!')─┐
 │                             13 │
 └────────────────────────────────┘
@@ -75,7 +75,7 @@ Example with `start_pos` argument:
 
 Query:
 
-```sql
+``` sql
 SELECT
     position('Hello, world!', 'o', 1),
     position('Hello, world!', 'o', 7)
@@ -83,7 +83,7 @@ SELECT
 
 Result:
 
-```text
+``` text
 ┌─position('Hello, world!', 'o', 1)─┬─position('Hello, world!', 'o', 7)─┐
 │                                 5 │                                 9 │
 └───────────────────────────────────┴───────────────────────────────────┘
@@ -109,7 +109,7 @@ Examples with empty `needle` substring:
 
 Query:
 
-```sql
+``` sql
 SELECT
     position('abc', ''),
     position('abc', '', 0),
@@ -122,7 +122,7 @@ SELECT
 
 Result:
 
-```text
+``` text
 ┌─position('abc', '')─┬─position('abc', '', 0)─┬─position('abc', '', 1)─┬─position('abc', '', 2)─┬─position('abc', '', 3)─┬─position('abc', '', 4)─┬─position('abc', '', 5)─┐
 │                   1 │                      1 │                      1 │                      2 │                      3 │                      4 │                      0 │
 └─────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┴────────────────────────┘
@@ -139,7 +139,7 @@ The behavior of this function depends on the ClickHouse version:
 
 **Syntax**
 
-```sql
+``` sql
 locate(needle, haystack[, start_pos])
 ```
 
@@ -151,13 +151,13 @@ A case insensitive invariant of [position](#position).
 
 Query:
 
-```sql
+``` sql
 SELECT positionCaseInsensitive('Hello, world!', 'hello');
 ```
 
 Result:
 
-```text
+``` text
 ┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
 │                                                 1 │
 └───────────────────────────────────────────────────┘
@@ -173,13 +173,13 @@ Function `positionUTF8` correctly counts character `ö` (represented by two poin
 
 Query:
 
-```sql
+``` sql
 SELECT positionUTF8('Motörhead', 'r');
 ```
 
 Result:
 
-```text
+``` text
 ┌─position('Motörhead', 'r')─┐
 │                          5 │
 └────────────────────────────┘
@@ -199,7 +199,7 @@ All `multiSearch*()` functions only support up to 2<sup>8</sup> needles.
 
 **Syntax**
 
-```sql
+``` sql
 multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 ```
 
@@ -217,13 +217,13 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needleN])
 
 Query:
 
-```sql
+``` sql
 SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
 ```
 
 Result:
 
-```text
+``` text
 ┌─multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])─┐
 │ [0,13,0]                                                          │
 └───────────────────────────────────────────────────────────────────┘
@@ -755,152 +755,6 @@ Result:
 1
 ```
 
-## searchAny {#searchany}
-
-:::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
-:::
-
-Returns 1, if at least one string needle<sub>i</sub> matches the `input` column and 0 otherwise.
-
-**Syntax**
-
-```sql
-searchAny(input, ['needle1', 'needle2', ..., 'needleN'])
-```
-
-**Parameters**
-
-- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
-:::note
-Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
-:::
-
-The `input` string is tokenized by the tokenizer from the index definition.
-
-Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
-For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
-To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
-Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
-
-**Returned value**
-
-- 1, if there was at least one match.
-- 0, otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE table (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\'])
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM table WHERE searchAny(msg, ['a', 'd']);
-```
-
-Result:
-
-```response
-3
-```
-
-**Generate needles using the `tokens` function**
-
-Query:
-
-```sql
-SELECT count() FROM table WHERE searchAny(msg, tokens('a()d', 'split', ['()', '\\']));
-```
-
-Result:
-
-```response
-3
-```
-
-## searchAll {#searchall}
-
-:::note
-This function can only be used if setting [allow_experimental_full_text_index](/operations/settings/settings#allow_experimental_full_text_index) is enabled.
-:::
-
-Like [searchAny](#searchany), but returns 1 only if all string needle<sub>i</sub> matches the `input` column and 0 otherwise.
-
-**Syntax**
-
-```sql
-searchAll(input, ['needle1', 'needle2', ..., 'needleN'])
-```
-
-**Parameters**
-
-- `input` — The input column. [String](../data-types/string.md) or [FixedString](../data-types/fixedstring.md).
-- `needles` — Tokens to be searched. Supports at most 64 tokens. [Array](../data-types/array.md)([String](../data-types/string.md)).
-
-:::note
-Column `input` must have a [text index][../../engines/table-engines/mergetree-family/invertedindexes.md].
-:::
-
-The `input` string is tokenized by the tokenizer from the index definition.
-
-Each `needle` array element token<sub>i</sub> is considered a single token, i.e., not further tokenized.
-For example, if you like to search for `ClickHouse` with index `tokenizer = 'ngram', ngram_size = 5`, provided these needles: `['Click', 'lickH', 'ickHo', 'ckHou', 'kHous', 'House']`.
-To generate the needles, you can use the [tokens](/sql-reference/functions/splitting-merging-functions.md/#tokens) function.
-Duplicate tokens are ignored, for example, `['ClickHouse', 'ClickHouse']` is the same as `['ClickHouse']`.
-
-**Returned value**
-
-- 1, if all needles match.
-- 0, otherwise.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE table (
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = 'split', separators = ['()', '\\']) GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
-
-SELECT count() FROM table WHERE searchAll(msg, ['a', 'd']);
-```
-
-Result:
-
-```response
-1
-```
-
-**Generate needles using the `tokens` function**
-
-Query:
-
-```sql
-SELECT count() FROM table WHERE searchAll(msg, tokens('a()d', 'split', ['()', '\\']));
-```
-
-Result:
-
-```response
-1
-```
-
 ## match {#match}
 
 Returns whether string `haystack` matches the regular expression `pattern` in [re2 regular expression syntax](https://github.com/google/re2/wiki/Syntax).
@@ -1081,7 +935,7 @@ This function is slower than [extractAllGroupsVertical](#extractallgroupsvertica
 
 **Syntax**
 
-```sql
+``` sql
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
@@ -1100,13 +954,13 @@ If `haystack` does not match the `pattern` regex, an array of empty arrays is re
 
 **Example**
 
-```sql
+``` sql
 SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
 
-```text
+``` text
 ┌─extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
 │ [['abc','def','ghi'],['111','222','333']]                                                │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
@@ -1118,7 +972,7 @@ Match all groups of given input string with a given regular expression, returns 
 
 **Syntax**
 
-```sql
+``` sql
 extractGroups(haystack, pattern)
 ```
 
@@ -1133,13 +987,13 @@ extractGroups(haystack, pattern)
 
 **Example**
 
-```sql
+``` sql
 SELECT extractGroups('hello abc=111 world', '("[^"]+"|\\w+)=("[^"]+"|\\w+)') AS result;
 ```
 
 Result:
 
-```text
+``` text
 ┌─result────────┐
 │ ['abc','111'] │
 └───────────────┘
@@ -1151,7 +1005,7 @@ Matches all groups of the `haystack` string using the `pattern` regular expressi
 
 **Syntax**
 
-```sql
+``` sql
 extractAllGroupsVertical(haystack, pattern)
 ```
 
@@ -1170,13 +1024,13 @@ If `haystack` does not match the `pattern` regex, an empty array is returned.
 
 **Example**
 
-```sql
+``` sql
 SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
 ```
 
 Result:
 
-```text
+``` text
 ┌─extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
 │ [['abc','111'],['def','222'],['ghi','333']]                                            │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -1273,6 +1127,8 @@ Result:
 ```
 
 The less similar two strings are to each, the larger the result will be.
+
+
 Query:
 
 ```sql
@@ -1554,7 +1410,7 @@ Functions [`countSubstringsCaseInsensitive`](#countsubstringscaseinsensitive) an
 
 **Syntax**
 
-```sql
+``` sql
 countSubstrings(haystack, needle[, start_pos])
 ```
 
@@ -1570,13 +1426,13 @@ countSubstrings(haystack, needle[, start_pos])
 
 **Examples**
 
-```sql
+``` sql
 SELECT countSubstrings('aaaa', 'aa');
 ```
 
 Result:
 
-```text
+``` text
 ┌─countSubstrings('aaaa', 'aa')─┐
 │                             2 │
 └───────────────────────────────┘
@@ -1590,7 +1446,7 @@ SELECT countSubstrings('abc___abc', 'abc', 4);
 
 Result:
 
-```text
+``` text
 ┌─countSubstrings('abc___abc', 'abc', 4)─┐
 │                                      1 │
 └────────────────────────────────────────┘
@@ -1601,7 +1457,7 @@ Returns how often a substring `needle` occurs in a string `haystack`. Ignores ca
 
 **Syntax**
 
-```sql
+``` sql
 countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 ```
 
@@ -1619,13 +1475,13 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 Query:
 
-```sql
+``` sql
 SELECT countSubstringsCaseInsensitive('AAAA', 'aa');
 ```
 
 Result:
 
-```text
+``` text
 ┌─countSubstringsCaseInsensitive('AAAA', 'aa')─┐
 │                                            2 │
 └──────────────────────────────────────────────┘
@@ -1641,7 +1497,7 @@ SELECT countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4);
 
 Result:
 
-```text
+``` text
 ┌─countSubstringsCaseInsensitive('abc___ABC___abc', 'abc', 4)─┐
 │                                                           2 │
 └─────────────────────────────────────────────────────────────┘
@@ -1653,7 +1509,7 @@ Returns how often a substring `needle` occurs in a string `haystack`. Ignores ca
 
 **Syntax**
 
-```sql
+``` sql
 countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
@@ -1671,13 +1527,13 @@ countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 Query:
 
-```sql
+``` sql
 SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА');
 ```
 
 Result:
 
-```text
+``` text
 ┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА')─┐
 │                                                                  4 │
 └────────────────────────────────────────────────────────────────────┘
@@ -1693,7 +1549,7 @@ SELECT countSubstringsCaseInsensitiveUTF8('ложка, кошка, картош�
 
 Result:
 
-```text
+``` text
 ┌─countSubstringsCaseInsensitiveUTF8('ложка, кошка, картошка', 'КА', 13)─┐
 │                                                                      2 │
 └────────────────────────────────────────────────────────────────────────┘
@@ -1703,14 +1559,9 @@ Result:
 
 Returns the number of regular expression matches for a `pattern` in a `haystack`.
 
-The behavior of this function depends on the ClickHouse version:
-- in versions < v25.6, `countMatches` would stop counting at the first empty match even if a pattern accepts.
-- in versions >= 25.6, `countMatches` would continue its execution when an empty match occurs.
-  The legacy behavior can be restored using setting [count_matches_stop_at_empty_match = true](/operations/settings/settings#count_matches_stop_at_empty_match);
-
 **Syntax**
 
-```sql
+``` sql
 countMatches(haystack, pattern)
 ```
 
@@ -1725,25 +1576,25 @@ countMatches(haystack, pattern)
 
 **Examples**
 
-```sql
+``` sql
 SELECT countMatches('foobar.com', 'o+');
 ```
 
 Result:
 
-```text
+``` text
 ┌─countMatches('foobar.com', 'o+')─┐
 │                                2 │
 └──────────────────────────────────┘
 ```
 
-```sql
+``` sql
 SELECT countMatches('aaaa', 'aa');
 ```
 
 Result:
 
-```text
+``` text
 ┌─countMatches('aaaa', 'aa')────┐
 │                             2 │
 └───────────────────────────────┘
@@ -1755,7 +1606,7 @@ Returns the number of regular expression matches for a pattern in a haystack lik
 
 **Syntax**
 
-```sql
+``` sql
 countMatchesCaseInsensitive(haystack, pattern)
 ```
 
@@ -1772,13 +1623,13 @@ countMatchesCaseInsensitive(haystack, pattern)
 
 Query:
 
-```sql
+``` sql
 SELECT countMatchesCaseInsensitive('AAAA', 'aa');
 ```
 
 Result:
 
-```text
+``` text
 ┌─countMatchesCaseInsensitive('AAAA', 'aa')────┐
 │                                            2 │
 └──────────────────────────────────────────────┘
@@ -1790,7 +1641,7 @@ Extracts the first string in `haystack` that matches the regexp pattern and corr
 
 **Syntax**
 
-```sql
+``` sql
 regexpExtract(haystack, pattern[, index])
 ```
 
@@ -1808,7 +1659,7 @@ Alias: `REGEXP_EXTRACT(haystack, pattern[, index])`.
 
 **Examples**
 
-```sql
+``` sql
 SELECT
     regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
     regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
@@ -1818,7 +1669,7 @@ SELECT
 
 Result:
 
-```text
+``` text
 ┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
 │ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
 └──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
@@ -1828,9 +1679,11 @@ Result:
 
 Returns 1 if `needle` is a subsequence of `haystack`, or 0 otherwise.
 A subsequence of a string is a sequence that can be derived from the given string by deleting zero or more elements without changing the order of the remaining elements.
+
+
 **Syntax**
 
-```sql
+``` sql
 hasSubsequence(haystack, needle)
 ```
 
@@ -1847,13 +1700,13 @@ hasSubsequence(haystack, needle)
 
 Query:
 
-```sql
+``` sql
 SELECT hasSubsequence('garbage', 'arg');
 ```
 
 Result:
 
-```text
+``` text
 ┌─hasSubsequence('garbage', 'arg')─┐
 │                                1 │
 └──────────────────────────────────┘
@@ -1865,7 +1718,7 @@ Like [hasSubsequence](#hassubsequence) but searches case-insensitively.
 
 **Syntax**
 
-```sql
+``` sql
 hasSubsequenceCaseInsensitive(haystack, needle)
 ```
 
@@ -1882,13 +1735,13 @@ hasSubsequenceCaseInsensitive(haystack, needle)
 
 Query:
 
-```sql
+``` sql
 SELECT hasSubsequenceCaseInsensitive('garbage', 'ARG');
 ```
 
 Result:
 
-```text
+``` text
 ┌─hasSubsequenceCaseInsensitive('garbage', 'ARG')─┐
 │                                               1 │
 └─────────────────────────────────────────────────┘
@@ -1900,7 +1753,7 @@ Like [hasSubsequence](#hassubsequence) but assumes `haystack` and `needle` are U
 
 **Syntax**
 
-```sql
+``` sql
 hasSubsequenceUTF8(haystack, needle)
 ```
 
@@ -1917,13 +1770,13 @@ Query:
 
 **Examples**
 
-```sql
-SELECT hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
+``` sql
+select hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система');
 ```
 
 Result:
 
-```text
+``` text
 ┌─hasSubsequenceUTF8('ClickHouse - столбцовая система управления базами данных', 'система')─┐
 │                                                                                         1 │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
@@ -1935,7 +1788,7 @@ Like [hasSubsequenceUTF8](#hassubsequenceutf8) but searches case-insensitively.
 
 **Syntax**
 
-```sql
+``` sql
 hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 ```
 
@@ -1952,13 +1805,13 @@ hasSubsequenceCaseInsensitiveUTF8(haystack, needle)
 
 Query:
 
-```sql
-SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
+``` sql
+select hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');
 ```
 
 Result:
 
-```text
+``` text
 ┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
 │                                                                                                        1 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -2095,6 +1948,8 @@ hasTokenCaseInsensitiveOrNull(haystack, token)
 Token must be a constant string. Supported by tokenbf_v1 index specialization.
 
 **Example**
+
+
 Where `hasTokenCaseInsensitive` would throw an error for an ill-formed token, `hasTokenCaseInsensitiveOrNull` returns `null` for an ill-formed token.
 
 Query:
@@ -2106,13 +1961,3 @@ SELECT hasTokenCaseInsensitiveOrNull('Hello World','hello,world');
 ```response
 null
 ```
-
-<!-- 
-The inner content of the tags below are replaced at doc framework build time with 
-docs generated from system.functions. Please do not modify or remove the tags.
-See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
--->
-
-<!--AUTOGENERATED_START-->
-<!--AUTOGENERATED_END-->
-

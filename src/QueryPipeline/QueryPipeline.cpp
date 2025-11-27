@@ -5,7 +5,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/Context.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
@@ -22,7 +21,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
@@ -179,8 +177,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         ///   2. Limit ... PartialSorting: Set counter on PartialSorting
         ///   3. Limit ... TotalsHaving(with filter) ... Remote: Set counter on the input port of Limit
         ///   4. Limit ... Remote: Set counter on Remote
-        ///   5. Limit ... LimitBy: Set counter on LimitBy, as it may not be executed on initiator
-        ///   6. Limit ... : Set counter on the input port of Limit
+        ///   5. Limit ... : Set counter on the input port of Limit
 
         /// Case 1.
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_processor)
@@ -224,14 +221,6 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
                 limit_candidates[limit_processor].push_back(limit_input_port);
                 continue;
             }
-
-            /// Case 5.
-            if (typeid_cast<LimitByTransform *>(processor))
-            {
-                processors.emplace_back(processor);
-                limit_candidates[limit_processor].push_back(limit_input_port);
-                continue;
-            }
         }
 
         /// Skip totals and extremes port for output format.
@@ -266,7 +255,7 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         }
     }
 
-    /// Case 6.
+    /// Case 5.
     for (auto && [limit, ports] : limit_candidates)
     {
         /// If there are some input ports which don't have the counter, add it to LimitTransform.
@@ -403,7 +392,7 @@ QueryPipeline::QueryPipeline(Chain chain)
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
-    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
+    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(chain.getOutputPort(), sink->getPort());
     processors->emplace_back(std::move(sink));
 
@@ -419,14 +408,14 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
 
     if (!totals)
     {
-        auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
+        auto source = std::make_shared<NullSource>(format_totals.getHeader());
         totals = &source->getPort();
         processors->emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
-        auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
+        auto source = std::make_shared<NullSource>(format_extremes.getHeader());
         extremes = &source->getPort();
         processors->emplace_back(std::move(source));
     }
@@ -448,7 +437,7 @@ static void drop(OutputPort *& port, Processors & processors)
     if (!port)
         return;
 
-    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
+    auto null_sink = std::make_shared<NullSink>(port->getHeader());
     connect(*port, null_sink->getPort());
 
     processors.emplace_back(std::move(null_sink));
@@ -484,7 +473,7 @@ void QueryPipeline::complete(Chain chain)
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
 
-    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
+    auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getHeader());
     connect(*output, chain.getInputPort());
     connect(chain.getOutputPort(), sink->getPort());
     processors->emplace_back(std::move(sink));
@@ -516,7 +505,7 @@ static void addMaterializing(OutputPort *& output, Processors & processors)
     if (!output)
         return;
 
-    auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader());
+    auto materializing = std::make_shared<MaterializingTransform>(output->getHeader());
     connect(*output, materializing->getInputPort());
     output = &materializing->getOutputPort();
     processors.emplace_back(std::move(materializing));
@@ -540,14 +529,14 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
 
     if (!totals)
     {
-        auto source = std::make_shared<NullSource>(format_totals.getSharedHeader());
+        auto source = std::make_shared<NullSource>(format_totals.getHeader());
         totals = &source->getPort();
         processors->emplace_back(std::move(source));
     }
 
     if (!extremes)
     {
-        auto source = std::make_shared<NullSource>(format_extremes.getSharedHeader());
+        auto source = std::make_shared<NullSource>(format_extremes.getHeader());
         extremes = &source->getPort();
         processors->emplace_back(std::move(source));
     }
@@ -583,15 +572,6 @@ Block QueryPipeline::getHeader() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
 }
 
-SharedHeader QueryPipeline::getSharedHeader() const
-{
-    if (input)
-        return input->getSharedHeader();
-    if (output)
-        return output->getSharedHeader();
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Header is available only for pushing or pulling QueryPipeline");
-}
-
 void QueryPipeline::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = callback;
@@ -622,7 +602,7 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
             ErrorCodes::LOGICAL_ERROR,
             "It is possible to set limits and quota only to pulling QueryPipeline");
 
-    auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
+    auto transform = std::make_shared<LimitsCheckingTransform>(output->getHeader(), limits);
     transform->setQuota(quota_);
     connect(*output, transform->getInputPort());
     output = &transform->getOutputPort();
@@ -733,7 +713,7 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
 {
     if (port)
     {
-        auto transform = std::make_shared<ExpressionTransform>(port->getSharedHeader(), actions);
+        auto transform = std::make_shared<ExpressionTransform>(port->getHeader(), actions);
         connect(*port, transform->getInputPort());
         port = &transform->getOutputPort();
         processors.emplace_back(std::move(transform));

@@ -17,10 +17,9 @@ public:
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
-        bool use_persistent_processing_nodes_,
         LoggerPtr log_);
 
-    static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
+    static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing"}; }
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(

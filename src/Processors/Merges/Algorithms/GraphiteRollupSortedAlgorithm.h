@@ -22,7 +22,7 @@ class GraphiteRollupSortedAlgorithm final : public IMergingAlgorithmWithSharedCh
 {
 public:
     GraphiteRollupSortedAlgorithm(
-        SharedHeader header,
+        const Block & header,
         size_t num_inputs,
         SortDescription description_,
         size_t max_block_size_rows_,

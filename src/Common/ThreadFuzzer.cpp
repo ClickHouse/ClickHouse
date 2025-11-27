@@ -52,6 +52,8 @@ namespace ErrorCodes
 ThreadFuzzer::ThreadFuzzer()
 {
     initConfiguration();
+    if (needsSetup())
+        setup();
 
     if (!isEffective())
     {
@@ -278,9 +280,6 @@ void ThreadFuzzer::signalHandler(int)
 
 void ThreadFuzzer::setup() const
 {
-    if (!needsSetup())
-        return;
-
     struct sigaction sa{};
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;

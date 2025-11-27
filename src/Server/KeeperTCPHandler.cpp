@@ -241,9 +241,19 @@ KeeperTCPHandler::KeeperTCPHandler(
     , log(getLogger("KeeperTCPHandler"))
     , keeper_dispatcher(keeper_dispatcher_)
     , keeper_context(keeper_dispatcher->getKeeperContext())
-    , min_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
-    , max_session_timeout(config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
-    , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
+    , operation_timeout(
+          0,
+          config_ref.getUInt(
+              "keeper_server.coordination_settings.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
+    , min_session_timeout(
+          0,
+          config_ref.getUInt(
+              "keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS) * 1000)
+    , max_session_timeout(
+          0,
+          config_ref.getUInt(
+              "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
+    , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
@@ -342,7 +352,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length, bool
     if (handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
         Coordination::read(readonly, *in);
 
-    return Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(timeout_ms) * 1000);
+    return Poco::Timespan(timeout_ms * 1000);
 }
 
 
@@ -436,14 +446,15 @@ void KeeperTCPHandler::runImpl()
         compressed_out.emplace(*out, CompressionCodecFactory::instance().get("LZ4",{}));
     }
 
-    auto response_callback = [my_responses = this->responses, my_poll_wrapper = this->poll_wrapper](
-                                 const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
+    auto response_fd = poll_wrapper->getResponseFD();
+    auto response_callback = [my_responses = this->responses,
+                              response_fd](const Coordination::ZooKeeperResponsePtr & response, Coordination::ZooKeeperRequestPtr request)
     {
         if (!my_responses->push(RequestWithResponse{response, std::move(request)}))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with xid {} and zxid {}", response->xid, response->zxid);
 
         UInt8 single_byte = 1;
-        [[maybe_unused]] ssize_t result = write(my_poll_wrapper->getResponseFD(), &single_byte, sizeof(single_byte));
+        [[maybe_unused]] ssize_t result = write(response_fd, &single_byte, sizeof(single_byte));
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 

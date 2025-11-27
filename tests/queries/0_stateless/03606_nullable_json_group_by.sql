@@ -1,3 +1,5 @@
+set output_format_json_quote_64bit_integers=0;
+
 select '{"a" : 42}'::Nullable(JSON) group by 1;
 select materialize('{"a" : 42}')::Nullable(JSON) group by 1;
 select null::Nullable(JSON) group by 1;

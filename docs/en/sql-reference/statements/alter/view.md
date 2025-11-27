@@ -4,7 +4,6 @@ sidebar_label: 'VIEW'
 sidebar_position: 50
 slug: /sql-reference/statements/alter/view
 title: 'ALTER TABLE ... MODIFY QUERY Statement'
-doc_type: 'reference'
 ---
 
 # ALTER TABLE ... MODIFY QUERY Statement
@@ -28,7 +27,7 @@ FROM events
 GROUP BY ts, event_type;
 
 INSERT INTO events
-SELECT DATE '2020-01-01' + interval number * 900 second,
+SELECT Date '2020-01-01' + interval number * 900 second,
        ['imp', 'click'][number%2+1]
 FROM numbers(100);
 

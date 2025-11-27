@@ -4,7 +4,6 @@ description: 'System table containing information about parameters `graphite_rol
 keywords: ['system table', 'graphite_retentions']
 slug: /operations/system-tables/graphite_retentions
 title: 'system.graphite_retentions'
-doc_type: 'reference'
 ---
 
 Contains information about parameters [graphite_rollup](../../operations/server-configuration-parameters/settings.md#graphite) which are used in tables with [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) engines.

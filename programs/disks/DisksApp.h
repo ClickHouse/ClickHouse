@@ -3,8 +3,9 @@
 #include <unordered_map>
 #include <vector>
 #include <Client/LineReader.h>
-#include <DisksClient.h>
-#include <ICommand_fwd.h>
+#include <Loggers/Loggers.h>
+#include "DisksClient.h"
+#include "ICommand_fwd.h"
 
 #include <Interpreters/Context.h>
 #include <boost/program_options/options_description.hpp>

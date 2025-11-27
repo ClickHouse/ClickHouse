@@ -67,8 +67,6 @@ public:
         return nested->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
     }
 
-    void updateHashImpl(SipHash & hash) const override;
-
     SerializationPtr doGetDefaultSerialization() const override;
 
     const DataTypePtr & getNestedType() const { return nested; }

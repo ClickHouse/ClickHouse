@@ -20,7 +20,6 @@ AS SELECT *
 FROM test;
 
 SET prefer_localhost_replica = 0;
-SET serialize_query_plan = 0;
 
 SELECT max(i1)
 FROM remote('localhost', currentDatabase(), test_view)

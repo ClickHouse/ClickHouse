@@ -55,7 +55,6 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , sql_security_type(other.sql_security_type)
     , comment(other.comment)
     , metadata_version(other.metadata_version)
-    , datalake_table_state(other.datalake_table_state)
 {
 }
 
@@ -88,8 +87,6 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     sql_security_type = other.sql_security_type;
     comment = other.comment;
     metadata_version = other.metadata_version;
-    datalake_table_state = other.datalake_table_state;
-
     return *this;
 }
 
@@ -122,7 +119,7 @@ UUID StorageInMemoryMetadata::getDefinerID(DB::ContextPtr context) const
     return access_control.getID<User>(*definer);
 }
 
-ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info) const
+ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(ContextPtr context) const
 {
     if (!sql_security_type)
         return Context::createCopy(context);
@@ -131,14 +128,11 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
         return Context::createCopy(context);
 
     auto new_context = Context::createCopy(context->getGlobalContext());
-    if (client_info)
-        new_context->setClientInfo(*client_info);
-    else
-        new_context->setClientInfo(context->getClientInfo());
+    new_context->setClientInfo(context->getClientInfo());
     new_context->makeQueryContext();
 
     const auto & database = context->getCurrentDatabase();
-    if (!database.empty() && database != new_context->getCurrentDatabase())
+    if (!database.empty())
         new_context->setCurrentDatabase(database);
 
     new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
@@ -162,7 +156,6 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     auto changed_settings = context->getSettingsRef().changes();
     new_context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
     new_context->applySettingsChanges(changed_settings);
-    new_context->setSetting("allow_ddl", 1);
 
     return new_context;
 }
@@ -220,11 +213,6 @@ void StorageInMemoryMetadata::setRefresh(ASTPtr refresh_)
 void StorageInMemoryMetadata::setMetadataVersion(int32_t metadata_version_)
 {
     metadata_version = metadata_version_;
-}
-
-void StorageInMemoryMetadata::setDataLakeTableState(const DataLakeTableStateSnapshot & datalake_table_state_)
-{
-    datalake_table_state = datalake_table_state_;
 }
 
 StorageInMemoryMetadata StorageInMemoryMetadata::withMetadataVersion(int32_t metadata_version_) const
@@ -788,21 +776,5 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     }
 }
 
-std::unordered_map<std::string, ColumnSize> StorageInMemoryMetadata::getFakeColumnSizes() const
-{
-    std::unordered_map<std::string, ColumnSize> sizes;
-    for (const auto & col : columns)
-        sizes[col.name] = ColumnSize {.marks = 1000, .data_compressed = 100000000, .data_uncompressed = 1000000000};
-    return sizes;
-}
-
-NameSet StorageInMemoryMetadata::getColumnsWithoutDefaultExpressions() const
-{
-    NameSet names;
-    for (const auto & col : columns)
-        if (!col.default_desc.expression)
-            names.insert(col.name);
-    return names;
-}
 
 }

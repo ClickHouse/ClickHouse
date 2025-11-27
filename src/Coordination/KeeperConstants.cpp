@@ -300,9 +300,6 @@
     M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
     M(KeeperLogsPrefetchedEntries) \
-\
-    M(JemallocFailedAllocationSampleTracking) \
-    M(JemallocFailedDeallocationSampleTracking) \
 
 namespace ProfileEvents
 {

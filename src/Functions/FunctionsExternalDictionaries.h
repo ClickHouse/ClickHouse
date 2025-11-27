@@ -113,7 +113,7 @@ public:
     bool isDictGetFunctionInjective(const Block & sample_columns)
     {
         /// Assume non-injective by default
-        if (sample_columns.empty())
+        if (!sample_columns)
             return false;
 
         if (sample_columns.columns() < 3)

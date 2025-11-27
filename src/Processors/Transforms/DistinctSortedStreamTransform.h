@@ -31,7 +31,7 @@ class DistinctSortedStreamTransform : public ISimpleTransform
 {
 public:
     DistinctSortedStreamTransform(
-        SharedHeader header_,
+        const Block & header_,
         const SizeLimits & output_size_limits_,
         UInt64 limit_hint_,
         const SortDescription & sorted_columns_descr_,

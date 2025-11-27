@@ -42,7 +42,7 @@ def docker_login(relogin: bool = True) -> None:
             "docker login --username 'robotclickhouse' --password-stdin",
             strict=True,
             stdin_str=Secret.Config(
-                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_PARAMETER
+                "dockerhub_robot_password", type=Secret.Type.AWS_SSM_VAR
             ).get_value(),
             encoding="utf-8",
         )
@@ -103,7 +103,11 @@ def main():
     command = f"docker buildx build --platform {platforms} \
                     -t {image_repo}:tmp {image_path} -f {docker_path}/Dockerfile.ubuntu"
 
-    results.append(Result.from_commands_run(name=f"{image_repo}:tmp", command=command))
+    results.append(
+        Result.from_commands_run(
+            name=f"{image_repo}:tmp", command=command, with_log=True
+        )
+    )
 
     Result.create_from(results=results, stopwatch=stopwatch).complete_job()
 

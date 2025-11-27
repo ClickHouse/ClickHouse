@@ -262,13 +262,11 @@ StorageFactory & StorageFactory::instance()
 }
 
 
-std::optional<AccessTypeObjects::Source> StorageFactory::getSourceAccessObject(const String & table_engine) const
+AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
 {
-    if (table_engine.empty())
-        return {};
-    const auto it = storages.find(table_engine);
+    auto it = storages.find(table_engine);
     if (it == storages.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown table engine '{}' when checking for access type", table_engine);
+        return AccessType::NONE;
     return it->second.features.source_access_type;
 }
 

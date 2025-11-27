@@ -214,9 +214,8 @@ public:
 
     void popBack(size_t n) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    StringRef serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    const char * deserializeAndInsertAggregationStateValueFromArena(const char * pos) override;
+    const char * deserializeVariantAndInsertFromArena(Discriminator global_discr, const char * pos);
     const char * skipSerializedInArena(const char * pos) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     std::optional<size_t> getSerializedValueSize(size_t n) const override;
@@ -247,7 +246,7 @@ public:
 
     void reserve(size_t n) override;
     size_t capacity() const override;
-    void prepareForSquashing(const Columns & source_columns, size_t factor) override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
