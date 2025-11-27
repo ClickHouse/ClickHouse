@@ -1,5 +1,3 @@
-#include <Common/StringUtils.h>
-
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
 #include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/BuzzHouse/Generator/SQLTypes.h>
@@ -163,8 +161,6 @@ void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, 
 
 void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, const bool complex, Expr * expr)
 {
-    const bool allow_floats
-        = (this->next_type_mask & (allow_bfloat16 | allow_float32 | allow_float64)) != 0 && this->fc.fuzz_floating_points;
     uint32_t nested_prob = 0;
     LiteralValue * lv = expr->mutable_lit_val();
     const uint32_t hugeint_lit = 20;
@@ -174,19 +170,18 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     const uint32_t time_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_time) != 0);
     const uint32_t date_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_dates) != 0);
     const uint32_t datetime_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_datetimes) != 0);
-    const uint32_t dec_lit = 25 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
+    const uint32_t dec_lit = 50 * static_cast<uint32_t>((this->next_type_mask & allow_decimals) != 0);
     const uint32_t random_str = 30 * static_cast<uint32_t>(complex && this->allow_not_deterministic);
     const uint32_t uuid_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_uuid) != 0);
     const uint32_t ipv4_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv4) != 0);
     const uint32_t ipv6_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_ipv6) != 0);
-    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0 && allow_floats);
+    const uint32_t geo_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_geo) != 0);
     const uint32_t str_lit = 50;
     const uint32_t special_val = 80;
     const uint32_t json_lit = 20 * static_cast<uint32_t>((this->next_type_mask & allow_JSON) != 0);
     const uint32_t null_lit = 10;
-    const uint32_t frac_lit = 25;
     const uint32_t prob_space = hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str
-        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit;
+        + uuid_lit + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -351,27 +346,16 @@ void StatementGenerator::generateLiteralValueInternal(RandomGenerator & rg, cons
     {
         lv->mutable_special_val()->set_val(SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_NULL);
     }
-    else if (
-        frac_lit
-        && (noption < hugeint_lit + uhugeint_lit + int_lit + uint_lit + time_lit + date_lit + datetime_lit + dec_lit + random_str + uuid_lit
-                + ipv4_lit + ipv6_lit + geo_lit + str_lit + special_val + json_lit + null_lit + frac_lit + 1))
-    {
-        std::uniform_int_distribution<uint32_t> frange(1, 999);
-
-        lv->set_no_quote_str(fmt::format("0.{}", frange(rg.generator)));
-    }
     else
     {
-        UNREACHABLE();
+        chassert(0);
     }
     addFieldAccess(rg, expr, nested_prob);
 }
 
 void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool complex, Expr * expr)
 {
-    const uint32_t nopt = rg.nextMediumNumber();
-
-    if (nopt < 15)
+    if (this->fc.max_depth > this->depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 16)
     {
         /// Generate a few arrays/tuples with literal values
         ExprList * elist
@@ -383,22 +367,6 @@ void StatementGenerator::generateLiteralValue(RandomGenerator & rg, const bool c
         {
             /// There are no recursive calls here, so don't bother about width and depth
             this->generateLiteralValue(rg, complex, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
-        }
-        this->depth--;
-    }
-    else if (nopt < 20)
-    {
-        /// Generate a few map key/value pairs
-        const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 4));
-        SQLFuncCall * fcall = expr->mutable_comp_expr()->mutable_func_call();
-
-        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCmap);
-        this->depth++;
-        for (uint32_t i = 0; i < nvalues; i++)
-        {
-            /// There are no recursive calls here, so don't bother about width and depth
-            this->generateLiteralValue(rg, complex, fcall->add_args()->mutable_expr());
-            this->generateLiteralValue(rg, complex, fcall->add_args()->mutable_expr());
         }
         this->depth--;
     }
@@ -531,7 +499,7 @@ Expr * StatementGenerator::generatePartialSearchExpr(RandomGenerator & rg, Expr 
     sfc->mutable_func()->set_catalog_func(nfunc);
     Expr * res = sfc->add_args()->mutable_expr();
     Expr * expr2 = sfc->add_args()->mutable_expr();
-    if ((nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens) && rg.nextBool())
+    if (nfunc == SQLFunc::FUNChasAnyTokens || nfunc == SQLFunc::FUNChasAllTokens)
     {
         ExprList * elist = expr2->mutable_comp_expr()->mutable_array();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 5)) + 1;
@@ -645,10 +613,8 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             else if (nopt2 < 8)
             {
                 ExprList * elist2 = ein->mutable_exprs();
-                const uint32_t nclauses2
-                    = rg.nextSmallNumber() < 9 ? nclauses : std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 4));
 
-                for (uint32_t i = 0; i < nclauses2; i++)
+                for (uint32_t i = 0; i < nclauses; i++)
                 {
                     this->generateExpression(rg, i == 0 ? elist2->mutable_expr() : elist2->add_extra_exprs());
                 }
@@ -732,7 +698,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else
         {
-            UNREACHABLE();
+            chassert(0);
         }
         addFieldAccess(rg, expr, 0);
     }
@@ -1103,11 +1069,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 {
     ExprColAlias * eca = nullptr;
     const auto & level_rels = this->levels[this->current_level].rels;
-    const auto has_dictionary_lambda
-        = [&](const SQLDictionary & d) { return d.isAttached() && (d.is_deterministic || this->allow_not_deterministic); };
 
     const uint32_t literal_value = this->inside_projection ? 50 : 100;
-    const uint32_t col_ref_expr = this->inside_projection ? 600 : 300;
+    const uint32_t col_ref_expr = 300;
     const uint32_t predicate_expr = 50 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t cast_expr = 25 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
     const uint32_t unary_expr = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth);
@@ -1129,11 +1093,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                                 && std::find_if(level_rels.begin(), level_rels.end(), has_rel_name_lambda) != level_rels.end());
     const uint32_t lambda_expr = 3 * static_cast<uint32_t>(this->fc.max_depth > this->depth && this->fc.max_width > this->width);
     const uint32_t projection_expr = 75 * static_cast<uint32_t>(this->inside_projection);
-    const uint32_t dict_expr
-        = 30 * static_cast<uint32_t>(this->fc.max_depth > this->depth && collectionHas<SQLDictionary>(has_dictionary_lambda));
     const uint32_t prob_space = literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr
         + cond_expr + case_expr + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr
-        + lambda_expr + projection_expr + dict_expr;
+        + lambda_expr + projection_expr;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t noption = next_dist(rg.generator);
 
@@ -1297,24 +1259,13 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
                + subquery_expr + binary_expr + array_tuple_expr + 1))
     {
-        const bool has_tuple = rg.nextBool();
-        ExprList * elist = has_tuple ? expr->mutable_comp_expr()->mutable_tuple() : expr->mutable_comp_expr()->mutable_array();
+        ExprList * elist = rg.nextBool() ? expr->mutable_comp_expr()->mutable_array() : expr->mutable_comp_expr()->mutable_tuple();
         const uint32_t nvalues = std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(0, 8));
-        const bool tuple_cols = has_tuple && rg.nextSmallNumber() < 5;
 
         this->depth++;
         for (uint32_t i = 0; i < nvalues; i++)
         {
-            Expr * next = i == 0 ? elist->mutable_expr() : elist->add_extra_exprs();
-
-            if (tuple_cols)
-            {
-                generateColRef(rg, next);
-            }
-            else
-            {
-                generateExpression(rg, next);
-            }
+            this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             this->width++;
         }
         this->depth--;
@@ -1373,7 +1324,6 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
                 this->ids.emplace_back(static_cast<uint32_t>(WINlead));
                 this->ids.emplace_back(static_cast<uint32_t>(WINleadInFrame));
             }
-            this->ids.emplace_back(static_cast<uint32_t>(WINcume_dist));
             this->ids.emplace_back(static_cast<uint32_t>(WINdense_rank));
             this->ids.emplace_back(static_cast<uint32_t>(WINnth_value));
             this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
@@ -1467,30 +1417,9 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
         sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCcount);
     }
-    else if (
-        dict_expr
-        && noption
-            < (literal_value + col_ref_expr + predicate_expr + cast_expr + unary_expr + interval_expr + columns_expr + cond_expr + case_expr
-               + subquery_expr + binary_expr + array_tuple_expr + func_expr + window_func_expr + table_star_expr + lambda_expr
-               + projection_expr + dict_expr + 1))
-    {
-        /// Dictionary functions
-        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-        const SQLDictionary & d = rg.pickRandomly(filterCollection<SQLDictionary>(has_dictionary_lambda)).get();
-
-        sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCdictGet);
-        sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str("'" + d.getFullName(true) + "'");
-        flatTableColumnPath(
-            flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, d.cols, [](const SQLColumn &) { return true; });
-        sfc->add_args()->mutable_expr()->mutable_lit_val()->set_no_quote_str(rg.pickRandomly(this->table_entries).columnPathRef("'"));
-        this->table_entries.clear();
-        this->depth++;
-        this->generateExpression(rg, sfc->add_args()->mutable_expr());
-        this->depth--;
-    }
     else
     {
-        UNREACHABLE();
+        chassert(0);
     }
 
     addFieldAccess(rg, expr, 6);

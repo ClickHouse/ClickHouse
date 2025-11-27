@@ -1,5 +1,0 @@
-<clickhouse>
-    <kafka>
-        <!-- <compression_codec>lz4</compression_codec> -->
-    </kafka>
-</clickhouse>

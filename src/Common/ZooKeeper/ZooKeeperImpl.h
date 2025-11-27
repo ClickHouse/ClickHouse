@@ -93,11 +93,6 @@ namespace DB
     class AggregatedZooKeeperLog;
 }
 
-namespace HistogramMetrics
-{
-    struct Metric;
-}
-
 namespace Coordination
 {
 
@@ -277,6 +272,7 @@ private:
         ZooKeeperRequestPtr request;
         ResponseCallback callback;
         WatchCallbackPtrOrEventPtr watch;
+        clock::time_point time;
     };
 
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;

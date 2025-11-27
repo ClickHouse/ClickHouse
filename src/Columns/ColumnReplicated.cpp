@@ -82,9 +82,9 @@ void ColumnReplicated::get(size_t n, Field & res) const
     nested_column->get(indexes.getIndexAt(n), res);
 }
 
-DataTypePtr ColumnReplicated::getValueNameAndTypeImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
+std::pair<String, DataTypePtr> ColumnReplicated::getValueNameAndType(size_t n) const
 {
-    return nested_column->getValueNameAndTypeImpl(name_buf, indexes.getIndexAt(n), options);
+    return nested_column->getValueNameAndType(indexes.getIndexAt(n));
 }
 
 bool ColumnReplicated::getBool(size_t n) const
@@ -117,7 +117,7 @@ UInt64 ColumnReplicated::get64(size_t n) const
     return nested_column->get64(indexes.getIndexAt(n));
 }
 
-std::string_view ColumnReplicated::getDataAt(size_t n) const
+StringRef ColumnReplicated::getDataAt(size_t n) const
 {
     return nested_column->getDataAt(indexes.getIndexAt(n));
 }
@@ -133,12 +133,12 @@ void ColumnReplicated::insertData(const char * pos, size_t length)
     indexes.insertIndex(nested_column->size() - 1);
 }
 
-std::string_view ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnReplicated::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested_column->serializeValueIntoArena(indexes.getIndexAt(n), arena, begin);
 }
 
-std::string_view ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnReplicated::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return nested_column->serializeAggregationStateValueIntoArena(indexes.getIndexAt(n), arena, begin);
 }
@@ -636,7 +636,7 @@ bool ColumnReplicated::structureEquals(const IColumn & rhs) const
     return false;
 }
 
-void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & source_columns)
 {
     Columns source_nested_columns;
     source_nested_columns.reserve(source_columns.size());
@@ -648,7 +648,7 @@ void ColumnReplicated::takeDynamicStructureFromSourceColumns(const Columns & sou
             source_nested_columns.emplace_back(source_column);
     }
 
-    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns, max_dynamic_subcolumns);
+    nested_column->takeDynamicStructureFromSourceColumns(source_nested_columns);
 }
 
 void ColumnReplicated::takeDynamicStructureFromColumn(const ColumnPtr & source_column)

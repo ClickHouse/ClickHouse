@@ -1,6 +1,6 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/DiskSelector.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
@@ -32,7 +32,7 @@ void DiskSelector::recordDisk(const std::string & disk_name, DiskPtr disk)
     {
         for (const auto & [saved_disk_name, saved_disk] : disks)
         {
-            if (!saved_disk->isPlain() || saved_disk->isReadOnly() || saved_disk->isWriteOnce())
+            if (!saved_disk->isPlain() || disk->isReadOnly() || disk->isWriteOnce())
                 continue;
 
             /// Same endpoint

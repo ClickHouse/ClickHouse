@@ -22,21 +22,6 @@ namespace Nested
     std::pair<std::string, std::string> splitName(const std::string & name, bool reverse = false);
     std::pair<std::string_view, std::string_view> splitName(std::string_view name, bool reverse = false);
 
-    /// Returns all possible pairs of column + subcolumn for specified name.
-    /// For example:
-    /// "a.b.c.d" -> ("a", "b.c.d"), ("a.b", "c.d"), ("a.b.c", "d")
-    std::vector<std::pair<std::string_view, std::string_view>> getAllColumnAndSubcolumnPairs(std::string_view name);
-
-    /// Given all existing columns, return specific pair of column and subcolumn from specified name.
-    /// For example:
-    /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: ("a.x", "y.z").
-    std::pair<std::string_view, std::string_view> getColumnAndSubcolumnPair(std::string_view name, const NameSet & storage_columns);
-
-    /// Given all existing columns, return column name of the subcolumn with specified name.
-    /// For example:
-    /// Columns: "a.x", "b", "c". Name: "a.x.y.z". Result: "a.x".
-    std::string_view getColumnFromSubcolumn(std::string_view name, const NameSet & storage_columns);
-
     /// Returns the prefix of the name to the first '.'. Or the name is unchanged if there is no dot.
     std::string extractTableName(const std::string & nested_name);
 
@@ -82,11 +67,5 @@ private:
     bool case_insentive;
     std::map<String, BlockPtr> nested_tables;
 };
-
-/// Returns type of scalars of Array of arbitrary dimensions and takes into account Tuples of Nested.
-DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements);
-
-/// Returns Array type with requested scalar type and number of dimensions.
-DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions);
 
 }

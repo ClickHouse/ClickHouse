@@ -1,4 +1,3 @@
-#include <memory>
 #include <Databases/DataLake/DatabaseDataLake.h>
 #include <Core/SettingsEnums.h>
 #include <Databases/DataLake/HiveCatalog.h>
@@ -7,7 +6,7 @@
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 
 #if USE_AVRO && USE_PARQUET
 
@@ -53,9 +52,6 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString aws_access_key_id;
     extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
-    extern const DatabaseDataLakeSettingsString onelake_tenant_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_id;
-    extern const DatabaseDataLakeSettingsString onelake_client_secret;
 }
 
 namespace Setting
@@ -150,20 +146,6 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
-        case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
-        {
-            catalog_impl = std::make_shared<DataLake::RestCatalog>(
-                settings[DatabaseDataLakeSetting::warehouse].value,
-                url,
-                settings[DatabaseDataLakeSetting::onelake_tenant_id].value,
-                settings[DatabaseDataLakeSetting::onelake_client_id].value,
-                settings[DatabaseDataLakeSetting::onelake_client_secret].value,
-                settings[DatabaseDataLakeSetting::auth_scope].value,
-                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
-                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
-                Context::getGlobalContextInstance());
-            break;
-        }
         case DB::DatabaseDataLakeCatalogType::UNITY:
         {
             catalog_impl = std::make_shared<DataLake::UnityCatalog>(
@@ -213,23 +195,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
     auto catalog = getCatalog();
     switch (catalog->getCatalogType())
     {
-        case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
-        {
-            switch (type)
-            {
-#if USE_AZURE_BLOB_STORAGE
-                case DB::DatabaseDataLakeStorageType::Azure:
-                {
-                    return std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
-                }
-#endif
-                default:
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {} for Iceberg OneLake catalog",
-                                    type);
-            }
-        }
-        case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
             switch (type)
@@ -423,7 +389,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
                 LOG_DEBUG(log, "Has no credentials");
             }
         }
-        else if (!lightweight && table_metadata.requiresCredentials() && catalog->getCatalogType() != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        else if (!lightweight && table_metadata.requiresCredentials())
         {
             throw Exception(
                ErrorCodes::BAD_ARGUMENTS,
@@ -470,22 +436,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     Settings settings_copy = context_copy->getSettingsCopy();
     settings_copy[Setting::use_hive_partitioning] = false;
     context_copy->setSettings(settings_copy);
-
-    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
-    {
-        auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
-        if (!azure_configuration)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
-        auto rest_catalog = std::static_pointer_cast<DataLake::RestCatalog>(catalog);
-        if (!rest_catalog)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
-
-        azure_configuration->setInitializationAsOneLake(
-            rest_catalog->getClientId(),
-            rest_catalog->getClientSecret(),
-            rest_catalog->getTenantId()
-        );
-    }
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
@@ -536,7 +486,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         /* is_datalake_query*/true,
         /* distributed_processing */can_use_distributed_iterator,
         /* partition_by */nullptr,
-        /* order_by */nullptr,
         /* is_table_function */false,
         /* lazy_init */true);
 }
@@ -711,12 +660,11 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getLightweightTablesIterator(
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
 }
 
-ASTPtr DatabaseDataLake::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseDataLake::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(database_name);
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_definition);
-    create_query->uuid = db_uuid;
     return create_query;
 }
 
@@ -839,7 +787,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         switch (catalog_type)
         {
-            case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             {
                 if (!args.create_query.attach
