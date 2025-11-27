@@ -70,8 +70,9 @@ String DPJoinEntry::dump() const
 class JoinOrderOptimizer
 {
 public:
-    explicit JoinOrderOptimizer(QueryGraph query_graph_)
+    JoinOrderOptimizer(QueryGraph query_graph_, const std::vector<JoinOrderAlgorithm> & enabled_algorithms_)
         : query_graph(std::move(query_graph_))
+        , enabled_algorithms(enabled_algorithms_)
     {
     }
 
@@ -96,6 +97,7 @@ private:
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
+    const std::vector<JoinOrderAlgorithm> enabled_algorithms;
     LoggerPtr log = getLogger("JoinOrderOptimizer");
 };
 
@@ -189,10 +191,22 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinReorderMicroseconds);
 
     std::shared_ptr<DPJoinEntry> best_plan;
-    if (!best_plan)
+
+    for (const auto & algorithm : enabled_algorithms)
     {
-        LOG_TRACE(log, "Solving join order using greedy algorithm");
-        best_plan = solveGreedy();
+        LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
+        switch (algorithm)
+        {
+            case JoinOrderAlgorithm::DPSIZE:
+                best_plan = solveDPsize();
+                break;
+            case JoinOrderAlgorithm::GREEDY:
+                best_plan = solveGreedy();
+                break;
+        }
+
+        if (best_plan)
+            break;
     }
 
     if (!best_plan)
@@ -485,12 +499,12 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrder(const BitSet & left
     return {};
 }
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph)
+DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (query_graph.relation_stats.size() <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
 
-    JoinOrderOptimizer reorderer(std::move(query_graph));
+    JoinOrderOptimizer reorderer(std::move(query_graph), optimization_settings.query_plan_optimize_join_order_algorithm);
     auto best_plan = reorderer.solve();
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
