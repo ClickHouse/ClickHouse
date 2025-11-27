@@ -1,5 +1,7 @@
 -- { echoOn }
 
+SET max_threads = 1, max_insert_threads = 1;
+
 DROP TABLE IF EXISTS test_has_skip_minmax;
 
 CREATE TABLE test_has_skip_minmax
