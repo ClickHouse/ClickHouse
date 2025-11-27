@@ -69,7 +69,7 @@ size_t tryOptimizeTopN(QueryPlan::Node * parent_node, QueryPlan::Nodes & /* node
     const auto & sort_description = sorting_step->getSortDescription();
 
     /// We only support ORDER BY <single column> right now. But easy to extend and support
-    /// multiple columns - just use the 1st column as the threshold and change comparisions
+    /// multiple columns - just use the 1st column as the threshold and change comparisons
     /// at a couple of places (from < to <=)
     if (sort_description.size() > 1)
         return 0;
