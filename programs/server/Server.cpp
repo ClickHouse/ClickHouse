@@ -2327,7 +2327,6 @@ try
                     new_server_settings[ServerSetting::storage_connections_warn_limit],
                     new_server_settings[ServerSetting::storage_connections_store_limit],
                     new_server_settings[ServerSetting::storage_connections_hard_limit],
-
                 },
                 HTTPConnectionPools::Limits{
                     new_server_settings[ServerSetting::http_connections_soft_limit],
