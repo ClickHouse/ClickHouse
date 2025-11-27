@@ -699,14 +699,14 @@ class IcebergTableGenerator(LakeTableGenerator):
             res = f"CALL `{table.catalog_name}`.system.compute_table_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id => {random.choice(snapshots)}"
+                res += f", snapshot_id => '{random.choice(snapshots)}'"
             res += ")"
             return res
         if next_option == 6:
             res = f"CALL `{table.catalog_name}`.system.compute_partition_stats(table => '{table.get_namespace_path()}'"
             snapshots = self.get_snapshots(spark, table)
             if len(snapshots) > 0 and random.randint(1, 2) == 1:
-                res += f", snapshot_id => {random.choice(snapshots)}"
+                res += f", snapshot_id => '{random.choice(snapshots)}'"
             res += ")"
             return res
         if next_option == 7:
@@ -796,7 +796,7 @@ class IcebergTableGenerator(LakeTableGenerator):
                 "set_current_snapshot",
                 "cherrypick_snapshot",
             ]
-            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => {random.choice(snapshots)})"
+            return f"CALL `{table.catalog_name}`.system.{random.choice(calls)}(table => '{table.get_namespace_path()}', snapshot_id => '{random.choice(snapshots)}')"
         timestamps = self.get_timestamps(spark, table)
         if len(timestamps) > 0 and next_option in (13, 14):
             return f"CALL `{table.catalog_name}`.system.rollback_to_timestamp(table => '{table.get_namespace_path()}', timestamp => TIMESTAMP '{random.choice(timestamps)}')"
