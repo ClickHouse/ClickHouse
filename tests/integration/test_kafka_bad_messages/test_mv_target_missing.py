@@ -79,6 +79,9 @@ def test_missing_mv_target(kafka_cluster, create_query_generator):
         DROP TABLE IF EXISTS test.mv1;
         DROP TABLE IF EXISTS test.mv2;
 
+        DROP DATABASE IF EXISTS test;
+        CREATE DATABASE test;
+
         {create_query};
         {create_other_query};
 
@@ -182,6 +185,7 @@ missing_dependencies: [['test.kafkamissother','test.mvother']]
         DROP TABLE test.target2;
         DROP TABLE test.kafkamiss;
         DROP TABLE test.kafkamissother;
+        DROP DATABASE test;
         """
     )
     k.kafka_delete_topic(admin, topic)
@@ -221,6 +225,9 @@ def test_missing_mv_transitive_target(kafka_cluster, create_query_generator):
         DROP TABLE IF EXISTS test.target2;
         DROP TABLE IF EXISTS test.mv1;
         DROP TABLE IF EXISTS test.mv2;
+
+        DROP DATABASE IF EXISTS test;
+        CREATE DATABASE test;
 
         {create_query};
 
@@ -273,6 +280,7 @@ missing_dependencies: []
         DROP TABLE test.target1;
         DROP TABLE test.target2;
         DROP TABLE test.tkafkamiss;
+        DROP DATABASE test;
         """
     )
     k.kafka_delete_topic(admin, topic)
