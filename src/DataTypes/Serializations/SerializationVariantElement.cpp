@@ -253,7 +253,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     /// We want to keep dynamic structure of the variant during deserialization.
     /// Keeping dynamic structure improves performance of insertFrom/insertRangeFrom methods.
     if (mutable_column->empty())
-        mutable_column->takeDynamicStructureFromSourceColumns({variant_element_state->variant});
+        mutable_column->takeDynamicStructureFromColumn(variant_element_state->variant);
 
     /// If there was nothing to deserialize or nothing was actually deserialized when variant_limit > 0, just insert defaults.
     /// The second case means that we don't have a stream for such sub-column. It may happen during ALTER MODIFY column with Variant extension.
