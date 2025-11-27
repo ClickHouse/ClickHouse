@@ -3413,11 +3413,6 @@ void ReadFromMergeTree::createReadTasksForTextIndex(const UsefulSkipIndexes & sk
     required_source_columns = all_column_names;
 }
 
-ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
-{
-    return data.getConditionSelectivityEstimator(getParts(), getContext());
-}
-
 bool ReadFromMergeTree::isSkipIndexAvailableForTopN(const String & sort_column) const
 {
     const auto & all_indexes = storage_snapshot->metadata->getSecondaryIndices();
@@ -3431,6 +3426,11 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopN(const String & sort_column) 
             return true;
     }
     return false;
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator() const
+{
+    return data.getConditionSelectivityEstimator(getParts(), getContext());
 }
 
 }
