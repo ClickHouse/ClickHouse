@@ -11,15 +11,10 @@ execute_process (COMMAND
     OUTPUT_STRIP_TRAILING_WHITESPACE)
 
 if (NOT EXISTS "${BUILTINS_LIBRARY}")
+    # In the past we used to fallback into using libgcc, which then required sysroot to include gcc libraries.
+    # Now we build the compiler-rt from source instead so we are independent of the target system's gcc.
     include (cmake/build_clang_builtin.cmake)
-    if (CMAKE_CXX_COMPILER_TARGET STREQUAL "x86_64-linux-musl" OR
-            CMAKE_CXX_COMPILER_TARGET STREQUAL "riscv64-linux-gnu" OR
-            CMAKE_CXX_COMPILER_TARGET STREQUAL "s390x-linux-gnu")
-        build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
-    else ()
-        message (WARNING "Builtins library not found at ${BUILTINS_LIBRARY} and no build rule for target ${CMAKE_CXX_COMPILER_TARGET}. Using libgcc as fallback.")
-        set (BUILTINS_LIBRARY "-lgcc")
-    endif ()
+    build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
 endif ()
 
 # Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
