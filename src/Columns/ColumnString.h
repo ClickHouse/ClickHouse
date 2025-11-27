@@ -211,8 +211,6 @@ public:
     std::string_view serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory) const override;
 
-    void batchSerializeValueIntoMemory(std::vector<char *> & memories) const override;
-
     void deserializeAndInsertFromArena(ReadBuffer & in) override;
     void deserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 

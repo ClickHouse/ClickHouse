@@ -74,12 +74,6 @@ struct ArenaKeyHolder
 {
     std::string_view key;
     Arena & pool;
-
-    ArenaKeyHolder(const std::string_view key_, Arena & pool_)
-        : key(key_)
-        , pool(pool_)
-    {
-    }
 };
 
 }
