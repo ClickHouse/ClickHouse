@@ -150,7 +150,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
         }
     }
     /// Rewrite dictionary name in dictGet*()
-    else if (functionIsDictGet(func.name))
+    else if (functionIsDictGet(func.name) && !func.arguments->children.empty())
     {
         auto & dict_name_arg = func.arguments->children.at(0);
         if (const auto * identifier = dict_name_arg->as<ASTIdentifier>(); identifier && identifier->isShort())
