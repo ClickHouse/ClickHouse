@@ -26,9 +26,9 @@ namespace ErrorCodes
 namespace
 {
 
-const EVP_MD * getHashAlgorithm(const String & mode)
+const EVP_MD * getHashAlgorithm(const std::string_view & mode)
 {
-    String mode_lower = Poco::toLower(mode);
+    std::string mode_lower = Poco::toLower(std::string{mode});
 
     if (mode_lower == "md5")
         return EVP_md5();
@@ -83,14 +83,14 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const StringRef mode = arguments[0].column->getDataAt(0);
-        const EVP_MD * evp_md = getHashAlgorithm(mode.toString());
+        const std::string_view mode = arguments[0].column->getDataAt(0);
+        const EVP_MD * evp_md = getHashAlgorithm(mode);
 
         if (evp_md == nullptr)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid hash algorithm: '{}'. Supported algorithms are: md5, sha1, sha224, sha256, sha384, sha512 (case-insensitive)",
-                mode.toString());
+                mode);
 
         const auto message_column = arguments[1].column;
         const auto key_column = arguments[2].column;
@@ -111,16 +111,16 @@ public:
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
-            const StringRef message_value = message_column->getDataAt(row_idx);
-            const StringRef key_value = key_column->getDataAt(row_idx);
+            const std::string_view message_value = message_column->getDataAt(row_idx);
+            const std::string_view key_value = key_column->getDataAt(row_idx);
 
             unsigned int actual_digest_length = 0;
             unsigned char * hmac_result = HMAC(
                 evp_md,
-                reinterpret_cast<const unsigned char *>(key_value.data),
-                static_cast<int>(key_value.size),
-                reinterpret_cast<const unsigned char *>(message_value.data),
-                message_value.size,
+                reinterpret_cast<const unsigned char *>(key_value.data()),
+                static_cast<int>(key_value.size()),
+                reinterpret_cast<const unsigned char *>(message_value.data()),
+                message_value.size(),
                 reinterpret_cast<unsigned char *>(result_ptr),
                 &actual_digest_length);
 
