@@ -7,15 +7,31 @@ title: 'Workload scheduling'
 doc_type: 'reference'
 ---
 
-When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks and CPU cores). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For all resources a common scheduling hierarchy can be configured. Hierarchy root represents shared resources, while leafs are specific workloads, holding requests that exceed resource capacity.
+When ClickHouse execute multiple queries simultaneously, they use shared resources (CPU, Memory and IO). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For all resources a common scheduling hierarchy can be configured. Hierarchy root represents shared resources, while leafs are specific workloads, holding resource requests and allocation of specific queries and backgroud activities.
 
-:::note
-Currently [remote disk IO](#disk_config) and [CPU](#cpu_scheduling) can be scheduled using described method. For flexible memory limits see [Memory overcommit](settings/memory-overcommit.md)
-:::
+## Resources {#resources}
 
-## Disk configuration {#disk_config}
+By default, workload scheduling is disabled. To enable it you have to create resources that will be used for scheduling and at least one workload. All resources are independent and could be used in any combination.
 
-To enable IO workload scheduling for a specific disk, you have to create read and write resources for WRITE and READ access:
+To enable CPU scheduling, you have to create CPU resource for MASTER or WORKER threads (see [CPU scheduling](#cpu_scheduling) for details):
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+```
+
+To enable memory reservation for workloads, you have to create MEMORY resource (see [Memory reservations](#memory_reservations) for details):
+
+```sql
+CREATE RESOURCE memory (MEMORY)
+```
+
+To enable query slot scheduling, you have to create QUERY resource (see [Query slot scheduling](#query_scheduling) for details):
+
+```sql
+CREATE RESOURCE query (QUERY)
+```
+
+To enable IO scheduling for a specific disk, you have to create read and write resources for WRITE and READ access:
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
@@ -30,165 +46,13 @@ Resource could be used for any number of disks for READ or WRITE or both for REA
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
-An alternative way to express which disks are used by a resource is server's `storage_configuration`:
-
-:::warning
-Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead.
-:::
-
-To enable IO scheduling for a specific disk, you have to specify `read_resource` and/or `write_resource` in storage configuration. It says ClickHouse what resource should be used for every read and write requests with given disk. Read and write resource can refer to the same resource name, which is useful for local SSDs or HDDs. Multiple different disks also can refer to the same resource, which is useful for remote disks: if you want to be able to allow fair division of network bandwidth between e.g. "production" and "development" workloads.
-
-Example:
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-Note that server configuration options have priority over SQL way to define resources.
-
-## Workload markup {#workload_markup}
-
-Queries can be marked with setting `workload` to distinguish different workloads. If `workload` is not set, than value "default" is used. Note that you are able to specify the other value using settings profiles. Setting constraints can be used to make `workload` constant if you want all queries from the user to be marked with fixed value of `workload` setting.
-
-It is possible to assign a `workload` setting for background activities. Merges and mutations are using `merge_workload` and `mutation_workload` server settings correspondingly. These values can also be overridden for specific tables using `merge_workload` and `mutation_workload` merge tree settings
-
-Let's consider an example of a system with two different workloads: "production" and "development".
-
-```sql
-SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
-SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
-```
-
-## Resource scheduling hierarchy {#hierarchy}
-
-From the standpoint of scheduling subsystem a resource represents a hierarchy of scheduling nodes.
-
-```mermaid
-graph TD
-    subgraph network_read
-    nr_root(("/"))
-    -->|100 concurrent requests| nr_fair("fair")
-    -->|75% bandwidth| nr_prod["prod"]
-    nr_fair
-    -->|25% bandwidth| nr_dev["dev"]
-    end
-
-    subgraph network_write
-    nw_root(("/"))
-    -->|100 concurrent requests| nw_fair("fair")
-    -->|75% bandwidth| nw_prod["prod"]
-    nw_fair
-    -->|25% bandwidth| nw_dev["dev"]
-    end
-```
-
-:::warning
-Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead. SQL syntax creates all necessary scheduling nodes automatically and the following scheduling node description should be considered as lower level implementation details, accessible through [system.scheduler](/operations/system-tables/scheduler.md) table.
-:::
-
-**Possible node types:**
-* `inflight_limit` (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
-* `bandwidth_limit` (constraint) - blocks if current bandwidth exceeds `max_speed` (0 means unlimited) or burst exceeds `max_burst` (by default equals `max_speed`); must have a single child.
-* `fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
-* `priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
-* `fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
-
-To be able to use the full capacity of the underlying resource, you should use `inflight_limit`. Note that a low number of `max_requests` or `max_cost` could lead to not full resource utilization, while too high numbers could lead to empty queues inside the scheduler, which in turn will result in policies being ignored (unfairness or ignoring of priorities) in the subtree. On the other hand, if you want to protect resources from too high utilization, you should use `bandwidth_limit`. It throttles when the amount of resource consumed in `duration` seconds exceeds `max_burst + max_speed * duration` bytes. Two `bandwidth_limit` nodes on the same resource could be used to limit peak bandwidth during short intervals and average bandwidth for longer ones.
-
-The following example shows how to define IO scheduling hierarchies shown in the picture:
-
-```xml
-<clickhouse>
-    <resources>
-        <network_read>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_read>
-        <network_write>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_write>
-    </resources>
-</clickhouse>
-```
-
-## Workload classifiers {#workload_classifiers}
-
-:::warning
-Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead. Classifiers are created automatically when using SQL syntax.
-:::
-
-Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
-
-Example:
-```xml
-<clickhouse>
-    <workload_classifiers>
-        <production>
-            <network_read>/fair/prod</network_read>
-            <network_write>/fair/prod</network_write>
-        </production>
-        <development>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </development>
-        <default>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </default>
-    </workload_classifiers>
-</clickhouse>
-```
+Resources are classified by sharing mode:
+* **Time-shared resources** (CPU, IO, Query slots) - manage resource requests that are enqueued at scheduling hierarchy leafs. Requests are scheduled according to policies and constraints defined by hierarchy. Resource requests are created when a query accesses corresponding resource. For example, when a query reads data from disk, or access CPU for processing, resource requests are created for every quantum of work done or number of bytes send or received through a socket.
+* **Space-shared resources** (Memory) - manage resource allocations at scheduling hierarchy leafs. Allocations could be running or pending. Pending allocations are blocked until enough space is freed or other allocation is evicted (killed). Decisions are based on limits and policies defined by the hierarchy. There is one-to-one correspondance between allocations and queries (or background activities). Allocation is created when a query starts execution and released when it finishes. Running allocations could increase or decrease their size dynamically.
 
 ## Workload hierarchy {#workloads}
 
-ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All resources that were created with `CREATE RESOURCE` share the same structure of the hierarchy, but could differ in some aspects. Every workload created with `CREATE WORKLOAD` maintains a few automatically created scheduling nodes for every resource. A child workload can be created inside another parent workload. Here is the example that defines exactly the same hierarchy as XML configuration above:
+ClickHouse provides convenient SQL syntax to define scheduling hierarchy. All resources that were created with `CREATE RESOURCE` share the same structure of the hierarchy, but could differ in some aspects. Every workload created with `CREATE WORKLOAD` maintains necessary scheduling nodes for every resource. A child workload can be created inside any workload. Here is the example of a simple hierarchy that divides IO resources between "development" and "production" workloads with "production" having 3 times more resources than "development":
 
 ```sql
 CREATE RESOURCE network_write (WRITE DISK s3)
@@ -198,11 +62,12 @@ CREATE WORKLOAD development IN all
 CREATE WORKLOAD production IN all SETTINGS weight = 3
 ```
 
-The name of a leaf workload without children could be used in query settings `SETTINGS workload = 'name'`.
+The name of a leaf workload without children could be used in query settings `SETTINGS workload = 'name'`. See [Workload markup](#workload_markup) for details.
 
 To customize workload the following settings could be used:
-* `priority` - sibling workloads are served according to static priority values (lower value means higher priority).
-* `weight` - sibling workloads having the same static priority share resources according to weights.
+* `priority` - (time-shared only) sibling workloads are served according to static values (lower value means higher priority). Drives preemption.
+* `precedence` - (space-shared only) sibling workloads are admitted according to static values (lower value means higher priority). Drives eviction and admission.
+* `weight` - sibling workloads having the same static priority or precedence share resources according to weights in a fair manner. Affects preemption, eviction and admission.
 * `max_io_requests` - the limit on the number of concurrent IO requests in this workload.
 * `max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
 * `max_bytes_per_second` - the limit on byte read or write rate of this workload.
@@ -212,6 +77,7 @@ To customize workload the following settings could be used:
 * `max_cpus` - the limit on the number of CPU cores to serve queries in this workload.
 * `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
 * `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
+* `max_memory` - the limit on the total memory reserved for this workload.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
@@ -226,6 +92,21 @@ Also note that workload or resource could not be dropped if it is referenced fro
 :::note
 Workload settings are translated into a proper set of scheduling nodes. For lower-level details, see the description of the scheduling node [types and options](#hierarchy).
 :::
+
+## Workload markup {#workload_markup}
+
+Queries can be marked with setting `workload` to distinguish different workloads. If `workload` is not set, than value "default" is used. Note that you are able to specify the other value using settings profiles. Setting constraints can be used to make `workload` constant if you want all queries from the user to be marked with fixed value of `workload` setting.
+
+:::warning
+Query setting `workload` can only refer to leaf workloads (i.e. workloads without children).
+:::
+
+```sql
+SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
+SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
+```
+
+It is possible to assign a `workload` setting for background activities. Merges and mutations are using `merge_workload` and `mutation_workload` server settings correspondingly. These values can also be overridden for specific tables using `merge_workload` and `mutation_workload` merge tree settings.
 
 ## CPU scheduling {#cpu_scheduling}
 
@@ -318,6 +199,19 @@ Here we limit the total number of threads for all queries to be x2 of the availa
 If you want to maximize CPU utilization on your ClickHouse server, avoid using `max_cpus` and `max_cpu_share` for the root workload `all`. Instead, set a higher value for `max_concurrent_threads`. For example, on a system with 8 CPUs, set `max_concurrent_threads = 16`. This allows 8 threads to run CPU tasks while 8 other threads can handle I/O operations. Additional threads will create CPU pressure, ensuring scheduling rules are enforced. In contrast, setting `max_cpus = 8` will never create CPU pressure because the server cannot exceed the 8 available CPUs.
 :::
 
+## Memory reservations {#memory_reservations}
+
+To enable memory reservations for workloads create MEMORY resource and set a limit for the total memory reserved for the workload:
+
+```sql
+CREATE RESOURCE memory (MEMORY)
+CREATE WORKLOAD all SETTINGS max_memory = '10G'
+```
+
+:::note
+It is possible to set memory limits based on users (not workloads). This is less flexible and do not provide features like memory reservation and queueing of pending queries. See [Memory overcommit](settings/memory-overcommit.md)
+:::
+
 ## Query slot scheduling {#query_scheduling}
 
 To enable query slot scheduling for workloads create QUERY resource and set a limit for the number of concurrent queries or queries per second:
@@ -380,6 +274,151 @@ To enforce all queries to follow resource scheduling policies there is a server 
 :::note
 Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default` is executed. It could lead to server startup issues if a query without explicit setting `workload` is executed during startup.
 :::
+
+## Deprecated configuration {#deprecated_configuration}
+
+An alternative way to express which disks are used by a resource is server's `storage_configuration`:
+
+:::warning
+Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead.
+:::
+
+To enable IO scheduling for a specific disk, you have to specify `read_resource` and/or `write_resource` in storage configuration. It says ClickHouse what resource should be used for every read and write requests with given disk. Read and write resource can refer to the same resource name, which is useful for local SSDs or HDDs. Multiple different disks also can refer to the same resource, which is useful for remote disks: if you want to be able to allow fair division of network bandwidth between e.g. "production" and "development" workloads.
+
+Example:
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <read_resource>network_read</read_resource>
+                <write_resource>network_write</write_resource>
+            </s3>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+Note that server configuration options have priority over SQL way to define resources.
+
+### Deprecated resource scheduling hierarchy {#hierarchy}
+
+From the standpoint of scheduling subsystem a resource represents a hierarchy of scheduling nodes.
+
+```mermaid
+graph TD
+    subgraph network_read
+    nr_root(("/"))
+    -->|100 concurrent requests| nr_fair("fair")
+    -->|75% bandwidth| nr_prod["prod"]
+    nr_fair
+    -->|25% bandwidth| nr_dev["dev"]
+    end
+
+    subgraph network_write
+    nw_root(("/"))
+    -->|100 concurrent requests| nw_fair("fair")
+    -->|75% bandwidth| nw_prod["prod"]
+    nw_fair
+    -->|25% bandwidth| nw_dev["dev"]
+    end
+```
+
+:::warning
+Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead. SQL syntax creates all necessary scheduling nodes automatically and the following scheduling node description should be considered as lower level implementation details, accessible through [system.scheduler](/operations/system-tables/scheduler.md) table.
+:::
+
+**Possible node types:**
+* `inflight_limit` (constraint) - blocks if either number of concurrent in-flight requests exceeds `max_requests`, or their total cost exceeds `max_cost`; must have a single child.
+* `bandwidth_limit` (constraint) - blocks if current bandwidth exceeds `max_speed` (0 means unlimited) or burst exceeds `max_burst` (by default equals `max_speed`); must have a single child.
+* `fair` (policy) - selects the next request to serve from one of its children nodes according to max-min fairness; children nodes can specify `weight` (default is 1).
+* `priority` (policy) - selects the next request to serve from one of its children nodes according to static priorities (lower value means higher priority); children nodes can specify `priority` (default is 0).
+* `fifo` (queue) - leaf of the hierarchy capable of holding requests that exceed resource capacity.
+
+To be able to use the full capacity of the underlying resource, you should use `inflight_limit`. Note that a low number of `max_requests` or `max_cost` could lead to not full resource utilization, while too high numbers could lead to empty queues inside the scheduler, which in turn will result in policies being ignored (unfairness or ignoring of priorities) in the subtree. On the other hand, if you want to protect resources from too high utilization, you should use `bandwidth_limit`. It throttles when the amount of resource consumed in `duration` seconds exceeds `max_burst + max_speed * duration` bytes. Two `bandwidth_limit` nodes on the same resource could be used to limit peak bandwidth during short intervals and average bandwidth for longer ones.
+
+The following example shows how to define IO scheduling hierarchies shown in the picture:
+
+```xml
+<clickhouse>
+    <resources>
+        <network_read>
+            <node path="/">
+                <type>inflight_limit</type>
+                <max_requests>100</max_requests>
+            </node>
+            <node path="/fair">
+                <type>fair</type>
+            </node>
+            <node path="/fair/prod">
+                <type>fifo</type>
+                <weight>3</weight>
+            </node>
+            <node path="/fair/dev">
+                <type>fifo</type>
+            </node>
+        </network_read>
+        <network_write>
+            <node path="/">
+                <type>inflight_limit</type>
+                <max_requests>100</max_requests>
+            </node>
+            <node path="/fair">
+                <type>fair</type>
+            </node>
+            <node path="/fair/prod">
+                <type>fifo</type>
+                <weight>3</weight>
+            </node>
+            <node path="/fair/dev">
+                <type>fifo</type>
+            </node>
+        </network_write>
+    </resources>
+</clickhouse>
+```
+
+### Deprecated workload classifiers {#workload_classifiers}
+
+:::warning
+Workload scheduling using clickhouse configuration is deprecated. SQL syntax should be used instead. Classifiers are created automatically when using SQL syntax.
+:::
+
+Workload classifiers are used to define mapping from `workload` specified by a query into leaf-queues that should be used for specific resources. At the moment, workload classification is simple: only static mapping is available.
+
+Example:
+```xml
+<clickhouse>
+    <workload_classifiers>
+        <production>
+            <network_read>/fair/prod</network_read>
+            <network_write>/fair/prod</network_write>
+        </production>
+        <development>
+            <network_read>/fair/dev</network_read>
+            <network_write>/fair/dev</network_write>
+        </development>
+        <default>
+            <network_read>/fair/dev</network_read>
+            <network_write>/fair/dev</network_write>
+        </default>
+    </workload_classifiers>
+</clickhouse>
+```
 
 ## See also {#see-also}
 - [system.scheduler](/operations/system-tables/scheduler.md)
