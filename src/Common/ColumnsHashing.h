@@ -353,7 +353,6 @@ struct HashMethodSerialized
     /// Only used if prealloc is true.
     PaddedPODArray<UInt64> row_sizes;
     size_t total_size = 0;
-    bool use_batch_serialize = false;
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
 
