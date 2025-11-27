@@ -33,7 +33,7 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/DataLake/ICatalog.h>
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -48,7 +48,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
@@ -539,6 +539,7 @@ void IcebergMetadata::createInitial(
     const ContextPtr & local_context,
     const std::optional<ColumnsDescription> & columns,
     ASTPtr partition_by,
+    ASTPtr order_by,
     bool if_not_exists,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id_)
@@ -570,7 +571,7 @@ void IcebergMetadata::createInitial(
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
-        location_path, *columns, partition_by, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
+        location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
@@ -737,6 +738,47 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
     return iceberg_history;
 }
 
+
+bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
+    if (!storage_metadata_snapshot->hasSortingKey())
+        return false;
+
+    auto sorting_key = storage_metadata_snapshot->getSortingKey();
+    if (!sorting_key.sort_order_id.has_value())
+        return false;
+
+    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
+    if (table_state_snapshot == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    /// Empty table is sorted table
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
+    if (!data_snapshot)
+        return true;
+
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        auto manifest_file_ptr = getManifestFile(
+            object_storage,
+            getConfiguration(),
+            persistent_components,
+            context,
+            log,
+            manifest_list_entry.manifest_file_path,
+            manifest_list_entry.added_sequence_number,
+            manifest_list_entry.added_snapshot_id);
+
+        if (!manifest_file_ptr->areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
+            return false;
+    }
+    return true;
+}
 
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
@@ -1063,50 +1105,11 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         log,
         persistent_components.metadata_compression_method);
 
-
-    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
-    Poco::JSON::Array::Ptr sort_orders = metadata_object->getArray(f_sort_orders);
-    std::unordered_map<Int64, String> source_id_to_column_name;
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-
-    auto mapper = createColumnMapper(schema)->getStorageColumnEncoding();
-    for (const auto & [col_name, source_id] : mapper)
-    {
-        source_id_to_column_name[source_id] = col_name;
-    }
-
-    KeyDescription key_description;
-    auto ch_schema = persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id);
-    ColumnsDescription column_description;
-    for (size_t i = 0; i < ch_schema->size(); ++i)
-        column_description.add(ColumnDescription(ch_schema->getNames()[i], ch_schema->getTypes()[i]));
-
-    String order_by_str;
-
-    for (UInt32 i = 0; i < sort_orders->size(); ++i)
-    {
-        auto sort_order = sort_orders->getObject(i);
-        if (sort_order->getValue<Int64>(f_order_id) != sort_order_id)
-            continue;
-        auto fields = sort_order->getArray(f_fields);
-        for (UInt32 field_index = 0; field_index < fields->size(); ++field_index)
-        {
-            auto field = fields->getObject(field_index);
-            auto source_id = field->getValue<Int64>(f_source_id);
-            auto column_name = source_id_to_column_name[source_id];
-            int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
-
-            if (direction == 1)
-                order_by_str += fmt::format("{} ASC,", column_name);
-            else
-                order_by_str += fmt::format("{} DESC,", column_name);
-        }
-        break;
-    }
-    if (order_by_str.empty())
-        return KeyDescription{};
-    order_by_str.pop_back();
-    return KeyDescription::parse(order_by_str, column_description, local_context, true);
+    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
+    auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
+    result.sort_order_id = sort_order_id;
+    return result;
 }
 
 }
