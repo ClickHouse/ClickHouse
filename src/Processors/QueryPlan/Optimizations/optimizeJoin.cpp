@@ -1134,13 +1134,11 @@ static bool canOptimizeJoinWithEmptyInput(
 {
     switch (kind)
     {
-        case JoinKind::Inner:
-        case JoinKind::Cross:
+        case JoinKind::Inner: [[fallthrough]];
+        case JoinKind::Cross: [[fallthrough]];
         case JoinKind::Comma:
         {
-            if (isDefinitelyEmpty(*left_node))
-                return true;
-            return isDefinitelyEmpty(*right_node);
+            return isDefinitelyEmpty(*left_node) || isDefinitelyEmpty(*right_node);
         }
         case JoinKind::Left:
         {
@@ -1152,9 +1150,7 @@ static bool canOptimizeJoinWithEmptyInput(
         }
         case JoinKind::Full:
         {
-            if (!isDefinitelyEmpty(*left_node))
-                return false;
-            return isDefinitelyEmpty(*right_node);
+            return isDefinitelyEmpty(*left_node) && isDefinitelyEmpty(*right_node);
         }
         default:
             return false;
