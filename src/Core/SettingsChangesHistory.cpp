@@ -55,7 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"aggregate_function_input_format", "state", "state", "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"},
             {"delta_lake_snapshot_start_version", -1, -1, "New setting."},
             {"delta_lake_snapshot_end_version", -1, -1, "New setting."},
-            {"apply_row_policy_after_final", false, false, "New setting. When enabled, row policies are applied after FINAL processing for *MergeTree tables"},
+            {"apply_row_policy_after_final", false, false, "New setting to control if row policies are applied after FINAL processing for *MergeTree tables"},
         });
         addSettingsChanges(settings_changes_history, "25.11",
         {

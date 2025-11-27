@@ -2677,8 +2677,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     const auto & local_settings = context->getSettingsRef();
 
     /// Check if we should apply row policy after FINAL instead of during reading
-    /// This is needed for correct behavior with ReplacingMergeTree and similar engines
-    /// where row policy should not affect which row "wins" during deduplication.
+    /// (for correct behavior with ReplacingMergeTree where row policy should not affect which row "wins" during deduplication)
     FilterDAGInfoPtr deferred_row_level_filter;
     if (local_settings[Setting::apply_row_policy_after_final]
         && isQueryWithFinal()
@@ -2687,12 +2686,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
         NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
 
-        /// Get required columns from row level filter (row policy)
         auto filter_required_columns = query_info.row_level_filter->actions.getRequiredColumnsNames();
 
         /// Check if ALL required columns are in sorting key
-        /// If they are, we can still apply before FINAL (optimal)
-        /// If not, we must apply after FINAL
+        /// if not, we must apply after FINAL
+        /// if they are, we do not change (more optimal)
         bool all_columns_in_sorting_key = true;
         for (const auto & col : filter_required_columns)
         {
@@ -2705,7 +2703,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
         if (!all_columns_in_sorting_key)
         {
-            /// save the filter and clear it from query_info so it won't be applied during reading
+            /// save the filter and clear it from query_info so it won't be applied before final
             deferred_row_level_filter = query_info.row_level_filter;
             query_info.row_level_filter = nullptr;
 
@@ -2923,7 +2921,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         });
     }
 
-    /// apply deferred row-level filter after FINAL
+    /// apply row policy after FINAL if needed
     if (deferred_row_level_filter)
     {
         auto row_level_filter_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());

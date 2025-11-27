@@ -1439,8 +1439,8 @@ Split parts ranges into intersecting and non intersecting during FINAL optimizat
 Split intersecting parts ranges into layers during FINAL optimization
 )", 0) \
     DECLARE(Bool, apply_row_policy_after_final, false, R"(
-When enabled, row policies are applied after FINAL processing for *MergeTree tables.
-By default (when disabled), row policies are applied before FINAL, which can cause different results when the policy
+When enabled, row policies are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
+When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
 If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
