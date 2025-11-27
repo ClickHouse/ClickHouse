@@ -375,7 +375,8 @@ String StorageSystemZooKeeperInfo::sendFourLetterCommand(String host, String por
             Coordination::read(response, *in);
             LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Response to four letter command : {}   response : {}", command, response);
         }
-        catch (...) {
+        catch (...)
+        {
             LOG_INFO(getLogger("StorageSystemZooKeeperInfo"), "Exception  {} ", getCurrentExceptionMessage(true));
         }
 
