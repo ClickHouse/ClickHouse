@@ -75,6 +75,122 @@ namespace
         return ids;
     }
 
+    /// Determines whether it is safe to reveal a missing-grant hint to the user.
+    /// Conservative: if we cannot confidently map the required scope to a SHOW privilege,
+    /// we return false (do not show details).
+    bool canRevealGrantHint(const AccessRightsElement & required, const AccessRights & explicit_rights)
+    {
+        const auto & flags = required.access_flags;
+
+        /// Conservative: if we cannot map to a single SHOW privilege, hide the hint.
+        if (flags.isGlobalWithParameter())
+        {
+            /// Global with parameter but no specific parameter (any): safe to reveal.
+            if (required.anyParameter())
+                return true;
+
+            switch (flags.getParameterType())
+            {
+                case AccessFlags::USER_NAME:
+                case AccessFlags::DEFINER:
+                {
+                    /// Roles are also encoded as USER_NAME parameter type. Require role-specific SHOW for role ops,
+                    /// otherwise require SHOW USERS for user ops.
+                    static const AccessFlags role_flags = AccessType::CREATE_ROLE
+                        | AccessType::ALTER_ROLE
+                        | AccessType::DROP_ROLE
+                        | AccessType::ROLE_ADMIN;
+
+                    const bool role_grant = static_cast<bool>(flags & role_flags);
+                    if (role_grant)
+                        return explicit_rights.isGranted(AccessType::SHOW_ROLES) || explicit_rights.isGranted(AccessType::SHOW_ROLES, required.parameter);
+
+                    return explicit_rights.isGranted(AccessType::SHOW_USERS) || explicit_rights.isGranted(AccessType::SHOW_USERS, required.parameter);
+                }
+                case AccessFlags::NAMED_COLLECTION:
+                {
+                    const auto & param = required.parameter.empty() ? required.database : required.parameter;
+                    return explicit_rights.isGranted(AccessType::SHOW_NAMED_COLLECTIONS, param)
+                        || explicit_rights.isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, param)
+                        || explicit_rights.isGranted(AccessType::SHOW_NAMED_COLLECTIONS)
+                        || explicit_rights.isGranted(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS);
+                }
+                default:
+                    return false;
+            }
+        }
+
+        const bool has_specific_columns = !required.anyColumn();
+        const bool has_specific_table = !required.anyTable();
+        const bool has_specific_database = !required.anyDatabase();
+
+        /// Global or “any” scope (no specific db/table/column):
+        /// require SHOW for access-management entities to avoid leaking names of the objects.
+        if (!has_specific_columns && !has_specific_table && !has_specific_database)
+        {
+            static const AccessFlags quotas_flags = AccessType::CREATE_QUOTA
+                | AccessType::ALTER_QUOTA
+                | AccessType::DROP_QUOTA;
+
+            static const AccessFlags profiles_flags = AccessType::CREATE_SETTINGS_PROFILE
+                | AccessType::ALTER_SETTINGS_PROFILE
+                | AccessType::DROP_SETTINGS_PROFILE;
+
+            if (static_cast<bool>(flags & quotas_flags))
+                return explicit_rights.isGranted(AccessType::SHOW_QUOTAS);
+
+            if (static_cast<bool>(flags & profiles_flags))
+                return explicit_rights.isGranted(AccessType::SHOW_SETTINGS_PROFILES);
+
+            return true;
+        }
+
+        /// If a table is mentioned (with or without columns), require SHOW at table scope (or dictionary scope).
+        if (has_specific_table)
+        {
+            const bool is_dictionary_scope = static_cast<bool>(flags & AccessFlags::allDictionaryFlags());
+
+            const bool can_show_table = explicit_rights.isGranted(AccessType::SHOW_TABLES, required.database, required.table)
+                || explicit_rights.isGranted(AccessType::SHOW_TABLES);
+            const bool can_show_dict = explicit_rights.isGranted(AccessType::SHOW_DICTIONARIES, required.database, required.table)
+                || explicit_rights.isGranted(AccessType::SHOW_DICTIONARIES);
+
+            if (is_dictionary_scope)
+            {
+                if (!can_show_dict)
+                    return false;
+            }
+            else
+            {
+                if (!can_show_table && !can_show_dict)
+                    return false;
+            }
+
+            /// Column-level hints for tables require SHOW COLUMNS, but if SHOW DICTIONARIES
+            /// already allows listing this object (e.g. dictionary table wrapper), do not block on columns.
+            if (!can_show_dict && has_specific_columns)
+            {
+                if (!explicit_rights.isGranted(AccessType::SHOW_COLUMNS, required.database, required.table)
+                    && !explicit_rights.isGranted(AccessType::SHOW_COLUMNS))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// Database-only scope (no table): require SHOW DATABASES on that db.
+        if (has_specific_database)
+        {
+            if (!required.database.empty())
+                return explicit_rights.isGranted(AccessType::SHOW_DATABASES, required.database);
+
+            /// Empty database name: fall back to global SHOW DATABASES.
+            return explicit_rights.isGranted(AccessType::SHOW_DATABASES);
+        }
+
+        return true;
+    }
+
     /// Helper for using in templates.
     std::string_view getDatabase() { return {}; }
 
@@ -628,6 +744,7 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     }
 
     auto acs = getAccessRightsWithImplicit();
+    auto explicit_acs = getAccessRights();
     bool granted;
     if constexpr (wildcard)
     {
@@ -646,15 +763,34 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
     if (!granted)
     {
+        const auto hints_level = access_control->getMissingGrantsHintsLevel();
+        auto should_show_details = [&](const AccessRightsElement & required) -> bool
+        {
+            if (hints_level == AccessControl::MissingGrantsHintsLevel::Never)
+                return false;
+
+            if (hints_level == AccessControl::MissingGrantsHintsLevel::Always)
+                return true;
+
+            bool result = canRevealGrantHint(required, *explicit_acs);
+            return result;
+        };
+
         auto access_denied_no_grant = [&]<typename... FmtArgs>(AccessFlags access_flags, FmtArgs && ...fmt_args)
         {
+            AccessRightsElement required_access{access_flags, fmt_args...};
+            bool show_details = should_show_details(required_access);
+
             if (grant_option && acs->isGranted(access_flags, fmt_args...))
             {
+                if (!show_details)
+                    return access_denied(ErrorCodes::ACCESS_DENIED, "{}: Not enough privileges.");
+
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. "
                     "The required privileges have been granted, but without grant option. "
                     "To execute this query, it's necessary to have the grant {} WITH GRANT OPTION",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions());
+                    required_access.toStringWithoutOptions());
             }
 
             AccessRights difference;
@@ -664,16 +800,21 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
 
             if (difference == original_rights)
             {
+                if (!show_details)
+                    return access_denied(ErrorCodes::ACCESS_DENIED, "{}: Not enough privileges.");
+
                 return access_denied(ErrorCodes::ACCESS_DENIED,
                     "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}",
-                    AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
+                    required_access.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""));
             }
 
+            if (!show_details)
+                return access_denied(ErrorCodes::ACCESS_DENIED, "{}: Not enough privileges.");
 
             return access_denied(ErrorCodes::ACCESS_DENIED,
                 "{}: Not enough privileges. To execute this query, it's necessary to have the grant {}. "
                 "(Missing permissions: {}){}",
-                AccessRightsElement{access_flags, fmt_args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                required_access.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
                 difference.getElements().toStringWithoutOptions(),
                 grant_option ? ". You can try to use the `GRANT CURRENT GRANTS(...)` statement" : "");
         };

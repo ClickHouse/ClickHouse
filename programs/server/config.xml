@@ -854,6 +854,14 @@
              however you can change this behaviour by setting this to true -->
         <table_engines_require_grant>false</table_engines_require_grant>
 
+        <!-- Controls whether ACCESS_DENIED errors include missing-grant hints.
+             Possible values:
+               always       - always include required grant details (may leak schema to users without SHOW).
+               require_show - include details only if the user has the relevant SHOW privilege (default).
+               never        - never include required grant details, always return a generic denial.
+             -->
+        <missing_grants_hints>require_show</missing_grants_hints>
+
         <!-- Number of seconds since last access a role is stored in the Role Cache -->
         <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
     </access_control_improvements>

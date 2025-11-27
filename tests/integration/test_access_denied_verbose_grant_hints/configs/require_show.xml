@@ -1,0 +1,6 @@
+<yandex>
+    <access_control_improvements>
+        <missing_grants_hints>require_show</missing_grants_hints>
+        <access_management>1</access_management>
+    </access_control_improvements>
+</yandex>

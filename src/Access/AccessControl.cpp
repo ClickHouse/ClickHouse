@@ -27,6 +27,7 @@
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string.hpp>
 #include <filesystem>
 #include <mutex>
 
@@ -306,6 +307,21 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
     setSettingsConstraintsReplacePrevious(config_.getBool("access_control_improvements.settings_constraints_replace_previous", true));
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
+    {
+        const auto mode = config_.getString("access_control_improvements.missing_grants_hints", "require_show");
+        auto normalized = boost::algorithm::to_lower_copy(mode);
+        if (normalized == "always")
+            setMissingGrantsHintsLevel(MissingGrantsHintsLevel::Always);
+        else if (normalized == "require_show")
+            setMissingGrantsHintsLevel(MissingGrantsHintsLevel::RequireShow);
+        else if (normalized == "never")
+            setMissingGrantsHintsLevel(MissingGrantsHintsLevel::Never);
+        else
+        {
+            LOG_WARNING(getLogger(), "Unknown value '{}' for access_control_improvements.missing_grants_hints, using 'require_show'", mode);
+            setMissingGrantsHintsLevel(MissingGrantsHintsLevel::RequireShow);
+        }
+    }
 
     /// Set `true` by default because the feature is backward incompatible only when older version replicas are in the same cluster.
     setEnableUserNameAccessType(config_.getBool("access_control_improvements.enable_user_name_access_type", true));
