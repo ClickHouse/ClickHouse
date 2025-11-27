@@ -2675,7 +2675,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::cloneWithRequiredColumns(c
         number_of_current_replica);
 }
 
-std::unique_ptr<LazyReadFromMergeTree> ReadFromMergeTree::removeUnusedColumns(const NameSet & required_outputs)
+std::unique_ptr<LazyReadFromMergeTree> ReadFromMergeTree::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs)
 {
     if (output_header == nullptr)
         return {};

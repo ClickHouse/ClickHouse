@@ -261,7 +261,7 @@ std::unique_ptr<LazyReadFromMergeTree> removeUnusedColumnsFromReadingStep(ReadFr
         if (required_output_positions[i])
             required_names.insert(cols[i].name);
 
-    return reading_step.removeUnusedColumns(required_names);
+    return reading_step.keepOnlyRequiredColumnsAndCreateLazyReadStep(required_names);
 
     // auto lazy_columns = reading_step.removeUnusedColumns(required_names);
     // std::cerr << "Lazy columns\n";

@@ -295,7 +295,7 @@ public:
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
 
-    std::unique_ptr<LazyReadFromMergeTree> removeUnusedColumns(const NameSet & required_outputs);
+    std::unique_ptr<LazyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     int addStartingPartOffsetAndPartOffset();
 
 private:
