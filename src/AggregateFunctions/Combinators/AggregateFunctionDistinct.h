@@ -59,7 +59,7 @@ struct AggregateFunctionDistinctSingleNumericData
 struct AggregateFunctionDistinctGenericData
 {
     /// When creating, the hash table must be small.
-    using Set = HashSetWithSavedHashWithStackMemory<StringRef, StringRefHash, 4>;
+    using Set = HashSetWithSavedHashWithStackMemory<std::string_view, StringViewHash, 4>;
     using Self = AggregateFunctionDistinctGenericData;
 
     Set history;
@@ -113,12 +113,11 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
     bool add(const IColumn ** columns, size_t columns_num, size_t row_num, Arena * arena)
     {
         const char * begin = nullptr;
-        StringRef value(begin, 0);
+        std::string_view value;
         for (size_t i = 0; i < columns_num; ++i)
         {
             auto cur_ref = columns[i]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
-            value.data = cur_ref.data - value.size;
-            value.size += cur_ref.size;
+            value = std::string_view{cur_ref.data() - value.size(), value.size() + cur_ref.size()};
         }
 
         Set::LookupResult it;
@@ -138,7 +137,7 @@ struct AggregateFunctionDistinctMultipleGenericData : public AggregateFunctionDi
                 Set::LookupResult it;
                 bool inserted;
                 history.emplace(ArenaKeyHolder{value, *arena}, it, inserted);
-                ReadBufferFromString in({it->getValue().data, it->getValue().size});
+                ReadBufferFromString in(it->getValue());
                 /// Multiple columns are serialized one by one
                 for (auto & column : argument_columns)
                     column->deserializeAndInsertAggregationStateValueFromArena(in);

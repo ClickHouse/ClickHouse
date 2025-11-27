@@ -312,7 +312,7 @@ public:
 /// Generic implementation, it uses serialized representation as object descriptor.
 struct AggregateFunctionTopKGenericData
 {
-    using Set = SpaceSaving<StringRef, StringRefHash>;
+    using Set = SpaceSaving<std::string_view, StringViewHash>;
 
     Set value;
 };
@@ -409,12 +409,12 @@ public:
         else
         {
             const char * begin = nullptr;
-            StringRef str_serialized = columns[0]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
+            auto str_serialized = columns[0]->serializeAggregationStateValueIntoArena(row_num, *arena, begin);
             if constexpr (is_weighted)
                 set.insert(str_serialized, columns[1]->getUInt(row_num));
             else
                 set.insert(str_serialized);
-            arena->rollback(str_serialized.size);
+            arena->rollback(str_serialized.size());
         }
     }
 
