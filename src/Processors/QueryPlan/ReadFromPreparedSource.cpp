@@ -21,7 +21,6 @@ ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
 {
 }
 
-// TODO(mfilitov): maybe calculate it in ctor?
 bool ReadFromPreparedSource::isEmpty() const
 {
     const auto & processors = pipe.getProcessors();
