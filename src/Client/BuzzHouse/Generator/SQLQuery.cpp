@@ -404,7 +404,7 @@ void StatementGenerator::setTableFunction(RandomGenerator & rg, const TableFunct
         else if (t.isGenerateRandomEngine())
         {
             GenerateRandomFunc * gfunc = tfunc->mutable_grandom();
-            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             structure = gfunc->mutable_structure();
@@ -1022,7 +1022,7 @@ bool StatementGenerator::joinedTableOrFunction(
             grf ? grf->mutable_structure() : tf->mutable_nullf());
         if (grf)
         {
-            std::uniform_int_distribution<uint32_t> string_length_dist(0, fc.max_string_length);
+            std::uniform_int_distribution<uint32_t> string_length_dist(fc.min_string_length, fc.max_string_length);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
             grf->set_random_seed(rg.nextRandomUInt64());
@@ -2299,7 +2299,7 @@ void StatementGenerator::generateTopSelect(
             fc.truncate_output ? OutFormat::OUT_Null
                                : (static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
         sif->set_path(qfile.generic_string());
-        if (rg.nextSmallNumber() < 10)
+        if (fc.truncate_output || rg.nextSmallNumber() < 10)
         {
             sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
         }

@@ -981,7 +981,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, const bool in_
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
-    std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+    std::uniform_int_distribution<uint64_t> string_length_dist(fc.min_string_length, fc.max_string_length);
     std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
     const bool is_url = tableOrFunctionRef(rg, t, ins->mutable_tof());
 
@@ -4773,7 +4773,7 @@ void StatementGenerator::dropTable(const bool staged, bool drop_peer, const uint
     }
 }
 
-void StatementGenerator::dropDatabase(const uint32_t dname)
+void StatementGenerator::dropDatabase(const uint32_t dname, const bool all)
 {
     for (auto it = this->tables.cbegin(), next_it = it; it != this->tables.cend(); it = next_it)
     {
@@ -4799,13 +4799,16 @@ void StatementGenerator::dropDatabase(const uint32_t dname)
             this->dictionaries.erase(it);
         }
     }
-    this->databases.erase(dname);
+    if (all)
+    {
+        this->databases.erase(dname);
+    }
 }
 
 template <typename T>
 void StatementGenerator::exchangeObjects(const uint32_t tname1, const uint32_t tname2)
 {
-    auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
+    auto & container = getNextCollection<T>();
     T obj1 = std::move(container.at(tname1));
     T obj2 = std::move(container.at(tname2));
     auto db_tmp = obj1.db;
@@ -4821,7 +4824,7 @@ void StatementGenerator::exchangeObjects(const uint32_t tname1, const uint32_t t
 template <typename T>
 void StatementGenerator::renameObjects(const uint32_t old_tname, const uint32_t new_tname, const std::optional<uint32_t> & new_db)
 {
-    auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
+    auto & container = getNextCollection<T>();
     T obj = std::move(container.at(old_tname));
 
     if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
@@ -4841,7 +4844,7 @@ void StatementGenerator::renameObjects(const uint32_t old_tname, const uint32_t 
 template <typename T>
 void StatementGenerator::attachOrDetachObject(const uint32_t tname, const DetachStatus status)
 {
-    auto & container = const_cast<std::unordered_map<uint32_t, T> &>(getNextCollection<T>());
+    auto & container = getNextCollection<T>();
     T & obj = container.at(tname);
 
     if constexpr (std::is_same_v<T, std::shared_ptr<SQLDatabase>>)
@@ -4955,7 +4958,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         }
         else if (isdatabase)
         {
-            dropDatabase(getIdentifierFromString(drp.object().database().database()));
+            dropDatabase(getIdentifierFromString(drp.object().database().database()), true);
         }
         else if (isfunction)
         {
@@ -5310,7 +5313,7 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
-        dropDatabase(getIdentifierFromString(query.trunc().database().database()));
+        dropDatabase(getIdentifierFromString(query.trunc().database().database()), false);
     }
     else if (ssq.has_explain() && query.has_backup_restore() && !ssq.explain().is_explain() && success)
     {

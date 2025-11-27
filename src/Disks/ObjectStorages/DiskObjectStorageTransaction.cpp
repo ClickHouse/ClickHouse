@@ -1,5 +1,4 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
-#include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/DiskObjectStorageTransaction.h>
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <Disks/ObjectStorages/StoredObject.h>
@@ -47,6 +46,32 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int NOT_IMPLEMENTED;
     extern const int FAULT_INJECTED;
+}
+
+namespace
+{
+
+std::exception_ptr copyBlobsToOtherObjectStorage(
+    const StoredObjects & objects_to_copy,
+    const StoredObjects & objects_to_write,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    IObjectStorage & src_object_storage,
+    IObjectStorage & dst_object_storage) noexcept
+{
+    try
+    {
+        for (const auto [object_from, object_to] : std::views::zip(objects_to_copy, objects_to_write))
+            src_object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, dst_object_storage);
+
+        return {};
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+}
+
 }
 
 DiskObjectStorageTransaction::DiskObjectStorageTransaction(
@@ -604,7 +629,8 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
         , from_path(from_path_)
         , to_path(to_path_)
         , destination_object_storage(destination_object_storage_)
-    {}
+    {
+    }
 
     std::string getInfoForLog() const override
     {
@@ -613,30 +639,17 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void execute(MetadataTransactionPtr tx) override
     {
-        /// We need this call to clear to_path metadata file if it exists
-        tx->createMetadataFile(to_path, /*objects=*/{});
-        auto source_blobs = metadata_storage.getStorageObjects(from_path); /// Full paths
+        const auto blobs_to_copy = metadata_storage.getStorageObjects(from_path);
+        created_objects = blobs_to_copy
+                            | std::views::transform([&](const auto & from) { return StoredObject(tx->generateObjectKeyForPath(to_path).serialize(), to_path, from.bytes_size); })
+                            | std::ranges::to<StoredObjects>();
 
-        if (source_blobs.empty())
-            return;
+        auto copy_error = copyBlobsToOtherObjectStorage(blobs_to_copy, created_objects, read_settings, write_settings, object_storage, destination_object_storage);
+        if (copy_error)
+            std::rethrow_exception(copy_error);
 
-        if (!tx->supportAddingBlobToMetadata())
-        {
-            if (source_blobs.size() > 1)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Unable to copy file '{}' with multiple blobs ({}), disk doesn't support addBlobToMetadata",
-                    from_path,
-                    source_blobs.size());
-
-            copySingleObject</*support_adding_blob_to_metadata=*/false>(tx, source_blobs.front());
-            return;
-        }
-
-        for (const auto & object_from : source_blobs)
-            copySingleObject</*support_adding_blob_to_metadata=*/true>(tx, object_from);
+        tx->createMetadataFile(to_path, created_objects);
     }
-
 
     void undo(StoredObjects & to_remove) override
     {
@@ -645,21 +658,6 @@ struct CopyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 
     void finalize(StoredObjects & /*to_remove*/) override
     {
-    }
-
-    template <bool support_adding_blob_to_metadata>
-    void copySingleObject(MetadataTransactionPtr tx, const StoredObject & object_from)
-    {
-        auto object_key = destination_object_storage.generateObjectKeyForPath(to_path, /*key_prefix=*/std::nullopt);
-        auto object_to = StoredObject(object_key.serialize());
-
-        object_storage.copyObjectToAnotherObjectStorage(object_from, object_to, read_settings, write_settings, destination_object_storage);
-        created_objects.push_back(object_to);
-
-        if constexpr (support_adding_blob_to_metadata)
-            tx->addBlobToMetadata(to_path, StoredObject(object_key.serialize(), to_path, object_from.bytes_size));
-        else
-            tx->createMetadataFile(to_path, {StoredObject(object_key.serialize(), to_path, object_from.bytes_size)});
     }
 };
 
@@ -724,32 +722,37 @@ struct TruncateFileObjectStorageOperation final : public IDiskObjectStorageOpera
 
 struct CreateEmptyFileObjectStorageOperation final : public IDiskObjectStorageOperation
 {
-    StoredObject object;
+    std::string path;
+    std::optional<StoredObject> object;
 
     CreateEmptyFileObjectStorageOperation(
         IObjectStorage & object_storage_,
         IMetadataStorage & metadata_storage_,
         const std::string & path_)
         : IDiskObjectStorageOperation(object_storage_, metadata_storage_)
+        , path(path_)
     {
-        const auto key = object_storage.generateObjectKeyForPath(path_, std::nullopt);
-        object = StoredObject(key.serialize(), path_, /* file_size */0);
     }
 
     std::string getInfoForLog() const override
     {
-        return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object.remote_path, object.local_path);
+        return fmt::format("CreateEmptyFileObjectStorageOperation (remote path: {}, local path: {})", object->remote_path, object->local_path);
     }
 
-    void execute(MetadataTransactionPtr /* tx */) override
+    void execute(MetadataTransactionPtr tx) override
     {
-        auto buf = object_storage.writeObject(object, WriteMode::Rewrite);
+        const auto key = tx->generateObjectKeyForPath(path);
+        object = StoredObject(key.serialize(), path, /* file_size */0);
+
+        auto buf = object_storage.writeObject(object.value(), WriteMode::Rewrite);
         buf->finalize();
+        tx->createMetadataFile(path, /*objects=*/{object.value()});
     }
 
     void undo(StoredObjects & to_remove) override
     {
-        to_remove.push_back(object);
+        if (object.has_value())
+            to_remove.push_back(object.value());
     }
 
     void finalize(StoredObjects & /*to_remove*/) override
@@ -894,7 +897,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     if (mode == WriteMode::Append && !metadata_transaction->supportAddingBlobToMetadata())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Disk does not support WriteMode::Append");
 
-    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object_key = metadata_transaction->generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
     /// Does metadata_storage support empty files without actual blobs in the object_storage?
@@ -903,7 +906,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskObjectStorageTransaction::writeFile
     auto object = std::make_shared<StoredObject>(object_key.serialize(), path);
 
     /// Previous remote blobs have to be deleted IFF metadata transaction is committed.
-    if (mode == WriteMode::Rewrite && !object_storage.isPlain())
+    if (mode == WriteMode::Rewrite && !metadata_storage.isPlain())
         truncateFile(object->local_path, /*size*/ 0);
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, create_blob_if_empty));
@@ -957,12 +960,12 @@ void DiskObjectStorageTransaction::writeFileUsingBlobWritingFunction(
     const String & path, WriteMode mode, WriteBlobFunction && write_blob_function)
 {
     /// This function is a simplified and adapted version of DiskObjectStorageTransaction::writeFile().
-    auto object_key = object_storage.generateObjectKeyForPath(path, std::nullopt /* key_prefix */);
+    auto object_key = metadata_transaction->generateObjectKeyForPath(path);
     std::optional<ObjectAttributes> object_attributes;
 
     auto object = std::make_shared<StoredObject>(object_key.serialize(), path);
 
-    if (mode == WriteMode::Rewrite && !object_storage.isPlain())
+    if (mode == WriteMode::Rewrite && !metadata_storage.isPlain())
         truncateFile(object->local_path, /*size*/ 0);
 
     operations_to_execute.emplace_back(std::make_shared<WriteFileObjectStorageOperation>(object_storage, metadata_storage, object, object_key, mode, /*do_not_write_empty_blob*/ false));
@@ -1018,17 +1021,19 @@ void DiskObjectStorageTransaction::chmod(const String & path, mode_t mode)
 
 void DiskObjectStorageTransaction::createFile(const std::string & path)
 {
-    if (object_storage.isPlain() && !object_storage.isWriteOnce())
+    if (metadata_storage.isPlain())
     {
         operations_to_execute.emplace_back(
             std::make_shared<CreateEmptyFileObjectStorageOperation>(object_storage, metadata_storage, path));
     }
-
-    operations_to_execute.emplace_back(
-        std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
-        {
-            tx->createMetadataFile(path, /*objects=*/{});
-        }));
+    else
+    {
+        operations_to_execute.emplace_back(
+            std::make_shared<PureMetadataObjectStorageOperation>(object_storage, metadata_storage, [path](MetadataTransactionPtr tx)
+            {
+                tx->createMetadataFile(path, /*objects=*/{});
+            }));
+    }
 }
 
 void DiskObjectStorageTransaction::copyFile(const std::string & from_file_path, const std::string & to_file_path, const ReadSettings & read_settings, const WriteSettings & write_settings)

@@ -178,7 +178,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCsparkBar, 1, 3, 2, 2, false),
     CHAggregate(SQLFunc::FUNCsumCount, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNClargestTriangleThreeBuckets, 1, 1, 2, 2, false),
-    CHAggregate(SQLFunc::FUNCestimateCompressionRatio, 2, 2, 1, 1, false),
+    CHAggregate(SQLFunc::FUNCestimateCompressionRatio, 0, 2, 1, 1, false),
     CHAggregate(SQLFunc::FUNCgroupConcat, 0, 2, 1, 1, false),
     /// JSON and Dynamic tyoes
     CHAggregate(SQLFunc::FUNCdistinctDynamicTypes, 0, 0, 1, 1, false),
