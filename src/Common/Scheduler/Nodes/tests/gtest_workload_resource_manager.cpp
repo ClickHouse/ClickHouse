@@ -2373,7 +2373,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderBetweenWorkloads)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderFairnessBetweenWorkloads)
 {
     ResourceTest t;
 
@@ -2413,7 +2413,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderBetweenWorkload
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunningInAnotherWorkload)
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunningDueToWorkloadFairness)
 {
     ResourceTest t;
 
@@ -2446,5 +2446,132 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingDoesNotKillRunnin
 
         a4.assertIncreaseEnqueued();
         a5.assertIncreaseEnqueued();
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenWorkloadsForPendingAllocations)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insert({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+        // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO).
+        // Workload `all` orders its children by their priority
+        // dev: 50 20 50 10         FIFO order
+        // prd: 40 20 30 15         FIFO order
+        a.assertApproveOrder("40 20 30 15 50 20 50 10");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreasePriorityBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({1, 1, 1, 1, 1, 1, 1, 1});
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 });
+
+
+        // Workloads `dev` and `prd` orders their running allocation increases by fair_key (resulting allocation size).
+        // Workload `all` orders its children by their priority
+        // dev: 10 20 50 50            ~ fair_key
+        // prd: 15 20 30 40            ~ fair_key
+        a.assertApproveOrder("15 20 30 40 10 20 50 50");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationKillOrderPriorityBetweenWorkloads)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 213");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+    t.query("CREATE WORKLOAD vip IN all SETTINGS priority = -1");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 1, 2, 3});
+        a.setWorkload("prd", {4, 5, 6, 7});
+        std::array<ResourceCost, 8> sizes = { 10, 30, 31, 32, 40, 30, 20, 15 };
+        a.insertSequential(sizes);
+
+        ClassifierPtr c_vip = t.manager->acquire("vip");
+        TestAllocation vip(c_vip->get("memory"), "VIP", 5);
+        vip.waitSync();
+
+        // Workload `all` kills its children based on their priorities, while `prd` and `dev` kill their allocations by fair_key DESC
+        // dev:  32 31 30 10            ~ fair_key
+        //        3  2  1  0 <-- (idx)
+        // prd:  40 30 20 15            ~ fair_key
+        //        4  5  6  7 <-- (idx)
+        ResourceCost vip_size = 5;
+        for (size_t idx_to_be_killed : {3, 2, 1, 0, 4, 5, 6, 7})
+        {
+            vip_size += sizes[idx_to_be_killed];
+            vip.setSize(vip_size);
+            a.allocations[idx_to_be_killed]->waitKilled();
+            vip.waitSync();
+        }
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationPendingKillRunningDueToWorkloadPriority)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD dev IN all SETTINGS priority = 2");
+    t.query("CREATE WORKLOAD prd IN all SETTINGS priority = 1");
+
+    ClassifierPtr c_dev = t.manager->acquire("dev");
+    ClassifierPtr c_prd = t.manager->acquire("prd");
+    ResourceLink l_dev = c_dev->get("memory");
+    ResourceLink l_prd = c_prd->get("memory");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocation a1(l_dev, "D1-running", 60);
+        TestAllocation a2(l_dev, "D2-running", 10);
+        TestAllocation a3(l_prd, "P3-running", 20);
+        a1.waitSync();
+        a2.waitSync();
+        a3.waitSync();
+
+        // Workload `dev` has lower priority and should not kill `prd` allocations
+        TestAllocation a4(l_dev, "D4-pending", 40);
+
+        // Workload `prd` has higher priority, so P5 kills allocation in dev.
+        TestAllocation a5(l_prd, "P5-pending", 40);
+
+        a1.waitKilled();
+        a5.waitSync();
+        a4.assertIncreaseEnqueued();
+
+        // Release memory and allow pending allocation to proceed
+        a2.setSize(0);
+        a4.waitSync();
     }
 }
