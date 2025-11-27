@@ -15,7 +15,7 @@
 
 #include <vector>
 
-#include <roaring.hh>
+#include <roaring/roaring.hh>
 
 namespace DB
 {

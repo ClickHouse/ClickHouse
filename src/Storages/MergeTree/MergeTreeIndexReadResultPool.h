@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
-#include <roaring.hh>
+#include <roaring/roaring.hh>
 
 namespace DB
 {
