@@ -1,42 +1,126 @@
-    ┌─engine────┬─join_kind─┬─scenario────┬─count_without_opt─┬─count_with_opt─┬─results_match─┬─plan_has_join─┐
- 1. │ Log       │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
- 2. │ Log       │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
- 3. │ Log       │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
- 4. │ Log       │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
- 5. │ Log       │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
- 6. │ Log       │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
- 7. │ Log       │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
- 8. │ Log       │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
- 9. │ Log       │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
-10. │ Log       │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
-11. │ Memory    │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
-12. │ Memory    │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
-13. │ Memory    │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
-14. │ Memory    │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
-15. │ Memory    │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
-16. │ Memory    │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
-17. │ Memory    │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
-18. │ Memory    │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
-19. │ Memory    │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
-20. │ Memory    │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
-21. │ MergeTree │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
-22. │ MergeTree │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
-23. │ MergeTree │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
-24. │ MergeTree │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
-25. │ MergeTree │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
-26. │ MergeTree │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
-27. │ MergeTree │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
-28. │ MergeTree │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
-29. │ MergeTree │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
-30. │ MergeTree │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
-31. │ numbers   │ CROSS     │ left_empty  │                 0 │              0 │ true          │ false         │
-32. │ numbers   │ CROSS     │ right_empty │                 0 │              0 │ true          │ false         │
-33. │ numbers   │ FULL      │ left_empty  │                 3 │              3 │ true          │ true          │
-34. │ numbers   │ FULL      │ right_empty │                 3 │              3 │ true          │ true          │
-35. │ numbers   │ INNER     │ left_empty  │                 0 │              0 │ true          │ false         │
-36. │ numbers   │ INNER     │ right_empty │                 0 │              0 │ true          │ false         │
-37. │ numbers   │ LEFT      │ left_empty  │                 0 │              0 │ true          │ false         │
-38. │ numbers   │ LEFT      │ right_empty │                 3 │              3 │ true          │ true          │
-39. │ numbers   │ RIGHT     │ left_empty  │                 3 │              3 │ true          │ true          │
-40. │ numbers   │ RIGHT     │ right_empty │                 0 │              0 │ true          │ false         │
-    └───────────┴───────────┴─────────────┴───────────────────┴────────────────┴───────────────┴───────────────┘
+-- { echoOn }
+
+
+
+-- Memory: INNER JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Memory AS l INNER JOIN r_data_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Memory: INNER JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Memory AS l INNER JOIN r_empty_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Memory: LEFT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Memory AS l LEFT JOIN r_data_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Memory: LEFT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Memory AS l LEFT JOIN r_empty_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Memory: RIGHT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Memory AS l RIGHT JOIN r_data_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Memory: RIGHT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Memory AS l RIGHT JOIN r_empty_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Memory: FULL JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Memory AS l FULL JOIN r_data_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Memory: FULL JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Memory AS l FULL JOIN r_empty_Memory AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Memory: CROSS JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Memory AS l CROSS JOIN r_data_Memory AS r ) WHERE explain LIKE '%Join%';
+0
+-- Memory: CROSS JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Memory AS l CROSS JOIN r_empty_Memory AS r ) WHERE explain LIKE '%Join%';
+0
+-- MergeTree: INNER JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_MergeTree AS l INNER JOIN r_data_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- MergeTree: INNER JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_MergeTree AS l INNER JOIN r_empty_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- MergeTree: LEFT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_MergeTree AS l LEFT JOIN r_data_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- MergeTree: LEFT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_MergeTree AS l LEFT JOIN r_empty_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- MergeTree: RIGHT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_MergeTree AS l RIGHT JOIN r_data_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- MergeTree: RIGHT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_MergeTree AS l RIGHT JOIN r_empty_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- MergeTree: FULL JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_MergeTree AS l FULL JOIN r_data_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- MergeTree: FULL JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_MergeTree AS l FULL JOIN r_empty_MergeTree AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- MergeTree: CROSS JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_MergeTree AS l CROSS JOIN r_data_MergeTree AS r ) WHERE explain LIKE '%Join%';
+0
+-- MergeTree: CROSS JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_MergeTree AS l CROSS JOIN r_empty_MergeTree AS r ) WHERE explain LIKE '%Join%';
+0
+-- Log: INNER JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Log AS l INNER JOIN r_data_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Log: INNER JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Log AS l INNER JOIN r_empty_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Log: LEFT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Log AS l LEFT JOIN r_data_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Log: LEFT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Log AS l LEFT JOIN r_empty_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Log: RIGHT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Log AS l RIGHT JOIN r_data_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Log: RIGHT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Log AS l RIGHT JOIN r_empty_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- Log: FULL JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Log AS l FULL JOIN r_data_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Log: FULL JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Log AS l FULL JOIN r_empty_Log AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- Log: CROSS JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_Log AS l CROSS JOIN r_data_Log AS r ) WHERE explain LIKE '%Join%';
+0
+-- Log: CROSS JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_Log AS l CROSS JOIN r_empty_Log AS r ) WHERE explain LIKE '%Join%';
+0
+-- numbers() table function
+
+-- numbers: INNER JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l INNER JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- numbers: INNER JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l INNER JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- numbers: LEFT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l LEFT JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- numbers: LEFT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l LEFT JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- numbers: RIGHT JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l RIGHT JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- numbers: RIGHT JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l RIGHT JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r USING (k)) WHERE explain LIKE '%Join%';
+0
+-- numbers: FULL JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l FULL JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- numbers: FULL JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l FULL JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r USING (k)) WHERE explain LIKE '%Join%';
+4
+-- numbers: CROSS JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l CROSS JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r ) WHERE explain LIKE '%Join%';
+0
+-- numbers: CROSS JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l CROSS JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r ) WHERE explain LIKE '%Join%';
+0

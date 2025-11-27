@@ -1,142 +1,44 @@
 {% set join_kinds = ['INNER', 'LEFT', 'RIGHT', 'FULL', 'CROSS'] %}
-{% set scenarios = ['left_empty', 'right_empty'] %}
+{% set engines = ['Memory', 'MergeTree', 'Log'] %}
 
-{% set sources = [
-    {'name': 'Memory',   'type': 'table'},
-    {'name': 'MergeTree','type': 'table'},
-    {'name': 'Log',      'type': 'table'},
-    {'name': 'numbers',  'type': 'numbers'}
-] %}
+{% for engine in engines %}
 
-DROP TABLE IF EXISTS join_opt_results;
+DROP TABLE IF EXISTS l_empty_{{ engine }};
+DROP TABLE IF EXISTS r_empty_{{ engine }};
+DROP TABLE IF EXISTS l_data_{{ engine }};
+DROP TABLE IF EXISTS r_data_{{ engine }};
 
-CREATE TABLE join_opt_results
-(
-    engine             String,
-    join_kind          String,
-    scenario           String,
-    count_without_opt  UInt64,
-    count_with_opt     UInt64,
-    results_match      Bool,
-    plan_has_join      Bool
-)
-ENGINE = Memory;
+CREATE TABLE l_empty_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+CREATE TABLE r_empty_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+CREATE TABLE l_data_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
+CREATE TABLE r_data_{{ engine }} (k Int32, v Int32) ENGINE = {{ engine }} {% if engine == 'MergeTree' %}ORDER BY k{% endif %};
 
-{% macro join_query(src, idx, kind, scenario, optimize_flag) %}
+INSERT INTO l_data_{{ engine }} VALUES (1,10),(2,20),(3,30);
+INSERT INTO r_data_{{ engine }} VALUES (2,200),(3,300),(4,400);
 
-SELECT *
-FROM
-    {% if src.type == 'table' %}
-        (SELECT * FROM
-            {% if scenario == 'left_empty' %}
-                l_empty_{{ idx }}
-            {% else %}
-                l_nonempty_{{ idx }}
-            {% endif %}
-        ) AS l
-    {% else %}
-        (SELECT number AS k, number * 10 AS v
-         FROM numbers({% if scenario == 'left_empty' %}0{% else %}3{% endif %})
-        ) AS l
-    {% endif %}
-    {{ kind }} JOIN
-    {% if src.type == 'table' %}
-        (SELECT * FROM
-            {% if scenario == 'right_empty' %}
-                r_empty_{{ idx }}
-            {% else %}
-                r_nonempty_{{ idx }}
-            {% endif %}
-        ) AS r
-    {% else %}
-        (SELECT number AS k, number * 100 AS v
-         FROM numbers({% if scenario == 'right_empty' %}0{% else %}3{% endif %})
-        ) AS r
-    {% endif %}
-    {% if kind != 'CROSS' %} USING (k) {% endif %}
-SETTINGS allow_statistics_optimize = {{ optimize_flag }}
+{% endfor %}
 
-{% endmacro %}
+SET allow_statistics_optimize = 1;
 
-{% for src in sources %}
-{% set idx = loop.index0 %}
+-- { echoOn }
 
-{% if src.type == 'table' %}
-
-DROP TABLE IF EXISTS l_empty_{{ idx }};
-DROP TABLE IF EXISTS r_empty_{{ idx }};
-DROP TABLE IF EXISTS l_nonempty_{{ idx }};
-DROP TABLE IF EXISTS r_nonempty_{{ idx }};
-
-CREATE TABLE l_empty_{{ idx }} (k Int32, v Int32)
-ENGINE = {{ src.name }}
-{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
-
-CREATE TABLE r_empty_{{ idx }} (k Int32, v Int32)
-ENGINE = {{ src.name }}
-{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
-
-CREATE TABLE l_nonempty_{{ idx }} (k Int32, v Int32)
-ENGINE = {{ src.name }}
-{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
-
-CREATE TABLE r_nonempty_{{ idx }} (k Int32, v Int32)
-ENGINE = {{ src.name }}
-{% if src.name == 'MergeTree' %} ORDER BY k {% endif %};
-
-INSERT INTO l_nonempty_{{ idx }} VALUES (1,10),(2,20),(3,30);
-INSERT INTO r_nonempty_{{ idx }} VALUES (2,200),(3,300),(4,400);
-
-{% endif %}
-
+{% for engine in engines %}
 {% for kind in join_kinds %}
-{% for scenario in scenarios %}
+-- {{ engine }}: {{ kind }} JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_empty_{{ engine }} AS l {{ kind }} JOIN r_data_{{ engine }} AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
 
-WITH
-(
-    SELECT count()
-    FROM ( {{ join_query(src, idx, kind, scenario, 0) }} )
-) AS rows_without_opt,
-(
-    SELECT count()
-    FROM ( {{ join_query(src, idx, kind, scenario, 1) }} )
-) AS rows_with_opt,
-(
-    SELECT count()
-    FROM
-    (
-        EXPLAIN PLAN
-        {{ join_query(src, idx, kind, scenario, 1) }}
-    )
-    WHERE position(explain, 'Join') > 0
-) AS plan_hit
-
-INSERT INTO join_opt_results
-SELECT
-    '{{ src.name }}'              AS engine,
-    '{{ kind }}'                  AS join_kind,
-    '{{ scenario }}'              AS scenario,
-    rows_without_opt              AS count_without_opt,
-    rows_with_opt                 AS count_with_opt,
-    (rows_without_opt = rows_with_opt) AS results_match,
-    (plan_hit > 0)                AS plan_has_join;
+-- {{ engine }}: {{ kind }} JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM l_data_{{ engine }} AS l {{ kind }} JOIN r_empty_{{ engine }} AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
 
 {% endfor %}
 {% endfor %}
 
-{% endfor %}
+-- numbers() table function
+{% for kind in join_kinds %}
+-- numbers: {{ kind }} JOIN, left empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(0)) AS l {{ kind }} JOIN (SELECT number AS k, number * 100 AS v FROM numbers(3)) AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
 
-SELECT
-    engine,
-    join_kind,
-    scenario,
-    count_without_opt,
-    count_with_opt,
-    results_match,
-    plan_has_join
-FROM join_opt_results
-ORDER BY
-    engine,
-    join_kind,
-    scenario
-FORMAT PrettyCompact;
+-- numbers: {{ kind }} JOIN, right empty
+SELECT count() FROM (EXPLAIN SELECT * FROM (SELECT number AS k, number * 10 AS v FROM numbers(3)) AS l {{ kind }} JOIN (SELECT number AS k, number * 100 AS v FROM numbers(0)) AS r {% if kind != 'CROSS' %}USING (k){% endif %}) WHERE explain LIKE '%Join%';
+
+{% endfor %}
