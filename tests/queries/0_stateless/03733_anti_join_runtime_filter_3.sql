@@ -1,5 +1,5 @@
 SET enable_analyzer = 1;
-SET enable_join_runtime_filters = 0;
+SET enable_join_runtime_filters = 1;
 
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey;
