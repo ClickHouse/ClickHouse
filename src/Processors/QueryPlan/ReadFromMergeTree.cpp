@@ -187,6 +187,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool enable_shared_storage_snapshot_in_query;
     extern const SettingsUInt64 query_plan_max_step_description_length;
+    extern const SettingsBool apply_row_policy_after_final;
 }
 
 namespace MergeTreeSetting
@@ -2673,7 +2674,51 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         storage_snapshot->data = std::make_unique<MergeTreeData::SnapshotData>();
     }
 
-    result.checkLimits(context->getSettingsRef(), query_info);
+    const auto & local_settings = context->getSettingsRef();
+
+    /// Check if we should apply row policy after FINAL instead of during reading
+    /// This is needed for correct behavior with ReplacingMergeTree and similar engines
+    /// where row policy should not affect which row "wins" during deduplication.
+    FilterDAGInfoPtr deferred_row_level_filter;
+    if (local_settings[Setting::apply_row_policy_after_final]
+        && isQueryWithFinal()
+        && query_info.row_level_filter)
+    {
+        const auto & sorting_key_columns = storage_snapshot->metadata->getSortingKeyColumns();
+        NameSet sorting_key_columns_set(sorting_key_columns.begin(), sorting_key_columns.end());
+
+        /// Get required columns from row level filter (row policy)
+        auto filter_required_columns = query_info.row_level_filter->actions.getRequiredColumnsNames();
+
+        /// Check if ALL required columns are in sorting key
+        /// If they are, we can still apply before FINAL (optimal)
+        /// If not, we must apply after FINAL
+        bool all_columns_in_sorting_key = true;
+        for (const auto & col : filter_required_columns)
+        {
+            if (!sorting_key_columns_set.contains(col))
+            {
+                all_columns_in_sorting_key = false;
+                break;
+            }
+        }
+
+        if (!all_columns_in_sorting_key)
+        {
+            /// save the filter and clear it from query_info so it won't be applied during reading
+            deferred_row_level_filter = query_info.row_level_filter;
+            query_info.row_level_filter = nullptr;
+
+            /// update output_header since row_level_filter was part of its calculation
+            output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+                storage_snapshot->getSampleBlockForColumns(all_column_names),
+                lazily_read_info,
+                nullptr, /// <-- row_level_filter
+                query_info.prewhere_info));
+        }
+    }
+
+    result.checkLimits(local_settings, query_info);
     shared_virtual_fields.emplace("_sample_factor", result.sampling.used_sample_factor);
 
     LOG_DEBUG(
@@ -2875,6 +2920,20 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 sampling_actions,
                 result.sampling.filter_function->getColumnName(),
                 false);
+        });
+    }
+
+    /// apply deferred row-level filter after FINAL
+    if (deferred_row_level_filter)
+    {
+        auto row_level_filter_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
+        pipe.addSimpleTransform([&](const SharedHeader & header)
+        {
+            return std::make_shared<FilterTransform>(
+                header,
+                row_level_filter_actions,
+                deferred_row_level_filter->column_name,
+                deferred_row_level_filter->do_remove_column);
         });
     }
 
