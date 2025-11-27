@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Disks/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
@@ -52,7 +52,7 @@ namespace ErrorCodes
 
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
-using DisksMap = std::map<String, DiskPtr>;
+using DisksMap = std::map<String, DiskPtr, std::less<>>;
 
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
