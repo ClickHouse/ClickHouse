@@ -34,7 +34,7 @@ static auto makeExtractor()
 
 HivePartitioningKeysAndValues parseHivePartitioningKeysAndValues(const String & path)
 {
-    thread_local auto extractor = makeExtractor();
+    static auto extractor = makeExtractor();
 
     HivePartitioningKeysAndValues key_values;
 
