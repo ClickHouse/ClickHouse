@@ -35,7 +35,7 @@ Test with utilizing skip indexes for disjunctions
         Granules: 157/157
         Name: v2_index
         Granules: 157/157
-        Name: <Combined Skip Indexes>
+        Name: <Combined skip indexes>
         Granules: 2/157
 -- Mixed AND/OR condition
       PrimaryKey
@@ -44,7 +44,7 @@ Test with utilizing skip indexes for disjunctions
         Granules: 79/79
         Name: v2_index
         Granules: 79/79
-        Name: <Combined Skip Indexes>
+        Name: <Combined skip indexes>
         Granules: 1/79
 -- Mixed _part_offset / OR condition
       PrimaryKey
@@ -53,7 +53,7 @@ Test with utilizing skip indexes for disjunctions
         Granules: 79/79
         Name: v2_index
         Granules: 79/79
-        Name: <Combined Skip Indexes>
+        Name: <Combined skip indexes>
         Granules: 1/79
 -- No skip index on v3
       PrimaryKey
@@ -62,7 +62,7 @@ Test with utilizing skip indexes for disjunctions
         Granules: 157/157
         Name: v2_index
         Granules: 157/157
-        Name: <Combined Skip Indexes>
+        Name: <Combined skip indexes>
         Granules: 157/157
 -- Complex condition
       PrimaryKey
@@ -71,7 +71,7 @@ Test with utilizing skip indexes for disjunctions
         Granules: 49/157
         Name: v2_index
         Granules: 33/49
-        Name: <Combined Skip Indexes>
+        Name: <Combined skip indexes>
         Granules: 0/33
 6
 Test with composite primary key condition
@@ -81,5 +81,5 @@ Test with composite primary key condition
         Granules: 10/10
         Name: v2_index
         Granules: 10/10
-        Name: <Combined Skip Indexes>
+        Name: <Combined skip indexes>
         Granules: 1/10

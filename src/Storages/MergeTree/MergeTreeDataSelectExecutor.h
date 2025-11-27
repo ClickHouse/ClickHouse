@@ -255,7 +255,7 @@ public:
         const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
 
-    static MarkRanges finalSetOfRangesForConditionWithORs(
+    static MarkRanges mergePartialResultsForDisjunctions(
         MergeTreeData::DataPartPtr part,
         const MarkRanges & ranges,
         const KeyCondition & rpn_template_for_eval_result,

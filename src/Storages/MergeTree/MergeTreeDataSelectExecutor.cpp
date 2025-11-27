@@ -922,7 +922,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 if (use_skip_indexes_for_disjunctions && key_condition_rpn_template.has_value())
                 {
-                    ranges.ranges = finalSetOfRangesForConditionWithORs(ranges.data_part,
+                    ranges.ranges = mergePartialResultsForDisjunctions(ranges.data_part,
                                         ranges.ranges, key_condition_rpn_template.value(),
                                         partial_eval_results, reader_settings, log);
 
@@ -2263,7 +2263,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
 /// to see if the range qualifies on the whole condition.
 /// rpn_template_for_eval_result is a "template" only. Hence the code
 /// below only processes 5 specific RPNElement types.
-MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
+MarkRanges MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
     MergeTreeData::DataPartPtr part,
     const MarkRanges & ranges,
     const KeyCondition & rpn_template_for_eval_result,
@@ -2275,7 +2275,7 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
 
     auto rpn_template_for_eval_result_string = rpn_template_for_eval_result.toString();
 
-    LOG_DEBUG(log, "Entered finalSetOfRangesForConditionWithORs for part {}, rpn = {}",
+    LOG_DEBUG(log, "Entered mergePartialResultsForDisjunctions for part {}, rpn = {}",
               part->name, rpn_template_for_eval_result_string);
 
     const size_t min_marks_for_seek = roundRowsOrBytesToMarks(
@@ -2326,13 +2326,13 @@ MarkRanges MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
                     rpn_stack.emplace_back(false);
                 }
                 else
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in finalSetOfRangesForConditionWithORs(), RPN = {}", element.function, rpn_template_for_eval_result_string);
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type {} in mergePartialResultsForDisjunctions(), RPN = {}", element.function, rpn_template_for_eval_result_string);
 
                 position++;
             }
 
             if (rpn_stack.size() != 1)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in finalSetOfRangesForConditionWithORs(), RPN = {}", rpn_stack.size(), rpn_template_for_eval_result_string);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size {} in mergePartialResultsForDisjunctions(), RPN = {}", rpn_stack.size(), rpn_template_for_eval_result_string);
 
             if (rpn_stack[0])
             {

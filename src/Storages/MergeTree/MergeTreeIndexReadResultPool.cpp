@@ -79,7 +79,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
     if (use_for_disjunctions)
     {
-        ranges = MergeTreeDataSelectExecutor::finalSetOfRangesForConditionWithORs(
+        ranges = MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions(
                             part.data_part, ranges, key_condition_rpn_template.value(),
                             partial_eval_results, reader_settings, log);
     }
