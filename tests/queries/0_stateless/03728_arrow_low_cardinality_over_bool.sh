@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# no-parallel-replicas: the query from query_log errors due to missing columns.
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
