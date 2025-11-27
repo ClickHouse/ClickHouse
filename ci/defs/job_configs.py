@@ -171,6 +171,8 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
             provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
+            # Uses xray which needs prebuilts that require a C++ able sysroot
+            # TODO: Revisit after xray is extended
             runs_on=RunnerLabels.AMD_LARGE,
         ),
         Job.ParamSet(
@@ -212,7 +214,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_BINARY,
             provides=[ArtifactNames.CH_AMD_BINARY],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN,
