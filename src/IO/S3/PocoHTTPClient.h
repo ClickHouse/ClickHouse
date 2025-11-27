@@ -46,7 +46,7 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
 {
     struct RetryStrategy
     {
-        unsigned int max_retries = 10;
+        unsigned int max_retries = 500;
         unsigned int initial_delay_ms = 25;
         unsigned int max_delay_ms = 5000;
         double jitter_factor = 0;
