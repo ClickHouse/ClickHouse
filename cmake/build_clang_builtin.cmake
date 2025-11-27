@@ -43,8 +43,36 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
 
     set (BUILTINS_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm-project/compiler-rt")
     set (BUILTINS_BINARY_DIR "${ClickHouse_BINARY_DIR}/clang-builtins")
+    set (NEED_BUILTIN_BUILD FALSE)
 
+    set (OUT_LIBS "${BUILTINS_BINARY_DIR}/${BUILTINS_TARGET}")
     if (NOT EXISTS "${BUILTINS_BINARY_DIR}/${BUILTINS_TARGET}")
+        set (NEED_BUILTIN_BUILD TRUE)
+    endif ()
+
+    set (${OUT_VARIABLE} "${BUILTINS_BINARY_DIR}/${BUILTINS_TARGET}" PARENT_SCOPE)
+    set (EXTRA_TARGETS)
+    if (SANITIZE)
+        set (EXTRA_BUILTINS_LIBRARIES)
+        if (SANITIZE STREQUAL "address")
+            set (EXTRA_BUILTINS_LIBRARIES "asan_static" "asan" "asan_cxx")
+        endif ()
+
+        foreach (LIB IN ITEMS ${EXTRA_BUILTINS_LIBRARIES})
+            string(REPLACE "builtins" "${LIB}" NEW_TARGET "${BUILTINS_TARGET}")
+            list (APPEND EXTRA_TARGETS "--target" "${NEW_TARGET}")
+            set (OUT_LIBS "${OUT_LIBS} ${BUILTINS_BINARY_DIR}/${NEW_TARGET}")
+
+            if (NOT EXISTS "${BUILTINS_BINARY_DIR}/${NEW_TARGET}")
+                set (NEED_BUILTIN_BUILD TRUE)
+            endif ()
+        endforeach ()
+
+        # We are providing our own sanitizer runtimes, so disable linking the system ones
+        set (OUT_LIBS "${OUT_LIBS} -fno-sanitize-link-runtime")
+    endif ()
+
+    if (NEED_BUILTIN_BUILD)
         execute_process(
                 COMMAND mkdir -p ${BUILTINS_BINARY_DIR}
                 COMMAND_ECHO STDOUT
@@ -73,13 +101,11 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
         )
 
         execute_process(
-                COMMAND ${CMAKE_COMMAND} --build ${BUILTINS_BINARY_DIR} --target ${BUILTINS_TARGET}
+                COMMAND ${CMAKE_COMMAND} --build ${BUILTINS_BINARY_DIR} --target ${BUILTINS_TARGET} ${EXTRA_TARGETS}
                 COMMAND_ECHO STDOUT
                 COMMAND_ERROR_IS_FATAL ANY
         )
     endif ()
 
-    set (${OUT_VARIABLE} "${BUILTINS_BINARY_DIR}/${BUILTINS_TARGET}" PARENT_SCOPE)
-
-
+    set (${OUT_VARIABLE} ${OUT_LIBS} PARENT_SCOPE)
 endfunction()

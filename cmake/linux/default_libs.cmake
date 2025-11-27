@@ -15,10 +15,8 @@ if (NOT EXISTS "${BUILTINS_LIBRARY}")
     # Now we build the compiler-rt from source instead so we are independent of the target system's gcc.
     include (cmake/build_clang_builtin.cmake)
     build_clang_builtin(${CMAKE_CXX_COMPILER_TARGET} BUILTINS_LIBRARY)
-endif ()
-
-# Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
-if (SANITIZE STREQUAL undefined)
+elseif (SANITIZE STREQUAL undefined)
+    # Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
     string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
 endif ()
 
