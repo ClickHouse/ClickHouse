@@ -3762,32 +3762,37 @@ def main(args):
     else:
         print("All tests have finished.")
 
-    unchecked_memory = int(clickhouse_execute(args, f"""
-    SELECT sum(size) FROM system.trace_log
-    WHERE
-        trace_type = 'MemoryAllocatedWithoutCheck'
-        AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
-        AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-    """))
-    if unchecked_memory > 1e9:
-        print(f"""
-        Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
-        Take a look at:
+    try:
+        clickhouse_execute(args, "SYSTEM FLUSH LOGS system.trace_log")
 
-        SELECT arrayStringConcat(symbols, '\\n'), sum(size)
-        FROM system.trace_log
-        WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+        unchecked_memory = int(clickhouse_execute(args, f"""
+        SELECT sum(size) FROM system.trace_log
+        WHERE
+            trace_type = 'MemoryAllocatedWithoutCheck'
             AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
             AND event_time >= fromUnixTimestamp({int(tests_start_time)})
-        GROUP BY 1
-        ORDER BY 2
-        LIMIT -10
-        FORMAT Vertical
+        """))
+        if unchecked_memory > 1e9:
+            print(f"""
+            Too much memory has been allocated without checking for memory limits: {unchecked_memory/1024/1024/1024} GiB.
+            Take a look at:
 
-        See also at
-        - MemoryTrackerDebugBlockerInThread
-        - AllocatorWithMemoryTracking
-        """)
+            SELECT arrayStringConcat(symbols, '\\n'), sum(size)
+            FROM system.trace_log
+            WHERE trace_type = 'MemoryAllocatedWithoutCheck'
+                AND event_date >= toDate(fromUnixTimestamp({int(tests_start_time)}))
+                AND event_time >= fromUnixTimestamp({int(tests_start_time)})
+            GROUP BY 1
+            ORDER BY 2
+            LIMIT -10
+            FORMAT Vertical
+
+            See also at
+            - MemoryTrackerDebugBlockerInThread
+            - AllocatorWithMemoryTracking
+            """)
+    except Exception as e:
+        print(f"Failed get MemoryAllocatedWithoutCheck events from trace_log: {e}")
 
     if args.report_logs_stats:
         try:
