@@ -78,6 +78,7 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "`MemoryAllocatedWithoutCheck` represents collection of significant allocations (>16MiB) that is done with ignoring any memory limits (for ClickHouse developers only)."
         },
         {"thread_id", std::make_shared<DataTypeUInt64>(), "Thread identifier."},
+        {"thread_name", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Thread name."},
         {"query_id", std::make_shared<DataTypeString>(), "Query identifier that can be used to get details about a query that was running from the query_log system table."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process."},
         {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0."},
@@ -111,11 +112,11 @@ namespace
     {
     private:
         Arena arena;
-        using Map = HashMap<uintptr_t, StringRef>;
+        using Map = HashMap<uintptr_t, std::string_view>;
         Map map;
         std::unordered_map<std::string, Dwarf> dwarfs;
 
-        void setResult(StringRef & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
+        void setResult(std::string_view & result, const Dwarf::LocationInfo & location, const std::vector<Dwarf::SymbolizedFrame> &)
         {
             const char * arena_begin = nullptr;
             WriteBufferFromArena out(arena, arena_begin);
@@ -128,7 +129,7 @@ namespace
             result = out.complete();
         }
 
-        StringRef impl(uintptr_t addr)
+        std::string_view impl(uintptr_t addr)
         {
             const SymbolIndex & symbol_index = SymbolIndex::instance();
 
@@ -140,18 +141,18 @@ namespace
 
                 Dwarf::LocationInfo location;
                 std::vector<Dwarf::SymbolizedFrame> frames; // NOTE: not used in FAST mode.
-                StringRef result;
+                std::string_view result;
                 if (dwarf_it->second.findAddress(addr, location, Dwarf::LocationInfoMode::FAST, frames))
                 {
                     setResult(result, location, frames);
                     return result;
                 }
-                return {object->name};
+                return object->name;
             }
             return {};
         }
 
-        StringRef implCached(uintptr_t addr)
+        std::string_view implCached(uintptr_t addr)
         {
             typename Map::LookupResult it;
             bool inserted;
@@ -162,7 +163,7 @@ namespace
         }
 
     public:
-        static StringRef get(uintptr_t addr)
+        static std::string_view get(uintptr_t addr)
         {
             static AddressToLineCache cache;
             return cache.implCached(addr);
@@ -184,6 +185,8 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(ClickHouseRevision::getVersionRevision());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_id);
+    auto thread_name_str = toString(thread_name);
+    columns[i++]->insertData(thread_name_str.data(), thread_name_str.size());
     columns[i++]->insertData(query_id.data(), query_id.size());
     columns[i++]->insert(Array(trace.begin(), trace.end()));
     columns[i++]->insert(size);
@@ -227,7 +230,7 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
                 else
                     symbols.emplace_back(std::string_view(symbol->name));
 
-                lines.emplace_back(AddressToLineCache::get(trace[frame]).toView());
+                lines.emplace_back(AddressToLineCache::get(trace[frame]));
             }
             else
             {

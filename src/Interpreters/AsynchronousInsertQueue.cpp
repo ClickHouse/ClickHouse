@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/setThreadName.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
@@ -888,7 +889,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
+        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length, true);
 }
 
 }
@@ -902,13 +903,13 @@ try
 
     SCOPE_EXIT(CurrentMetrics::sub(CurrentMetrics::PendingAsyncInsert, data->entries.size()));
 
-    setThreadName("AsyncInsertQ");
+    DB::setThreadName(ThreadName::ASYNC_INSERT_QUEUE);
 
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
     auto insert_context = Context::createCopy(global_context);
-    bool internal = false; // To enable logging this query
+    bool internal = true;
     bool async_insert = true;
 
     /// Disabled query spans. Could be activated by initializing this to a SpanHolder
@@ -957,7 +958,8 @@ try
         normalized_query_hash,
         key.query.get(),
         insert_context,
-        start_watch.getStart());
+        start_watch.getStart(),
+        internal);
 
     auto query_status = process_list_entry->getQueryStatus();
     insert_context->setProcessListElement(std::move(query_status));
@@ -1059,7 +1061,7 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds());
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
 
         if (async_insert_log)
         {

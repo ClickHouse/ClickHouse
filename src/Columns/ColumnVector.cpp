@@ -25,6 +25,7 @@
 #include <Common/iota.h>
 #include <DataTypes/FieldToDataType.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 
 #include <bit>
 #include <cstring>
@@ -57,16 +58,17 @@ namespace ErrorCodes
 }
 
 template <typename T>
-const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
+void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in)
 {
-    data.emplace_back(unalignedLoad<T>(pos));
-    return pos + sizeof(T);
+    T element;
+    readBinaryLittleEndian<T>(element, in);
+    data.emplace_back(std::move(element));
 }
 
 template <typename T>
-const char * ColumnVector<T>::skipSerializedInArena(const char * pos) const
+void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
 {
-    return pos + sizeof(T);
+    in.ignore(sizeof(T));
 }
 
 template <typename T>
@@ -423,7 +425,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        std::string_view value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();

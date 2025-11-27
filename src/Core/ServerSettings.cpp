@@ -166,6 +166,7 @@ namespace DB
     DECLARE(UInt32, asynchronous_metrics_update_period_s, 1, R"(Period in seconds for updating asynchronous metrics.)", 0) \
     DECLARE(Bool, asynchronous_metrics_enable_heavy_metrics, false, R"(Enable the calculation of heavy asynchronous metrics.)", 0) \
     DECLARE(UInt32, asynchronous_heavy_metrics_update_period_s, 120, R"(Period in seconds for updating heavy asynchronous metrics.)", 0) \
+    DECLARE(Bool, asynchronous_metrics_keeper_metrics_only, false, R"(Make asynchronous metrics calculate the keeper-related metrics only.)", 0) \
     DECLARE(String, default_database, "default", R"(The default database name.)", 0) \
     DECLARE(String, tmp_policy, "", R"(
     Policy for storage with temporary data. All files with `tmp` prefix will be removed at start.
@@ -1208,6 +1209,7 @@ The policy on how to perform a scheduling of CPU slots specified by `concurrent_
     )", 0) \
     DECLARE(String, keeper_hosts, "", R"(Dynamic setting. Contains a set of [Zoo]Keeper hosts ClickHouse can potentially connect to. Doesn't expose information from `<auxiliary_zookeepers>`)", 0) \
     DECLARE(Bool, allow_impersonate_user, false, R"(Enable/disable the IMPERSONATE feature (EXECUTE AS target_user).)", 0) \
+    DECLARE(UInt64, s3_credentials_provider_max_cache_size, 100, R"(The maximum number of S3 credentials providers that can be cached)", 0) \
 
 // clang-format on
 

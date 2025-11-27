@@ -29,6 +29,9 @@ struct MergeTreeIndexGranuleMinMax final : public IMergeTreeIndexGranule
     const Block & index_sample_block;
 
     std::vector<Range> hyperrectangle;
+    Serializations serializations;
+    DataTypes datatypes;
+    FormatSettings format_settings;
 };
 
 
@@ -76,7 +79,7 @@ public:
     ~MergeTreeIndexMinMax() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;

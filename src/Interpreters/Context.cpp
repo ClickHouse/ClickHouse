@@ -4,6 +4,7 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
+#include <Common/setThreadName.h>
 #include <Common/ISlotControl.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
@@ -46,10 +47,10 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <IO/S3Settings.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/StoragePolicy.h>
 #include <Disks/IO/IOUringReader.h>
@@ -63,6 +64,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
@@ -131,6 +133,7 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
+#include <Interpreters/AggregatedZooKeeperLog.h>
 #include <filesystem>
 #include <Storages/StorageView.h>
 #include <Parsers/ASTFunction.h>
@@ -265,6 +268,7 @@ namespace Setting
     extern const SettingsUInt64 filesystem_cache_max_download_size;
     extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
     extern const SettingsUInt64 filesystem_cache_segments_batch_size;
+    extern const SettingsBool filesystem_cache_allow_background_download;
     extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
     extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
     extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
@@ -319,6 +323,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
+    extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
 }
 
 namespace MergeTreeSetting
@@ -365,6 +370,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
+    extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
+    extern const ServerSettingsUInt64 max_database_num_to_throw;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
 }
 
 namespace ErrorCodes
@@ -894,9 +904,8 @@ struct ContextSharedPart : boost::noncopyable
         /// Background operations in cache use background schedule pool.
         /// Deactivate them before destructing it.
         LOG_TRACE(log, "Shutting down caches");
-        const auto & caches = FileCacheFactory::instance().getAll();
-        for (const auto & [_, cache] : caches)
-            cache->cache->deactivateBackgroundOperations();
+        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
+            cache_data->cache->deactivateBackgroundOperations();
         FileCacheFactory::instance().clear();
 
         {
@@ -1341,18 +1350,78 @@ std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnin
     {
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
-        if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create("The number of attached views is more than {}.", shared->max_view_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create("The number of active parts is more than {}.", shared->max_part_num_to_warn.load());
-        if (CurrentMetrics::get(CurrentMetrics::NamedCollection) > static_cast<Int64>(shared->max_named_collection_num_to_warn))
-            common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create("The number of named collections is more than {}.", shared->max_named_collection_num_to_warn.load());
+
+        auto attached_tables = CurrentMetrics::get(CurrentMetrics::AttachedTable);
+        auto attached_views = CurrentMetrics::get(CurrentMetrics::AttachedView);
+        auto attached_dictionaries = CurrentMetrics::get(CurrentMetrics::AttachedDictionary);
+        auto attached_databases = CurrentMetrics::get(CurrentMetrics::AttachedDatabase);
+        auto attached_named_collections = CurrentMetrics::get(CurrentMetrics::NamedCollection);
+        auto active_parts = CurrentMetrics::get(CurrentMetrics::PartsActive);
+
+        if (attached_tables > static_cast<Int64>(shared->max_table_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_table_num_to_throw]; limit > shared->max_table_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
+                    "The number of attached tables ({}) exceeds the warning limit of {}. You will not be able to create new tables once the limit of {} is reached.",
+                    attached_tables, shared->max_table_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = PreformattedMessage::create(
+                    "The number of attached tables ({}) exceeds the warning limit of {}.",
+                    attached_tables, shared->max_table_num_to_warn.load());
+        }
+
+        if (attached_views > static_cast<Int64>(shared->max_view_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_view_num_to_throw]; limit > shared->max_view_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
+                    "The number of attached views ({}) exceeds the warning limit of {}. You will not be able to create new views once the limit of {} is reached.",
+                    attached_views, shared->max_view_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] =  PreformattedMessage::create(
+                    "The number of attached views ({}) exceeds the warning limit of {}.",
+                    attached_views, shared->max_view_num_to_warn.load());
+        }
+
+        if (attached_dictionaries > static_cast<Int64>(shared->max_dictionary_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_dictionary_num_to_throw]; limit > shared->max_dictionary_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
+                    "The number of attached dictionaries ({}) exceeds the warning limit of {}. You will not be able to create new dictionaries once the limit of {} is reached.",
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] =  PreformattedMessage::create(
+                    "The number of attached dictionaries ({}) exceeds the warning limit of {}.",
+                    attached_dictionaries, shared->max_dictionary_num_to_warn.load());
+        }
+
+        if (attached_databases > static_cast<Int64>(shared->max_database_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_database_num_to_throw]; limit > shared->max_database_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
+                    "The number of attached databases ({}) exceeds the warning limit of {}. You will not be able to create new databases once the limit of {} is reached.",
+                    attached_databases, shared->max_database_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = PreformattedMessage::create(
+                    "The number of attached databases ({}) exceeds the warning limit of {}.",
+                    attached_databases, shared->max_database_num_to_warn.load());
+        }
+
+        if (attached_named_collections > static_cast<Int64>(shared->max_named_collection_num_to_warn))
+        {
+            if (auto limit = shared->server_settings[ServerSetting::max_named_collection_num_to_throw]; limit > shared->max_named_collection_num_to_warn.load())
+                common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
+                    "The number of named collections ({}) exceeds the warning limit of {}. You will not be able to create new named collections once the limit of {} is reached.",
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load(), limit.value);
+            else
+                common_warnings[Context::WarningType::MAX_NAMED_COLLECTIONS] = PreformattedMessage::create(
+                    "The number of named collections ({}) exceeds the warning limit of {}.",
+                    attached_named_collections, shared->max_named_collection_num_to_warn.load());
+        }
+
+        if (active_parts > static_cast<Int64>(shared->max_part_num_to_warn))
+            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create(
+                "The number of active parts ({}) exceeds the warning limit of {}.",
+                active_parts, shared->max_part_num_to_warn.load());
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -4143,7 +4212,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
-            "BgBufSchPool");
+            ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
     });
 
     return *shared->buffer_flush_schedule_pool;
@@ -4190,7 +4259,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
             max_parallel_tasks_per_type,
             CurrentMetrics::BackgroundSchedulePoolTask,
             CurrentMetrics::BackgroundSchedulePoolSize,
-            "BgSchPool");
+            DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
     });
 
     return *shared->schedule_pool;
@@ -4204,7 +4273,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
-            "BgDistSchPool");
+            DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
     });
 
     return *shared->distributed_schedule_pool;
@@ -4218,7 +4287,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
             /*max_parallel_tasks_per_type*/ 0,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
-            "BgMBSchPool");
+            DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
     });
 
     return *shared->message_broker_schedule_pool;
@@ -6705,7 +6774,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     /// With this executor we can execute more tasks than threads we have
     shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
     (
-        "MergeMutate",
+        ThreadName::MERGE_MUTATE,
         /*max_threads_count*/background_pool_size,
         /*max_tasks_count*/background_pool_max_tasks_count,
         CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
@@ -6721,7 +6790,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
-        "Move",
+        ThreadName::MERGETREE_MOVE,
         background_move_pool_size,
         background_move_pool_size,
         CurrentMetrics::BackgroundMovePoolTask,
@@ -6735,7 +6804,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
-        "Fetch",
+        ThreadName::MERGETREE_FETCH,
         background_fetches_pool_size,
         background_fetches_pool_size,
         CurrentMetrics::BackgroundFetchesPoolTask,
@@ -6749,7 +6818,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
 
     shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
     (
-        "Common",
+        ThreadName::MERGETREE_COMMON,
         background_common_pool_size,
         background_common_pool_size,
         CurrentMetrics::BackgroundCommonPoolTask,
@@ -6879,6 +6948,7 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
     res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
         = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
+    res.filesystem_cache_allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
     res.filesystem_cache_allow_background_download_for_metadata_files_in_packed_storage
         = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
     res.filesystem_cache_allow_background_download_during_fetch = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
@@ -7040,6 +7110,26 @@ void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
 PreparedSetsCachePtr Context::getPreparedSetsCache() const
 {
     return prepared_sets_cache;
+}
+
+ReverseLookupCache & Context::getReverseLookupCache() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->reverse_lookup_cache)
+    {
+        query_context->reverse_lookup_cache = std::make_shared<ReverseLookupCache>(
+            "LRU",
+            CurrentMetrics::end(),
+            CurrentMetrics::end(),
+            settings_ref[Setting::max_reverse_dictionary_lookup_cache_size_bytes],
+            ReverseLookupCache::NO_MAX_COUNT,
+            ReverseLookupCache::DEFAULT_SIZE_RATIO);
+    }
+    return *query_context->reverse_lookup_cache;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
