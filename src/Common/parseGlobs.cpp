@@ -3,9 +3,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
+#include <IO/readIntText.h>
 #include <algorithm>
+#include <optional>
 #include <sstream>
 #include <iomanip>
+#include <string_view>
 
 namespace DB
 {
@@ -46,6 +49,198 @@ bool containsOnlyEnumGlobs(const std::string & input)
 bool hasExactlyOneBracketsExpansion(const std::string & input)
 {
     return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
+}
+
+namespace
+{
+
+enum class ExpressionType {
+    CONSTANT,
+    RANGE,
+    ENUM,
+};
+
+/// fixme more clever range:
+/// select start and end depending on which is higher or lower
+/// calculate necessary padding to match values
+struct Range
+{
+    size_t start = 0;
+    size_t end = 0;
+};
+
+using ExpressionData = std::variant<
+    Range,
+    std::string_view,
+    std::vector<std::string_view>
+>;
+
+class Expression
+{
+public:
+    explicit Expression (ExpressionData input): data(input) {}
+
+    ExpressionType type() const {
+        return static_cast<ExpressionType>(data.index());
+    }
+
+    const ExpressionData& getData() const { return data; }
+
+private:
+    ExpressionData data;
+};
+
+class GlobString
+{
+public:
+    explicit GlobString(std::string input): input_data(std::move(input)) {}
+
+    void parse();
+private:
+    std::string_view consumeConstantExpression(const std::string_view & input);
+    std::string_view consumeMatcher(const std::string_view & input);
+
+    std::vector<std::string_view> tryParseEnumMatcher(const std::string_view & input);
+    std::optional<Range> tryParseRangeMatcher(const std::string_view & input);
+
+    std::vector<Expression> expressions;
+
+    std::string input_data;
+
+    bool has_globs = false;
+    bool has_ranges = false;
+    bool has_enums = false;
+    bool has_question_or_asterisk = false;
+};
+
+std::string_view GlobString::consumeConstantExpression(const std::string_view & input)
+{
+    auto first_nonconstant = input.find_first_of("{*?");
+
+    if (first_nonconstant == std::string::npos)
+        return {};
+
+    return input.substr(0, first_nonconstant);
+}
+
+std::string_view GlobString::consumeMatcher(const std::string_view & input)
+{
+    auto first_curly_closing_brace = input.find_first_of('}');
+
+    if (first_curly_closing_brace == std::string::npos)
+        return {};
+
+    return input.substr(0, first_curly_closing_brace);
+}
+
+std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_view & input)
+{
+    assert(input.length() > 2);
+    assert(input.front() == '{');
+    assert(input.back() == '}');
+
+    auto separator = ',';
+
+    std::vector<std::string_view> enum_elements;
+    std::string_view contents = input.substr(1, input.length() - 2);
+
+    size_t search_start_pos = 0;
+    while (true)
+    {
+        auto next_separator_pos = contents.find(separator, search_start_pos);
+
+        if (next_separator_pos == std::string_view::npos)
+        {
+            enum_elements.push_back(contents.substr(search_start_pos));
+            break;
+        }
+
+        enum_elements.push_back(contents.substr(search_start_pos, next_separator_pos));
+        search_start_pos = next_separator_pos + 1;
+    }
+
+    return enum_elements;
+}
+
+std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & input)
+{
+    assert(input.length() > 2);
+
+    /// Range matcher must contain "..", like in "{0..10}".
+    auto double_dot_pos = input.find_first_of("..");
+    if (double_dot_pos == std::string_view::npos)
+        return std::nullopt;
+
+    Range range;
+    ReadBufferFromString read_buffer(input);
+
+    bool ok = true;
+
+    ok &= checkChar('{', read_buffer);
+
+    if (!ok)
+        return std::nullopt;
+
+    ok &= tryReadIntText(range.start, read_buffer);
+    ok &= checkChar('.', read_buffer);
+    ok &= checkChar('.', read_buffer);
+
+    if (!ok)
+        return std::nullopt;
+
+    ok &= tryReadIntText(range.end, read_buffer);
+    ok &= checkChar('}', read_buffer);
+
+    if (!ok)
+        return std::nullopt;
+
+    return range;
+}
+
+void GlobString::parse()
+{
+    if (input_data.empty())
+        return;
+
+    std::string_view input = input_data;
+
+    size_t position = 0;
+    while (position <= input.length())
+    {
+        if(input[position] != '{')
+        {
+            auto constant_expression = consumeConstantExpression(input.substr(position));
+
+            /// if (constant_expression.length() != 0) ...
+
+            position += constant_expression.length();
+            expressions.push_back(Expression(constant_expression));
+
+            continue;
+        }
+        else
+        {
+            auto matcher_expression = consumeMatcher(input.substr(position));
+
+            auto range = tryParseRangeMatcher(matcher_expression);
+            if (range.has_value())
+            {
+                position += matcher_expression.length();
+                expressions.push_back(Expression(range.value()));
+                continue;
+            }
+
+            auto enum_matcher = tryParseEnumMatcher(matcher_expression);
+
+            /// if (enum_matcher.length() != 0) ...
+
+            position += matcher_expression.length();
+            expressions.push_back(Expression(enum_matcher));
+            continue;
+        }
+    }
+}
+
 }
 
 
