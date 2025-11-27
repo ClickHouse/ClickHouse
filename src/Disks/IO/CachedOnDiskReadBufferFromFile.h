@@ -106,6 +106,7 @@ private:
         ReadType read_type = ReadType::NONE;
         std::shared_ptr<ReadBufferFromFileBase> buf;
         size_t bytes_to_predownload = 0;
+        Memory<> predownload_memory;
 
         ReadFromFileSegmentState(
             std::shared_ptr<ReadBufferFromFileBase> buf_,
@@ -147,7 +148,7 @@ private:
 
     static size_t readFromFileSegment(
         FileSegment & file_segment,
-        size_t & offset,
+        size_t offset,
         ReadFromFileSegmentState & state,
         ReadInfo & info,
         bool & implementation_buffer_can_be_reused,
