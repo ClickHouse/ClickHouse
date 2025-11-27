@@ -15,7 +15,6 @@ struct BackupInfo
     String backup_engine_name;
     String id_arg;
     std::vector<Field> args;
-    ASTPtr function_arg;
 
     String toString() const;
     static BackupInfo fromString(const String & str);

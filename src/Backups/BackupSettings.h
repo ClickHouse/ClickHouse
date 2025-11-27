@@ -1,9 +1,8 @@
 #pragma once
 
-#include <optional>
-#include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
 #include <Common/SettingsChanges.h>
+#include <optional>
 
 
 namespace DB
@@ -43,8 +42,9 @@ struct BackupSettings
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
 
-    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
-    bool allow_s3_native_copy = true;
+    /// Whether S3 native copy is allowed.
+    /// If not set, then S3 native copy will be allowed only if the source and destination credentials are the same.
+    std::optional<bool> allow_s3_native_copy;
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_azure_native_copy = true;
@@ -90,17 +90,6 @@ struct BackupSettings
 
     /// Is it allowed to use blob paths to calculate checksums of backup entries?
     bool allow_checksums_from_remote_paths = true;
-
-    /// Defines how backup data file names are generated.
-    /// - `FirstFileName`: use the original file name from BackupFileInfo.
-    /// - `Checksum`: derive the name from the file checksum.
-    /// Example: for a 128-bit checksum = `abcd1234ef567890abcd1234ef567890`
-    /// and `data_file_name_prefix_length = 3`, the resulting path will be: `abc/d1234ef567890abcd1234ef567890`.
-    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
-
-    /// Optional length of the checksum prefix used as a directory path segment
-    /// when `data_file_name_generator` is `Checksum`.
-    std::optional<size_t> data_file_name_prefix_length;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

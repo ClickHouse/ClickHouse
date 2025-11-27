@@ -5,13 +5,12 @@ description: 'This engine provides integration with the Apache Hadoop ecosystem 
 sidebar_label: 'HDFS'
 sidebar_position: 80
 slug: /engines/table-engines/integrations/hdfs
-title: 'HDFS table engine'
-doc_type: 'reference'
+title: 'HDFS'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# HDFS table engine
+# HDFS
 
 <CloudNotSupportedBadge/>
 
@@ -21,7 +20,7 @@ This feature is not supported by ClickHouse engineers, and it is known to have a
 
 ## Usage {#usage}
 
-```sql
+``` sql
 ENGINE = HDFS(URI, format)
 ```
 
@@ -44,36 +43,36 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 **1.** Set up the `hdfs_engine_table` table:
 
-```sql
+``` sql
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
 ```
 
 **2.** Fill file:
 
-```sql
+``` sql
 INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
 ```
 
 **3.** Query the data:
 
-```sql
+``` sql
 SELECT * FROM hdfs_engine_table LIMIT 2
 ```
 
-```text
+``` text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
 └──────┴───────┘
 ```
 
-## Implementation details {#implementation-details}
+## Implementation Details {#implementation-details}
 
 - Reads and writes can be parallel.
 - Not supported:
-  - `ALTER` and `SELECT...SAMPLE` operations.
-  - Indexes.
-  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+    - `ALTER` and `SELECT...SAMPLE` operations.
+    - Indexes.
+    - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
   :::note Zero-copy replication is not ready for production
   Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -105,19 +104,19 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 <!-- -->
 
-```sql
+``` sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
 ```
 
 Another way:
 
-```sql
+``` sql
 CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_?', 'TSV')
 ```
 
 Table consists of all the files in both directories (all files should satisfy format and schema described in query):
 
-```sql
+``` sql
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
@@ -129,14 +128,14 @@ If the listing of files contains number ranges with leading zeros, use the const
 
 Create table with files named `file000`, `file001`, ... , `file999`:
 
-```sql
+``` sql
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 ## Configuration {#configuration}
 
 Similar to GraphiteMergeTree, the HDFS engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`hdfs`) and user-level (`hdfs_*`). The global configuration is applied first, and then the user-level configuration is applied (if it exists).
 
-```xml
+``` xml
 <!-- Global configuration options for HDFS engine type -->
 <hdfs>
   <hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
@@ -150,9 +149,10 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 </hdfs_root>
 ```
 
-### Configuration options {#configuration-options}
+### Configuration Options {#configuration-options}
 
 #### Supported by libhdfs3 {#supported-by-libhdfs3}
+
 
 | **parameter**                                         | **default value**       |
 | -                                                  | -                    |
@@ -198,7 +198,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 | dfs\_client\_log\_severity                            | "INFO"                  |
 | dfs\_domain\_socket\_path                             | ""                      |
 
+
 [HDFS Configuration Reference](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) might explain some parameters.
+
 
 #### ClickHouse extras {#clickhouse-extras}
 
@@ -227,7 +229,7 @@ libhdfs3 support HDFS namenode HA.
 - Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
 - Add following piece to ClickHouse config file:
 
-```xml
+``` xml
   <hdfs>
     <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
   </hdfs>
@@ -235,14 +237,15 @@ libhdfs3 support HDFS namenode HA.
 
 - Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
 
-## Virtual columns {#virtual-columns}
+
+## Virtual Columns {#virtual-columns}
 
 - `_path` — Path to the file. Type: `LowCardinality(String)`.
 - `_file` — Name of the file. Type: `LowCardinality(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-## Storage settings {#storage-settings}
+## Storage Settings {#storage-settings}
 
 - [hdfs_truncate_on_insert](/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [hdfs_create_new_file_on_insert](/operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.

@@ -21,17 +21,13 @@ void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
+void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
 void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
-void registerStorageAlias(StorageFactory & factory);
-
-#if USE_ARROWFLIGHT
-void registerStorageArrowFlight(StorageFactory & factory);
-#endif
 
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerStorageFuzzJSON(StorageFactory & factory);
@@ -41,10 +37,10 @@ void registerStorageFuzzJSON(StorageFactory & factory);
 void registerStorageS3(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory);
 void registerStorageS3Queue(StorageFactory & factory);
-#endif
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory);
+#endif
 #endif
 
 #if USE_AVRO
@@ -56,9 +52,10 @@ void registerStorageAzureQueue(StorageFactory & factory);
 #endif
 
 #if USE_HDFS
-#  if USE_HIVE
+#if USE_HIVE
 void registerStorageHive(StorageFactory & factory);
-#  endif
+#endif
+
 #endif
 
 void registerStorageODBC(StorageFactory & factory);
@@ -70,9 +67,7 @@ void registerStorageMySQL(StorageFactory & factory);
 
 #if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
-#endif
-#if USE_YTSAURUS
-void registerStorageYTsaurus(StorageFactory & factory);
+void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
@@ -111,7 +106,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages()
+void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = StorageFactory::instance();
 
@@ -130,17 +125,13 @@ void registerStorages()
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
+    registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
     registerStorageWindowView(factory);
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
-    registerStorageAlias(factory);
-
-#if USE_ARROWFLIGHT
-    registerStorageArrowFlight(factory);
-#endif
 
 #if USE_RAPIDJSON || USE_SIMDJSON
     registerStorageFuzzJSON(factory);
@@ -157,60 +148,63 @@ void registerStorages()
 #if USE_AWS_S3
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
-#endif
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+    #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerStorageDeltaLake(factory);
+    #endif
+
 #endif
 
 #if USE_HDFS
-#  if USE_HIVE
+#    if USE_HIVE
     registerStorageHive(factory);
-#  endif
-#endif
+    #endif
+    #endif
 
     registerStorageODBC(factory);
     registerStorageJDBC(factory);
 
-#if USE_MYSQL
+    #if USE_MYSQL
     registerStorageMySQL(factory);
-#endif
+    #endif
 
-#if USE_MONGODB
-    registerStorageMongoDB(factory);
-#endif
+    #if USE_MONGODB
+    if (use_legacy_mongodb_integration)
+        registerStorageMongoDBPocoLegacy(factory);
+    else
+        registerStorageMongoDB(factory);
+    #endif
 
-    registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
 
-#if USE_RDKAFKA
+    #if USE_RDKAFKA
     registerStorageKafka(factory);
-#endif
+    #endif
 
-#if USE_FILELOG
+    #if USE_FILELOG
     registerStorageFileLog(factory);
-#endif
+    #endif
 
-#if USE_AMQPCPP
+    #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
-#endif
+    #endif
 
-#if USE_NATSIO
+    #if USE_NATSIO
     registerStorageNATS(factory);
-#endif
+    #endif
 
-#if USE_ROCKSDB
+    #if USE_ROCKSDB
     registerStorageEmbeddedRocksDB(factory);
-#endif
+    #endif
 
-#if USE_LIBPQXX
+    #if USE_LIBPQXX
     registerStoragePostgreSQL(factory);
     registerStorageMaterializedPostgreSQL(factory);
-#endif
+    #endif
 
-#if USE_SQLITE
+    #if USE_SQLITE
     registerStorageSQLite(factory);
-#endif
+    #endif
 
     registerStorageKeeperMap(factory);
 

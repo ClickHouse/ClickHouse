@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan
-# no-msan: it is too slow
+# Tags: no-fasttest, long
 
 set -e
 

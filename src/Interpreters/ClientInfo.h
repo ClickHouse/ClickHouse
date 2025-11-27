@@ -37,8 +37,6 @@ public:
         LOCAL = 6,
         TCP_INTERSERVER = 7,
         PROMETHEUS = 8,
-        BACKGROUND = 9, // e.g. queries from refreshable materialized views
-        ARROW_FLIGHT = 10,
     };
 
     enum class HTTPMethod : uint8_t
@@ -64,9 +62,6 @@ public:
     String current_user;
     String current_query_id;
     std::shared_ptr<Poco::Net::SocketAddress> current_address;
-
-    /// For IMPERSONATEd session, stores the original authenticated user
-    String authenticated_user;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
@@ -131,7 +126,6 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
-    bool is_shared_catalog_internal = false;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};

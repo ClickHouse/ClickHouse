@@ -1,22 +1,19 @@
 #include <Backups/BackupCoordinationLocal.h>
 
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
-
 
 namespace DB
 {
 
 BackupCoordinationLocal::BackupCoordinationLocal(
-    const BackupSettings & backup_settings_, bool allow_concurrent_backup_, BackupConcurrencyCounters & concurrency_counters_)
+    bool is_plain_backup_,
+    bool allow_concurrent_backup_,
+    BackupConcurrencyCounters & concurrency_counters_)
     : log(getLogger("BackupCoordinationLocal"))
-    , concurrency_check(
-          /* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
-    , file_infos(
-          BackupCoordinationFileInfos::Config{
-              !backup_settings_.deduplicate_files,
-              backup_settings_.data_file_name_generator,
-              *backup_settings_.data_file_name_prefix_length})
+    , concurrency_check(/* is_restore = */ false, /* on_cluster = */ false, /* zookeeper_path = */ "", allow_concurrent_backup_, concurrency_counters_)
+    , file_infos(is_plain_backup_)
 {
 }
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Dictionaries/IDictionarySource.h>
+#include "IDictionarySource.h"
 #include <Interpreters/Context_fwd.h>
 
 #include <unordered_map>
@@ -32,7 +32,6 @@ public:
     /// It is used as default_database for ClickHouse dictionary source when no explicit database was specified.
     /// Does not make sense for other sources.
     using Creator = std::function<DictionarySourcePtr(
-        const String & name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
