@@ -582,7 +582,7 @@ def _check_and_mark_flaky_tests(workflow_result: Result):
                     print(
                         f"  Marking '{result.name}' as flaky (matched: {test_name}, issue: #{issue.issue})"
                     )
-                    result.set_clickable_label(label="flaky", link=issue.issue_url)
+                    result.set_clickable_label(label="issue", link=issue.issue_url)
                     break
 
     # Check all workflow results
