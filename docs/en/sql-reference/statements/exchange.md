@@ -34,14 +34,10 @@ EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
 
 ### Multiple Table Exchanges
 
-You can exchange multiple table pairs in a single query by separating them with commas:
-
-```sql
-EXCHANGE TABLES [db0.]table_A AND [db1.]table_B, [db2.]table_C AND [db3.]table_D [, ...] [ON CLUSTER cluster]
-```
+You can exchange multiple table pairs in a single query by separating them with commas.
 
 :::note
-When exchanging multiple table pairs, the exchanges are performed **sequentially, not atomically**. If an error occurs during the operation, some table pairs may have been exchanged while others have not. This is different from a single-pair exchange, which is atomic within `Atomic` and `Shared` database engines.
+When exchanging multiple table pairs, the exchanges are performed **sequentially, not atomically**. If an error occurs during the operation, some table pairs may have been exchanged while others have not.
 :::
 
 **Example**
@@ -60,11 +56,10 @@ SHOW TABLE a;
 SHOW TABLE b;
 SHOW TABLE c;
 SHOW TABLE a;
--- Now table 'a' has the structure of 'b', table 'b' has the structure of 'a',
--- table 'c' has the structure of 'd', and table 'd' has the structure of 'c'
 ```
 
 ```sql title="Response"
+-- Now table 'a' has the structure of 'b', table 'b' has the structure of 'a',
 ┌─statement──────────────┐
 │ CREATE TABLE default.a↴│
 │↳(                     ↴│
@@ -80,6 +75,7 @@ SHOW TABLE a;
 │↳ENGINE = Memory        │
 └────────────────────────┘
 
+-- table 'c' has the structure of 'd', and table 'd' has the structure of 'c'
 ┌─statement──────────────┐
 │ CREATE TABLE default.c↴│
 │↳(                     ↴│
@@ -88,14 +84,13 @@ SHOW TABLE a;
 │↳ENGINE = Memory        │
 └────────────────────────┘
 ┌─statement──────────────┐
-│ CREATE TABLE default.a↴│
+│ CREATE TABLE default.d↴│
 │↳(                     ↴│
-│↳    `b` UInt8         ↴│
+│↳    `c` UInt8         ↴│
 │↳)                     ↴│
 │↳ENGINE = Memory        │
 └────────────────────────┘
 ```
-
 
 ## EXCHANGE DICTIONARIES {#exchange-dictionaries}
 
