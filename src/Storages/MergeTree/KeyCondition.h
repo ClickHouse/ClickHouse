@@ -87,12 +87,12 @@ public:
     /// on a reduced set of ranges.
     ///
     /// But a condition with ORs is fundamentally different : A = 5 OR B = 5. If a range does
-    /// not match the condtion (A = 5) using skip index on A, we cannot throw out or prune away
+    /// not match the condition (A = 5) using skip index on A, we cannot throw out or prune away
     /// that range. We need to 'wait' for skip index B application and see the result of B = 5
     /// on that range.
     ///
     /// Range pruning for mixed AND/OR predicates uses below callback to record each atom's
-    /// evaluation result got by applying correspondig skip index (true or false). This is
+    /// evaluation result got by applying corresponding skip index (true or false). This is
     /// done in MergeTreeDataSelectExecutor::filterMarksUsingIndex(). Each *IndexCondition
     /// invokes this callback as it is evaluating the predicate. The final result for each
     /// granule is computed in MergeTreeDataSelectExecutor::mergePartialResultsForDisjunctions()
