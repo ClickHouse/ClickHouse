@@ -45,7 +45,7 @@ SELECT
         )"}
     };
 
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 11};
 
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
 
