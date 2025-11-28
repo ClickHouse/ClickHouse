@@ -243,7 +243,7 @@ public:
         }
         else
         {
-            attr_comparison_function_node->getArguments().getNodes() = {arguments[0], attr_col_node_casted};
+            attr_comparison_function_node->getArguments().getNodes() = { arguments[0], attr_col_node_casted };
         }
         resolveOrdinaryFunctionNodeByName(*attr_comparison_function_node, attr_comparison_function_name, getContext());
 
