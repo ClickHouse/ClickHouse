@@ -1916,7 +1916,7 @@ static void buildIndexes(
     }
 
     indexes->use_skip_indexes_for_disjunctions = settings[Setting::use_skip_indexes_for_disjunctions]
-                                                    && !skip_indexes.useful_indices.empty()
+                                                    && skip_indexes.useful_indices.size() > 1
                                                     && !indexes->key_condition_rpn_template->hasOnlyConjunctions();
     {
         std::vector<size_t> index_sizes;
