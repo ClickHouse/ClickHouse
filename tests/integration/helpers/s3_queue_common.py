@@ -187,7 +187,7 @@ def create_table(
 
     if hive_partitioning_columns:
         hive_partitioning_columns = f", {hive_partitioning_columns}"
-        settings["allow_experimental_s3_queue_hive_partitioning"] = True
+        settings["use_hive_partitioning"] = True
 
     engine_def = None
     if engine_name == "S3Queue":

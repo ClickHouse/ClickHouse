@@ -115,6 +115,7 @@ def test_ordered_mode_with_hive(started_cluster, engine_name, processing_threads
     put_file_content(started_cluster, engine_name, f"{files_path}/date=2025-01-03/city=Amsterdam/file3.csv", b"3,1,3\n")
 
     for node in instances:
+        node.query("SET allow_experimental_object_storage_queue_hive_partitioning = 1;")
         create_table(
             started_cluster,
             node,

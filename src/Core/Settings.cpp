@@ -7347,6 +7347,9 @@ Allow to create table with the Alias engine.
     DECLARE(Bool, use_paimon_partition_pruning, false, R"(
 Use Paimon partition pruning for Paimon table functions
     )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
+Allow to use hive partitioning with S3Queue/AzureQueue engines
+    )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
