@@ -2716,7 +2716,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
                 storage_snapshot->getSampleBlockForColumns(all_column_names),
                 lazily_read_info,
                 nullptr, // <-- row_level_filter
-                nullptr); // <-- prewhere
+                nullptr)); // <-- prewhere
 
             LOG_DEBUG(log, "Deferring row policy filter and prewhere to after FINAL");
         }
@@ -2927,7 +2927,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
         });
     }
 
-    /// apply row policy after FINAL if needed (must be aplied before prewhere)
+    /// apply row policy after FINAL if needed (must be applied before prewhere)
     if (deferred_row_level_filter)
     {
         auto row_level_filter_actions = std::make_shared<ExpressionActions>(deferred_row_level_filter->actions.clone());
