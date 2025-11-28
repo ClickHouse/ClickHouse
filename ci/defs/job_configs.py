@@ -303,7 +303,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.AMD_FREEBSD,
             provides=[ArtifactNames.CH_AMD_FREEBSD],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.PPC64LE,
@@ -328,7 +328,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.S390X,
             provides=[ArtifactNames.CH_S390X],
-            runs_on=RunnerLabels.AMD_LARGE,
+            runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,

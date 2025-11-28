@@ -177,6 +177,8 @@ def run_fuzz_job(check_name: str):
     result = Result.create_from(results=results, status=True if not results else None)
 
     if not result.is_ok():
+        # generate fatal log
+        Shell.check(f"rg --text '\s<Fatal>\s' {server_log} > {fatal_log}")
         for file in paths:
             if file.exists():
                 result.set_files(file)

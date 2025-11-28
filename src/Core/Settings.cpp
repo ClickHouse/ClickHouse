@@ -983,12 +983,6 @@ Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) a
     DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
 Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
 )", 0) \
-    DECLARE(Bool, allow_not_comparable_types_in_order_by, false, R"(
-Allows or restricts using not comparable types (like JSON/AggregateFunction) in ORDER BY keys.
-)", 0) \
-    DECLARE(Bool, allow_not_comparable_types_in_comparison_functions, false, R"(
-Allows or restricts using not comparable types (like JSON/AggregateFunction) in comparison functions `equal/less/greater/etc`.
-)", 0) \
     DECLARE(Bool, compile_expressions, true, R"(
 Compile some scalar functions and operators to native code.
 )", 0) \
@@ -3202,7 +3196,7 @@ Possible values:
 - NONE — No compression is applied.
 )", 0) \
     \
-    DECLARE(UInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
+    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
     DECLARE(UInt64, max_rows_to_transfer, 0, R"(
 Maximum size (in rows) that can be passed to a remote server or saved in a
 temporary table when the GLOBAL IN/JOIN section is executed.
@@ -7407,6 +7401,8 @@ Use Paimon partition pruning for Paimon table functions
     MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
     MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
     MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
+    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
+    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
 \
     /* moved to config.xml: see also src/Core/ServerSettings.h */ \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
