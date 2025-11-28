@@ -16,7 +16,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -788,6 +788,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const std::optional<FormatSettings> & format_settings_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     const CommitSettings & commit_settings_,
+    const AfterProcessingSettings & after_processing_settings_,
     std::shared_ptr<ObjectStorageQueueMetadata> files_metadata_,
     ContextPtr context_,
     size_t max_block_size_,
@@ -809,6 +810,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , format_settings(format_settings_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , commit_settings(commit_settings_)
+    , after_processing_settings(after_processing_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
     , mode(files_metadata->getTableMetadata().getMode())
@@ -1348,11 +1350,16 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     prepareHiveProcessedRequests(requests, file_map);
 
     if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
+        && files_metadata->getTableMetadata().after_processing != ObjectStorageQueueAction::KEEP)
     {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
+        auto postProcessor = ObjectStorageQueuePostProcessor(
+            getContext(),
+            configuration->getType(),
+            object_storage,
+            getName(),
+            files_metadata->getTableMetadata(),
+            after_processing_settings);
+        postProcessor.process(successful_objects);
     }
 
     auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log);

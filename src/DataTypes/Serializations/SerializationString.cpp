@@ -68,16 +68,16 @@ void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, co
 
 void SerializationString::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const StringRef & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-    if (settings.binary.max_binary_string_size && s.size > settings.binary.max_binary_string_size)
+    const std::string_view & s = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+    if (settings.binary.max_binary_string_size && s.size() > settings.binary.max_binary_string_size)
         throw Exception(
             ErrorCodes::TOO_LARGE_STRING_SIZE,
             "Too large string size: {}. The maximum is: {}. To increase the maximum, use setting "
             "format_binary_max_string_size",
-            s.size,
+            s.size(),
             settings.binary.max_binary_string_size);
 
-    writeVarUInt(s.size, ostr);
+    writeVarUInt(s.size(), ostr);
     writeString(s, ostr);
 }
 
@@ -375,7 +375,7 @@ void SerializationString::serializeText(const IColumn & column, size_t row_num, 
 
 void SerializationString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    writeEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -446,7 +446,7 @@ bool SerializationString::tryDeserializeTextEscaped(IColumn & column, ReadBuffer
 void SerializationString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.values.escape_quote_with_quote)
-        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+        writeQuotedStringPostgreSQL(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
     else
         writeQuotedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
@@ -465,7 +465,7 @@ bool SerializationString::tryDeserializeTextQuoted(IColumn & column, ReadBuffer 
 
 void SerializationString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr, settings);
+    writeJSONString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
@@ -561,7 +561,7 @@ bool SerializationString::tryDeserializeTextJSON(IColumn & column, ReadBuffer & 
 
 void SerializationString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+    writeXMLStringForTextElement(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
@@ -585,7 +585,7 @@ void SerializationString::serializeTextMarkdown(
     const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     if (settings.markdown.escape_special_characters)
-        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num).toView(), ostr);
+        writeMarkdownEscapedString(assert_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
     else
         serializeTextEscaped(column, row_num, ostr, settings);
 }

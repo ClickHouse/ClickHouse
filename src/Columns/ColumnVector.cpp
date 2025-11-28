@@ -425,7 +425,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        StringRef value = getDataAt(permuted_i);
+        std::string_view value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
