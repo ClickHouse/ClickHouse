@@ -533,10 +533,12 @@ ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
 {
     if (columns.empty())
     {
-        if (indexes.size() < limit)
-            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes is less than required");
+        size_t result_size = limit ? limit : indexes.size();
+        if (indexes.size() < result_size)
+            throw Exception(
+                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of indexes ({}) is less than required ({})", indexes.size(), result_size);
 
-        return cloneResized(limit ? limit : column_length);
+        return cloneResized(result_size);
     }
 
     const size_t tuple_size = columns.size();
