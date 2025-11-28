@@ -51,89 +51,30 @@ bool hasExactlyOneBracketsExpansion(const std::string & input)
     return std::count(input.begin(), input.end(), '{') == 1 && containsOnlyEnumGlobs(input);
 }
 
-namespace
+namespace BetterGlob
 {
 
-enum class ExpressionType {
-    CONSTANT,
-    RANGE,
-    ENUM,
-};
-
-/// fixme more clever range:
-/// select start and end depending on which is higher or lower
-/// calculate necessary padding to match values
-struct Range
-{
-    size_t start = 0;
-    size_t end = 0;
-};
-
-using ExpressionData = std::variant<
-    Range,
-    std::string_view,
-    std::vector<std::string_view>
->;
-
-class Expression
-{
-public:
-    explicit Expression (ExpressionData input): data(input) {}
-
-    ExpressionType type() const {
-        return static_cast<ExpressionType>(data.index());
-    }
-
-    const ExpressionData& getData() const { return data; }
-
-private:
-    ExpressionData data;
-};
-
-class GlobString
-{
-public:
-    explicit GlobString(std::string input): input_data(std::move(input)) {}
-
-    void parse();
-private:
-    std::string_view consumeConstantExpression(const std::string_view & input);
-    std::string_view consumeMatcher(const std::string_view & input);
-
-    std::vector<std::string_view> tryParseEnumMatcher(const std::string_view & input);
-    std::optional<Range> tryParseRangeMatcher(const std::string_view & input);
-
-    std::vector<Expression> expressions;
-
-    std::string input_data;
-
-    bool has_globs = false;
-    bool has_ranges = false;
-    bool has_enums = false;
-    bool has_question_or_asterisk = false;
-};
-
-std::string_view GlobString::consumeConstantExpression(const std::string_view & input)
+std::string_view GlobString::consumeConstantExpression(const std::string_view & input) const
 {
     auto first_nonconstant = input.find_first_of("{*?");
 
     if (first_nonconstant == std::string::npos)
-        return {};
+        return input;
 
     return input.substr(0, first_nonconstant);
 }
 
-std::string_view GlobString::consumeMatcher(const std::string_view & input)
+std::string_view GlobString::consumeMatcher(const std::string_view & input) const
 {
     auto first_curly_closing_brace = input.find_first_of('}');
 
     if (first_curly_closing_brace == std::string::npos)
         return {};
 
-    return input.substr(0, first_curly_closing_brace);
+    return input.substr(0, first_curly_closing_brace + 1);
 }
 
-std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_view & input)
+std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_view & input) const
 {
     assert(input.length() > 2);
     assert(input.front() == '{');
@@ -162,7 +103,7 @@ std::vector<std::string_view> GlobString::tryParseEnumMatcher(const std::string_
     return enum_elements;
 }
 
-std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & input)
+std::optional<Range> GlobString::tryParseRangeMatcher(const std::string_view & input) const
 {
     assert(input.length() > 2);
 
@@ -205,7 +146,7 @@ void GlobString::parse()
     std::string_view input = input_data;
 
     size_t position = 0;
-    while (position <= input.length())
+    while (position < input.length())
     {
         if(input[position] != '{')
         {
