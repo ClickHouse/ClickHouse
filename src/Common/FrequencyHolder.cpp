@@ -121,7 +121,7 @@ void FrequencyHolder::loadEmotionalDict()
         buf_line.ignore();
         readFloatText(tonality, buf_line);
 
-        std::string_view ref{string_pool.insert(word.data(), word.size()), word.size()};
+        StringRef ref{string_pool.insert(word.data(), word.size()), word.size()};
         emotional_dict[ref] = tonality;
         ++count;
     }
@@ -173,7 +173,7 @@ void FrequencyHolder::loadProgrammingFrequency()
             buf_line.ignore();
             readFloatText(frequency, buf_line);
 
-            std::string_view ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
+            StringRef ref{string_pool.insert(bigram.data(), bigram.size()), bigram.size()};
             programming_freq.back().map[ref] = frequency;
         }
     }

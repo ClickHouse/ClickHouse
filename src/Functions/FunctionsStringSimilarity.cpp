@@ -561,7 +561,7 @@ Calculates the 4-gram distance between two strings.
 For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities.
 The smaller the returned value, the more similar the strings are.
 
-For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceCaseInsensitive`](#ngramDistanceCaseInsensitive), [`ngramDistanceUTF8`](#ngramDistanceUTF8), [`ngramDistanceCaseInsensitiveUTF8`](#ngramDistanceCaseInsensitiveUTF8).
+For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceCaseInsensitive`](#ngramDistanceCaseInsensitive), [`ngramDistanceUTF8`](ngramDistanceUTF8), [`ngramDistanceCaseInsensitiveUTF8`](ngramDistanceCaseInsensitiveUTF8).
     )";
     FunctionDocumentation::Syntax syntax_ngram_distance = "ngramDistance(haystack, needle)";
     FunctionDocumentation::Arguments arguments_ngram_distance = {
@@ -637,7 +637,7 @@ The smaller the returned value, the more similar the strings are.
     FunctionDocumentation documentation_ngram_distance_case_insensitive = {description_ngram_distance_case_insensitive, syntax_ngram_distance_case_insensitive, arguments_ngram_distance_case_insensitive, returned_value_ngram_distance_case_insensitive, examples_ngram_distance_case_insensitive, introduced_in_ngram_distance_case_insensitive, category_ngram_distance_case_insensitive};
 
     FunctionDocumentation::Description description_ngram_distance_utf8 = R"(
-Provides a UTF-8 variant of [`ngramDistance`](#ngramDistance).
+Provides a UTF-8 variant of [`ngramDistance`](ngramDistance).
 Assumes that `needle` and `haystack` strings are UTF-8 encoded strings.
 Calculates the 3-gram distance between two UTF-8 strings.
 The smaller the returned value, the more similar the strings are.

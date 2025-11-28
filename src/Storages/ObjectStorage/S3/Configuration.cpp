@@ -14,9 +14,9 @@
 #include <Formats/FormatFactory.h>
 
 #include <Common/ProxyConfigurationResolverProvider.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/ObjectStorages/S3/diskSettings.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -163,7 +163,7 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
     }
 
     auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
-    auto key_generator = createObjectStorageKeyGeneratorAsIsWithPrefix(url.key);
+    auto key_generator = createObjectStorageKeysGeneratorAsIsWithPrefix(url.key);
 
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
@@ -695,13 +695,13 @@ void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
         if (collection->getOrDefault<String>("format", "auto") == "auto")
         {
             ASTs format_equal_func_args = {std::make_shared<ASTIdentifier>("format"), std::make_shared<ASTLiteral>(format_)};
-            auto format_equal_func = makeASTOperator("equals", std::move(format_equal_func_args));
+            auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
         if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
             ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
-            auto structure_equal_func = makeASTOperator("equals", std::move(structure_equal_func_args));
+            auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
             args.push_back(structure_equal_func);
         }
     }

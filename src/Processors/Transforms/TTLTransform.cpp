@@ -128,7 +128,7 @@ void TTLTransform::consume(Chunk chunk)
         return;
     }
 
-    removeSpecialColumnRepresentations(chunk);
+    convertToFullIfSparse(chunk);
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     for (const auto & algorithm : algorithms)

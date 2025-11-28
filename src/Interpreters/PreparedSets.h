@@ -1,6 +1,5 @@
 #pragma once
 
-#include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <memory>
