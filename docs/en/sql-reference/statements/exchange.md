@@ -32,7 +32,7 @@ Exchanges the names of two tables.
 EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
 ```
 
-### Multiple Table Exchanges
+### EXCHANGE MULTIPLE TABLES {#exchange-multiple-tables}
 
 You can exchange multiple table pairs in a single query by separating them with commas.
 
@@ -55,11 +55,11 @@ EXCHANGE TABLES a AND b, c AND d;
 SHOW TABLE a;
 SHOW TABLE b;
 SHOW TABLE c;
-SHOW TABLE a;
+SHOW TABLE d;
 ```
 
 ```sql title="Response"
--- Now table 'a' has the structure of 'b', table 'b' has the structure of 'a',
+-- Now table 'a' has the structure of 'b', and table 'b' has the structure of 'a'
 ┌─statement──────────────┐
 │ CREATE TABLE default.a↴│
 │↳(                     ↴│
@@ -75,7 +75,7 @@ SHOW TABLE a;
 │↳ENGINE = Memory        │
 └────────────────────────┘
 
--- table 'c' has the structure of 'd', and table 'd' has the structure of 'c'
+-- Now table 'c' has the structure of 'd', and table 'd' has the structure of 'c'
 ┌─statement──────────────┐
 │ CREATE TABLE default.c↴│
 │↳(                     ↴│
