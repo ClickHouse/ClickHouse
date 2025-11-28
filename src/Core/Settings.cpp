@@ -127,16 +127,25 @@ The `max_block_size` setting indicates the recommended maximum number of rows to
 
 The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 )", 0) \
-    DECLARE(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
+    DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
 The size of blocks (in a count of rows) to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
 For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
-But when using clickhouse-client, the client parses the data itself, and the 'max_insert_block_size' setting on the server does not affect the size of the inserted blocks.
+But when using clickhouse-client to read data from a file or stdin,the client parses the data itself, and the 'max_insert_block_size' setting on the server does not affect the size of the inserted blocks.
+The setting also does not have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
+
+The default is slightly more than `max_block_size`. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
+)", 0, max_insert_block_size_rows) \
+DECLARE(UInt64, max_insert_block_size_bytes, DEFAULT_INSERT_BLOCK_SIZE, R"(
+The size of blocks (in bytes) to form for insertion into a table.
+This setting only applies in cases when the server forms the blocks.
+For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
+But when using clickhouse-client to read data from a file or stdin, the client parses the data itself, and the 'max_insert_block_size_bytes' setting on the server does not affect the size of the inserted blocks.
 The setting also does not have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
 
 The default is slightly more than `max_block_size`. The reason for this is that certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion, and a large enough block size allow sorting more data in RAM.
 )", 0) \
-    DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
+DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
 Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:

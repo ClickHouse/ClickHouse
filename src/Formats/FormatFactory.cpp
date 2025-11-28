@@ -406,7 +406,8 @@ InputFormatPtr FormatFactory::getInput(
     FormatFilterInfoPtr format_filter_info,
     bool is_remote_fs,
     CompressionMethod compression,
-    bool need_only_count) const
+    bool need_only_count,
+    const std::optional<UInt64> & max_block_size_bytes) const
 {
     const auto& creators = getCreators(name);
     if (!creators.input_creator && !creators.random_access_input_creator)
@@ -430,7 +431,7 @@ InputFormatPtr FormatFactory::getInput(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size = max_block_size;
-    row_input_format_params.max_block_size_bytes = format_settings.max_block_size_bytes;
+    row_input_format_params.max_block_size_bytes = max_block_size_bytes.value_or(format_settings.max_block_size_bytes);
     row_input_format_params.allow_errors_num = format_settings.input_allow_errors_num;
     row_input_format_params.allow_errors_ratio = format_settings.input_allow_errors_ratio;
     row_input_format_params.max_execution_time = settings[Setting::max_execution_time];

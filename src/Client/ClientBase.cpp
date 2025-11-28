@@ -117,6 +117,7 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
+    extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -952,7 +953,10 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
     }
 
     if (getClientConfiguration().has("insert_format_max_block_size"))
-        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+        insert_format_max_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+
+    if (getClientConfiguration().has("insert_format_max_block_size_bytes"))
+        insert_format_max_block_size_rows_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size_bytes");
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -2034,10 +2038,16 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     /// Setting value from cmd arg overrides one from config.
     size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
     if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
-        insert_format_max_block_size_from_config.has_value())
-        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
+        insert_format_max_block_size_rows_from_config.has_value())
+        insert_format_max_block_size = insert_format_max_block_size_rows_from_config.value();
 
-    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
+    size_t insert_format_max_block_size_bytes = client_context->getSettingsRef()[Setting::max_insert_block_size_bytes];
+    if (!client_context->getSettingsRef()[Setting::max_insert_block_size_bytes].changed &&
+        insert_format_max_block_size_bytes_from_config.has_value())
+        insert_format_max_block_size_bytes = insert_format_max_block_size_bytes_from_config.value();
+
+    (void)insert_format_max_block_size_bytes;
+    auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size/*, insert_format_max_block_size_bytes*/);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
