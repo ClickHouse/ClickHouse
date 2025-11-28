@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Common/FieldVisitorToString.h>
-#include <DataTypes/FieldToDataType.h>
-#include <base/sort.h>
-#include <base/TypeName.h>
-#include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
-#include <Core/TypeId.h>
-#include <Common/typeid_cast.h>
-#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/NewColumnFixedSizeHelper.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/Field.h>
+#include <Core/TypeId.h>
+#include <DataTypes/FieldToDataType.h>
 #include <IO/Operators.h>
+#include <base/TypeName.h>
+#include <base/sort.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -19,11 +19,11 @@ namespace DB
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
-class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, ColumnFixedSizeHelper>, ColumnDecimal<T>>
+class ColumnDecimal final : public COWHelper<IColumnHelper<ColumnDecimal<T>, NewShinyColumnFixedSizeHelper>, ColumnDecimal<T>>
 {
 private:
     using Self = ColumnDecimal;
-    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
+    friend class COWHelper<IColumnHelper<Self, NewShinyColumnFixedSizeHelper>, Self>;
 
 public:
     using ValueType = T;
@@ -34,12 +34,16 @@ private:
     ColumnDecimal(const size_t n, UInt32 scale_)
     :   data(n),
         scale(scale_)
-    {}
+    {
+    }
 
     ColumnDecimal(const ColumnDecimal & src)
     :   data(src.data.begin(), src.data.end()),
         scale(src.scale)
-    {}
+    {
+    }
+
+    size_t getFixedSize() const override { return sizeof(ValueType); }
 
 public:
     const char * getFamilyName() const override;

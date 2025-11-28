@@ -845,12 +845,12 @@ template class IColumnHelper<ColumnVector<UUID>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<IPv4>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<IPv6>, ColumnFixedSizeHelper>;
 
-template class IColumnHelper<ColumnDecimal<Decimal32>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Decimal64>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Decimal128>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Decimal256>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<DateTime64>, ColumnFixedSizeHelper>;
-template class IColumnHelper<ColumnDecimal<Time64>, ColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal32>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal64>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal128>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Decimal256>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<DateTime64>, NewShinyColumnFixedSizeHelper>;
+template class IColumnHelper<ColumnDecimal<Time64>, NewShinyColumnFixedSizeHelper>;
 
 template class IColumnHelper<ColumnFixedString, NewShinyColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnString, IColumn>;

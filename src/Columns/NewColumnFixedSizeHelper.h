@@ -30,7 +30,7 @@ class NewShinyColumnFixedSizeHelper : public IColumn
     using PODArrayBaseClass = PODArrayBase<element_size, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD>;
 
     // explicit NewShinyColumnFixedSizeHelper(size_t fixed_size)
-    //     : the_fixed_size(fixed_size)
+    //     : getFixedSize()(fixed_size)
     // {
     // }
 
@@ -49,9 +49,9 @@ public:
 
     char * serializeValueIntoMemory(size_t n, char * memory) const override
     {
-        const char * raw_data_begin = getRawDataBegin<1>() + n * the_fixed_size;
-        memcpy(memory, raw_data_begin, the_fixed_size);
-        return memory + the_fixed_size;
+        const char * raw_data_begin = getRawDataBegin<1>() + n * getFixedSize();
+        memcpy(memory, raw_data_begin, getFixedSize());
+        return memory + getFixedSize();
     }
 
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override
@@ -69,9 +69,9 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
     {
-        char * memory = arena.allocContinue(the_fixed_size, begin);
+        char * memory = arena.allocContinue(getFixedSize(), begin);
         this->serializeValueIntoMemory(n, memory);
-        return {memory, the_fixed_size};
+        return {memory, getFixedSize()};
     }
 
     std::string_view serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override
@@ -105,7 +105,7 @@ public:
         return this->serializeValueIntoArena(n, arena, begin);
     }
 
-    size_t the_fixed_size;
+    virtual size_t getFixedSize() const = 0;
 };
 
 }
