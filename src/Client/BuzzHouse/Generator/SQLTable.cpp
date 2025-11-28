@@ -2388,7 +2388,8 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, const boo
     generateEngineDetails(rg, createTableRelation(rg, true, "", next), next, !added_pkey, te);
     this->entries.clear();
 
-    if (rg.nextSmallNumber() < 2)
+    /// No UUIDs in Shared databases
+    if (!next.isShared() && (!next.db || !next.db->isSharedDatabase()) && (next.db || !supports_cloud_features) && rg.nextSmallNumber() < 2)
     {
         ct->set_uuid(rg.nextUUID());
     }
@@ -2622,7 +2623,7 @@ void StatementGenerator::generateNextCreateDictionary(RandomGenerator & rg, Crea
         }
         dc->set_is_object_id(rg.nextMediumNumber() < 3);
     }
-    if (rg.nextSmallNumber() < 2)
+    if (!next.isShared() && (!next.db || !next.db->isSharedDatabase()) && (next.db || !supports_cloud_features) && rg.nextSmallNumber() < 2)
     {
         cd->set_uuid(rg.nextUUID());
     }
@@ -2744,7 +2745,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     SQLDatabase::setRandomDatabase(rg, next);
     next.deng = this->getNextDatabaseEngine(rg);
     deng->set_engine(next.deng);
-    if (rg.nextSmallNumber() < 2)
+    if (!next.isSharedDatabase() && rg.nextSmallNumber() < 2)
     {
         cd->set_uuid(rg.nextUUID());
     }
