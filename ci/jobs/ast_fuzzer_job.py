@@ -37,7 +37,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
-        "--tmpfs /tmp/clickhouse "
+        "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={workspace_path}:/workspace "
         f"--volume={cwd}:/repo "
         f"{env_str} "
