@@ -1,15 +1,15 @@
 #pragma once
 
-#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/TargetSpecific.h>
-#include <Common/assert_cast.h>
+#include <Columns/NewColumnFixedSizeHelper.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <base/TypeName.h>
 #include <base/unaligned.h>
+#include <Common/TargetSpecific.h>
+#include <Common/assert_cast.h>
 
 #include "config.h"
 
@@ -26,13 +26,13 @@ namespace ErrorCodes
 /** A template for columns that use a simple array to store.
  */
 template <typename T>
-class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, ColumnFixedSizeHelper>, ColumnVector<T>>
+class ColumnVector final : public COWHelper<IColumnHelper<ColumnVector<T>, NewShinyColumnFixedSizeHelper>, ColumnVector<T>>
 {
     static_assert(!is_decimal<T>);
 
 private:
     using Self = ColumnVector;
-    friend class COWHelper<IColumnHelper<Self, ColumnFixedSizeHelper>, Self>;
+    friend class COWHelper<IColumnHelper<Self, NewShinyColumnFixedSizeHelper>, Self>;
 
     struct less;
     struct less_stable;
@@ -53,6 +53,8 @@ private:
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}
+
+    size_t getFixedSize() const override { return sizeof(ValueType); }
 
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }

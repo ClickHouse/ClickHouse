@@ -10,6 +10,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <Columns/ColumnFixedSizeHelper.h>
 
 namespace DB
 {

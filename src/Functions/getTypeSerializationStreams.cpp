@@ -1,12 +1,13 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Core/Field.h>
-#include <Columns/ColumnString.h>
+#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 
 namespace DB
 {
@@ -48,7 +49,7 @@ public:
         SerializationPtr serialization = type->getDefaultSerialization();
         auto col_res = ColumnArray::create(ColumnString::create());
         ColumnString & col_res_strings = typeid_cast<ColumnString &>(col_res->getData());
-        ColumnFixedSizeHelper::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
+        IColumn::Offsets & col_res_offsets = typeid_cast<ColumnArray::Offsets &>(col_res->getOffsets());
 
         ISerialization::EnumerateStreamsSettings settings;
         settings.enumerate_virtual_streams = true;
