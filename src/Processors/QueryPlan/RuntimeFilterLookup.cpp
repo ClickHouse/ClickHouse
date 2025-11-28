@@ -16,6 +16,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void IRuntimeFilter::updateStats(UInt64 rows_checked, UInt64 rows_passed) const
+{
+    stats.rows_checked += rows_checked;
+    stats.rows_passed += rows_passed;
+}
+
 static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
 {
     auto & destination_words = destination.getFilter();
@@ -132,8 +138,7 @@ ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) 
         case ValuesCount::UNKNOWN:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Run time filter set is not ready for lookups");
         case ValuesCount::ZERO:
-            stats.rows_checked += values.column->size();
-            stats.rows_passed += negate ? values.column->size() : 0;
+            updateStats(values.column->size(), negate ? values.column->size() : 0);
             return std::make_shared<DataTypeUInt8>()->createColumnConst(values.column->size(), negate);
         case ValuesCount::ONE:
         {
@@ -145,15 +150,13 @@ ColumnPtr RuntimeFilterBase<negate>::find(const ColumnWithTypeAndName & values) 
             };
             auto single_element_equals_function = FunctionFactory::instance().get(negate ? "notEquals" : "equals", nullptr)->build(arguments);
             auto result = single_element_equals_function->execute(arguments, single_element_equals_function->getResultType(), values.column->size(), /* dry_run = */ false);
-            stats.rows_checked += values.column->size();
-            stats.rows_passed += countPassedStats(result);
+            updateStats(values.column->size(), countPassedStats(result));
             return result;
         }
         case ValuesCount::MANY:
         {
             auto result = exact_values->execute({values}, negate);
-            stats.rows_checked += values.column->size();
-            stats.rows_passed += countPassedStats(result);
+            updateStats(values.column->size(), countPassedStats(result));
             return result;
         }
     }
@@ -180,8 +183,7 @@ ColumnPtr ApproximateRuntimeFilter::find(const ColumnWithTypeAndName & values) c
             found_count += found ? 1 : 0;
             dst_data[row] = found;
         }
-        stats.rows_checked += values.column->size();
-        stats.rows_passed += found_count;
+        updateStats(values.column->size(), found_count);
 
         return dst;
     }

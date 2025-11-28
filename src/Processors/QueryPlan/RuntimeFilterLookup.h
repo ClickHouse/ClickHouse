@@ -48,6 +48,7 @@ public:
     virtual void merge(const IRuntimeFilter * source) = 0;
 
     /// Usage statistics
+    void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
 
 protected:
