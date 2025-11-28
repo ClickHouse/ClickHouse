@@ -489,6 +489,25 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
+    /// TODO: default columns may have dependencies, use the following code to check
+    // for (const ColumnDescription & column : all_columns)
+    // {
+    //     const auto & default_expression = column.default_desc.expression;
+    //     if (default_expression)
+    //     {
+    //         ASTPtr query = default_expression->clone();
+    //         auto syntax_result = TreeRewriter(context).analyze(query, all_columns.getAll());
+    //         const auto actions = ExpressionAnalyzer(query, syntax_result, context).getActions(true);
+    //         const auto required_columns = actions->getRequiredColumns();
+
+    //         if (required_columns.end() != std::find(required_columns.begin(), required_columns.end(), command.column_name))
+    //             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it",
+    //                     backQuote(command.column_name), backQuote(column.name));
+    //     }
+    // }
+    //
+    // evaluateMissingDefaults
+
     /// Determine columns that are absent in all source parts, either fully expired or never written, and mark them as
     /// expired to avoid reading or writing unnecessary data.
     {

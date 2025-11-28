@@ -103,7 +103,7 @@ TTLTransform::TTLTransform(
         const auto & column = storage_columns.get(name);
         auto default_ast = it->second.expression->clone();
         default_ast = addTypeConversionToAST(std::move(default_ast), column.type->getName());
-        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAllPhysical());
+        auto syntax_result = TreeRewriter(storage_.getContext()).analyze(default_ast, storage_columns.getAll());
         auto actions = ExpressionAnalyzer{default_ast, syntax_result, storage_.getContext()}.getActions(true);
         return Result{actions, default_ast->getColumnName()};
     };
