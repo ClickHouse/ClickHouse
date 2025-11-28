@@ -318,7 +318,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// Deserialize type and value from shared variant row.
             auto value = shared_variant.getDataAt(offsets[i]);
-            ReadBufferFromMemory buf(value.data(), value.size());
+            ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
             auto type_name = type->getName();
 
