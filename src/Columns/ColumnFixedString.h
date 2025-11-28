@@ -44,7 +44,11 @@ private:
     using ComparatorEqual = ComparatorEqualImpl<ComparatorBase>;
 
     /** Create an empty column of strings of fixed-length `n` */
-    explicit ColumnFixedString(size_t n_) : n(n_) {}
+    explicit ColumnFixedString(size_t n_)
+        : n(n_)
+    {
+        the_fixed_size = n;
+    }
 
     ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {} /// NOLINT
 
