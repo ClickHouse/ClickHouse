@@ -296,7 +296,9 @@ std::shared_ptr<ReadBufferFromFileBase> getRemoteReadBuffer(
 
             if (info.remote_file_reader
                 && info.remote_file_reader->getFileOffsetOfBufferEnd() == offset)
+            {
                 return info.remote_file_reader;
+            }
 
             auto reader = file_segment.extractRemoteFileReader();
             if (reader && offset == reader->getFileOffsetOfBufferEnd())
@@ -1081,17 +1083,11 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
         }
         else
         {
-            /// Move buffer back from implementation_buffer to us.
-            //swap.reset();
-            //resetWorkingBuffer();
-
+            chassert(!state.buf->available());
             auto buf = getRemoteReadBuffer(file_segment, offset, ReadType::REMOTE_FS_READ_BYPASS_CACHE, info);
             buf.swap(state.buf);
             state.buf = buf;
             state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
-
-            /// Recreate swap helper.
-            ///swap.emplace(*this, *state.buf);
 
             state.buf->setReadUntilPosition(file_segment.range().right + 1); /// [..., range.right]
             state.buf->seek(offset, SEEK_SET);
@@ -1448,11 +1444,15 @@ size_t CachedOnDiskReadBufferFromFile::readBigAt(
 
 off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
 {
+    if (offset == getPosition() && whence == SEEK_SET)
+        return offset;
+
     if (initialized && !allow_seeks_after_first_read)
     {
         throw Exception(
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-            "Seek is allowed only before first read attempt from the buffer");
+            "Seek is allowed only before first read attempt from the buffer. "
+            "Current offset {}, seek offset: {}", file_offset_of_buffer_end, offset);
     }
 
     size_t new_pos = offset;
@@ -1569,6 +1569,7 @@ std::string CachedOnDiskReadBufferFromFile::getInfoForLog(
             wb << "buf.available: " << state->buf->available() << ", ";
             wb << "buf.offset: " << state->buf->offset() << ", ";
             wb << "buf.size: " << state->buf->buffer().size() << ", ";
+            wb << "buf.buffer_end_offset: " << state->buf->getFileOffsetOfBufferEnd() << ", ";
         }
     }
 
