@@ -45,16 +45,38 @@ public:
     using Container = PaddedPODArray<ValueType>;
 
 private:
-    ColumnVector() = default;
-    explicit ColumnVector(const size_t n) : data(n) {}
-    ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
-    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
-    ColumnVector(Container::const_iterator begin, Container::const_iterator end) : data(begin, end) { }
+    ColumnVector() { NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType)); }
+
+    explicit ColumnVector(const size_t n)
+        : data(n)
+    {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
+
+    ColumnVector(const size_t n, const ValueType x)
+        : data(n, x)
+    {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
+
+    ColumnVector(const ColumnVector & src)
+        : data(src.data.begin(), src.data.end())
+    {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
+
+    ColumnVector(Container::const_iterator begin, Container::const_iterator end)
+        : data(begin, end)
+    {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
 
     /// Sugar constructor.
-    ColumnVector(std::initializer_list<T> il) : data{il} {}
-
-    size_t getFixedSize() const override { return sizeof(ValueType); }
+    ColumnVector(std::initializer_list<T> il)
+        : data{il}
+    {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
+    }
 
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }

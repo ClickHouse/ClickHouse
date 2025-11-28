@@ -47,15 +47,15 @@ private:
     explicit ColumnFixedString(size_t n_)
         : n(n_)
     {
+        NewShinyColumnFixedSizeHelper::setFixedSize(n);
     }
 
     ColumnFixedString(const ColumnFixedString & src)
         : chars(src.chars.begin(), src.chars.end())
         , n(src.n)
     {
+        NewShinyColumnFixedSizeHelper::setFixedSize(n);
     }
-
-    size_t getFixedSize() const override { return n; }
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }

@@ -35,15 +35,15 @@ private:
     :   data(n),
         scale(scale_)
     {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
 
     ColumnDecimal(const ColumnDecimal & src)
     :   data(src.data.begin(), src.data.end()),
         scale(src.scale)
     {
+        NewShinyColumnFixedSizeHelper::setFixedSize(sizeof(ValueType));
     }
-
-    size_t getFixedSize() const override { return sizeof(ValueType); }
 
 public:
     const char * getFamilyName() const override;
