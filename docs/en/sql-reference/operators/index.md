@@ -83,6 +83,28 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
 
+### is not distinct from operator (`<=>`) {#is-not-distinct-from}
+
+:::note
+Introduced in version 25.10
+:::
+
+The `<=>` operator is the `NULL`-safe equality operator, equivalent to `IS NOT DISTINCT FROM`.
+It works like the regular equality operator (`=`), but it treats `NULL` values as comparable. 
+Two `NULL` values are considered equal, and a `NULL` compared to any non-`NULL` value returns 0 (false) rather than `NULL`.
+
+```sql
+SELECT
+  'ClickHouse' <=> NULL,
+  NULL <=> NULL
+```
+
+```response
+┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
 See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
