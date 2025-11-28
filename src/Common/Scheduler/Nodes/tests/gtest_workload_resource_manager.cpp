@@ -1942,6 +1942,8 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
+static constexpr ResourceCost SKIP = -1;
+
 template <size_t count>
 struct TestAllocationArray
 {
@@ -1989,6 +1991,8 @@ struct TestAllocationArray
             for (size_t i = 0; i < count; i++)
             {
                 ResourceCost mem = sizes[i];
+                if (mem == SKIP)
+                    continue;
                 chassert(!links[i]);
                 links[i] = link;
                 ids[i] = fmt::format("A{}", i);
@@ -2005,6 +2009,8 @@ struct TestAllocationArray
             for (size_t i = 0; i < count; i++)
             {
                 ResourceCost mem = sizes[i];
+                if (mem == SKIP)
+                    continue;
                 chassert(links[i]);
                 allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
             }
@@ -2016,6 +2022,8 @@ struct TestAllocationArray
         for (size_t i = 0; i < count; i++)
         {
             ResourceCost mem = sizes[i];
+            if (mem == SKIP)
+                continue;
             chassert(!links[i]);
             links[i] = link;
             ids[i] = fmt::format("A{}", i);
@@ -2029,6 +2037,8 @@ struct TestAllocationArray
         for (size_t i = 0; i < count; i++)
         {
             ResourceCost mem = sizes[i];
+            if (mem == SKIP)
+                continue;
             chassert(links[i]);
             allocations[i].emplace(links[i], ids[i], mem);
             allocations[i]->waitSync();
@@ -2040,9 +2050,19 @@ struct TestAllocationArray
         // We run in the scheduler thread to emulate requests comming in specific order while delaying their processing
         t.executeFromScheduler("memory", [&]
         {
-            int idx = 0;
-            for (ResourceCost mem : sizes)
-                allocations[idx++]->setSize(mem, [this, mem] { onApprove(mem); });
+            for (size_t i = 0; i < count; i++)
+            {
+                ResourceCost mem = sizes[i];
+                if (mem == SKIP)
+                    continue;
+                if (allocations[i])
+                    allocations[i]->setSize(mem, [this, mem] { onApprove(mem); });
+                else
+                {
+                    chassert(links[i]);
+                    allocations[i].emplace(links[i], ids[i], mem, [this, mem] { onApprove(mem); });
+                }
+            }
         });
     }
 
@@ -2341,6 +2361,36 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenW
         // prd: 40 20 30  15         FIFO order
         //       0 40 60  90 105 <-- (sum) ~ usage_key
         a.assertApproveOrder("40 50 20 20 30 50 15 10");
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseFairnessBetweenWorkloadsForMixedAllocations)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all");
+    t.query("CREATE WORKLOAD dev IN all");
+    t.query("CREATE WORKLOAD prd IN all");
+
+    for (int i = 0; i < 3; i++)
+    {
+        TestAllocationArray<8> a(t);
+        a.setWorkload("dev", {0, 2, 4, 6});
+        a.setWorkload("prd", {1, 3, 5, 7});
+        a.insertSequential({ SKIP, SKIP, 1, 1, SKIP, SKIP, 1, 1 });
+        a.setSize({ 50, 40, 20, 20, 50, 30, 10, 15 }); // Half of allocations are running, half are pending
+
+        // Workloads `dev` and `prd` orders their pending allocation by arrival order (FIFO) and running allocations by fair_key (resulting allocation size).
+        // Pending allocations are considered after all running allocations.
+        // Workload `all` orders its children by usage_key (resulting total size of all allocations in child workload)
+        // Pending allocations are considered after all running allocations as well.
+        //
+        // dev: 10r 20r 50p 50p
+        //      10  30  30  80   <-- (sum) ~ usage_key (pending size is not included)
+        // prd: 15r 20r 40p 30p
+        //      15  35  35  75   <-- (sum) ~ usage_key (pending size is not included)
+        a.assertApproveOrder("10 15 20 20 50 40 30 50");
     }
 }
 

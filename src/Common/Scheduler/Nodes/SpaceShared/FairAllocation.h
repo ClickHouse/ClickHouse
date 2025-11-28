@@ -30,8 +30,9 @@ private:
     void updateKey(ISpaceSharedNode & from_child, IncreaseRequest * new_increase);
 
     RunningSetByUsage running_children; /// Children with currently running allocations
-    IncreasingSetByUsage increasing_children; /// Children with pending increase request
-    DecreasingList decreasing_children; /// Children with pending decrease request
+    PendingSetByUsage pending_children; /// Children with pending allocation increase request
+    IncreasingSetByUsage increasing_children; /// Children with running allocation increase request
+    DecreasingList decreasing_children; /// Children with decrease request
     size_t tie_breaker = 0; /// Unique id generator for tie breaking in ordering
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`

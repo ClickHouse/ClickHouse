@@ -148,8 +148,11 @@ bool FairAllocation::setIncrease(ISpaceSharedNode & from_child, IncreaseRequest 
     updateKey(from_child, new_increase);
 
     // Update current increase request
+    // To avoid thrashing we first server running allocation increase requests, then pending ones
     IncreaseRequest * old_increase = increase;
-    increase_child = increasing_children.empty() ? nullptr : &*increasing_children.begin();
+    increase_child = !increasing_children.empty() ?
+        &*increasing_children.begin() :
+        (!pending_children.empty() ? &*pending_children.begin() : nullptr);
     increase = increase_child ? increase_child->increase : nullptr;
     return old_increase != increase;
 }
@@ -191,6 +194,8 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
         // Remove from intrusive sets to update the key
         if (from_child.isIncreasing())
             increasing_children.erase(increasing_children.iterator_to(from_child));
+        if (from_child.isPending())
+            pending_children.erase(pending_children.iterator_to(from_child));
         if (from_child.isRunning())
             running_children.erase(running_children.iterator_to(from_child));
 
@@ -198,7 +203,12 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
 
         // Reinsert into intrusive sets
         if (new_increase)
-            increasing_children.insert(from_child);
+        {
+            if (new_increase->pending_allocation)
+                pending_children.insert(from_child);
+            else
+                increasing_children.insert(from_child);
+        }
         if (from_child.allocated > 0)
             running_children.insert(from_child);
     }
@@ -206,11 +216,19 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
     {
         if (!from_child.isIncreasing())
         {
-            if (new_increase)
+            if (new_increase && !new_increase->pending_allocation)
                 increasing_children.insert(from_child);
         }
-        else if (!new_increase)
+        else if (!(new_increase && !new_increase->pending_allocation))
             increasing_children.erase(increasing_children.iterator_to(from_child));
+
+        if (!from_child.isPending())
+        {
+            if (new_increase && new_increase->pending_allocation)
+                pending_children.insert(from_child);
+        }
+        else if (!(new_increase && new_increase->pending_allocation))
+            pending_children.erase(pending_children.iterator_to(from_child));
 
         if (!from_child.isRunning())
         {

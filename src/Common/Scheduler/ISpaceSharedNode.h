@@ -136,6 +136,7 @@ protected:
     /// Intrusive data structures for managing sets of nodes for parent nodes (e.g. PriorityAllocation and FairAllocation)
     /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
     using RunningSetByUsage = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByUsage>>;
+    using PendingSetByUsage = boost::intrusive::set<ISpaceSharedNode, PendingHook, boost::intrusive::compare<ByUsage>>;
     using RunningSetByPriority = boost::intrusive::set<ISpaceSharedNode, RunningHook, boost::intrusive::compare<ByPriority>>;
     using IncreasingSetByUsage = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByUsage>>;
     using IncreasingSetByPriority = boost::intrusive::set<ISpaceSharedNode, IncreasingHook, boost::intrusive::compare<ByPriority>>;
