@@ -7,7 +7,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnDynamic.h>
-#include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLazy.h>
@@ -636,17 +635,12 @@ std::string_view IColumnHelper<Derived, Parent>::serializeValueIntoArena(size_t 
     {
         return NewShinyColumnFixedSizeHelper::serializeValueIntoArena(n, arena, begin);
     }
-    else
-    {
-        if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
-            return IColumn::serializeValueIntoArena(n, arena, begin);
 
-        const auto & self = static_cast<const Derived &>(*this);
-        size_t sz = self.byteSizeAt(n);
-        char * memory = arena.allocContinue(sz, begin);
-        self.serializeValueIntoMemory(n, memory);
-        return {memory, sz};
-    }
+    const auto & self = static_cast<const Derived &>(*this);
+    size_t sz = self.byteSizeAt(n);
+    char * memory = arena.allocContinue(sz, begin);
+    self.serializeValueIntoMemory(n, memory);
+    return {memory, sz};
 }
 
 template <typename Derived, typename Parent>
@@ -671,22 +665,17 @@ char * IColumnHelper<Derived, Parent>::serializeValueIntoMemory(size_t n, char *
     {
         return NewShinyColumnFixedSizeHelper::serializeValueIntoMemory(n, memory);
     }
-    else
-    {
-        if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived>)
-            return IColumn::serializeValueIntoMemory(n, memory);
 
-        const auto & self = static_cast<const Derived &>(*this);
-        auto raw_data = self.getDataAt(n);
-        memcpy(memory, raw_data.data(), raw_data.size());
-        return memory + raw_data.size();
-    }
+    const auto & self = static_cast<const Derived &>(*this);
+    auto raw_data = self.getDataAt(n);
+    memcpy(memory, raw_data.data(), raw_data.size());
+    return memory + raw_data.size();
 }
 
 template <typename Derived, typename Parent>
 void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
 {
-    if constexpr (!std::is_base_of_v<ColumnFixedSizeHelper, Derived> && !std::is_base_of_v<NewShinyColumnFixedSizeHelper, Derived>)
+    if constexpr (!std::is_base_of_v<NewShinyColumnFixedSizeHelper, Derived>)
         return IColumn::collectSerializedValueSizes(sizes, is_null);
 
     const auto & self = static_cast<const Derived &>(*this);
