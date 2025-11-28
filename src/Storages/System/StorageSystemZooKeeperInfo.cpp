@@ -32,6 +32,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
+#include <Poco/Net/StreamSocket.h>
 
 namespace DB
 {
