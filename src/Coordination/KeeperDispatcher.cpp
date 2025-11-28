@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int SYSTEM_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -1024,6 +1025,53 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
         result.alive_connections_count = session_to_response_callback.size();
     }
     return result;
+}
+
+
+Poco::JSON::Object::Ptr KeeperDispatcher::reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command)
+{
+    if (reconfig_command->has("preconditions"))
+    {
+        auto latest_config = server->getKeeperStateMachine()->getClusterConfig();
+        auto preconditions = reconfig_command->getObject("preconditions");
+        if (preconditions->has("members"))
+        {
+            std::unordered_set<int32_t> nodes;
+            auto members = preconditions->getArray("members");
+            for (size_t i = 0; i < members->size(); ++i)
+                nodes.insert(members->getElement<int32_t>(i));
+
+            auto servers_in_config = latest_config->get_servers();
+            if (nodes.size() != servers_in_config.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Precondition failed: expected members size {}, actual {}",
+                    nodes.size(),
+                    servers_in_config.size());
+
+            for (const auto & participant : servers_in_config)
+            {
+                if (!nodes.contains(participant->get_id()))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Precondition failed: expected member id {} not found in actual members",
+                        participant->get_id());
+            }
+        }
+        if (preconditions->has("leaders"))
+        {
+            std::unordered_set<int32_t> leaders;
+            auto leaders_array = preconditions->getArray("leaders");
+            for (size_t i = 0; i < leaders_array->size(); ++i)
+                leaders.insert(leaders_array->getElement<int32_t>(i));
+
+            if (!leaders.contains(server->getLeaderID()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Precondition failed: expected leader id {} does not match actual leader id {}",
+                    leaders,
+                    server->getLeaderID()));
+
+        }
+
+    }
 }
 
 void KeeperDispatcher::cleanResources()

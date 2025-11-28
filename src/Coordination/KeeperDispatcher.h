@@ -14,6 +14,7 @@
 #include <Coordination/KeeperSnapshotManagerS3.h>
 #include <Common/MultiVersion.h>
 #include <Common/Macros.h>
+#include <Poco/JSON/Object.h>
 
 namespace DB
 {
@@ -131,6 +132,8 @@ public:
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config, const MultiVersion<Macros>::Version & macros);
     void pushClusterUpdates(ClusterUpdateActions && actions);
     bool reconfigEnabled() const;
+
+    Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();
