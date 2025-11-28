@@ -4,7 +4,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
+# run flaky check
 $CLICKHOUSE_CLIENT -m -q "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
