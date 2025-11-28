@@ -239,7 +239,7 @@ public:
 
         if (dict_side == Side::LHS)
         {
-            attr_comparison_function_node->getArguments().getNodes() = {attr_col_node_casted, arguments[1]};
+            attr_comparison_function_node->getArguments().getNodes() = { attr_col_node_casted, arguments[1] };
         }
         else
         {
