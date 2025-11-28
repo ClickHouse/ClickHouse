@@ -52,8 +52,8 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
 
     set (${OUT_VARIABLE} "${BUILTINS_BINARY_DIR}/${BUILTINS_TARGET}" PARENT_SCOPE)
     set (EXTRA_TARGETS)
+    set (EXTRA_BUILTINS_LIBRARIES)
     if (SANITIZE)
-        set (EXTRA_BUILTINS_LIBRARIES)
         if (SANITIZE STREQUAL "address")
             set (EXTRA_BUILTINS_LIBRARIES "asan_static" "asan" "asan_cxx")
         elseif (SANITIZE STREQUAL "memory")
@@ -63,20 +63,25 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
         elseif (SANITIZE STREQUAL "undefined")
             set (EXTRA_BUILTINS_LIBRARIES "ubsan_standalone" "ubsan_standalone_cxx")
         endif ()
-
-        foreach (LIB IN ITEMS ${EXTRA_BUILTINS_LIBRARIES})
-            string(REPLACE "builtins" "${LIB}" NEW_TARGET "${BUILTINS_TARGET}")
-            list (APPEND EXTRA_TARGETS "--target" "${NEW_TARGET}")
-            set (OUT_LIBS "${OUT_LIBS} ${BUILTINS_BINARY_DIR}/${NEW_TARGET}")
-
-            if (NOT EXISTS "${BUILTINS_BINARY_DIR}/${NEW_TARGET}")
-                set (NEED_BUILTIN_BUILD TRUE)
-            endif ()
-        endforeach ()
-
         # We are providing our own sanitizer runtimes, so disable linking the system ones
         set (OUT_LIBS "${OUT_LIBS} -fno-sanitize-link-runtime")
     endif ()
+
+    if (ENABLE_XRAY)
+        set (EXTRA_BUILTINS_LIBRARIES "xray")
+        # We are providing our runtime, so disable linking the system ones
+        set (OUT_LIBS "${OUT_LIBS} -fno-xray-link-deps")
+    endif()
+
+    foreach (LIB IN ITEMS ${EXTRA_BUILTINS_LIBRARIES})
+        string(REPLACE "builtins" "${LIB}" NEW_TARGET "${BUILTINS_TARGET}")
+        list (APPEND EXTRA_TARGETS "--target" "${NEW_TARGET}")
+        set (OUT_LIBS "${OUT_LIBS} ${BUILTINS_BINARY_DIR}/${NEW_TARGET}")
+
+        if (NOT EXISTS "${BUILTINS_BINARY_DIR}/${NEW_TARGET}")
+            set (NEED_BUILTIN_BUILD TRUE)
+        endif ()
+    endforeach ()
 
     if (NEED_BUILTIN_BUILD)
         execute_process(
@@ -101,6 +106,9 @@ function (build_clang_builtin target_triple OUT_VARIABLE)
                 "-DCMAKE_BUILD_TYPE=Release"
                 "-DCOMPILER_RT_DEFAULT_TARGET_TRIPLE=${BUILTINS_DEFAULT_TARGET_TRIPLE}"
                 "-DCMAKE_TOOLCHAIN_FILE=${BUILTINS_TOOLCHAIN_FILE}"
+                # Trick the build into using libc++ from our clang instead of the sysroot one (which isn't there)
+                # Needed for xray (sanitizers use C headers only)
+                "-DSANITIZER_COMMON_CFLAGS=-isystem;${BUILTINS_SOURCE_DIR}/../libcxx/include"
                 "-S ${BUILTINS_SOURCE_DIR}"
                 "-B ${BUILTINS_BINARY_DIR}"
                 WORKING_DIRECTORY ${BUILTINS_BINARY_DIR}
