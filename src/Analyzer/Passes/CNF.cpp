@@ -566,7 +566,6 @@ QueryTreeNodePtr CNF::toQueryTree() const
                 or_arguments.push_back(function_node_from_atom(atom));
 
             auto or_function = std::make_shared<FunctionNode>("or");
-            or_function->markAsOperator();
             or_function->getArguments().getNodes() = std::move(or_arguments);
             or_function->resolveAsFunction(or_resolver);
 
@@ -578,7 +577,6 @@ QueryTreeNodePtr CNF::toQueryTree() const
         return std::move(and_arguments[0]);
 
     auto and_function = std::make_shared<FunctionNode>("and");
-    and_function->markAsOperator();
     and_function->getArguments().getNodes() = std::move(and_arguments);
     and_function->resolveAsFunction(and_resolver);
 

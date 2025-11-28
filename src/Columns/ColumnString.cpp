@@ -3,7 +3,6 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
@@ -257,32 +256,38 @@ void ColumnString::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, c
 }
 
 
-std::string_view ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     size_t string_size = sizeAt(n);
     size_t offset = offsetAt(n);
 
-    auto result_size = sizeof(string_size) + string_size;
-    char * pos = arena.allocContinue(result_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size, sizeof(string_size));
     memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-    return {pos, result_size};
+    res.data = pos;
+
+    return res;
 }
 
-std::string_view ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnString::serializeAggregationStateValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     /// Serialize string values with 0 byte at the end for compatibility
     /// with old versions where we stored 0 byte at the end of each string value.
     size_t string_size_with_zero_byte = sizeAt(n) + 1;
     size_t offset = offsetAt(n);
 
-    auto res_size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
-    char * pos = arena.allocContinue(res_size, begin);
+    StringRef res;
+    res.size = sizeof(string_size_with_zero_byte) + string_size_with_zero_byte;
+    char * pos = arena.allocContinue(res.size, begin);
     memcpy(pos, &string_size_with_zero_byte, sizeof(string_size_with_zero_byte));
     memcpy(pos + sizeof(string_size_with_zero_byte), &chars[offset], string_size_with_zero_byte - 1);
     /// Add 0 byte at the end.
     *(pos + sizeof(string_size_with_zero_byte) + string_size_with_zero_byte - 1) = 0;
-    return std::string_view{pos, res_size};
+    res.data = pos;
+
+    return res;
 }
 
 
@@ -367,9 +372,9 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
     size_t new_chars_size = 0;
     for (size_t i = 0; i < limit; ++i)
         new_chars_size += sizeAt(indexes[i]);
-    res_chars.resize_exact(new_chars_size);
+    res_chars.resize(new_chars_size);
 
-    res_offsets.resize_exact(limit);
+    res_offsets.resize(limit);
 
     Offset current_new_offset = 0;
 
@@ -523,7 +528,7 @@ size_t ColumnString::estimateCardinalityInPermutedRange(const Permutation & perm
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
         size_t permuted_i = permutation[i];
-        auto value = getDataAt(permuted_i);
+        StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
     return elements.size();
@@ -740,27 +745,6 @@ void ColumnString::updateHashFast(SipHash & hash) const
 {
     hash.update(reinterpret_cast<const char *>(offsets.data()), offsets.size() * sizeof(offsets[0]));
     hash.update(reinterpret_cast<const char *>(chars.data()), chars.size() * sizeof(chars[0]));
-}
-
-ColumnPtr ColumnString::createSizeSubcolumn() const
-{
-    MutableColumnPtr column_sizes = ColumnUInt64::create();
-    size_t rows = offsets.size();
-    if (rows == 0)
-        return column_sizes;
-
-    auto & sizes_data = assert_cast<ColumnUInt64 &>(*column_sizes).getData();
-    sizes_data.resize(rows);
-
-    IColumn::Offset prev_offset = 0;
-    for (size_t i = 0; i < rows; ++i)
-    {
-        auto current_offset = offsets[i];
-        sizes_data[i] = current_offset - prev_offset;
-        prev_offset = current_offset;
-    }
-
-    return column_sizes;
 }
 
 }
