@@ -1,7 +1,5 @@
 -- { echoOn }
 
-SET max_threads = 1, max_insert_threads = 1;
-
 DROP TABLE IF EXISTS test_has_skip_minmax;
 
 CREATE TABLE test_has_skip_minmax
@@ -13,26 +11,26 @@ CREATE TABLE test_has_skip_minmax
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 1000;
 
 INSERT INTO test_has_skip_minmax
 SELECT number,
-       number % 100000,
+       number % 10000,
        toString(number)
-FROM numbers(1000000);
+FROM numbers(100000);
 
 EXPLAIN indexes = 1
 SELECT count()
 FROM test_has_skip_minmax
-WHERE has([12345, 54321, 99999], key_col);
+WHERE has([5432, 7432, 9999], key_col);
 
 SELECT count()
 FROM test_has_skip_minmax
-WHERE has([12345, 54321, 99999], key_col);
+WHERE has([5432, 7432, 9999], key_col);
 
 SELECT count()
 FROM test_has_skip_minmax
-WHERE key_col IN [12345, 54321, 99999];
+WHERE key_col IN [5432, 7432, 9999];
 
 
 DROP TABLE IF EXISTS test_has_skip_set;
@@ -43,7 +41,7 @@ CREATE TABLE test_has_skip_set (
 )
 ENGINE = MergeTree
 ORDER BY event_time
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 1000;
 
 INSERT INTO test_has_skip_set 
 SELECT 
@@ -64,7 +62,6 @@ SELECT count()
 FROM test_has_skip_set 
 WHERE user_id IN (10, 20, 30);
 
-
 DROP TABLE IF EXISTS test_has_skip_bloom;
 
 CREATE TABLE test_has_skip_bloom
@@ -76,13 +73,13 @@ CREATE TABLE test_has_skip_bloom
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8192;
+SETTINGS index_granularity = 1000;
 
 INSERT INTO test_has_skip_bloom
 SELECT number,
        concat('v_', toString(number % 100000)),
        toString(number)
-FROM numbers(1000000);
+FROM numbers(100000);
 
 EXPLAIN indexes = 1
 SELECT count()
