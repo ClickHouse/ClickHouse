@@ -59,6 +59,10 @@ namespace ErrorCodes
     DECLARE(String, after_processing_move_connection_string, "", "Azure connection string to move processed files to", 0) \
     DECLARE(String, after_processing_move_container, "", "Azure container accompanying after_processing_move_connection_string", 0) \
     \
+ /* ####################################################### */ \
+ /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
+ /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
+ /* ####################################################### */ \
     DECLARE(Bool, allow_experimental_s3_queue_hive_partitioning, false, "Whether path contains hive partitioning and this engine should process such files with a separate processed files tracking per partition.", EXPERIMENTAL) \
 
 #define LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS(M, ALIAS) \
