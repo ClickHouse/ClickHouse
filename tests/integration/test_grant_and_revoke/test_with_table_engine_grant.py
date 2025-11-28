@@ -84,7 +84,7 @@ def test_revoke_requires_grant_option():
     assert expected_error in instance.query_and_get_error(
         "REVOKE SELECT ON test.table FROM B", user="A"
     )
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT SELECT ON test.`table` TO B;\n"
 
     instance.query("GRANT SELECT ON test.table TO A")
     expected_error = "privileges have been granted, but without grant option"
@@ -141,7 +141,7 @@ def test_allowed_grantees():
     instance.query("ALTER USER A GRANTEES NONE")
     expected_error = "user `B` is not allowed as grantee"
     assert expected_error in instance.query_and_get_error(
-        "GRANT SELECT ON test.table TO B", user="A"
+        "GRANT SELECT ON test.table TO B;", user="A"
     )
 
     instance.query("ALTER USER A GRANTEES ANY EXCEPT B")
@@ -192,7 +192,7 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
+        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B;\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -223,7 +223,7 @@ def test_implicit_show_grants():
 
     instance.query("GRANT SELECT(x) ON test.table TO A")
     assert (
-        instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.`table` TO A\n"
+        instance.query("SHOW GRANTS FOR A") == "GRANT SELECT(x) ON test.`table` TO A;\n"
     )
     assert (
         instance.query(
@@ -435,7 +435,7 @@ def test_introspection():
     )
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.`table` TO A;"]
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         ["GRANT CREATE ON *.* TO B WITH GRANT OPTION"]
@@ -548,7 +548,7 @@ def test_current_database():
     instance.query("GRANT SELECT ON table TO A", database="test")
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.`table` TO A;"]
     )
     assert instance.query("SHOW GRANTS FOR A", database="test") == TSV(
         ["GRANT SELECT ON test.`table` TO A"]
@@ -573,7 +573,7 @@ def test_grant_with_replace_option():
     instance.query("CREATE USER A")
     instance.query("GRANT SELECT ON test.table TO A")
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT ON test.`table` TO A"]
+        ["GRANT SELECT ON test.`table` TO A;"]
     )
 
     instance.query("GRANT INSERT ON test.table TO A WITH REPLACE OPTION")
@@ -632,7 +632,7 @@ def test_grant_current_grants():
         "GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"
     )
     assert instance.query("SHOW GRANTS FOR A") == TSV(
-        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION"]
+        ["GRANT SELECT, CREATE TABLE, CREATE VIEW ON test.* TO A WITH GRANT OPTION;"]
     )
 
     instance.query("CREATE USER B")
@@ -657,7 +657,7 @@ def test_grant_current_grants_with_partial_revoke():
     instance.query("CREATE USER A")
     instance.query("GRANT CREATE TABLE ON *.* TO A")
     instance.query("REVOKE CREATE TABLE ON test.* FROM A")
-    instance.query("GRANT CREATE TABLE ON test.table TO A WITH GRANT OPTION")
+    instance.query("GRANT CREATE TABLE ON test.table TO A WITH GRANT OPTION;")
     instance.query("GRANT SELECT ON *.* TO A WITH GRANT OPTION")
     instance.query("REVOKE SELECT ON test.* FROM A")
     instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
@@ -665,11 +665,11 @@ def test_grant_current_grants_with_partial_revoke():
 
     assert instance.query("SHOW GRANTS FOR A") == TSV(
         [
-            "GRANT CREATE TABLE ON *.* TO A",
-            "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
+            "GRANT CREATE TABLE ON *.* TO A;",
+            "GRANT SELECT ON *.* TO A WITH GRANT OPTION;",
             "REVOKE SELECT, CREATE TABLE ON test.* FROM A",
-            "GRANT SELECT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION",
-            "GRANT SELECT ON test.table2 TO A",
+            "GRANT SELECT, CREATE TABLE ON test.`table` TO A WITH GRANT OPTION;",
+            "GRANT SELECT ON test.table2 TO A;",
         ]
     )
 
@@ -721,7 +721,7 @@ def test_current_grants_override():
     instance.query("REVOKE SELECT ON test.* FROM A")
     assert instance.query("SHOW GRANTS FOR A") == TSV(
         [
-            "GRANT SELECT ON *.* TO A WITH GRANT OPTION",
+            "GRANT SELECT ON *.* TO A WITH GRANT OPTION;",
             "REVOKE SELECT ON test.* FROM A",
         ]
     )

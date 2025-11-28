@@ -165,7 +165,7 @@ def test_default_access(cluster):
 def test_granular_access_show_query(cluster):
     node = cluster.instances["node"]
     assert (
-        "GRANT ALL ON *.* TO default WITH GRANT OPTION"
+        "GRANT ALL ON *.* TO default WITH GRANT OPTION;"
         == node.query("SHOW GRANTS FOR default").strip()
     )  # includes named collections control
     assert 1 == int(node.query("SELECT count() FROM system.named_collections"))
@@ -302,7 +302,7 @@ def test_show_grants(cluster):
     node.query("DROP USER IF EXISTS koko")
     node.query("CREATE USER koko")
     node.query("GRANT CREATE NAMED COLLECTION ON name1 TO koko")
-    node.query("GRANT select ON name1.* TO koko")
+    node.query("GRANT select ON name1.* TO koko;")
     assert (
         "GRANT SELECT ON name1.* TO koko\nGRANT CREATE NAMED COLLECTION ON name1 TO koko"
         == node.query("SHOW GRANTS FOR koko;").strip()

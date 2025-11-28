@@ -139,7 +139,7 @@ def test_revoke_requires_admin_option():
     instance.query("CREATE ROLE R1, R2")
 
     instance.query("GRANT R1 TO B")
-    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B\n"
+    assert instance.query("SHOW GRANTS FOR B") == "GRANT R1 TO B;\n"
 
     expected_error = "necessary to have the role R1 granted"
     assert expected_error in instance.query_and_get_error("REVOKE R1 FROM B", user="A")
@@ -253,7 +253,7 @@ def test_introspection():
     )
     assert instance.query("SHOW GRANTS FOR B") == TSV(
         [
-            "GRANT CREATE ON *.* TO B WITH GRANT OPTION",
+            "GRANT CREATE ON *.* TO B WITH GRANT OPTION;",
             "GRANT R2 TO B WITH ADMIN OPTION",
         ]
     )

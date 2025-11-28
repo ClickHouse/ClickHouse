@@ -110,7 +110,7 @@ def test_alter():
             instance.query("SHOW GRANTS FOR u1")
             == "GRANT SELECT ON mydb.mytable TO u1;\n"
         )
-        assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2\n"
+        assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx, ry TO u2;\n"
         assert (
             instance.query("SHOW CREATE ROLE rx")
             == "CREATE ROLE rx SETTINGS PROFILE `s2`\n"

@@ -22,7 +22,7 @@ def test_enable_username_access_type():
                 sorted(node.query(
                     "SHOW GRANTS FOR foobar"
                 ).strip().split('\n'))
-                == ["GRANT CREATE USER ON *.* TO foobar", "GRANT SET DEFINER ON * TO foobar"]
+                == ["GRANT CREATE USER ON *.* TO foobar;", "GRANT SET DEFINER ON * TO foobar"]
         )
         node.query("DROP USER foobar")
     finally:
