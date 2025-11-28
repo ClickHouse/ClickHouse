@@ -33,10 +33,10 @@ namespace ErrorCodes
     DECLARE(UInt64, rabbitmq_max_block_size, 0, "Number of row collected before flushing data from RabbitMQ.", 0) \
     DECLARE(UInt64, rabbitmq_flush_interval_ms, 0, "Timeout for flushing data from RabbitMQ.", 0) \
     DECLARE(String, rabbitmq_vhost, "/", "RabbitMQ vhost.", 0) \
-    DECLARE(String, rabbitmq_queue_settings_list, "", "A list of rabbitmq queue settings", 0) \
-    DECLARE(UInt64, rabbitmq_empty_queue_backoff_start_ms, 10, "A minimum backoff point to reschedule read if the rabbitmq queue is empty", 0) \
-    DECLARE(UInt64, rabbitmq_empty_queue_backoff_end_ms, 10000, "A maximum backoff point to reschedule read if the rabbitmq queue is empty", 0) \
-    DECLARE(UInt64, rabbitmq_empty_queue_backoff_step_ms, 100, "A backoff step to reschedule read if the rabbitmq queue is empty", 0) \
+    DECLARE(String, rabbitmq_queue_settings_list, "", "A list of RabbitMQ queue settings", 0) \
+    DECLARE(UInt64, rabbitmq_empty_queue_backoff_start_ms, 10, "A minimum backoff point to reschedule read if the RabbitMQ queue is empty", 0) \
+    DECLARE(UInt64, rabbitmq_empty_queue_backoff_end_ms, 10000, "A maximum backoff point to reschedule read if the RabbitMQ queue is empty", 0) \
+    DECLARE(UInt64, rabbitmq_empty_queue_backoff_step_ms, 100, "A backoff step to reschedule read if the RabbitMQ queue is empty", 0) \
     DECLARE(Bool, rabbitmq_queue_consume, false, "Use user-defined queues and do not make any RabbitMQ setup: declaring exchanges, queues, bindings", 0) \
     DECLARE(String, rabbitmq_username, "", "RabbitMQ username", 0) \
     DECLARE(String, rabbitmq_password, "", "RabbitMQ password", 0) \
